@@ -377,17 +377,17 @@ private fun markdownHeadingLineHeight(fontSize: TextUnit): TextUnit =
 private fun blockSpacing(block: MdBlock, isFirst: Boolean, isLast: Boolean): Modifier {
     val top = when (block) {
         is MdBlock.Header -> when (block.level) {
-            1 -> 16.dp
-            2 -> 14.dp
-            3 -> 12.dp
+            1 -> 14.dp
+            2 -> 12.dp
+            3 -> 11.dp
             else -> 10.dp
         }
         else -> 0.dp
     }
     val bottom = when (block) {
         is MdBlock.Header -> when (block.level) {
-            1 -> 10.dp
-            2, 3 -> 8.dp
+            1 -> 9.dp
+            2, 3 -> 7.dp
             else -> 6.dp
         }
         // 水平分割线自带上下 padding，不需要额外段距
@@ -399,15 +399,19 @@ private fun blockSpacing(block: MdBlock, isFirst: Boolean, isLast: Boolean): Mod
         .then(if (!isLast && bottom > 0.dp) Modifier.padding(bottom = bottom) else Modifier)
 }
 
-/** 标题样式：按层级放大字号并收紧行高（GitHub 风格：2em / 1.5em / 1.25em…）。 */
+/**
+ * 标题样式：按层级放大字号并收紧行高。
+ * 倍率参考对话类产品的窄屏排版（ChatGPT / Claude），比 GitHub 文档站的 2em 收敛得多：
+ * 手机屏宽有限，过大的 H1 稍长即折行，反而压迫正文。
+ */
 private fun headerStyle(style: androidx.compose.ui.text.TextStyle, level: Int): androidx.compose.ui.text.TextStyle {
     val base = markdownBaseFontSize(style)
     val (size, weight) = when (level) {
-        1 -> (base * 1.8f) to FontWeight.Bold
-        2 -> (base * 1.5f) to FontWeight.Bold
-        3 -> (base * 1.3f) to FontWeight.Bold
-        4 -> (base * 1.2f) to FontWeight.SemiBold
-        5 -> (base * 1.1f) to FontWeight.SemiBold
+        1 -> (base * 1.45f) to FontWeight.Bold
+        2 -> (base * 1.3f) to FontWeight.Bold
+        3 -> (base * 1.2f) to FontWeight.Bold
+        4 -> (base * 1.1f) to FontWeight.SemiBold
+        5 -> (base * 1.05f) to FontWeight.SemiBold
         else -> base to FontWeight.SemiBold
     }
     val fontSize = size.sp
