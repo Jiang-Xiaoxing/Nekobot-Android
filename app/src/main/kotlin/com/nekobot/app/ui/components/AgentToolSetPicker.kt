@@ -327,6 +327,9 @@ internal fun toolNameResId(id: String): Int = when (id) {
     "read_image" -> R.string.tool_name_read_image
     "agent_memory_read" -> R.string.tool_name_agent_memory_read
     "agent_memory_update" -> R.string.tool_name_agent_memory_update
+    "agent_recall_search" -> R.string.tool_name_agent_recall_search
+    "agent_history_search" -> R.string.tool_name_agent_history_search
+    "agent_history_read" -> R.string.tool_name_agent_history_read
     "todo_write" -> R.string.tool_name_todo_write
     "ask_user_question" -> R.string.tool_name_ask_user_question
     "get_session_thinking_history" -> R.string.tool_name_get_session_thinking_history
@@ -454,6 +457,9 @@ internal fun toolDescResId(id: String): Int = when (id) {
     "read_image" -> R.string.tool_desc_read_image
     "agent_memory_read" -> R.string.tool_desc_agent_memory_read
     "agent_memory_update" -> R.string.tool_desc_agent_memory_update
+    "agent_recall_search" -> R.string.tool_desc_agent_recall_search
+    "agent_history_search" -> R.string.tool_desc_agent_history_search
+    "agent_history_read" -> R.string.tool_desc_agent_history_read
     "todo_write" -> R.string.tool_desc_todo_write
     "todo_read" -> R.string.tool_desc_todo_read
     "ask_user_question" -> R.string.tool_desc_ask_user_question
@@ -704,7 +710,8 @@ internal data class ToolParameterEntry(val name: String, val required: Boolean)
  * 就能在「工具详情 / 进度卡片步骤详情」中展示说明与输入参数。
  */
 internal fun allLocalToolDefinitions(): List<Map<String, Any>> =
-    buildLocalAgentToolDefinitions() + buildLocalSkillToolDefinitions() + buildLocalDbToolDefinitions()
+    buildLocalAgentToolDefinitions(recallEnabled = true) +
+        buildLocalSkillToolDefinitions() + buildLocalDbToolDefinitions()
 
 /** 从一份 function-calling 定义中取出 function 节点。 */
 private fun functionNode(definition: Map<String, Any>): Map<String, Any>? {

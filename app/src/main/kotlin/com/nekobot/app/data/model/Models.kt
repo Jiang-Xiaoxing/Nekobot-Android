@@ -116,7 +116,10 @@ data class Session(
     val inheritCharacter: Boolean? = null,
     /** 继承角色能力时是否使用角色卡开场白作为首条消息。 */
     @SerializedName(value = "inherit_character_greeting", alternate = ["inheritCharacterGreeting"])
-    val inheritCharacterGreeting: Boolean? = null
+    val inheritCharacterGreeting: Boolean? = null,
+    /** 本地 Agent 可选的长期单会话记忆模式。 */
+    @SerializedName(value = "long_conversation_enabled", alternate = ["longConversationEnabled"])
+    val longConversationEnabled: Boolean? = null
 ) {
     val displayName: String get() = name?.takeIf { it.isNotBlank() } ?: "未命名会话"
     /** 角色立绘 URL：优先 portrait，回退 characterAvatar */
@@ -169,7 +172,9 @@ data class UpdateSessionRequest(
     /** Agent 会话继承绑定角色的完整能力（仅本地模式生效）。 */
     @SerializedName("inherit_character") val inheritCharacter: Boolean? = null,
     /** 继承角色能力时使用角色卡开场白。 */
-    @SerializedName("inherit_character_greeting") val inheritCharacterGreeting: Boolean? = null
+    @SerializedName("inherit_character_greeting") val inheritCharacterGreeting: Boolean? = null,
+    /** 仅本地 Agent 使用；服务器模式不发送此开关。 */
+    @SerializedName("long_conversation_enabled") val longConversationEnabled: Boolean? = null
 )
 
 /** 创建或更新公开分享时提交给独立 public API 的配置。 */
@@ -965,7 +970,9 @@ data class LegacyMemory(
     @SerializedName("updated_at") val updatedAt: String? = null,
     // 本地模式扩展：真实 memoryfs category（user_persona/character_persona/important_event/timeline/life_sim/recent_digest/legacy）
     // 远程模式反序列化时若无此字段则为 null，不影响兼容性
-    val category: String? = null
+    val category: String? = null,
+    /** 本地角色记忆可选主题标签；远程旧接口未返回时为 null。 */
+    val tags: List<String>? = null
 )
 
 /** 旧版记忆列表响应：{memories, long_term, short_term} */

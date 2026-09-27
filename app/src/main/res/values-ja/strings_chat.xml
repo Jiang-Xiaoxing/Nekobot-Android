@@ -131,6 +131,11 @@
     <string name="sessions_detail_inherit_character_desc">キャラクターとして応答しつつ、Agent のツール能力はすべて維持します。キャラクターカード・記憶・世界観・関係状態を読み込みます。</string>
     <string name="sessions_detail_inherit_character_on">キャラクター能力を完全継承：オン</string>
     <string name="sessions_detail_inherit_character_off">キャラクター能力を完全継承：オフ</string>
+    <string name="sessions_detail_long_conversation">長期会話メモリー</string>
+    <string name="sessions_detail_long_conversation_desc">直近の原文を残し、記憶・経験の要約・過去の発言を必要に応じて検索します。有効化だけで過去の履歴を有料で整理しません。過去の整理には別途費用確認が必要です。</string>
+    <string name="sessions_detail_long_conversation_on">長期会話メモリー：オン</string>
+    <string name="sessions_detail_long_conversation_off">長期会話メモリー：オフ</string>
+    <string name="sessions_detail_experience_archives">経験アーカイブを見る</string>
     <string name="sessions_detail_inherit_greeting_on">キャラクターの挨拶を使用：オン</string>
     <string name="sessions_detail_inherit_greeting_off">キャラクターの挨拶を使用：オフ</string>
     <string name="sessions_detail_runtime_state">キャラクター実行時状態</string>

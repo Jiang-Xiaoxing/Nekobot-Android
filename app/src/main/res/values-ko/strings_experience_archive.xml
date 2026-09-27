@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="experience_archive_title">경험 보관함</string>
+    <string name="experience_archive_empty">아직 경험 기록이 없습니다</string>
+    <string name="experience_archive_empty_hint">오래된 대화는 구간별로 정리됩니다. 기존의 많은 기록은 수동으로 정리를 시작해야 합니다.</string>
+    <string name="experience_archive_entries">이 대화의 경험</string>
+    <string name="experience_archive_related_memories">같은 태그의 캐릭터 기억</string>
+    <string name="experience_archive_load_more">경험 더 불러오기</string>
+    <string name="experience_archive_status">상태: %1$s</string>
+    <string name="experience_archive_ready">회상 가능</string>
+    <string name="experience_archive_stale">원문이 변경되어 다시 정리해야 합니다</string>
+    <string name="experience_archive_processing">정리 중</string>
+    <string name="experience_archive_failed">정리 실패</string>
+    <string name="experience_archive_source_range">원본 메시지: %1$s ~ %2$s</string>
+    <string name="experience_archive_edit">이 경험 편집</string>
+    <string name="experience_archive_summary">경험 요약</string>
+    <string name="experience_archive_tags">주제 태그</string>
+    <string name="experience_archive_saved">경험을 저장했습니다</string>
+    <string name="experience_archive_missing">이 경험을 찾을 수 없습니다. 목록을 새로고침하세요.</string>
+</resources>

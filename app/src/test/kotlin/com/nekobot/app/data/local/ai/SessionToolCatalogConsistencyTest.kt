@@ -34,7 +34,7 @@ class SessionToolCatalogConsistencyTest {
 
     @Test
     fun `可执行工具都有 function-calling 定义`() {
-        val definedIds = buildLocalAgentToolDefinitions()
+        val definedIds = buildLocalAgentToolDefinitions(recallEnabled = true)
             .mapNotNull { toolNameOf(it) }
             .toSet()
         val missing = localExecutableToolIds - definedIds
@@ -68,7 +68,7 @@ class SessionToolCatalogConsistencyTest {
 
     @Test
     fun `内置工具定义都带必填参数与合法 schema`() {
-        buildLocalAgentToolDefinitions().forEach { definition ->
+        buildLocalAgentToolDefinitions(recallEnabled = true).forEach { definition ->
             val function = definition["function"] as Map<*, *>
             val name = function["name"]
             assertTrue("工具定义缺少名称", name is String && name.isNotBlank())

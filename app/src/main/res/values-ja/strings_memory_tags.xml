@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_tag_all">すべてのタグ</string>
+    <string name="memory_entries_and_tags">記憶とタグ</string>
+    <string name="memory_edit_tags">タグを編集</string>
+    <string name="memory_tags_separator_hint">タグはカンマまたは改行で区切ります。この記憶だけを変更します。</string>
+    <string name="memory_tags_saved">タグを保存しました</string>
+    <string name="memory_tags_missing">この記憶は存在しません。更新してください。</string>
+</resources>

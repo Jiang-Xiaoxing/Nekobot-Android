@@ -86,15 +86,19 @@ data class LocalSessionEntity(
      */
     @ColumnInfo(name = "inherit_character", defaultValue = "0") val inheritCharacter: Boolean = false,
     /** 继承角色能力时是否使用角色卡开场白作为首条消息（仅 [inheritCharacter] 开启时生效）。 */
-    @ColumnInfo(name = "inherit_character_greeting", defaultValue = "0") val inheritCharacterGreeting: Boolean = false
+    @ColumnInfo(name = "inherit_character_greeting", defaultValue = "0") val inheritCharacterGreeting: Boolean = false,
+    /** Agent 会话长期记忆增强开关，旧会话默认关闭。 */
+    @ColumnInfo(name = "long_conversation_enabled", defaultValue = "0") val longConversationEnabled: Boolean = false,
+    /** 压缩后近期原话的截止消息 ID；供上下文构建跳过已完成回合的工具轨迹。 */
+    @ColumnInfo(name = "long_conversation_tail_until_id") val longConversationTailUntilId: String? = null
 )
 
 /**
- * 本地消息。一条消息 = 一行；session_id 建索引。
+ * 本地消息。一条消息 = 一行；会话和创建时间的复合索引支持稳定游标分页。
  */
 @Entity(
     tableName = "local_messages",
-    indices = [Index("session_id")],
+    indices = [Index("session_id"), Index(value = ["session_id", "created_at"])],
     foreignKeys = [
         ForeignKey(
             entity = LocalSessionEntity::class,
@@ -591,7 +595,95 @@ data class LocalCharacterMemoryEntity(
     /** 最近一次写入时间（ISO），用于排序最新 N 条 */
     @ColumnInfo(name = "updated_at") val updatedAt: String? = null,
     /** 该记忆所属会话（important_event/life_sim 按 conversationId 隔离） */
-    @ColumnInfo(name = "conversation_id") val conversationId: String? = null
+    @ColumnInfo(name = "conversation_id") val conversationId: String? = null,
+    /** 可选主题标签 JSON 数组；旧记忆无标签也可按正文查询。 */
+    @ColumnInfo(name = "tags_json") val tagsJson: String? = null,
+    /** 用户手动修改过标签时，自动抽取不能静默覆盖。 */
+    @ColumnInfo(name = "tags_edited", defaultValue = "0") val tagsEdited: Boolean = false,
+    /** 来源指针允许为空，以兼容既有记忆和非聊天来源。 */
+    @ColumnInfo(name = "source_session_id") val sourceSessionId: String? = null,
+    @ColumnInfo(name = "source_start_message_id") val sourceStartMessageId: String? = null,
+    @ColumnInfo(name = "source_end_message_id") val sourceEndMessageId: String? = null
+)
+
+/** 当前会话的一份经历摘要；原文仍以 local_messages 为准。 */
+@Entity(
+    tableName = "local_experience_archives",
+    indices = [
+        Index("session_id"),
+        Index(value = ["session_id", "start_message_id", "end_message_id"], unique = true),
+        Index(value = ["session_id", "status", "source_started_at"])
+    ],
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["session_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
+data class LocalExperienceArchiveEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "start_message_id") val startMessageId: String,
+    @ColumnInfo(name = "end_message_id") val endMessageId: String,
+    @ColumnInfo(name = "source_started_at") val sourceStartedAt: String,
+    @ColumnInfo(name = "source_ended_at") val sourceEndedAt: String,
+    val summary: String,
+    @ColumnInfo(name = "tags_json", defaultValue = "'[]'") val tagsJson: String = "[]",
+    /** 对源消息 ID、正文和删除状态计算的摘要，用于幂等更新。 */
+    @ColumnInfo(name = "source_fingerprint") val sourceFingerprint: String,
+    /** ready / stale / processing / failed；stale 不参加正常召回。 */
+    @ColumnInfo(name = "status", defaultValue = "'ready'") val status: String = "ready",
+    @ColumnInfo(name = "summary_edited", defaultValue = "0") val summaryEdited: Boolean = false,
+    @ColumnInfo(name = "tags_edited", defaultValue = "0") val tagsEdited: Boolean = false,
+    @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String
+)
+
+/** 精确记录摘要覆盖的每条原消息，供编辑或删除后自动标记过期。 */
+@Entity(
+    tableName = "local_experience_sources",
+    primaryKeys = ["archive_id", "message_id"],
+    indices = [Index("message_id")],
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalExperienceArchiveEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["archive_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
+data class LocalExperienceSourceEntity(
+    @ColumnInfo(name = "archive_id") val archiveId: String,
+    @ColumnInfo(name = "message_id") val messageId: String
+)
+
+/** 用户主动补建旧会话档案的可恢复进度；不会自行启动任务。 */
+@Entity(
+    tableName = "local_experience_archive_jobs",
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["session_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
+data class LocalExperienceArchiveJobEntity(
+    @PrimaryKey @ColumnInfo(name = "session_id") val sessionId: String,
+    /** 最后成功归档的源消息 ID；恢复时重新解析其当前分页游标。 */
+    @ColumnInfo(name = "checkpoint_message_id") val checkpointMessageId: String? = null,
+    /** idle / running / paused / failed / done。 */
+    @ColumnInfo(name = "status", defaultValue = "'idle'") val status: String = "idle",
+    @ColumnInfo(name = "processed_count", defaultValue = "0") val processedCount: Int = 0,
+    @ColumnInfo(name = "total_count") val totalCount: Int? = null,
+    @ColumnInfo(name = "generated_count", defaultValue = "0") val generatedCount: Int = 0,
+    val error: String? = null,
+    @ColumnInfo(name = "updated_at") val updatedAt: String
 )
 
 /**

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tool_name_agent_recall_search">キャラクターの記憶と体験を検索</string>
+    <string name="tool_name_agent_history_search">会話の原文を検索</string>
+    <string name="tool_name_agent_history_read">会話の原文を読む</string>
+    <string name="tool_desc_agent_recall_search">閲覧可能なキャラクターの記憶と、この会話の体験要約をまとめて検索します。</string>
+    <string name="tool_desc_agent_history_search">この会話の表示可能な元メッセージをキーワードで検索します。</string>
+    <string name="tool_desc_agent_history_read">メッセージ ID から原文と前後のメッセージを読み、長文は分割して続きから読みます。</string>
+    <string name="experience_backfill_title">古い体験のアーカイブ作成</string>
+    <string name="experience_backfill_hint">既存の会話は自動で有料処理されません。原文は今すぐ検索できます。要約を作る場合は先に費用を確認してください。</string>
+    <string name="experience_backfill_progress">%1$s · %2$d/%3$d 件 · 新規 %4$d 件</string>
+    <string name="experience_backfill_pause">一時停止</string>
+    <string name="experience_backfill_resume">再開</string>
+    <string name="experience_backfill_start">古いアーカイブを作成</string>
+    <string name="experience_backfill_confirm_title">モデル費用の確認</string>
+    <string name="experience_backfill_confirm">理解して開始</string>
+    <string name="experience_backfill_unknown">不明</string>
+    <string name="experience_backfill_cost_notice">表示可能なメッセージは約 %1$d 件。参考モデル：%2$s。参考単価：入力 %3$s USD/百万トークン、出力 %4$s USD/百万トークン。モデル呼び出しに費用が発生する場合があります。総額は正確に見積もれず、ルーティングやフェイルオーバーでモデルと単価が変わる可能性があります。確認後にのみ開始し、一時停止できます。</string>
+    <string name="experience_history_copy_title">作業領域の会話原文コピー</string>
+    <string name="experience_history_copy_hint">この会話の原文をサイズ制限付きの分割ファイルへ手動でコピーします。データベースが正本です。原文の変更後は古いコピーが無効になります。モデルは呼び出しません。</string>
+    <string name="experience_history_copy_progress">%1$d 件を読み込み済み</string>
+    <string name="experience_history_copy_rebuild">原文コピーを再作成</string>
+    <string name="experience_history_copy_done">原文コピーを再作成しました：%1$d 件</string>
+    <string name="experience_history_copy_failed">原文コピーを再作成できませんでした</string>
+    <string name="sessions_long_conversation_cost_title">長期会話を有効にする前の費用確認</string>
+    <string name="sessions_long_conversation_cost_notice">今後の会話がコンテキスト圧縮しきい値に達すると、体験アーカイブ作成のため追加のモデル呼び出し（1回あたり最大4区間、必要なら要約をもう1回）を行い、トークン費用が発生する場合があります。既存履歴の有料補完は自動実行しません。参考モデル：%1$s。参考単価：入力 %2$s、出力 %3$s USD/百万トークン。総額は予測できず、ルーティングや障害時の切替でモデルと単価が変わる場合があります。確認後、この画面の設定を保存してください。</string>
+    <string name="sessions_long_conversation_cost_confirm">費用を理解して有効化</string>
+</resources>

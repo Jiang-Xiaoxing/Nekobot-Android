@@ -56,6 +56,8 @@ object Routes {
     const val AGENT_MEMORY = "agent_memory"
     const val STATE_HISTORY = "state_history"
     const val MEMORY = "memory"
+    const val EXPERIENCE_ARCHIVE = "experience_archive/{sessionId}"
+    fun experienceArchive(sessionId: String) = "experience_archive/$sessionId"
     const val STYLE_SETTINGS = "style_settings"
 
     const val WORKSPACE = "workspace/{sessionId}"

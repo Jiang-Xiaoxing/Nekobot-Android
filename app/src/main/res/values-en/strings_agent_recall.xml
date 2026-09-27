@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tool_name_agent_recall_search">Search character memories and experiences</string>
+    <string name="tool_name_agent_history_search">Search original chat</string>
+    <string name="tool_name_agent_history_read">Read original chat</string>
+    <string name="tool_desc_agent_recall_search">Search permitted character memories and this session’s experience summaries together.</string>
+    <string name="tool_desc_agent_history_search">Search visible original messages in this session by keyword.</string>
+    <string name="tool_desc_agent_history_read">Read an original message by ID with nearby messages; continue through long text in segments.</string>
+    <string name="experience_backfill_title">Build old experience archives</string>
+    <string name="experience_backfill_hint">Existing chats are not automatically processed with paid model calls. Original messages are searchable now. Confirm potential cost before building summaries.</string>
+    <string name="experience_backfill_progress">%1$s · %2$d/%3$d messages · %4$d new archives</string>
+    <string name="experience_backfill_pause">Pause</string>
+    <string name="experience_backfill_resume">Resume</string>
+    <string name="experience_backfill_start">Build old archives</string>
+    <string name="experience_backfill_confirm_title">Confirm possible model cost</string>
+    <string name="experience_backfill_confirm">I understand, start</string>
+    <string name="experience_backfill_unknown">unknown</string>
+    <string name="experience_backfill_cost_notice">About %1$d visible messages. Reference model: %2$s. Reference rates: input %3$s USD per million tokens; output %4$s USD per million tokens. This will call a model and may cost money. Total cost cannot be estimated accurately; routing or failover may change the model and rate. Processing starts only after confirmation and can be paused.</string>
+    <string name="experience_history_copy_title">Workspace history copy</string>
+    <string name="experience_history_copy_hint">Manually create bounded chunks of this session’s original messages. Room remains the source of truth. Changes to messages invalidate the old copy. This does not call a model.</string>
+    <string name="experience_history_copy_progress">Read %1$d messages</string>
+    <string name="experience_history_copy_rebuild">Rebuild history copy</string>
+    <string name="experience_history_copy_done">History copy rebuilt: %1$d messages</string>
+    <string name="experience_history_copy_failed">Could not rebuild history copy</string>
+    <string name="sessions_long_conversation_cost_title">Confirm cost before enabling long chat</string>
+    <string name="sessions_long_conversation_cost_notice">When future chats reach the context compaction threshold, this mode makes extra model calls to build episodic archives (up to 4 segments per pass, plus another summary call when needed). This uses tokens and may cost money. Existing history is not automatically backfilled. Reference model: %1$s; reference rates: input %2$s and output %3$s USD per million tokens. Total cost cannot be predicted; routing or failover may change model and rates. Save this page after confirming.</string>
+    <string name="sessions_long_conversation_cost_confirm">Understand cost, enable</string>
+</resources>

@@ -58,7 +58,10 @@ object ToolSetModeCatalog {
         "todo_write",
         "todo_read",
         "agent_memory_read",
-        "agent_memory_update"
+        "agent_memory_update",
+        "agent_recall_search",
+        "agent_history_search",
+        "agent_history_read"
     )
 
     /**

@@ -177,6 +177,75 @@ class NekobotDatabaseLatestMigrationTest {
         migrated.close()
     }
 
+    @Test
+    fun migration45To46_preservesMemoryAndInvalidatesEditedExperience() {
+        open(version = 45, onCreate = { db ->
+            db.execSQL("CREATE TABLE local_sessions (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE local_character_memories (id TEXT NOT NULL PRIMARY KEY, content TEXT NOT NULL)")
+            db.execSQL(
+                "CREATE TABLE local_messages (id TEXT NOT NULL PRIMARY KEY, session_id TEXT NOT NULL, " +
+                    "created_at TEXT NOT NULL, content TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)"
+            )
+            db.execSQL("INSERT INTO local_sessions(id, name) VALUES ('s1', '旧会话')")
+            db.execSQL("INSERT INTO local_character_memories(id, content) VALUES ('m1', '原来的角色记忆正文')")
+            db.execSQL(
+                "INSERT INTO local_messages(id, session_id, created_at, content) " +
+                    "VALUES ('msg1', 's1', '2026-09-27T10:00:00Z', '中秋送了一本书')"
+            )
+        }).close()
+
+        val migrated = open(version = 46, onUpgrade = { db, _, _ ->
+            NekobotDatabase.MIGRATION_45_46.migrate(db)
+        })
+        val db = migrated.writableDatabase
+        assertTrue(columnNames(db, "local_sessions").containsAll(listOf("long_conversation_enabled", "long_conversation_tail_until_id")))
+        assertTrue(columnNames(db, "local_character_memories").containsAll(listOf("tags_json", "tags_edited", "source_session_id")))
+        assertTrue(tableExists(db, "local_experience_archives"))
+        assertTrue(tableExists(db, "local_experience_sources"))
+        assertTrue(tableExists(db, "local_experience_archive_jobs"))
+        db.query(
+            "EXPLAIN QUERY PLAN SELECT * FROM local_messages WHERE session_id = 's1' " +
+                "AND created_at > '2026-09-27' ORDER BY created_at, rowid"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.getString(3).contains("index_local_messages_session_id_created_at"))
+        }
+        db.query("SELECT content, tags_json FROM local_character_memories WHERE id = 'm1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("原来的角色记忆正文", cursor.getString(0))
+            assertTrue(cursor.isNull(1))
+        }
+        db.query("SELECT long_conversation_enabled FROM local_sessions WHERE id = 's1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO local_experience_archives(id, session_id, start_message_id, end_message_id, " +
+                "source_started_at, source_ended_at, summary, source_fingerprint, created_at, updated_at) " +
+                "VALUES ('a1', 's1', 'msg1', 'msg1', '2026-09-27', '2026-09-27', '中秋礼物', 'hash', 'now', 'now')"
+        )
+        db.execSQL("INSERT INTO local_experience_sources(archive_id, message_id) VALUES ('a1', 'msg1')")
+        db.execSQL("UPDATE local_messages SET content = '中秋送了月饼' WHERE id = 'msg1'")
+        db.query("SELECT status FROM local_experience_archives WHERE id = 'a1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("stale", cursor.getString(0))
+        }
+        db.execSQL("UPDATE local_experience_archives SET status = 'ready' WHERE id = 'a1'")
+        db.execSQL("UPDATE local_messages SET deleted = 1 WHERE id = 'msg1'")
+        db.query("SELECT status FROM local_experience_archives WHERE id = 'a1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("stale", cursor.getString(0))
+        }
+        db.execSQL("UPDATE local_experience_archives SET status = 'ready' WHERE id = 'a1'")
+        db.execSQL("DELETE FROM local_messages WHERE id = 'msg1'")
+        db.query("SELECT status FROM local_experience_archives WHERE id = 'a1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("stale", cursor.getString(0))
+        }
+        migrated.close()
+    }
+
     private fun open(
         version: Int,
         onCreate: (SupportSQLiteDatabase) -> Unit = {},

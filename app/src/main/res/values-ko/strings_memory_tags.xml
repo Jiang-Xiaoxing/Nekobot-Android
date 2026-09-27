@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_tag_all">모든 태그</string>
+    <string name="memory_entries_and_tags">기억 항목과 태그</string>
+    <string name="memory_edit_tags">태그 편집</string>
+    <string name="memory_tags_separator_hint">쉼표나 줄 바꿈으로 태그를 구분합니다. 이 기억에만 적용됩니다.</string>
+    <string name="memory_tags_saved">태그를 저장했습니다</string>
+    <string name="memory_tags_missing">이 기억은 더 이상 없습니다. 새로고침해 주세요.</string>
+</resources>

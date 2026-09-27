@@ -111,6 +111,12 @@ class MemoryViewModel : com.nekobot.app.ui.BaseViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _selectedTag = MutableStateFlow<String?>(null)
+    val selectedTag: StateFlow<String?> = _selectedTag.asStateFlow()
+
+    private val _editingTags = MutableStateFlow<LegacyMemory?>(null)
+    val editingTags: StateFlow<LegacyMemory?> = _editingTags.asStateFlow()
+
     private val _expandedPaths = MutableStateFlow<Set<String>>(emptySet())
     val expandedPaths: StateFlow<Set<String>> = _expandedPaths.asStateFlow()
 
@@ -139,6 +145,13 @@ class MemoryViewModel : com.nekobot.app.ui.BaseViewModel() {
                     val all = resp?.memories
                         ?: (resp?.longTerm.orEmpty() + resp?.shortTerm.orEmpty())
                     _legacy.value = all
+                    if (_selectedTag.value != null && all.none { memory ->
+                            memory.tags.orEmpty().any { tag ->
+                                tag.equals(_selectedTag.value, ignoreCase = true)
+                            }
+                        }) {
+                        _selectedTag.value = null
+                    }
                     // 按 category 分组构建 MemoryFS 文件视图
                     _files.value = buildLocalMemoryFsFiles(all)
                 }
@@ -243,6 +256,31 @@ class MemoryViewModel : com.nekobot.app.ui.BaseViewModel() {
 
     /** 更新搜索关键词 */
     fun setSearchQuery(q: String) { _searchQuery.value = q }
+
+    fun selectTag(tag: String?) { _selectedTag.value = tag }
+
+    fun startEditTags(memory: LegacyMemory) { _editingTags.value = memory }
+
+    fun dismissTagEditor() { _editingTags.value = null }
+
+    fun saveTags(tags: List<String>) {
+        val id = _editingTags.value?.id ?: return
+        launchResult(
+            block = {
+                val saved = com.nekobot.app.ServiceContainer.localRepository.updateMemoryTags(id, tags)
+                com.nekobot.app.data.repository.Resource.Success(saved)
+            },
+            onSuccess = { saved ->
+                if (saved == true) {
+                    _editingTags.value = null
+                    load()
+                    showToast(string(R.string.memory_tags_saved))
+                } else {
+                    showError(string(R.string.memory_tags_missing))
+                }
+            }
+        )
+    }
 
     /** 展开/折叠文件内容 */
     fun toggleExpand(path: String) {
@@ -418,6 +456,8 @@ fun MemoryScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val selectedChar by viewModel.selectedCharacterId.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedTag by viewModel.selectedTag.collectAsStateWithLifecycle()
+    val editingTags by viewModel.editingTags.collectAsStateWithLifecycle()
     val expandedPaths by viewModel.expandedPaths.collectAsStateWithLifecycle()
     val showAddDialog by viewModel.showAddDialog.collectAsStateWithLifecycle()
     val editingLegacy by viewModel.editingLegacy.collectAsStateWithLifecycle()
@@ -425,6 +465,7 @@ fun MemoryScreen(
     var showMenu by remember { mutableStateOf(false) }
     var deleteFile by remember { mutableStateOf<MemoryFile?>(null) }
     var deleteLegacyItem by remember { mutableStateOf<LegacyMemory?>(null) }
+    val isLocalMode = com.nekobot.app.ServiceContainer.prefs.isLocalMode
 
     // 角色选项：从 MemoryFS 文件中提取（本地模式 characterId 即角色名）
     val characterOptions = remember(files) {
@@ -440,8 +481,8 @@ fun MemoryScreen(
     }
 
     // 搜索 + 角色筛选
-    val filteredFiles = remember(files, searchQuery, selectedChar) {
-        var result = files
+    val filteredFiles = remember(files, searchQuery, selectedChar, selectedTag) {
+        var result = if (selectedTag == null) files else emptyList()
         if (selectedChar != null) {
             result = result.filter { it.characterId == selectedChar }
         }
@@ -455,7 +496,7 @@ fun MemoryScreen(
         }
         result
     }
-    val filteredLegacy = remember(legacy, searchQuery, selectedChar) {
+    val filteredLegacy = remember(legacy, searchQuery, selectedChar, selectedTag) {
         var result = legacy
         if (selectedChar != null) {
             // 本地模式 LegacyMemory.characterName 即角色名，与 MemoryFile.characterId 对齐
@@ -465,10 +506,26 @@ fun MemoryScreen(
             result = result.filter {
                 it.title.contains(searchQuery, true) ||
                 it.content.contains(searchQuery, true) ||
-                (it.summary?.contains(searchQuery, true) == true)
+                (it.summary?.contains(searchQuery, true) == true) ||
+                it.tags.orEmpty().any { tag -> tag.contains(searchQuery, true) }
+            }
+        }
+        if (selectedTag != null) {
+            result = result.filter { memory ->
+                memory.tags.orEmpty().any { it.equals(selectedTag, ignoreCase = true) }
             }
         }
         result
+    }
+
+    val tagOptions = remember(legacy, selectedChar) {
+        legacy.asSequence()
+            .filter { selectedChar == null || it.characterName == selectedChar }
+            .flatMap { it.tags.orEmpty().asSequence() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .sortedWith(String.CASE_INSENSITIVE_ORDER)
+            .toList()
     }
 
     // MemoryFS 文件按 category 分组
@@ -482,8 +539,10 @@ fun MemoryScreen(
     // 注意：已被分类到 MemoryFS 文件视图的记忆（category=user_persona/character_persona/important_event/timeline/life_sim/recent_digest）
     // 不在"旧版记忆"区重复展示，只显示真正的旧版（category 为空/null/"legacy"）
     val isLegacyCategory = { cat: String? -> cat.isNullOrBlank() || cat == "legacy" }
-    val longTermLegacy = filteredLegacy.filter { it.type == "long" && isLegacyCategory(it.category) }
-    val shortTermLegacy = filteredLegacy.filter { it.type == "short" && isLegacyCategory(it.category) }
+    val longTermLegacy = if (isLocalMode) emptyList() else
+        filteredLegacy.filter { it.type == "long" && isLegacyCategory(it.category) }
+    val shortTermLegacy = if (isLocalMode) emptyList() else
+        filteredLegacy.filter { it.type == "short" && isLegacyCategory(it.category) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -548,6 +607,14 @@ fun MemoryScreen(
                 onSelectCharacter = { viewModel.selectCharacter(it) },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
             )
+            if (isLocalMode && tagOptions.isNotEmpty()) {
+                MemoryTagFilterRow(
+                    tags = tagOptions,
+                    selectedTag = selectedTag,
+                    onSelectTag = { viewModel.selectTag(it) },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                )
+            }
             Box(modifier = Modifier.weight(1f)) {
                 if (files.isEmpty() && legacy.isEmpty() && !loading) {
                     EmptyState(
@@ -597,6 +664,28 @@ fun MemoryScreen(
                             }
                         }
 
+                        // 本地角色记忆的单条视图：可查看与修改每条记忆的标签。
+                        if (isLocalMode && filteredLegacy.isNotEmpty()) {
+                            item {
+                                SectionHeader(
+                                    title = stringResource(R.string.memory_entries_and_tags),
+                                    subtitle = stringResource(R.string.memory_count_format, filteredLegacy.size)
+                                )
+                            }
+                            items(filteredLegacy, key = { "entry_${it.id ?: it.hashCode()}" }) { mem ->
+                                val expandKey = "entry://${mem.id ?: mem.hashCode()}"
+                                LegacyMemoryItem(
+                                    memory = mem,
+                                    expanded = expandedPaths.contains(expandKey),
+                                    onToggle = { viewModel.toggleExpand(expandKey) },
+                                    onEdit = { viewModel.startEditLegacy(mem) },
+                                    onDelete = { deleteLegacyItem = mem },
+                                    onTagClick = { viewModel.selectTag(it) },
+                                    onEditTags = { viewModel.startEditTags(mem) }
+                                )
+                            }
+                        }
+
                         // 旧版记忆 - 长期
                         if (longTermLegacy.isNotEmpty()) {
                             item {
@@ -631,7 +720,10 @@ fun MemoryScreen(
                             }
                         }
 
-                        if (groupedFiles.isEmpty() && longTermLegacy.isEmpty() && shortTermLegacy.isEmpty()) {
+                        if (groupedFiles.isEmpty() &&
+                            (if (isLocalMode) filteredLegacy.isEmpty()
+                             else longTermLegacy.isEmpty() && shortTermLegacy.isEmpty())
+                        ) {
                             item {
                                 Text(
                                     stringResource(R.string.memory_no_match),
@@ -687,6 +779,13 @@ fun MemoryScreen(
             editing = editingLegacy,
             onDismiss = { viewModel.dismissDialog() },
             onSave = { viewModel.saveLegacy(it) }
+        )
+    }
+    if (editingTags != null && isLocalMode) {
+        MemoryTagsDialog(
+            editing = editingTags!!,
+            onDismiss = { viewModel.dismissTagEditor() },
+            onSave = { viewModel.saveTags(it) }
         )
     }
 }
@@ -775,6 +874,33 @@ private fun MemorySearchPanel(
                     label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MemoryTagFilterRow(
+    tags: List<String>,
+    selectedTag: String?,
+    onSelectTag: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FilterChip(
+            selected = selectedTag == null,
+            onClick = { onSelectTag(null) },
+            label = { Text(stringResource(R.string.memory_tag_all)) }
+        )
+        tags.forEach { tag ->
+            FilterChip(
+                selected = selectedTag?.equals(tag, ignoreCase = true) == true,
+                onClick = { onSelectTag(tag) },
+                label = { Text(tag) }
+            )
         }
     }
 }
@@ -925,7 +1051,9 @@ private fun LegacyMemoryItem(
     expanded: Boolean,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onTagClick: (String) -> Unit = {},
+    onEditTags: (() -> Unit)? = null
 ) {
     val highPriority = memory.priority == "high"
     GlassCard(
@@ -1008,6 +1136,21 @@ private fun LegacyMemoryItem(
                     )
                     Spacer(Modifier.height(10.dp))
                 }
+                if (memory.tags.orEmpty().isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        memory.tags.orEmpty().forEach { tag ->
+                            AssistChip(
+                                onClick = { onTagClick(tag) },
+                                label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 // 元信息 Chip 行
                 Row(
                     modifier = Modifier
@@ -1055,6 +1198,13 @@ private fun LegacyMemoryItem(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (onEditTags != null) {
+                        TextButton(onClick = onEditTags) {
+                            Icon(Icons.Filled.Label, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.memory_edit_tags))
+                        }
+                    }
                     TextButton(onClick = onEdit) {
                         Icon(
                             Icons.Filled.Edit,
@@ -1078,6 +1228,49 @@ private fun LegacyMemoryItem(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MemoryTagsDialog(
+    editing: LegacyMemory,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit
+) {
+    var draft by remember(editing.id) { mutableStateOf(editing.tags.orEmpty().joinToString("，")) }
+    NekoDialog(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.memory_edit_tags),
+        confirmText = stringResource(R.string.common_save),
+        cancelText = stringResource(R.string.common_cancel),
+        onConfirm = {
+            onSave(
+                draft.split(',', '，', ';', '；', '\n')
+                    .map { it.trim().replace(Regex("\\s+"), " ") }
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() }
+            )
+        },
+        onCancel = onDismiss
+    ) {
+        Text(
+            text = editing.title.ifBlank { stringResource(R.string.memory_unnamed) },
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(Modifier.height(8.dp))
+        NekoTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            singleLine = false,
+            minLines = 2,
+            maxLines = 4
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.memory_tags_separator_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

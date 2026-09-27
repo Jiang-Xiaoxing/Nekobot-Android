@@ -27,6 +27,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LocalCharacterStateEntity::class,
         LocalRelationshipStateEntity::class,
         LocalCharacterMemoryEntity::class,
+        LocalExperienceArchiveEntity::class,
+        LocalExperienceSourceEntity::class,
+        LocalExperienceArchiveJobEntity::class,
         LocalStateSnapshotEntity::class,
         LocalHookEntity::class,
         LocalHookLogEntity::class,
@@ -44,7 +47,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LocalMessageVariantEntity::class,
         LocalStickerEntity::class
     ],
-    version = 45,
+    version = 46,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
@@ -61,6 +64,8 @@ abstract class NekobotDatabase : RoomDatabase() {
     abstract fun characterStateDao(): CharacterStateDao
     abstract fun relationshipDao(): RelationshipDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun experienceArchiveDao(): ExperienceArchiveDao
+    abstract fun experienceArchiveJobDao(): ExperienceArchiveJobDao
     abstract fun stateSnapshotDao(): StateSnapshotDao
     abstract fun hookDao(): HookDao
     abstract fun hookLogDao(): HookLogDao
@@ -945,6 +950,116 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+        /** v45 → v46：长期会话开关、角色记忆标签与可追溯的经历档案。 */
+        val MIGRATION_45_46 = object : Migration(45, 46) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // SQLite 普通索引以 rowid 作为隐含的末级排序键，匹配 (created_at, rowid) 游标。
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_messages_session_id_created_at " +
+                        "ON local_messages(session_id, created_at)"
+                )
+                db.execSQL("ALTER TABLE local_sessions ADD COLUMN long_conversation_enabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_sessions ADD COLUMN long_conversation_tail_until_id TEXT")
+                db.execSQL("ALTER TABLE local_character_memories ADD COLUMN tags_json TEXT")
+                db.execSQL("ALTER TABLE local_character_memories ADD COLUMN tags_edited INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_character_memories ADD COLUMN source_session_id TEXT")
+                db.execSQL("ALTER TABLE local_character_memories ADD COLUMN source_start_message_id TEXT")
+                db.execSQL("ALTER TABLE local_character_memories ADD COLUMN source_end_message_id TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_experience_archives (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        start_message_id TEXT NOT NULL,
+                        end_message_id TEXT NOT NULL,
+                        source_started_at TEXT NOT NULL,
+                        source_ended_at TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        tags_json TEXT NOT NULL DEFAULT '[]',
+                        source_fingerprint TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'ready',
+                        summary_edited INTEGER NOT NULL DEFAULT 0,
+                        tags_edited INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY(session_id) REFERENCES local_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_experience_archives_session_id ON local_experience_archives(session_id)")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_local_experience_archives_session_id_start_message_id_end_message_id " +
+                        "ON local_experience_archives(session_id, start_message_id, end_message_id)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_experience_archives_session_id_status_source_started_at " +
+                        "ON local_experience_archives(session_id, status, source_started_at)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_experience_sources (
+                        archive_id TEXT NOT NULL,
+                        message_id TEXT NOT NULL,
+                        PRIMARY KEY(archive_id, message_id),
+                        FOREIGN KEY(archive_id) REFERENCES local_experience_archives(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_experience_sources_message_id ON local_experience_sources(message_id)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_experience_archive_jobs (
+                        session_id TEXT NOT NULL PRIMARY KEY,
+                        checkpoint_message_id TEXT,
+                        status TEXT NOT NULL DEFAULT 'idle',
+                        processed_count INTEGER NOT NULL DEFAULT 0,
+                        total_count INTEGER,
+                        generated_count INTEGER NOT NULL DEFAULT 0,
+                        error TEXT,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY(session_id) REFERENCES local_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                installExperienceInvalidationTriggers(db)
+            }
+        }
+
+        /** Room 不声明触发器；数据库打开时也安装一次，覆盖全新安装。 */
+        private fun installExperienceInvalidationTriggers(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS experience_source_content_changed
+                AFTER UPDATE OF content, deleted ON local_messages
+                WHEN OLD.content IS NOT NEW.content OR OLD.deleted != NEW.deleted
+                BEGIN
+                    UPDATE local_experience_archives SET status = 'stale'
+                    WHERE id IN (SELECT archive_id FROM local_experience_sources WHERE message_id = NEW.id);
+                END
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS experience_source_deleted
+                AFTER DELETE ON local_messages
+                BEGIN
+                    UPDATE local_experience_archives SET status = 'stale'
+                    WHERE id IN (SELECT archive_id FROM local_experience_sources WHERE message_id = OLD.id);
+                END
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS experience_source_replaced
+                AFTER INSERT ON local_messages
+                BEGIN
+                    UPDATE local_experience_archives SET status = 'stale'
+                    WHERE id IN (SELECT archive_id FROM local_experience_sources WHERE message_id = NEW.id);
+                END
+                """.trimIndent()
+            )
+        }
+
         /**
          * 完整迁移链同时供生产数据库构建和迁移回归测试使用。
          * 新版本必须把迁移追加到这里；缺少迁移时直接失败，绝不静默清空用户数据。
@@ -960,7 +1075,8 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
             MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37,
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
-            MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45
+            MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
+            MIGRATION_45_46
         )
 
         fun get(context: Context): NekobotDatabase =
@@ -976,6 +1092,11 @@ abstract class NekobotDatabase : RoomDatabase() {
                 dbName
             )
                 .addMigrations(*ALL_MIGRATIONS)
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onOpen(db: SupportSQLiteDatabase) {
+                        installExperienceInvalidationTriggers(db)
+                    }
+                })
                 .build()
                 .also {
                     it.dbName = dbName

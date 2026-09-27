@@ -194,7 +194,8 @@ class UnifiedRepository(
                 shareConfig = req.shareConfig?.toString(),
                 archived = req.archived,
                 inheritCharacter = req.inheritCharacter,
-                inheritCharacterGreeting = req.inheritCharacterGreeting
+                inheritCharacterGreeting = req.inheritCharacterGreeting,
+                longConversationEnabled = req.longConversationEnabled
             )
             local.getSession(id)?.let { Resource.Success(it) } ?: Resource.Error("会话不存在")
         } else remote.updateSession(id, req)

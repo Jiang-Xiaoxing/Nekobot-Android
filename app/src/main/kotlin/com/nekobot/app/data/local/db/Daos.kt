@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.Upsert
 import com.nekobot.app.data.local.security.LocalDatabaseSecrets
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -97,10 +98,95 @@ interface SessionDao {
     /** Agent 规格任务（/spec 命令）持久化；不触碰 updated_at，避免影响会话排序。 */
     @Query("UPDATE local_sessions SET agent_spec = :specJson WHERE id = :id")
     suspend fun updateAgentSpec(id: String, specJson: String?)
+
+    /** 标记压缩后近期原话的末条消息，不改变会话排序。 */
+    @Query("UPDATE local_sessions SET long_conversation_tail_until_id = :messageId WHERE id = :id")
+    suspend fun updateLongConversationTailUntilId(id: String, messageId: String?)
 }
 
 @Dao
 interface MessageDao {
+    @Query("SELECT COUNT(*) FROM local_messages WHERE session_id = :sessionId AND deleted = 0 AND role IN ('user', 'assistant')")
+    suspend fun countVisibleFinalBySession(sessionId: String): Int
+
+    /** 当前会话最近一条 Agent 压缩摘要；兼容早期仅在正文标记的历史摘要。 */
+    @Query(
+        "SELECT * FROM local_messages WHERE session_id = :sessionId AND deleted = 0 AND role = 'system' " +
+            "AND (source = 'agent_context_summary' OR source LIKE 'agent_context_summary:%' " +
+            "OR content LIKE '【已压缩的 Agent 对话】%' OR content LIKE '【历史对话摘要】%') " +
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1"
+    )
+    suspend fun latestAgentSummaryBySession(sessionId: String): LocalMessageEntity?
+
+    /** 只允许更新已有 Agent 压缩摘要；编辑原话导致摘要失效时由仓库层显式调用。 */
+    @Query(
+        "UPDATE local_messages SET content = :content, source = :source WHERE id = :id AND role = 'system' " +
+            "AND (source = 'agent_context_summary' OR source LIKE 'agent_context_summary:%' " +
+            "OR content LIKE '【已压缩的 Agent 对话】%' OR content LIKE '【历史对话摘要】%')"
+    )
+    suspend fun updateSummaryBoundary(id: String, content: String, source: String): Int
+
+    /** 有压缩边界时，从边界消息开始按稳定游标分页读取上下文。 */
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
+            "AND (created_at > :createdAt OR (created_at = :createdAt AND rowid >= :rowId)) " +
+            "ORDER BY created_at ASC, rowid ASC LIMIT :limit"
+    )
+    suspend fun listRowsAtOrAfterCursor(sessionId: String, createdAt: String, rowId: Long, limit: Int): List<LocalMessageRow>
+
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
+            "AND role IN ('user', 'assistant') ORDER BY created_at ASC, rowid ASC LIMIT 1"
+    )
+    suspend fun firstVisibleRow(sessionId: String): LocalMessageRow?
+
+    /** 用户主动补建历史时按稳定游标逐页读取，不一次加载全会话。 */
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
+            "AND role IN ('user', 'assistant') " +
+            "AND (created_at > :createdAt OR (created_at = :createdAt AND rowid > :rowId)) " +
+            "ORDER BY created_at ASC, rowid ASC LIMIT :limit"
+    )
+    suspend fun listVisibleRowsAfter(sessionId: String, createdAt: String, rowId: Long, limit: Int): List<LocalMessageRow>
+
+    /** 当前会话可见原话的受限搜索，不把工具历史和思考字段当作聊天正文。 */
+    @Query(
+        "SELECT * FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
+            "AND role IN ('user', 'assistant') AND instr(lower(content), lower(:query)) > 0 " +
+            "ORDER BY created_at DESC, rowid DESC LIMIT :limit"
+    )
+    suspend fun searchVisibleFinalBySession(sessionId: String, query: String, limit: Int): List<LocalMessageEntity>
+
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId " +
+            "AND id = :id AND deleted = 0 AND role IN ('user', 'assistant') LIMIT 1"
+    )
+    suspend fun visibleAnchorRow(sessionId: String, id: String): LocalMessageRow?
+
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
+            "AND role IN ('user', 'assistant') " +
+            "AND (created_at < :createdAt OR (created_at = :createdAt AND rowid < :rowId)) " +
+            "ORDER BY created_at DESC, rowid DESC LIMIT :limit"
+    )
+    suspend fun listVisibleBeforeAnchor(sessionId: String, createdAt: String, rowId: Long, limit: Int): List<LocalMessageRow>
+
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
+            "AND role IN ('user', 'assistant') " +
+            "AND (created_at > :createdAt OR (created_at = :createdAt AND rowid > :rowId)) " +
+            "ORDER BY created_at ASC, rowid ASC LIMIT :limit"
+    )
+    suspend fun listVisibleAfterAnchor(sessionId: String, createdAt: String, rowId: Long, limit: Int): List<LocalMessageRow>
+
+    @Transaction
+    suspend fun readVisibleWindow(sessionId: String, anchorId: String, before: Int, after: Int): List<LocalMessageEntity> {
+        val anchor = visibleAnchorRow(sessionId, anchorId) ?: return emptyList()
+        val previous = listVisibleBeforeAnchor(sessionId, anchor.message.createdAt, anchor.rowId, before.coerceIn(0, 4))
+        val following = listVisibleAfterAnchor(sessionId, anchor.message.createdAt, anchor.rowId, after.coerceIn(0, 4))
+        return previous.asReversed().map { it.message } + anchor.message + following.map { it.message }
+    }
+
     @Query("SELECT * FROM local_messages ORDER BY created_at ASC")
     suspend fun listAll(): List<LocalMessageEntity>
 
@@ -688,6 +774,23 @@ interface StateSnapshotDao {
 
 @Dao
 interface MemoryDao {
+    @Query("SELECT * FROM local_character_memories WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): LocalCharacterMemoryEntity?
+
+    /** 按正文及标签找当前角色和玩家的记忆，旧的无标签条目仍可命中正文。 */
+    @Query(
+        "SELECT * FROM local_character_memories WHERE character_id = :characterId AND target_id = :targetId " +
+            "AND (category NOT IN ('important_event', 'life_sim') OR conversation_id = :conversationId) " +
+            "AND (instr(lower(title), lower(:query)) > 0 OR instr(lower(summary), lower(:query)) > 0 " +
+            "OR instr(lower(content), lower(:query)) > 0 OR instr(lower(COALESCE(tags_json, '')), lower(:query)) > 0) " +
+            "ORDER BY importance DESC, created_at DESC LIMIT :limit"
+    )
+    suspend fun searchIncludingTags(characterId: String, targetId: String, conversationId: String, query: String, limit: Int): List<LocalCharacterMemoryEntity>
+
+    /** 仅修改标签，避免编辑 UI 重建实体时覆盖旧正文、分类和来源。 */
+    @Query("UPDATE local_character_memories SET tags_json = :tagsJson, tags_edited = 1, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateTags(id: String, tagsJson: String, updatedAt: String)
+
     @Query("SELECT * FROM local_character_memories WHERE character_id = :characterId AND target_id = :targetId ORDER BY importance DESC, created_at DESC LIMIT :limit")
     suspend fun listByCharacterAndTarget(characterId: String, targetId: String, limit: Int = 20): List<LocalCharacterMemoryEntity>
 
@@ -722,6 +825,10 @@ interface MemoryDao {
     @Query("DELETE FROM local_character_memories WHERE memory_path = :path")
     suspend fun deleteByPath(path: String)
 
+    /** 自动替换角色人格时保留人工改过标签的原记录及其来源指针。 */
+    @Query("DELETE FROM local_character_memories WHERE memory_path = :path AND tags_edited = 0")
+    suspend fun deleteGeneratedByPath(path: String)
+
     /**
      * 原子替换某个角色和玩家下的单槽记忆类别。
      * 会清理早期版本中 path 为空或重复写入产生的旧记录。
@@ -753,6 +860,10 @@ interface MemoryDao {
     @Query("DELETE FROM local_character_memories WHERE id IN (SELECT id FROM local_character_memories WHERE memory_path = :path ORDER BY version DESC, created_at DESC LIMIT -1 OFFSET :keep)")
     suspend fun trimByPath(path: String, keep: Int)
 
+    /** 只截断机器生成的角色人格，人工标注条目不限于机器生成条数上限。 */
+    @Query("DELETE FROM local_character_memories WHERE id IN (SELECT id FROM local_character_memories WHERE memory_path = :path AND tags_edited = 0 ORDER BY version DESC, created_at DESC LIMIT -1 OFFSET :keep)")
+    suspend fun trimGeneratedByPath(path: String, keep: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(memory: LocalCharacterMemoryEntity)
 
@@ -773,6 +884,116 @@ interface MemoryDao {
 
     @Query("SELECT * FROM local_character_memories WHERE character_id = :characterId ORDER BY importance DESC, created_at DESC")
     suspend fun listByCharacter(characterId: String): List<LocalCharacterMemoryEntity>
+}
+
+@Dao
+interface ExperienceArchiveDao {
+    @Query("SELECT * FROM local_experience_archives WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): LocalExperienceArchiveEntity?
+
+    @Query(
+        "SELECT * FROM local_experience_archives WHERE session_id = :sessionId " +
+            "AND start_message_id = :startMessageId AND end_message_id = :endMessageId LIMIT 1"
+    )
+    suspend fun findByRange(sessionId: String, startMessageId: String, endMessageId: String): LocalExperienceArchiveEntity?
+
+    @Query(
+        "SELECT * FROM local_experience_archives WHERE session_id = :sessionId " +
+            "ORDER BY source_started_at DESC, id DESC LIMIT :limit OFFSET :offset"
+    )
+    suspend fun listBySession(sessionId: String, limit: Int, offset: Int = 0): List<LocalExperienceArchiveEntity>
+
+    /** 只返回有效档案；调用方仍需按结构化标签精确过滤和限制总输出。 */
+    @Query(
+        "SELECT * FROM local_experience_archives WHERE session_id = :sessionId AND status = 'ready' " +
+            "AND (instr(lower(summary), lower(:query)) > 0 OR instr(lower(tags_json), lower(:query)) > 0 " +
+            "OR instr(lower(source_started_at), lower(:query)) > 0 OR instr(lower(source_ended_at), lower(:query)) > 0) " +
+            "ORDER BY source_ended_at DESC, id DESC LIMIT :limit"
+    )
+    suspend fun searchReadyBySession(sessionId: String, query: String, limit: Int): List<LocalExperienceArchiveEntity>
+
+    /** UPDATE 路径保留来源映射，避免 REPLACE 触发外键级联删除。 */
+    @Upsert
+    suspend fun upsert(archive: LocalExperienceArchiveEntity)
+
+    /** 同一来源范围只保留一个档案；重新生成不能覆盖用户手工修订。 */
+    @Transaction
+    suspend fun saveGenerated(archive: LocalExperienceArchiveEntity, sourceMessageIds: List<String>): LocalExperienceArchiveEntity {
+        require(sourceMessageIds.isNotEmpty()) { "经历档案必须记录原消息 ID" }
+        require(sourceMessageIds.first() == archive.startMessageId && sourceMessageIds.last() == archive.endMessageId) {
+            "经历档案来源边界与消息列表不一致"
+        }
+        val old = findByRange(archive.sessionId, archive.startMessageId, archive.endMessageId)
+        val changedSource = old != null && old.sourceFingerprint != archive.sourceFingerprint
+        val saved = if (old == null) archive else archive.copy(
+            id = old.id,
+            summary = if (old.summaryEdited) old.summary else archive.summary,
+            tagsJson = if (old.tagsEdited) old.tagsJson else archive.tagsJson,
+            summaryEdited = old.summaryEdited,
+            tagsEdited = old.tagsEdited,
+            createdAt = old.createdAt,
+            status = if (changedSource && (old.summaryEdited || old.tagsEdited)) "stale" else archive.status
+        )
+        upsert(saved)
+        replaceSources(saved.id, sourceMessageIds)
+        return saved
+    }
+
+    @Query("DELETE FROM local_experience_sources WHERE archive_id = :archiveId")
+    suspend fun deleteSources(archiveId: String)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSources(sources: List<LocalExperienceSourceEntity>)
+
+    @Transaction
+    suspend fun replaceSources(archiveId: String, messageIds: List<String>) {
+        deleteSources(archiveId)
+        insertSources(messageIds.distinct().map { LocalExperienceSourceEntity(archiveId, it) })
+    }
+
+    @Query("SELECT message_id FROM local_experience_sources WHERE archive_id = :archiveId")
+    suspend fun sourceMessageIds(archiveId: String): List<String>
+
+    @Query(
+        "UPDATE local_experience_archives SET summary = :summary, tags_json = :tagsJson, " +
+            "summary_edited = 1, tags_edited = 1, updated_at = :updatedAt WHERE id = :id"
+    )
+    suspend fun updateUserEdits(id: String, summary: String, tagsJson: String, updatedAt: String)
+
+    /** 仅供用户明确要求用模型重建时调用；下一次生成才可覆盖手工文字和标签。 */
+    @Query(
+        "UPDATE local_experience_archives SET summary_edited = 0, tags_edited = 0, " +
+            "status = 'stale' WHERE id = :id"
+    )
+    suspend fun clearManualProtectionForExplicitRebuild(id: String)
+
+    @Query(
+        "UPDATE local_experience_archives SET status = 'stale' WHERE session_id = :sessionId " +
+            "AND id IN (SELECT archive_id FROM local_experience_sources WHERE message_id = :messageId)"
+    )
+    suspend fun markStaleByMessage(sessionId: String, messageId: String)
+
+    @Query("DELETE FROM local_experience_archives WHERE session_id = :sessionId")
+    suspend fun deleteBySession(sessionId: String)
+
+    @Query("DELETE FROM local_experience_archives WHERE id = :id")
+    suspend fun deleteById(id: String)
+}
+
+@Dao
+interface ExperienceArchiveJobDao {
+    @Query("SELECT * FROM local_experience_archive_jobs WHERE session_id = :sessionId LIMIT 1")
+    suspend fun getBySession(sessionId: String): LocalExperienceArchiveJobEntity?
+
+    @Upsert
+    suspend fun upsert(job: LocalExperienceArchiveJobEntity)
+
+    /** 崩溃或强制退出后的 running 任务在下一次启动时可继续。 */
+    @Query("UPDATE local_experience_archive_jobs SET status = 'paused', updated_at = :updatedAt WHERE status = 'running'")
+    suspend fun recoverInterruptedRuns(updatedAt: String): Int
+
+    @Query("DELETE FROM local_experience_archive_jobs WHERE session_id = :sessionId")
+    suspend fun deleteBySession(sessionId: String)
 }
 
 // ==================== 扩展功能 DAOs (v10) ====================

@@ -39,9 +39,8 @@ class NotificationReplyWorker(
                 }
             }
 
-            val latestReply = when (val messages = ServiceContainer.unified.listMessages(sessionId)) {
-                is Resource.Success -> messages.data
-                    .orEmpty()
+            val latestReply = when (val messages = ServiceContainer.unified.listRecentMessages(sessionId, 24)) {
+                is Resource.Success -> messages.data.messages
                     .lastOrNull { it.role == "assistant" }
                     ?.content
                     .orEmpty()

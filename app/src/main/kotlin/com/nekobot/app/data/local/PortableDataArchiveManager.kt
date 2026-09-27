@@ -41,7 +41,10 @@ enum class PortableDataCategory(
             "local_messages",
             "local_agent_runs",
             "local_message_favorites",
-            "local_message_images"
+            "local_message_images",
+            "local_experience_archives",
+            "local_experience_sources",
+            "local_experience_archive_jobs"
         )
     ),
     CHARACTERS("characters", listOf("local_characters")),
@@ -290,6 +293,9 @@ class PortableDataArchiveManager(private val context: Context) {
                             PortableDataCategory.STICKERS in selected
                     )
                 }
+                if (PortableDataCategory.CONVERSATIONS in selected) {
+                    invalidateExperiencesWithoutVisibleSources(db)
+                }
                 if (PortableDataCategory.CREDENTIALS in selected) {
                     require(password.trim().length >= MIN_PASSWORD_LENGTH) {
                         "导入账号与凭据时，请输入导出时设置的至少 8 位密码"
@@ -316,6 +322,24 @@ class PortableDataArchiveManager(private val context: Context) {
         } finally {
             archive.cleanup()
         }
+    }
+
+    /** 选择性导入后，缺原消息或原消息已删除的档案不能继续参与召回。 */
+    private fun invalidateExperiencesWithoutVisibleSources(db: NekobotDatabase) {
+        db.openHelper.writableDatabase.execSQL(
+            """
+            UPDATE local_experience_archives SET status = 'stale'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM local_experience_sources AS source
+                WHERE source.archive_id = local_experience_archives.id
+            ) OR EXISTS (
+                SELECT 1 FROM local_experience_sources AS source
+                LEFT JOIN local_messages AS message ON message.id = source.message_id
+                WHERE source.archive_id = local_experience_archives.id
+                  AND (message.id IS NULL OR message.session_id != local_experience_archives.session_id OR message.deleted != 0)
+            )
+            """.trimIndent()
+        )
     }
 
     private fun activeDatabase(): NekobotDatabase =

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_tag_all">All tags</string>
+    <string name="memory_entries_and_tags">Memory entries and tags</string>
+    <string name="memory_edit_tags">Edit tags</string>
+    <string name="memory_tags_separator_hint">Separate tags with commas or new lines. Changes affect this memory only.</string>
+    <string name="memory_tags_saved">Tags saved</string>
+    <string name="memory_tags_missing">This memory no longer exists. Please refresh.</string>
+</resources>

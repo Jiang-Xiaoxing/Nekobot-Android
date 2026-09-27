@@ -61,6 +61,7 @@ import com.nekobot.app.ui.screens.chat.WorkspaceScreen
 import com.nekobot.app.ui.screens.login.LoginScreen
 import com.nekobot.app.ui.screens.onboarding.QuickSetupScreen
 import com.nekobot.app.ui.screens.memory.MemoryScreen
+import com.nekobot.app.ui.screens.memory.ExperienceArchiveScreen
 import com.nekobot.app.ui.screens.more.MoreScreen
 import com.nekobot.app.ui.screens.search.GlobalSearchScreen
 import com.nekobot.app.ui.screens.sessions.SessionsScreen
@@ -457,7 +458,8 @@ fun NekobotNavGraph() {
             ) { entry ->
                 SessionDetailScreen(
                     sessionId = entry.arguments?.getString("sessionId").orEmpty(),
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onOpenExperienceArchive = { id -> navController.navigate(Routes.experienceArchive(id)) }
                 )
             }
             composable(
@@ -618,6 +620,15 @@ fun NekobotNavGraph() {
             }
             composable(Routes.MEMORY) {
                 MemoryScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = Routes.EXPERIENCE_ARCHIVE,
+                arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
+            ) { entry ->
+                ExperienceArchiveScreen(
+                    sessionId = entry.arguments?.getString("sessionId").orEmpty(),
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Routes.STYLE_SETTINGS) {
                 StyleSettingsScreen(onBack = { navController.popBackStack() })
