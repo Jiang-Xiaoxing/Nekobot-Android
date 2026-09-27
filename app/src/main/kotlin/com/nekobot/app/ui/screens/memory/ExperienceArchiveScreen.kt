@@ -3,7 +3,6 @@ package com.nekobot.app.ui.screens.memory
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -258,108 +258,121 @@ fun ExperienceArchiveScreen(
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            GlassCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), cornerRadius = 16) {
-                Text(stringResource(R.string.experience_backfill_title), style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.experience_backfill_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                backfillJob?.let { job ->
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        stringResource(
-                            R.string.experience_backfill_progress,
-                            job.status,
-                            job.processedCount,
-                            job.totalCount ?: backfillInfo?.messageCount ?: 0,
-                            job.generatedCount
-                        ),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    if (job.status == "running") {
-                        LinearProgressIndicator(
-                            progress = { (job.processedCount.toFloat() /
-                                (job.totalCount ?: backfillInfo?.messageCount ?: 1).coerceAtLeast(1))
-                                .coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth()
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(key = "backfill") {
+                    GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
+                        Text(stringResource(R.string.experience_backfill_title), style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.experience_backfill_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        backfillJob?.let { job ->
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                stringResource(
+                                    R.string.experience_backfill_progress,
+                                    job.status,
+                                    job.processedCount,
+                                    job.totalCount ?: backfillInfo?.messageCount ?: 0,
+                                    job.generatedCount
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (job.status == "running") {
+                                LinearProgressIndicator(
+                                    progress = { (job.processedCount.toFloat() /
+                                        (job.totalCount ?: backfillInfo?.messageCount ?: 1).coerceAtLeast(1))
+                                        .coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            job.error?.takeIf(String::isNotBlank)?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (backfillJob?.status == "running") {
+                            TextButton(onClick = viewModel::pauseBackfill) {
+                                Text(stringResource(R.string.experience_backfill_pause))
+                            }
+                        } else {
+                            Button(
+                                onClick = { showBackfillConfirm = true },
+                                enabled = backfillInfo != null
+                            ) {
+                                Text(stringResource(if (backfillJob?.status == "paused" || backfillJob?.status == "failed")
+                                    R.string.experience_backfill_resume else R.string.experience_backfill_start))
+                            }
+                        }
+                    }
+                }
+                item(key = "history_copy") {
+                    GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
+                        Text(stringResource(R.string.experience_history_copy_title), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.experience_history_copy_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        historyCopyProgress?.let { count ->
+                            Text(stringResource(R.string.experience_history_copy_progress, count))
+                        }
+                        TextButton(onClick = viewModel::rebuildHistoryCopy, enabled = !historyCopyRunning) {
+                            Text(stringResource(R.string.experience_history_copy_rebuild))
+                        }
+                    }
+                }
+                if (tags.isNotEmpty()) {
+                    item(key = "tags") {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedTag == null,
+                                onClick = { selectedTag = null },
+                                label = { Text(stringResource(R.string.memory_tag_all)) }
+                            )
+                            tags.forEach { tag ->
+                                FilterChip(
+                                    selected = selectedTag == tag,
+                                    onClick = { selectedTag = tag },
+                                    label = { Text(tag) }
+                                )
+                            }
+                        }
+                    }
+                }
+                if (error != null) {
+                    item(key = "error") {
+                        ErrorBanner(
+                            message = error!!,
+                            onRetry = { viewModel.clearError(); viewModel.load(sessionId) }
                         )
                     }
-                    job.error?.takeIf(String::isNotBlank)?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                if (backfillJob?.status == "running") {
-                    TextButton(onClick = viewModel::pauseBackfill) {
-                        Text(stringResource(R.string.experience_backfill_pause))
-                    }
-                } else {
-                    Button(
-                        onClick = { showBackfillConfirm = true },
-                        enabled = backfillInfo != null
-                    ) {
-                        Text(stringResource(if (backfillJob?.status == "paused" || backfillJob?.status == "failed")
-                            R.string.experience_backfill_resume else R.string.experience_backfill_start))
-                    }
-                }
-            }
-            GlassCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), cornerRadius = 16) {
-                Text(stringResource(R.string.experience_history_copy_title), style = MaterialTheme.typography.titleSmall)
-                Text(
-                    stringResource(R.string.experience_history_copy_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                historyCopyProgress?.let { count ->
-                    Text(stringResource(R.string.experience_history_copy_progress, count))
-                }
-                TextButton(onClick = viewModel::rebuildHistoryCopy, enabled = !historyCopyRunning) {
-                    Text(stringResource(R.string.experience_history_copy_rebuild))
-                }
-            }
-            if (tags.isNotEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedTag == null,
-                        onClick = { selectedTag = null },
-                        label = { Text(stringResource(R.string.memory_tag_all)) }
-                    )
-                    tags.forEach { tag ->
-                        FilterChip(
-                            selected = selectedTag == tag,
-                            onClick = { selectedTag = tag },
-                            label = { Text(tag) }
-                        )
-                    }
-                }
-            }
-            if (error != null) {
-                ErrorBanner(
-                    message = error!!,
-                    onRetry = { viewModel.clearError(); viewModel.load(sessionId) }
-                )
-            }
-            Box(Modifier.fillMaxSize()) {
                 if (!loading && archives.isEmpty() && relatedMemories.isEmpty()) {
-                    EmptyState(
-                        title = stringResource(R.string.experience_archive_empty),
-                        hint = stringResource(R.string.experience_archive_empty_hint)
-                    )
+                    item(key = "empty") {
+                        Box(
+                            Modifier.fillMaxWidth().fillParentMaxHeight(0.55f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            EmptyState(
+                                title = stringResource(R.string.experience_archive_empty),
+                                hint = stringResource(R.string.experience_archive_empty_hint)
+                            )
+                        }
+                    }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
                     if (visibleArchives.isNotEmpty()) {
-                        item {
+                        item(key = "archives_header") {
                             SectionHeader(
                                 title = stringResource(R.string.experience_archive_entries),
                                 subtitle = stringResource(R.string.memory_count_format, visibleArchives.size)
@@ -374,7 +387,7 @@ fun ExperienceArchiveScreen(
                         }
                     }
                     if (relatedMemories.isNotEmpty()) {
-                        item {
+                        item(key = "memories_header") {
                             SectionHeader(
                                 title = stringResource(R.string.experience_archive_related_memories),
                                 subtitle = stringResource(R.string.memory_count_format, relatedMemories.size)
@@ -392,19 +405,18 @@ fun ExperienceArchiveScreen(
                         }
                     }
                     if (visibleArchives.isEmpty() && relatedMemories.isEmpty() && archives.isNotEmpty()) {
-                        item { Text(stringResource(R.string.memory_no_match)) }
+                        item(key = "no_match") { Text(stringResource(R.string.memory_no_match)) }
                     }
                     if (hasMore) {
-                        item {
+                        item(key = "load_more") {
                             TextButton(onClick = viewModel::loadMore, enabled = !loading) {
                                 Text(stringResource(R.string.experience_archive_load_more))
                             }
                         }
                     }
-                    }
                 }
-                LoadingOverlay(visible = loading)
             }
+            LoadingOverlay(visible = loading)
         }
     }
 
