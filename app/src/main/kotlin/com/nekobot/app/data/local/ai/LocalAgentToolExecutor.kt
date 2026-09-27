@@ -106,8 +106,10 @@ internal fun buildLocalAgentToolDefinitions(recallEnabled: Boolean = false): Lis
     // 描述里的字符数不再写死：统一由「设置 → Agent 设置 → 工具输出截断字符数」决定，
     // 这里把当前生效值注入定义，避免模型按已经过时的数字行动。
     val outputLimit = AgentToolLimits.toolOutputChars()
+    // 回查工具的定义只随 recallEnabled 注入（见下方 append），这里必须排除 BuiltinTools 里的同名定义，
+    // 否则未开启长期记忆的会话也会看到并调用它们。
     val builtins = BuiltinTools.all
-        .filter { it.enabled && it.id in localExecutableToolIds }
+        .filter { it.enabled && it.id in localExecutableToolIds && it.id !in agentRecallToolIds }
         .map { spec ->
             @Suppress("UNCHECKED_CAST")
             val parsed = runCatching {
