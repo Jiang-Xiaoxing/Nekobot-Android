@@ -1934,15 +1934,17 @@ class LocalRepository(
         // A short conversation should keep all original turns. The no-cost placeholder is
         // only for genuinely large imported/forked history or an unusually long natural chat.
         if (messageDao.countVisibleFinalBySession(sessionId) <= 1_500) return null
-        val recent = messageDao.listRecentRows(sessionId, 96).asReversed()
-            .map { it.message }
-            .filter { it.role == "user" || it.role == "assistant" }
+        val scanned = messageDao.listRecentRows(sessionId, 96).asReversed().map { it.message }
+        val recent = scanned.filter { it.role == "user" || it.role == "assistant" }
         // The current user message may already be persisted when this on-ramp runs. It is
         // not a complete turn and must stay AFTER the boundary, not cause the whole recent
         // window to be hidden behind an unindexed placeholder.
         val completed = recent.dropLastWhile { it.role == "user" }
         val split = splitLongConversationHistory(completed, maxRecentTokens = 4_000)
-        val boundary = split.toSummarize.lastOrNull() ?: return null
+        // The scan may contain only short complete turns; the oldest scanned row still has to
+        // anchor the placeholder so a huge older history is not left without a boundary.
+        val anchorId = resolveUnindexedAnchorId(split, scanned) ?: return null
+        val boundary = scanned.firstOrNull { it.id == anchorId } ?: return null
         val now = nowIso()
         return boundary.copy(
             id = UUID.randomUUID().toString(),

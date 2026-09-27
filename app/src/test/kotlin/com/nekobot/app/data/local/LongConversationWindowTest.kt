@@ -36,4 +36,28 @@ class LongConversationWindowTest {
         assertEquals(rows.map { it.id }, split.toSummarize.map { it.id })
         assertEquals(emptyList<String>(), split.recent.map { it.id })
     }
+
+    @Test fun anchorFallsBackToOldestScannedRowWhenTailAlreadyFitsBudget() {
+        val rows = listOf(msg("u1", "user"), msg("a1", "assistant"),
+            msg("u2", "user"), msg("a2", "assistant"))
+        val split = splitLongConversationHistory(rows, maxRecentTokens = 1000)
+        assertEquals(emptyList<String>(), split.toSummarize.map { it.id })
+        assertEquals(listOf("u1", "a1", "u2", "a2"), split.recent.map { it.id })
+        assertEquals("u1", resolveUnindexedAnchorId(split, rows))
+    }
+
+    @Test fun anchorUsesLastSummarizedRowWhenTheTailIsSplit() {
+        val rows = listOf(msg("u1", "user"), msg("a1", "assistant"),
+            msg("u2", "user"), msg("a2", "assistant"))
+        val split = splitLongConversationHistory(rows, maxPairs = 1, maxRecentTokens = 1000)
+        assertEquals(listOf("u1", "a1"), split.toSummarize.map { it.id })
+        assertEquals("a1", resolveUnindexedAnchorId(split, rows))
+    }
+
+    @Test fun anchorFallsBackToScannedRowsWhenNoEligibleTurnExists() {
+        val rows = listOf(msg("s1", "system"), msg("u1", "user"))
+        val split = splitLongConversationHistory(emptyList(), maxRecentTokens = 1000)
+        assertEquals("s1", resolveUnindexedAnchorId(split, rows))
+        assertNull(resolveUnindexedAnchorId(split, emptyList()))
+    }
 }

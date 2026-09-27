@@ -40,3 +40,18 @@ internal fun splitLongConversationHistory(
     }
     return LongConversationSplit(eligible.take(start), eligible.drop(start))
 }
+
+/**
+ * Zero-cost placeholder anchor for an imported/naturally-grown large history.
+ *
+ * The tail scan can already fit the recent budget entirely (many short turns), so
+ * [LongConversationSplit.toSummarize] may be empty even though a much older history
+ * exists. In that case the oldest scanned row must still anchor the boundary; otherwise
+ * no summary row is written and the strict read later refuses the whole history as unsafe.
+ */
+internal fun resolveUnindexedAnchorId(
+    split: LongConversationSplit,
+    scanned: List<LocalMessageEntity>
+): String? = split.toSummarize.lastOrNull()?.id
+    ?: split.recent.firstOrNull()?.id
+    ?: scanned.firstOrNull()?.id
