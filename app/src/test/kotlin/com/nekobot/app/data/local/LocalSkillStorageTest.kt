@@ -8,11 +8,13 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -216,6 +218,48 @@ class LocalSkillStorageTest {
         assertEquals("资料", storage.readText("ai-demo", "resources/说明.md"))
         assertTrue(runCatching { storage.writeFiles("ai-demo", mapOf("../escape.txt" to "nope")) }.isFailure)
         assertTrue(runCatching { storage.writeFiles("ai-demo", mapOf("config.json" to "{}")) }.isFailure)
+    }
+
+    @Test
+    fun `deleteFiles removes listed files and prunes emptied directories`() {
+        val root = temporaryFolder.newFolder("skills-delete")
+        val storage = LocalSkillStorage(root)
+        storage.save("delete-demo", skillMd = "# delete-demo", referenceMd = "ref")
+        storage.writeFiles(
+            "delete-demo",
+            mapOf(
+                "scripts/main.py" to "print('ok')",
+                "resources/nested/data.md" to "资料"
+            )
+        )
+
+        val deleted = storage.deleteFiles(
+            "delete-demo",
+            listOf("reference.md", "scripts/main.py", "resources/nested/data.md")
+        )
+
+        assertEquals(listOf("reference.md", "scripts/main.py", "resources/nested/data.md"), deleted)
+        assertNull(storage.referenceMd("delete-demo"))
+        assertTrue(runCatching { storage.readText("delete-demo", "scripts/main.py") }.isFailure)
+        // 随之变空的父目录应被清理，避免残留空目录树。
+        assertFalse(File(root, "delete-demo/scripts").exists())
+        assertFalse(File(root, "delete-demo/resources").exists())
+        assertTrue(storage.exists("delete-demo"))
+    }
+
+    @Test
+    fun `deleteFiles protects core files and skips missing paths`() {
+        val root = temporaryFolder.newFolder("skills-delete-guard")
+        val storage = LocalSkillStorage(root)
+        storage.save("guard-demo", skillMd = "# guard-demo", referenceMd = null)
+
+        assertTrue(runCatching { storage.deleteFiles("guard-demo", listOf("SKILL.md")) }.isFailure)
+        assertTrue(runCatching { storage.deleteFiles("guard-demo", listOf("config.json")) }.isFailure)
+        assertEquals(emptyList<String>(), storage.deleteFiles("guard-demo", listOf("missing.txt")))
+        // 核心文件不受影响。
+        assertTrue(storage.skillMd("guard-demo").orEmpty().contains("guard-demo"))
+        // save() 总会写 config.json（本机元数据），它应原样保留且受删除保护。
+        assertTrue(File(root, "guard-demo/config.json").exists())
     }
 
     // ==================== 导出 ZIP ====================

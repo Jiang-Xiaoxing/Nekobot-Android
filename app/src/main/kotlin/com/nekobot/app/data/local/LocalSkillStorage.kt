@@ -483,6 +483,48 @@ internal class LocalSkillStorage(private val root: File) {
         }
     }
 
+    /**
+     * 删除 Skill 目录下的指定文件（相对路径列表），返回实际删除的相对路径。
+     *
+     * 与 [writeFiles] 同一套路径校验：支持 `scripts/main.py` 等任意相对路径，
+     * 不存在的文件静默跳过；SKILL.md 是技能核心文件、config.json 是本机元数据，
+     * 均不允许删除。文件删除后顺带清理随之变空的父目录（技能根目录本身保留）。
+     */
+    fun deleteFiles(name: String, paths: List<String>): List<String> {
+        if (paths.isEmpty()) return emptyList()
+        val directory = directoryFor(name)
+        require(directory.isDirectory) { "Skill 存储目录不存在: $name" }
+        val deleted = mutableListOf<String>()
+        for (relativePath in paths) {
+            val cleaned = relativePath.trim().replace('\\', '/')
+            require(cleaned.isNotBlank() && !cleaned.endsWith("/")) {
+                "Skill 附加文件路径无效: $relativePath"
+            }
+            require(!cleaned.equals("SKILL.md", ignoreCase = true)) {
+                "SKILL.md 为技能核心文件，不能删除"
+            }
+            require(!cleaned.equals("config.json", ignoreCase = true)) {
+                "config.json 为本地元数据，不能删除"
+            }
+            val file = resolveInside(directory, cleaned)
+            if (!file.exists()) continue
+            require(file.isFile) { "不支持删除目录，请指定具体文件: $cleaned" }
+            if (!file.delete()) {
+                throw IllegalStateException("删除 Skill 文件失败: $cleaned")
+            }
+            deleted += file.relativeTo(directory).invariantSeparatorsPath
+            // 从被删文件的父目录向上清理空目录，避免残留空目录树。
+            var parent = file.parentFile
+            while (parent != null && parent.canonicalFile != directory.canonicalFile &&
+                parent.isDirectory && parent.list().isNullOrEmpty()
+            ) {
+                parent.delete()
+                parent = parent.parentFile
+            }
+        }
+        return deleted
+    }
+
     fun install(pkg: DownloadedSkillPackage, overwrite: Boolean) {
         val target = directoryFor(pkg.name)
         if (target.exists() && !overwrite) throw IllegalStateException("Skill「${pkg.name}」已存在")

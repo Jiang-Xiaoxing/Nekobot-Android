@@ -449,7 +449,7 @@ internal fun buildLocalDbToolDefinitions(): List<Map<String, Any>> {
         definition(
             "db_update_skill",
             "修改指定 Skill：名称（会同步重命名存储目录）、描述、别名、启用状态、参数，" +
-                "并可直接写入 SKILL.md / reference.md / 附加文件；未传的内容保持原样。",
+                "并可直接写入 SKILL.md / reference.md / 附加文件、删除指定的附加文件；未传的内容保持原样。",
             params(
                 mapOf(
                     "skill_id" to str("Skill ID（必填）"),
@@ -460,7 +460,8 @@ internal fun buildLocalDbToolDefinitions(): List<Map<String, Any>> {
                     "parameters" to obj("参数 JSON"),
                     "skill_md" to str("SKILL.md 完整内容（不传则保留原文件）"),
                     "reference_md" to str("reference.md 内容（不传则保留原文件）"),
-                    "files" to fileObj("附加文件对象：相对路径 → 文本内容；只覆盖传入的文件")
+                    "files" to fileObj("附加文件对象：相对路径 → 文本内容；只覆盖传入的文件"),
+                    "delete_files" to strArr("要删除的文件相对路径数组（可选；不支持 SKILL.md 和 config.json）")
                 ),
                 listOf("skill_id")
             )
@@ -1346,9 +1347,11 @@ internal class LocalDbToolExecutor(
         val skillMd = args.string("skill_md").takeIf { it.isNotBlank() }
         val referenceMd = args.string("reference_md").takeIf { it.isNotBlank() }
         val extraFiles = args.textFileMap("files")
-        if (storage == null && (skillMd != null || referenceMd != null || extraFiles.isNotEmpty())) {
-            return failure("本地 Skill 存储不可用，无法写入 SKILL.md / 附加文件")
+        val deleteFiles = args.stringList("delete_files").orEmpty()
+        if (storage == null && (skillMd != null || referenceMd != null || extraFiles.isNotEmpty() || deleteFiles.isNotEmpty())) {
+            return failure("本地 Skill 存储不可用，无法写入/删除 Skill 文件")
         }
+        var deletedPaths: List<String> = emptyList()
         if (storage != null) {
             val oldSkillMd = storage.skillMd(existing.name)
             val oldReference = storage.referenceMd(existing.name)
@@ -1366,12 +1369,13 @@ internal class LocalDbToolExecutor(
                     sourceUrl = sourceUrl
                 )
                 storage.writeFiles(validated, extraFiles)
+                deletedPaths = storage.deleteFiles(validated, deleteFiles)
             }.getOrElse { error ->
                 // 保存失败时尽量把目录名改回去，避免库与磁盘目录名不一致。
                 if (renamed && storage.exists(validated) && !storage.exists(existing.name)) {
                     runCatching { storage.rename(validated, existing.name) }
                 }
-                return failure(error.message ?: "写入 Skill 文件失败")
+                return failure(error.message ?: "写入/删除 Skill 文件失败")
             }
         }
         val updated = existing.copy(
@@ -1382,14 +1386,18 @@ internal class LocalDbToolExecutor(
             parametersJson = args.any("parameters")?.let { gson.toJson(it) } ?: existing.parametersJson
         )
         db.skillDao().upsert(updated)
-        return success("skill_id" to updated.id, "skill" to updated.toMap())
+        return if (deletedPaths.isEmpty()) {
+            success("skill_id" to updated.id, "skill" to updated.toMap())
+        } else {
+            success("skill_id" to updated.id, "skill" to updated.toMap(), "deleted_files" to deletedPaths)
+        }
     }
 
     private suspend fun deleteSkill(args: Map<String, Any>): Map<String, Any> {
         val id = args.string("skill_id").ifBlank { return failure("skill_id 不能为空") }
-        val existing = db.skillDao().getById(id)
+        val existing = db.skillDao().getById(id) ?: return failure("Skill 不存在: $id")
         db.skillDao().deleteById(id)
-        existing?.let { entity -> runCatching { skillStorage?.delete(entity.name) } }
+        runCatching { skillStorage?.delete(existing.name) }
         return success("deleted" to true, "skill_id" to id)
     }
 
