@@ -294,6 +294,8 @@
     <string name="agent_settings_subagent_max_depth_desc">Maximum depth at which a subagent can further delegate to subagents (0 disables, default %1$d). Prevents infinite recursion.</string>
     <string name="agent_settings_subagent_max_tool_calls">Subagent Tool Limit</string>
     <string name="agent_settings_subagent_max_tool_calls_desc">Maximum tool-call iterations allowed inside a single subagent (1–500, default %1$d).</string>
+    <string name="agent_settings_subagent_max_background_runs">Max Background Subagents</string>
+    <string name="agent_settings_subagent_max_background_runs_desc">Maximum number of subagents running in the background at the same time (1–10, default %1$d). New background tasks beyond this are rejected.</string>
     <string name="agent_settings_subagent_default_background">Default to Background</string>
     <string name="agent_settings_subagent_default_background_desc">Whether a subagent runs in the background by default (returns a task id) when the AI does not explicitly set run_in_background.</string>
     <string name="agent_settings_wake_on_notice">Wake on task completion</string>

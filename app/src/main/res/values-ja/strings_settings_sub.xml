@@ -287,6 +287,8 @@
     <string name="agent_settings_subagent_max_depth_desc">サブエージェントがさらに子エージェントに委任できる最大深度（0 で無効、既定 %1$d）。無限再帰を防止します。</string>
     <string name="agent_settings_subagent_max_tool_calls">サブエージェントのツール上限</string>
     <string name="agent_settings_subagent_max_tool_calls_desc">単一サブエージェント内で許可されるツール呼び出し反復の最大数（1～500、既定 %1$d）。</string>
+    <string name="agent_settings_subagent_max_background_runs">バックグラウンドサブエージェント上限</string>
+    <string name="agent_settings_subagent_max_background_runs_desc">同時に実行できるバックグラウンドサブエージェントの最大数（1～10、既定 %1$d）。超過すると新しいバックグラウンドタスクは拒否されます。</string>
     <string name="agent_settings_subagent_default_background">既定でバックグラウンド実行</string>
     <string name="agent_settings_subagent_default_background_desc">AI が run_in_background を明示しないとき、サブエージェントを既定でバックグラウンド実行（タスク id を返す）にするかどうか。</string>
     <string name="agent_settings_wake_on_notice">タスク完了時に自動起床</string>

@@ -293,6 +293,11 @@ class PrefsManager(context: Context) {
         get() = prefs.getInt(KEY_SUBAGENT_MAX_TOOL_CALLS, 60)
         set(value) = prefs.edit().putInt(KEY_SUBAGENT_MAX_TOOL_CALLS, value.coerceIn(1, 500)).apply()
 
+    /** 同时运行的后台子代理上限（1-10，默认 3）。超限时新的后台任务会被拒绝。 */
+    var subagentMaxBackgroundRuns: Int
+        get() = prefs.getInt(KEY_SUBAGENT_MAX_BACKGROUND_RUNS, 3)
+        set(value) = prefs.edit().putInt(KEY_SUBAGENT_MAX_BACKGROUND_RUNS, value.coerceIn(1, 10)).apply()
+
     /** 子代理默认是否后台运行（AI 未显式指定 run_in_background 时使用）。 */
     var subagentDefaultBackground: Boolean
         get() = prefs.getBoolean(KEY_SUBAGENT_DEFAULT_BACKGROUND, false)
@@ -1286,6 +1291,7 @@ class PrefsManager(context: Context) {
         private const val KEY_SUBAGENT_ENABLED = "subagent_enabled"
         private const val KEY_SUBAGENT_MAX_DEPTH = "subagent_max_depth"
         private const val KEY_SUBAGENT_MAX_TOOL_CALLS = "subagent_max_tool_calls"
+        private const val KEY_SUBAGENT_MAX_BACKGROUND_RUNS = "subagent_max_background_runs"
         private const val KEY_SUBAGENT_DEFAULT_BACKGROUND = "subagent_default_background"
         private const val KEY_AGENT_WAKE_ON_NOTICE = "agent_wake_on_notice"
         private const val KEY_AGENT_NETWORK_ACCESS = "agent_network_access_enabled"

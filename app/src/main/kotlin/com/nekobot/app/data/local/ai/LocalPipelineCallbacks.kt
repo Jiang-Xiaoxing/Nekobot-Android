@@ -1854,7 +1854,7 @@ internal class LocalPipelineCallbacks(
                 if (runInBackground && !SubagentConcurrency.tryAcquire()) {
                     return mapOf(
                         "success" to false,
-                        "error" to "后台子代理并发已达上限（${SubagentConcurrency.MAX_BACKGROUND_RUNS}）" +
+                        "error" to "后台子代理并发已达上限（${SubagentConcurrency.maxBackgroundRuns}）" +
                             "。请等待已有后台任务完成（可用 subagent_list 查看），或改为前台执行（run_in_background=false）。"
                     )
                 }

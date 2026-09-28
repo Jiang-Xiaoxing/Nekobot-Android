@@ -287,6 +287,8 @@
     <string name="agent_settings_subagent_max_depth_desc">서브에이전트가 다시 하위 에이전트로 위임할 수 있는 최대 깊이 (0이면 비활성, 기본 %1$d). 무한 재귀를 방지합니다.</string>
     <string name="agent_settings_subagent_max_tool_calls">서브에이전트 도구 상한</string>
     <string name="agent_settings_subagent_max_tool_calls_desc">단일 서브에이전트 내에서 허용되는 도구 호출 반복 최대 수 (1–500, 기본 %1$d).</string>
+    <string name="agent_settings_subagent_max_background_runs">백그라운드 서브에이전트 상한</string>
+    <string name="agent_settings_subagent_max_background_runs_desc">동시에 실행할 수 있는 백그라운드 서브에이전트의 최대 수 (1–10, 기본 %1$d). 초과 시 새 백그라운드 작업은 거부됩니다.</string>
     <string name="agent_settings_subagent_default_background">기본적으로 백그라운드 실행</string>
     <string name="agent_settings_subagent_default_background_desc">AI가 run_in_background를 명시하지 않을 때 서브에이전트를 기본적으로 백그라운드 실행(태스크 id 반환)할지 여부.</string>
     <string name="agent_settings_wake_on_notice">작업 완료 시 자동 깨우기</string>

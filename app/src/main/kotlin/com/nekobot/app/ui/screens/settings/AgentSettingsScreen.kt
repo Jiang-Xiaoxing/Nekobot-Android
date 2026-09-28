@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -102,6 +103,9 @@ private const val SUBAGENT_MAX_DEPTH_DEFAULT = 3
 private const val SUBAGENT_MAX_TOOL_CALLS_MIN = 1
 private const val SUBAGENT_MAX_TOOL_CALLS_MAX = 500
 private const val SUBAGENT_MAX_TOOL_CALLS_DEFAULT = 60
+private const val SUBAGENT_MAX_BACKGROUND_RUNS_MIN = 1
+private const val SUBAGENT_MAX_BACKGROUND_RUNS_MAX = 10
+private const val SUBAGENT_MAX_BACKGROUND_RUNS_DEFAULT = 3
 
 /**
  * Agent 设置界面：布局沿用「拓展功能」风格（分组卡片 + 彩色图标行），
@@ -325,6 +329,20 @@ fun AgentSettingsScreen(
                             min = SUBAGENT_MAX_TOOL_CALLS_MIN,
                             max = SUBAGENT_MAX_TOOL_CALLS_MAX,
                             onValid = { ServiceContainer.prefs.subagentMaxToolCalls = it }
+                        )
+                    }
+                )
+                AgentSettingRow(
+                    icon = Icons.Filled.Workspaces,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    title = stringResource(R.string.agent_settings_subagent_max_background_runs),
+                    desc = stringResource(R.string.agent_settings_subagent_max_background_runs_desc, SUBAGENT_MAX_BACKGROUND_RUNS_DEFAULT),
+                    trailing = {
+                        NumericInput(
+                            initial = ServiceContainer.prefs.subagentMaxBackgroundRuns.toString(),
+                            min = SUBAGENT_MAX_BACKGROUND_RUNS_MIN,
+                            max = SUBAGENT_MAX_BACKGROUND_RUNS_MAX,
+                            onValid = { ServiceContainer.prefs.subagentMaxBackgroundRuns = it }
                         )
                     }
                 )

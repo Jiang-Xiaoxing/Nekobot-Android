@@ -105,17 +105,31 @@ internal fun buildAgentWakeUpMessage(notices: List<String>): String {
  */
 internal object SubagentConcurrency {
 
-    const val MAX_BACKGROUND_RUNS = 3
+    /** 用户未自定义时的默认上限，与 PrefsManager 的默认值保持一致。 */
+    private const val DEFAULT_MAX_BACKGROUND_RUNS = 3
 
-    private val permits = java.util.concurrent.Semaphore(MAX_BACKGROUND_RUNS)
+    /** 当前正在运行的后台子代理数量。 */
+    private val running = java.util.concurrent.atomic.AtomicInteger(0)
 
-    fun tryAcquire(): Boolean = permits.tryAcquire()
+    /** 当前允许的最大后台子代理数（Agent 设置中可调，1-10），实时读取偏好。 */
+    val maxBackgroundRuns: Int
+        get() = runCatching { com.nekobot.app.ServiceContainer.prefs.subagentMaxBackgroundRuns }
+            .getOrDefault(DEFAULT_MAX_BACKGROUND_RUNS)
 
-    fun release() {
-        permits.release()
+    fun tryAcquire(): Boolean = synchronized(this) {
+        if (running.get() >= maxBackgroundRuns) {
+            false
+        } else {
+            running.incrementAndGet()
+            true
+        }
     }
 
-    internal fun availablePermits(): Int = permits.availablePermits()
+    fun release() {
+        running.updateAndGet { if (it > 0) it - 1 else 0 }
+    }
+
+    internal fun availablePermits(): Int = (maxBackgroundRuns - running.get()).coerceAtLeast(0)
 }
 
 /** 工具上下文里传递“当前子代理任务 id”的键，用于按任务树计算嵌套深度。 */
