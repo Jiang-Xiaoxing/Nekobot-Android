@@ -59,7 +59,7 @@ internal fun fallbackContextUsageBreakdown(
     )
 }
 
-private fun List<Message>.agentContextWindow(): List<Message> {
+internal fun List<Message>.agentContextWindow(): List<Message> {
     val summary = asReversed().firstOrNull(Message::isAgentContextSummary) ?: return this
     val boundaryId = summary.agentContextSummaryBoundaryId() ?: return this
     val boundaryIndex = indexOfFirst { it.id == boundaryId }

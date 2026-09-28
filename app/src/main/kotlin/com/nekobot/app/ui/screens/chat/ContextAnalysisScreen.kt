@@ -1,6 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,9 +20,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -46,17 +49,22 @@ import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.ai.ContextUsageBreakdown
+import com.nekobot.app.data.local.ai.ContextUsagePart
 import com.nekobot.app.data.local.ai.ContextUsagePartTokens
+import com.nekobot.app.data.local.isAgentContextSummary
 import com.nekobot.app.data.model.Message
 import com.nekobot.app.data.model.Session
 import com.nekobot.app.data.repository.Resource
+import com.nekobot.app.ui.components.NekoDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private data class ContextAnalysisData(
     val breakdown: ContextUsageBreakdown,
     val usedTokens: Long,
-    val maxTokens: Int?
+    val maxTokens: Int?,
+    /** 参与占比统计的压缩摘要原文（Agent 会话的压缩窗口内），供点击查看。 */
+    val summaries: List<Message> = emptyList()
 )
 
 private data class ContextAnalysisUiState(
@@ -73,6 +81,7 @@ fun ContextAnalysisScreen(
 ) {
     var state by remember(sessionId) { mutableStateOf(ContextAnalysisUiState()) }
     var refreshKey by remember(sessionId) { mutableStateOf(0) }
+    var showSummaryDialog by remember(sessionId) { mutableStateOf(false) }
 
     suspend fun load() {
         state = ContextAnalysisUiState()
@@ -105,12 +114,19 @@ fun ContextAnalysisScreen(
                     null
                 }
                 val liveBreakdown = live?.breakdown?.takeIf { !it.isEmpty }
+                // 与占比统计同一窗口取摘要原文：占比里的「压缩摘要」条目对应这几条消息
+                val summaries = if (isAgentSession) {
+                    messages.agentContextWindow().filter(Message::isAgentContextSummary)
+                } else {
+                    emptyList()
+                }
                 Result.success(
                     ContextAnalysisData(
                         breakdown = liveBreakdown ?: fallbackContextUsageBreakdown(session, messages),
                         usedTokens = live?.totalTokens
                             ?: ServiceContainer.unified.sessionContextTokenUsage(sessionId),
-                        maxTokens = ServiceContainer.unified.getActiveContextLength()
+                        maxTokens = ServiceContainer.unified.getActiveContextLength(),
+                        summaries = summaries
                     )
                 )
             }
@@ -215,9 +231,25 @@ fun ContextAnalysisScreen(
                         }
                     } else {
                         items(data.breakdown.parts, key = { it.part.name }) { part ->
-                            ContextTypeRow(part, data.breakdown.totalTokens)
+                            val summaryClickable =
+                                part.part == ContextUsagePart.SUMMARY && data.summaries.isNotEmpty()
+                            ContextTypeRow(
+                                part,
+                                data.breakdown.totalTokens,
+                                onClick = if (summaryClickable) {
+                                    { showSummaryDialog = true }
+                                } else {
+                                    null
+                                }
+                            )
                         }
                     }
+                }
+                if (showSummaryDialog && data.summaries.isNotEmpty()) {
+                    SummaryContentDialog(
+                        summaries = data.summaries,
+                        onDismiss = { showSummaryDialog = false }
+                    )
                 }
             }
         }
@@ -278,11 +310,22 @@ private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?) {
 }
 
 @Composable
-private fun ContextTypeRow(part: ContextUsagePartTokens, totalTokens: Int) {
+private fun ContextTypeRow(
+    part: ContextUsagePartTokens,
+    totalTokens: Int,
+    onClick: (() -> Unit)? = null
+) {
     val color = part.part.displayColor(MaterialTheme.colorScheme)
     val share = if (totalTokens > 0) part.tokens.toFloat() / totalTokens else 0f
     val percent = (share * 100).toInt()
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        modifier = if (onClick != null) {
+            Modifier.clickable(onClick = onClick)
+        } else {
+            Modifier
+        }
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -306,6 +349,14 @@ private fun ContextTypeRow(part: ContextUsagePartTokens, totalTokens: Int) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (onClick != null) {
+                    Text(
+                        stringResource(R.string.chat_context_analysis_summary_view_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
             Text(
                 "$percent%",
@@ -313,6 +364,13 @@ private fun ContextTypeRow(part: ContextUsagePartTokens, totalTokens: Int) {
                 color = color,
                 fontWeight = FontWeight.Bold
             )
+            if (onClick != null) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         LinearProgressIndicator(
             progress = { share },
@@ -323,5 +381,34 @@ private fun ContextTypeRow(part: ContextUsagePartTokens, totalTokens: Int) {
             color = color,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
+    }
+}
+
+/** 压缩摘要原文弹窗：多条摘要时按占比统计顺序逐段展示。 */
+@Composable
+private fun SummaryContentDialog(
+    summaries: List<Message>,
+    onDismiss: () -> Unit
+) {
+    NekoDialog(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.chat_context_analysis_summary),
+        confirmText = stringResource(R.string.common_close),
+        contentScrollable = true
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            summaries.forEachIndexed { index, summary ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                    )
+                }
+                Text(
+                    summary.displayContent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
     }
 }
