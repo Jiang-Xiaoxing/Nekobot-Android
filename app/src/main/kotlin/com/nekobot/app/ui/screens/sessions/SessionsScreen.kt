@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -399,6 +400,8 @@ fun SessionsScreen(
     // 有等待用户处理的 Agent 事件的会话（授权/提问），在列表中显示提示
     val attentionBySession by com.nekobot.app.data.local.ai.AgentAttentionCenter.pendingBySession
         .collectAsStateWithLifecycle()
+    // 正在生成 AI 回复的会话集合：列表项左侧渲染主题色运行中竖条
+    val generatingSessions by ServiceContainer.generatingSessions.collectAsStateWithLifecycle()
     val dashboardData by viewModel.dashboardData.collectAsStateWithLifecycle()
     val dashboardLoading by viewModel.dashboardLoading.collectAsStateWithLifecycle()
 
@@ -776,6 +779,7 @@ fun SessionsScreen(
                                 SessionItem(
                                     row = row,
                                     hasAttention = row.id?.let { attentionBySession.containsKey(it) } == true,
+                                    isGenerating = row.id != null && row.id in generatingSessions,
                                     onClick = { row.id?.let(handleOpenChat) },
                                     onOpenDetail = { row.id?.let(onOpenDetail) },
                                     onRename = { if (row.id != null) renaming = row },
@@ -1819,6 +1823,7 @@ private val SessionPortraitShape = RoundedCornerShape(12.dp)
 private fun SessionItem(
     row: SessionListRow,
     hasAttention: Boolean = false,
+    isGenerating: Boolean = false,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
@@ -1886,9 +1891,26 @@ private fun SessionItem(
         shadowElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier
+                .height(IntrinsicSize.Min)
+                // 左侧 3dp 竖条 + 9dp 间距 = 原 12dp 起始内边距，内容位置不变
+                .padding(start = 9.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // AI 生成中指示竖条：非生成状态透明占位，避免列表项内容左右跳动
+            val generatingBarColor by animateColorAsState(
+                targetValue = if (isGenerating) MaterialTheme.colorScheme.primary else Color.Transparent,
+                animationSpec = tween(200),
+                label = "sessionGeneratingBar"
+            )
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(generatingBarColor)
+            )
+            Spacer(Modifier.width(9.dp))
             Box(
                 modifier = Modifier
                     .size(width = 48.dp, height = 60.dp)

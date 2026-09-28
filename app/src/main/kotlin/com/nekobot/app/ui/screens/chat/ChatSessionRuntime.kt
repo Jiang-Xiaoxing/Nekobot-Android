@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 enum class MessageTtsStatus {
@@ -434,6 +435,9 @@ class ChatSessionState(
     /** 本地模式流式聊天收集 Job */
     @Volatile
     var localChatJob: Job? = null
+    /** 把 sending 状态同步到全局"生成中"集合的 Job（服务器模式依赖；会话状态回收时取消） */
+    @Volatile
+    var generatingSyncJob: Job? = null
     /** 正文已经完成，但自动命名/剧情选项等后处理可能仍在运行。 */
     @Volatile
     private var localResponseComplete = false
@@ -551,7 +555,26 @@ object ChatSessionManager {
         val state = existing ?: ChatSessionState(sessionId)
         synchronized(state) { state.subscriberCount++ }
         state
-    }!!
+    }!!.also(::ensureGeneratingSync)
+
+    /**
+     * 把会话的 sending 状态同步到全局"生成中"集合（ServiceContainer.generatingSessions），
+     * 会话列表据此渲染运行中竖条。
+     *
+     * 仅服务器模式生效：本地模式的 sending 在最终回复落地时就会提前释放（解锁输入框），
+     * 而标题总结/剧情选项/记忆沉淀等后台生成仍在运行——本地模式的完整生命周期由
+     * LocalRepository 的生成登记（activeGenerations put/remove）直接驱动全局集合。
+     */
+    private fun ensureGeneratingSync(state: ChatSessionState) {
+        if (state.generatingSyncJob?.isActive == true) return
+        state.generatingSyncJob = ServiceContainer.applicationScope.launch {
+            state.sending.collect { generating ->
+                if (!ServiceContainer.prefs.isLocalMode) {
+                    ServiceContainer.notifySessionGenerating(state.sessionId, generating)
+                }
+            }
+        }
+    }
 
     /** 减少引用计数；为 0 且无实际后台工作时取消监听并从内存移除。 */
     fun release(sessionId: String) {
@@ -574,6 +597,10 @@ object ChatSessionManager {
         if (state.subscriberCount > 0 || state.hasRetainedWork()) return state
         state.eventsJob?.cancel()
         state.eventsJob = null
+        state.generatingSyncJob?.cancel()
+        state.generatingSyncJob = null
+        // 状态已回收，兜底撤销全局"生成中"标记（正常路径下 sending 已为 false）
+        ServiceContainer.notifySessionGenerating(state.sessionId, false)
         return null
     }
 
@@ -586,6 +613,7 @@ object ChatSessionManager {
             state.localChatJob?.cancel()
             state.compressionJob?.cancel()
             state.eventsJob?.cancel()
+            state.generatingSyncJob?.cancel()
             state.ttsJobs.values.forEach { it.cancel() }
         }
         sessions.clear()

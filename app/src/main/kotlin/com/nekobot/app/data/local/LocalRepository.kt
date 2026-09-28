@@ -6764,6 +6764,8 @@ class LocalRepository(
         val generationController = LocalGenerationController()
         var agentForegroundStarted = false
         activeGenerations.put(sessionId, generationController)?.requestStop()
+        // 登记全局"生成中"状态：会话列表据此显示运行中竖条
+        ServiceContainer.notifySessionGenerating(sessionId, true)
         try {
         // 标记当前会话，供二级 LLM 调用（AutoState/记忆）token 记账归属
         currentSessionId = sessionId
@@ -7562,7 +7564,10 @@ class LocalRepository(
             if (agentForegroundStarted) {
                 appContext?.let { AgentForegroundService.release(it, sessionId) }
             }
-            activeGenerations.remove(sessionId, generationController)
+            // 仅在确实移除了本轮控制器时才撤销"生成中"标记，避免误清新一轮的登记
+            if (activeGenerations.remove(sessionId, generationController)) {
+                ServiceContainer.notifySessionGenerating(sessionId, false)
+            }
         }
     }.flowOn(Dispatchers.IO)
 

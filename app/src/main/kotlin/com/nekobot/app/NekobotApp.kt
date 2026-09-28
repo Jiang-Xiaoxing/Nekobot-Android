@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
@@ -133,6 +134,29 @@ object ServiceContainer {
     /** 全局登录态流：登录/登出/token 失效时自动刷新路由 */
     private val _loginStateFlow = MutableStateFlow(false)
     val loginStateFlow: StateFlow<Boolean> = _loginStateFlow.asStateFlow()
+
+    /**
+     * 正在生成 AI 回复的会话 ID 集合：会话列表据此在条目左侧渲染"运行中"竖条。
+     *
+     * 本地模式由 [com.nekobot.app.data.local.LocalRepository] 的生成登记驱动
+     * （覆盖聊天/群聊/后台唤醒/自动化触发的全部本地生成）；
+     * 服务器模式由 ChatSessionManager 把会话的 sending 状态同步进来。
+     */
+    private val _generatingSessions = MutableStateFlow<Set<String>>(emptySet())
+    val generatingSessions: StateFlow<Set<String>> = _generatingSessions.asStateFlow()
+
+    /** 会话开始/结束一轮 AI 生成时更新全局"生成中"集合（幂等）。 */
+    fun notifySessionGenerating(sessionId: String?, generating: Boolean) {
+        val id = sessionId?.takeIf { it.isNotBlank() } ?: return
+        _generatingSessions.update { current ->
+            if (generating) current + id else current - id
+        }
+    }
+
+    /** 清空"生成中"集合：模式/数据库档案切换时调用，避免上一通道的标记残留。 */
+    private fun clearGeneratingSessions() {
+        _generatingSessions.value = emptySet()
+    }
 
     /** 通知点击待跳转的会话 ID（NavGraph 观察并消费） */
     private val _pendingSessionId = MutableStateFlow<String?>(null)
@@ -323,6 +347,7 @@ object ServiceContainer {
             unified = UnifiedRepository(prefs, repository, localRepository, ctx)
             com.nekobot.app.data.local.AchievementManager.switchScope(achievementScopeId())
             _dataSourceRevision.value += 1L
+            clearGeneratingSessions()
             applicationScope.launch {
                 runCatching { localRepository.migrateStoredSecrets() }
                     .onFailure {
@@ -344,6 +369,7 @@ object ServiceContainer {
         _appModeFlow.value = mode
         _dataSourceRevision.value += 1L
         _loginStateFlow.value = prefs.isLoggedIn
+        clearGeneratingSessions()
         if (mode == AppMode.LOCAL) {
             applicationScope.launch { localRepository.syncAutomationSchedules() }
         }
