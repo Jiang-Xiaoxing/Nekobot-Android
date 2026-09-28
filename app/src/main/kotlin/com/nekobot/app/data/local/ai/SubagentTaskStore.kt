@@ -174,6 +174,7 @@ object SubagentTaskStore {
         val removedIds = tasks.keys.filter { tasks[it]?.sessionId == sessionId }
         removedIds.forEach(tasks::remove)
         SubagentTodoStore.clearTasks(removedIds.toSet())
+        SubagentTaskNoticeBus.clearTasks(removedIds.toSet())
     }
 
     fun size(): Int = tasks.size

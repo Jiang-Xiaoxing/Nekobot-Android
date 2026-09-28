@@ -9,8 +9,10 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * 后台子代理完成任务时，父会话可能仍在工具循环中，也可能已经空闲。两种情况都要让模型
  * 有机会知道任务已经结束（否则模型只能靠 subagent_get 轮询，或者干脆遗忘）：
  *
- * - 仍在循环中：通知在下一轮模型调用前作为消息注入（复用排队消息通道）；
- * - 已经空闲：通知留在队列里，等用户下一次发消息时注入。
+ * - 仍在循环中：通知在下一轮模型调用前作为消息注入（复用排队消息通道，即"插队"）；
+ * - 已经空闲：通过 [onNoticePublished] 通知 LocalRepository 自动「唤醒」会话——
+ *   开一轮新的 Agent 运行处理通知并向用户汇报结果（对齐 DeepSeek harness 的
+ *   后台任务完成唤醒语义；可在设置中关闭）。
  *
  * 只做内存队列并限制长度：通知是过程性信息，任务结果本身持久化在 [SubagentTaskStore]，
  * 进程重启后依然可以用 subagent_get 查询完整结果。
@@ -22,15 +24,39 @@ internal object AgentNoticeBus {
 
     private val queues = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
 
+    /**
+     * 通知到达监听器：由 LocalRepository 注册。
+     *
+     * 会话空闲时收到通知意味着没有任何运行中的工具循环去消费它——监听器借此触发
+     * 「唤醒」：为空闲会话自动开一轮新的 Agent 运行处理通知（对齐 DeepSeek harness 的
+     * 后台任务完成唤醒语义）。会话仍在运行时监听器应直接返回，通知会由循环内注入
+     * 通道（[com.nekobot.app.data.local.ai.LocalPipelineCallbacks.drainPendingUserMessages]）
+     * 在下一轮模型调用前插队送达。
+     */
+    @Volatile
+    internal var onNoticePublished: ((sessionId: String) -> Unit)? = null
+
     /** 发布一条通知；超过上限时丢弃最旧的通知。 */
-    fun publish(sessionId: String, notice: String) {
+    fun publish(sessionId: String, notice: String, wakeIfIdle: Boolean = true) {
         if (sessionId.isBlank() || notice.isBlank()) return
         val queue = queues.computeIfAbsent(sessionId) { ConcurrentLinkedQueue() }
         queue.add(notice)
         while (queue.size > MAX_NOTICES_PER_SESSION) {
             queue.poll()
         }
+        if (wakeIfIdle) {
+            runCatching { onNoticePublished?.invoke(sessionId) }.onFailure { error ->
+                com.nekobot.app.data.local.LocalLogger.w(
+                    "AgentNoticeBus",
+                    "唤醒回调失败: ${error.message}"
+                )
+            }
+        }
     }
+
+    /** 某会话是否还有未被消费的通知。 */
+    fun hasPending(sessionId: String): Boolean =
+        queues[sessionId]?.isNotEmpty() == true
 
     /** 取出并清空某会话的全部通知（取出即消费）。 */
     fun drain(sessionId: String): List<String> {
@@ -47,6 +73,27 @@ internal object AgentNoticeBus {
     fun clear(sessionId: String) {
         queues.remove(sessionId)
     }
+}
+
+/**
+ * 把一批后台任务通知组装成唤醒运行的「用户消息」。
+ *
+ * 唤醒运行与会话内插队注入不同：它没有正在进行的父任务上下文，因此把通知持久化为
+ * 一条真正的用户消息（带说明头部），让模型在全新的运行里明确知道自己被唤醒的原因，
+ * 并据此向用户汇报结果。后续轮次的上下文里也能看到这条通知。
+ */
+internal fun buildAgentWakeUpMessage(notices: List<String>): String {
+    val body = notices.filter { it.isNotBlank() }.joinToString(separator = "\n\n") { it.trim() }
+    if (body.isBlank()) return ""
+    return buildString {
+        appendLine("[后台任务通知 · 自动唤醒]")
+        appendLine(body)
+        append(
+            "（本条消息由系统在会话空闲时自动发送：后台任务的通知到达且没有正在进行的任务。" +
+                "请基于上述通知向用户简明汇报任务结果；如任务失败请说明原因。" +
+                "不要重复执行或重复委派该任务。）"
+        )
+    }.trim()
 }
 
 /**
@@ -99,5 +146,110 @@ internal object SubagentRunRegistry {
         val job = jobs.remove(taskId) ?: return false
         job.cancel()
         return true
+    }
+}
+
+/**
+ * 子代理任务级通知队列（进程内单例）。
+ *
+ * 嵌套场景下，后台子代理自己也可以委派后台子任务。子任务完成时，若它的父任务
+ * （也是子代理）仍在运行，通知投递到这里，由父任务工具循环在下一轮模型调用前
+ * 注入上下文（与主会话的 [AgentNoticeBus] 插队通道同语义，只是按任务 id 隔离）。
+ * 父任务已结束的通知由 [forwardUndeliveredSubagentTaskNotices] 向上转发或回落到会话级。
+ */
+internal object SubagentTaskNoticeBus {
+
+    private val queues = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
+
+    /** 发布一条发给指定子代理任务的通知。 */
+    fun publish(taskId: String, notice: String) {
+        if (taskId.isBlank() || notice.isBlank()) return
+        queues.computeIfAbsent(taskId) { ConcurrentLinkedQueue() }.add(notice)
+    }
+
+    fun hasPending(taskId: String): Boolean = queues[taskId]?.isNotEmpty() == true
+
+    /** 取出并清空某任务的通知（父任务循环每轮模型调用前消费）。 */
+    fun drain(taskId: String): List<String> {
+        val queue = queues[taskId] ?: return emptyList()
+        val drained = mutableListOf<String>()
+        while (true) {
+            val item = queue.poll() ?: break
+            drained.add(item)
+        }
+        return drained
+    }
+
+    /** 清理一批任务的通知（任务记录被清理时调用）。 */
+    fun clearTasks(taskIds: Collection<String>) {
+        if (taskIds.isEmpty()) return
+        taskIds.forEach(queues::remove)
+    }
+}
+
+/**
+ * 组装子代理任务完成通知文本。
+ *
+ * @param addressedToParentTask true=发给仍在运行的父任务（也是子代理）；
+ *   false=发给主会话（循环内注入或唤醒空闲会话）。
+ */
+internal fun buildSubagentCompletionNotice(task: SubagentTask, addressedToParentTask: Boolean): String {
+    val latest = SubagentTaskStore.get(task.id) ?: task
+    val status = latest.status.name.lowercase()
+    val body = if (latest.status == SubagentTaskStatus.SUCCEEDED) {
+        val summary = latest.result.trim().take(2_000)
+        if (summary.isBlank()) "任务已完成，但没有返回内容。" else "结果摘要：\n$summary"
+    } else {
+        "失败原因：${latest.error?.take(500)?.takeIf { it.isNotBlank() } ?: "未知错误"}"
+    }
+    val headline = if (addressedToParentTask) {
+        "[系统通知] 你委派的后台子任务已结束：${latest.description}（task_id=${latest.id}，状态=$status）"
+    } else {
+        val hierarchyNote = if (latest.parentTaskId != null) {
+            // 嵌套孤儿：父任务已结束，结果由主会话接手处理。
+            "。注意：该任务由子代理（task_id=${latest.parentTaskId}）委派，其父任务已结束，结果由你接手处理"
+        } else {
+            ""
+        }
+        "[系统通知] 后台子代理任务已结束：${latest.description}（task_id=${latest.id}，状态=$status）$hierarchyNote"
+    }
+    return "$headline\n$body\n" +
+        "如需完整结果可用 subagent_get(task_id=${latest.id}) 读取，不要重复委派同一任务。"
+}
+
+/**
+ * 子代理任务结束后的通知路由（前台/后台、嵌套层级共用）。
+ *
+ * - 父任务存在且仍在运行：投递到父任务的通知队列，由父任务工具循环插队消费；
+ * - 父任务不存在或已结束：发布到会话级 [AgentNoticeBus]——主会话运行中则下一轮
+ *   注入，空闲则触发唤醒（对齐 DeepSeek harness 的后台任务完成唤醒语义）。
+ */
+internal fun routeSubagentCompletionNotice(sessionId: String, task: SubagentTask) {
+    val parent = task.parentTaskId?.let { SubagentTaskStore.get(it) }
+    if (parent != null && parent.isActive) {
+        SubagentTaskNoticeBus.publish(parent.id, buildSubagentCompletionNotice(task, addressedToParentTask = true))
+    } else {
+        AgentNoticeBus.publish(
+            sessionId,
+            buildSubagentCompletionNotice(task, addressedToParentTask = false)
+        )
+    }
+}
+
+/**
+ * 任务进入终态后，把它仍未消费的子任务完成通知向上转发。
+ *
+ * 竞态兜底：子任务完成时父任务还在运行，但父任务可能在消费前就结束了。此时这些
+ * 通知不能再留在死任务的队列里，按同样的规则继续向上（父任务活跃→父任务队列；
+ * 否则→会话级），保证嵌套结果最终总能到达主会话。
+ */
+internal fun forwardUndeliveredSubagentTaskNotices(task: SubagentTask) {
+    val leftovers = SubagentTaskNoticeBus.drain(task.id)
+    if (leftovers.isEmpty()) return
+    val parent = task.parentTaskId?.let { SubagentTaskStore.get(it) }
+    if (parent != null && parent.isActive) {
+        leftovers.forEach { SubagentTaskNoticeBus.publish(parent.id, it) }
+    } else {
+        leftovers.forEach { AgentNoticeBus.publish(task.sessionId, it) }
     }
 }

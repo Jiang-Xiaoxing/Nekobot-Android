@@ -38,6 +38,40 @@ internal fun decodeThinkingCardsForUi(
     }.getOrNull()
 }
 
+/** 单条消息最多持久化的进度卡片数（主 Agent 卡 + 各子代理卡）。 */
+internal const val MAX_PERSISTED_PROGRESS_CARDS = 24
+
+/**
+ * 按 id 把一张进度卡片合并进既有卡片列表（替换同 id，否则追加）。
+ *
+ * 一条用户消息上现在同时挂着主 Agent 卡与各子代理卡：合并写（而不是整表替换）
+ * 才能让两类卡共存。超出 [MAX_PERSISTED_PROGRESS_CARDS] 时优先丢弃**最旧的已完成卡**
+ * （子代理还在运行的卡不能丢）；极端情况下全部未完成才整体截尾。
+ */
+internal fun mergeProgressCards(
+    existing: List<ThinkingCard>,
+    incoming: ThinkingCard,
+    maxCards: Int = MAX_PERSISTED_PROGRESS_CARDS
+): List<ThinkingCard> {
+    val result = existing.toMutableList()
+    val index = result.indexOfFirst { it.id == incoming.id }
+    if (index >= 0) result[index] = incoming else result.add(incoming)
+    if (result.size <= maxCards) return result
+    var overflow = result.size - maxCards
+    val iterator = result.listIterator()
+    while (iterator.hasNext() && overflow > 0) {
+        if (iterator.next().isComplete) {
+            iterator.remove()
+            overflow--
+        }
+    }
+    return if (overflow > 0) {
+        result.drop(result.size - maxCards)
+    } else {
+        result
+    }
+}
+
 private fun oversizedThinkingCard(messageId: String): ThinkingCard = ThinkingCard(
     id = "oversized-history-$messageId",
     content = "思考过程已完成（历史详情过大，已安全折叠）",

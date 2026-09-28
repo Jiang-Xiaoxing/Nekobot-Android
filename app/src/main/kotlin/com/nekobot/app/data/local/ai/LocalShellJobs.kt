@@ -74,6 +74,10 @@ internal object LocalShellJobs {
         jobs[job.id] = job
         prune(sessionId)
         // 与后台子代理一致：独立协程 + SupervisorJob，父会话结束不影响已启动的命令。
+        // 后台命令可能超出父会话的生成周期，用独立槽位保活前台服务，避免进程被回收。
+        com.nekobot.app.ServiceContainer.appContext?.let { context ->
+            runCatching { com.nekobot.app.service.AgentForegroundService.acquireBackgroundTask(context, sessionId) }
+        }
         val handle = kotlinx.coroutines.GlobalScope.launch(
             kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
         ) {
@@ -85,6 +89,12 @@ internal object LocalShellJobs {
                 throw e
             } catch (e: Exception) {
                 finish(job, STATUS_FAILED, error = e.message ?: "命令执行失败")
+            } finally {
+                com.nekobot.app.ServiceContainer.appContext?.let { context ->
+                    runCatching {
+                        com.nekobot.app.service.AgentForegroundService.releaseBackgroundTask(context, sessionId)
+                    }
+                }
             }
         }
         handles[job.id] = handle

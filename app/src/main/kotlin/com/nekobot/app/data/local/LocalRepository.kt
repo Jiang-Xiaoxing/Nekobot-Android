@@ -9,6 +9,8 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.nekobot.app.data.local.ai.AiOutputLanguage
+import com.nekobot.app.data.local.ai.AgentNoticeBus
+import com.nekobot.app.data.local.ai.buildAgentWakeUpMessage
 import com.nekobot.app.data.local.ai.CustomToolSetModeRecord
 import com.nekobot.app.data.local.ai.ToolSetMode
 import com.nekobot.app.data.local.ai.ToolSetModeCatalog
@@ -69,6 +71,7 @@ import com.nekobot.app.data.local.ai.estimateToolDefinitionsTokens
 import com.nekobot.app.data.local.ai.IncrementalExperienceArchiver
 import com.nekobot.app.data.local.ai.CONTEXT_USAGE_AGENT_OVERHEAD_TOKENS
 import com.nekobot.app.data.local.ai.decodeThinkingCardsForUi
+import com.nekobot.app.data.local.ai.mergeProgressCards
 import com.nekobot.app.data.local.ai.boundAgentToolHistoryJson
 import com.nekobot.app.data.local.ai.decodeAgentToolMessageRow
 import com.nekobot.app.data.local.ai.decodeToolCallHistory
@@ -168,7 +171,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -836,6 +843,8 @@ class LocalRepository(
                 if (!savedGraph.isNullOrBlank()) manager.fromJson(savedGraph)
             }
         }
+        // 后台任务通知 → 会话唤醒：仓库实例重建（切库）时新实例覆盖旧钩子。
+        AgentNoticeBus.onNoticePublished = { sessionId -> onAgentNoticePublished(sessionId) }
     }
 
     /** 将本地故事图整体持久化，保证重启应用后节点、边和当前分支仍可恢复。 */
@@ -6278,6 +6287,131 @@ class LocalRepository(
         }
     }
 
+    // ==================== 后台任务唤醒 ====================
+
+    /**
+     * 后台任务（后台子代理 / 后台 shell 命令）完成通知到达时的会话唤醒。
+     *
+     * 对齐 DeepSeek harness 的语义：主 Agent 给出最终回复后，后台任务完成不再静默
+     * 等待用户下次发消息——空闲的会话会被自动「唤醒」，开一轮新的 Agent 运行处理
+     * 通知并向用户汇报结果。会话仍在运行时保持现状：通知走循环内注入通道插队送达
+     * （LocalPipelineCallbacks.drainPendingUserMessages）。
+     *
+     * 唤醒运行的实时事件同时转发到 [agentWakeEvents]，聊天界面打开时可直接接管渲染；
+     * 没有收集者时事件被丢弃，回复已照常落库。
+     */
+    private val _agentWakeEvents = MutableSharedFlow<RealtimeEvent>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    /** 唤醒运行的事件流（仅本地模式；ChatViewModel 按当前会话收集）。 */
+    val agentWakeEvents: SharedFlow<RealtimeEvent> = _agentWakeEvents.asSharedFlow()
+
+    /** 每会话唤醒锁：防止同一会话并发启动多个唤醒运行。 */
+    private val wakeUpLocks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** AgentNoticeBus 回调入口：尝试唤醒空闲会话（在应用协程内执行）。 */
+    private fun onAgentNoticePublished(sessionId: String) {
+        if (!ServiceContainer.prefs.isLocalMode) return
+        if (!ServiceContainer.prefs.agentWakeOnNotice) return
+        if (sessionId.isBlank()) return
+        ServiceContainer.applicationScope.launch(Dispatchers.IO) {
+            tryWakeSessionForNotices(sessionId)
+        }
+    }
+
+    private suspend fun tryWakeSessionForNotices(sessionId: String) {
+        if (activeGenerations.containsKey(sessionId)) return
+        if (!wakeUpLocks.add(sessionId)) return
+        try {
+            // 拿到锁后复查：另一个唤醒运行可能刚启动，或用户消息抢先开跑了。
+            if (activeGenerations.containsKey(sessionId)) return
+            if (!AgentNoticeBus.hasPending(sessionId)) return
+            val session = sessionDao.getById(sessionId) ?: return
+            if (session.archived || !session.sessionMode.equals("agent", ignoreCase = true)) return
+            runAgentWakeUpTurn(session)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LocalLogger.w(TAG, "唤醒会话 $sessionId 失败: ${e.message}")
+        } finally {
+            wakeUpLocks.remove(sessionId)
+        }
+        // 锁已释放：若本轮运行期间又有通知到达（未被本轮消费），再唤醒一次继续处理。
+        if (AgentNoticeBus.hasPending(sessionId)) {
+            onAgentNoticePublished(sessionId)
+        }
+    }
+
+    /**
+     * 执行一轮唤醒运行：把通知组装成唤醒指令，走完整 Agent 管线（含工具循环），
+     * 模型基于通知内容向用户汇报结果。
+     *
+     * 唤醒指令只进入本轮模型上下文，**不落库为用户消息**（与循环内插队注入的通知同语义）：
+     * - 不在聊天界面显示任何额外气泡；
+     * - 不触发按对话数计数的自动化（is_heartbeat 跳过自动命名/长期记忆/技能沉淀/AutoState，
+     *   也不经过 addMessage 的成就计数与主动聊天排程）。
+     *
+     * 失败或被停止时把通知放回队列（不再次自动唤醒，避免空转），等用户下次发消息时
+     * 由循环内注入通道送达。
+     */
+    private suspend fun runAgentWakeUpTurn(session: LocalSessionEntity) {
+        val sessionId = session.id
+        val notices = AgentNoticeBus.drain(sessionId)
+        if (notices.isEmpty()) return
+        val wakeMessage = buildAgentWakeUpMessage(notices)
+        if (wakeMessage.isBlank()) return
+        try {
+            val model = getRoutedModel(sessionId, wakeMessage)
+            if (model == null) {
+                // 没有可用模型：放回通知但不重试唤醒。
+                AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+                return
+            }
+            var failure: String? = null
+            chatWithPipeline(
+                sessionId = sessionId,
+                userMessage = wakeMessage,
+                activeModel = model,
+                persistUserMessage = false,
+                internalMetadata = mapOf(
+                    // 与主动聊天同语义：心跳轮不计入任何按对话/轮次触发的自动化计数。
+                    "is_heartbeat" to true,
+                    "skip_auto_memory" to true,
+                    "is_wake_up" to true
+                ),
+                allowTools = true
+            ).collect { event ->
+                _agentWakeEvents.tryEmit(reattachWakeUpSession(sessionId, event))
+                if (event is RealtimeEvent.Error && failure == null) failure = event.message
+            }
+            if (failure != null) {
+                LocalLogger.w(TAG, "唤醒运行失败（$sessionId）: $failure")
+                AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+            }
+        } catch (e: CancellationException) {
+            AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+            throw e
+        } catch (e: Exception) {
+            LocalLogger.w(TAG, "唤醒运行异常（$sessionId）: ${e.message}")
+            AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+        }
+    }
+
+    /**
+     * 唤醒事件统一携带会话 id，供聊天界面按会话过滤。
+     * StreamChunk / ReasoningChunk 等事件默认 sessionId 为 null，这里补齐。
+     */
+    private fun reattachWakeUpSession(sessionId: String, event: RealtimeEvent): RealtimeEvent = when (event) {
+        is RealtimeEvent.StreamStart -> RealtimeEvent.StreamStart(sessionId)
+        is RealtimeEvent.StreamChunk -> event.copy(sessionId = sessionId)
+        is RealtimeEvent.ReasoningChunk -> event.copy(sessionId = sessionId)
+        is RealtimeEvent.StreamEnd -> event.copy(sessionId = sessionId)
+        is RealtimeEvent.Error -> event.copy(sessionId = sessionId)
+        else -> event
+    }
+
     /** 释放本地仓库持有的长连接与 stdio 子进程。 */
     fun close() {
         // 先失活再发取消信号，确保尚未退出的同名/旧 profile 任务无法修改全局故事图。
@@ -6958,9 +7092,15 @@ class LocalRepository(
                 )
             },
             onThinkingCardUpdate = { card ->
-                // 持久化进度卡片到父用户消息
-                if (parentMessageId != null) kotlinx.coroutines.runBlocking {
-                    updateMessageThinkingCards(parentMessageId, listOf(card))
+                // 持久化进度卡片到父用户消息：按卡片 id 合并写，主 Agent 卡与各子代理卡共存。
+                kotlinx.coroutines.runBlocking {
+                    persistAgentProgressCard(sessionId, card)
+                }
+            },
+            onSubagentThinkingCard = { card ->
+                // 子代理进度卡片同样持久化：退出会话重进后仍能看到（挂在委派轮的用户消息下）。
+                kotlinx.coroutines.runBlocking {
+                    persistAgentProgressCard(sessionId, card)
                 }
             },
             workspaceRoot = appContext?.filesDir
@@ -6996,6 +7136,10 @@ class LocalRepository(
             pluginInstallConfirmationEmitter = { request -> emitPluginInstallConfirmation(request) },
             mcpToolDefinitions = prepareMcpAgentTools(),
             sessionToolFilter = { definitions -> filterDefinitionsForSession(sessionId, definitions) },
+            // 父运行结束后，后台子代理的进度卡片经唤醒事件流继续送达聊天界面。
+            backgroundEventForwarder = { event ->
+                _agentWakeEvents.tryEmit(reattachWakeUpSession(sessionId, event))
+            },
             recallReader = recallReader,
             isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(sessionId, toolName) }
         )
@@ -10409,6 +10553,40 @@ ${AiOutputLanguage.directive()}
             }
             messageDao.updateThinkingCards(messageId, json)
         }
+
+    /**
+     * 进度卡片合并写互斥：主 Agent 卡与多个子代理卡并发更新同一条消息的卡片列表，
+     * 读-合并-写必须串行，否则并发写会互相覆盖（丢了刚写入的兄弟卡片）。
+     */
+    private val progressCardPersistMutex = Mutex()
+
+    /**
+     * 把一张进度卡片合并持久化到消息（按卡片 id 替换/追加，见 [mergeProgressCards]）。
+     *
+     * 锚点优先用 card.parentMessageId（委派轮的用户消息）；为空时（如唤醒运行的孤儿卡片）
+     * 回退到会话最后一条用户消息——与聊天界面 attachThinkingCardToMessages 的孤儿兜底
+     * 规则一致，保证退出会话重进后卡片显示在同一位置。
+     */
+    private fun persistAgentProgressCard(sessionId: String, card: ThinkingCard) {
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            runCatching {
+                val targetId = card.parentMessageId
+                    ?.takeIf { id -> messageDao.getById(id) != null }
+                    ?: messageDao.listBySession(sessionId)
+                        .lastOrNull { it.role.equals("user", ignoreCase = true) }?.id
+                    ?: return@runBlocking
+                progressCardPersistMutex.withLock {
+                    val existing = decodeThinkingCardsForUi(
+                        targetId,
+                        messageDao.getById(targetId)?.thinkingCards
+                    ).orEmpty()
+                    updateMessageThinkingCards(targetId, mergeProgressCards(existing, card))
+                }
+            }.onFailure { error ->
+                LocalLogger.w(TAG, "持久化进度卡片失败: ${error.message}")
+            }
+        }
+    }
 
     private fun LocalCharacterEntity.toCharacterPreset(): CharacterPreset = CharacterPreset(
         id = id,

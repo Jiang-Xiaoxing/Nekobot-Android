@@ -147,7 +147,18 @@ internal class LocalPipelineCallbacks(
      * 会话工具集过滤器：子代理工具清单必须与父会话一样受“Agent 工具集”勾选约束，
      * 否则用户在父会话里关掉的工具会经由子代理重新变得可用。为空时不额外过滤。
      */
-    private val sessionToolFilter: ((List<Map<String, Any>>) -> List<Map<String, Any>>)? = null
+    private val sessionToolFilter: ((List<Map<String, Any>>) -> List<Map<String, Any>>)? = null,
+    /**
+     * 后台事件转发器：父运行的 eventChannel 关闭（主 Agent 已给出最终回复或被停止）后，
+     * 后台子代理的进度卡片经此继续送达 UI（LocalRepository → agentWakeEvents → ChatViewModel）。
+     * 为空时父运行结束后卡片更新静默丢弃（进度仍记录在 SubagentTaskStore）。
+     */
+    private val backgroundEventForwarder: ((RealtimeEvent) -> Unit)? = null,
+    /**
+     * 子代理进度卡片持久化回调：按卡片 id 合并写进委派轮的用户消息，
+     * 退出会话重进后卡片仍在。为空时卡片只做实时展示，不落库。
+     */
+    private val onSubagentThinkingCard: ((card: com.nekobot.app.data.model.ThinkingCard) -> Unit)? = null
 ) : PipelineCallbacks() {
 
     companion object {
@@ -301,6 +312,16 @@ internal class LocalPipelineCallbacks(
         runCatching {
             kotlinx.coroutines.runBlocking { eventChannel.send(event) }
         }
+    }
+
+    /**
+     * 子代理进度卡片事件出口：父运行仍在收集时走 eventChannel（原链路）；
+     * 父运行已结束（通道关闭）后经 [backgroundEventForwarder] 继续送达 UI——
+     * 后台子代理不随主 Agent 的回复/停止而停止，卡片必须持续更新直到任务终态。
+     */
+    private fun emitSubagentCardEvent(event: RealtimeEvent) {
+        if (!eventChannel.isClosedForSend && eventChannel.trySend(event).isSuccess) return
+        backgroundEventForwarder?.invoke(event)
     }
 
     // HookExecutor 事件由 ChatViewModel 直接收集（connectLocalHookEvents），
@@ -1956,6 +1977,10 @@ internal class LocalPipelineCallbacks(
             status = SubagentTaskStatus.KILLED,
             error = "已被父会话通过 subagent_kill 终止"
         )
+        // 被终止的任务进入终态：它未消费的子任务完成通知向上转发，不留在死队列里。
+        runCatching {
+            forwardUndeliveredSubagentTaskNotices(SubagentTaskStore.get(id) ?: task)
+        }
         return mapOf(
             "success" to true,
             "task_id" to id,
@@ -1971,6 +1996,11 @@ internal class LocalPipelineCallbacks(
         prompt: String,
         maxToolIterations: Int
     ) {
+        // 后台任务可能在父会话生成结束后才完成：用独立槽位保活前台服务，
+        // 避免进程在任务运行期间被回收（父会话自己的槽位由 chatWithPipeline 管理，互不干扰）。
+        com.nekobot.app.ServiceContainer.appContext?.let { context ->
+            runCatching { com.nekobot.app.service.AgentForegroundService.acquireBackgroundTask(context, session.id) }
+        }
         val job = kotlinx.coroutines.GlobalScope.launch(
             kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
         ) {
@@ -2006,9 +2036,19 @@ internal class LocalPipelineCallbacks(
             } catch (e: Exception) {
                 SubagentTaskStore.update(id = taskId, status = SubagentTaskStatus.FAILED, error = e.message)
             } finally {
-                // 释放并发额度，并把完成情况通知给父会话（父会话可能仍在循环中或已空闲）。
+                // 释放并发额度，并把完成情况通知给父级（父任务仍在运行→父任务队列；
+                // 否则→会话级通知，空闲会话会被唤醒）。
                 SubagentConcurrency.release()
-                runCatching { notifyParentOfBackgroundSubagent(task) }
+                com.nekobot.app.ServiceContainer.appContext?.let { context ->
+                    runCatching {
+                        com.nekobot.app.service.AgentForegroundService.releaseBackgroundTask(context, session.id)
+                    }
+                }
+                runCatching {
+                    val latest = SubagentTaskStore.get(task.id) ?: task
+                    forwardUndeliveredSubagentTaskNotices(latest)
+                    routeSubagentCompletionNotice(session.id, latest)
+                }
             }
         }
         // 登记运行句柄，供 subagent_kill 精确终止该任务（协程结束时自动注销）。
@@ -2017,26 +2057,14 @@ internal class LocalPipelineCallbacks(
     }
 
     /**
-     * 后台子代理结束后给父会话写明一条系统通知。
+     * 后台子代理结束后给父级发系统通知（按嵌套层级路由，见 [routeSubagentCompletionNotice]）。
      *
-     * 通知只带摘要，完整结果仍在 [SubagentTaskStore]；模型可以在下一轮直接基于摘要回答，
+     * 通知只带摘要，完整结果仍在 [SubagentTaskStore]；父级可以在下一轮直接基于摘要回答，
      * 不必再花一次工具轮次轮询，也不会因为"不知道任务已完成"而重复委派。
      */
     private fun notifyParentOfBackgroundSubagent(task: SubagentTask) {
         val latest = SubagentTaskStore.get(task.id) ?: task
-        val status = latest.status.name.lowercase()
-        val body = if (latest.status == SubagentTaskStatus.SUCCEEDED) {
-            val summary = latest.result.trim().take(2_000)
-            if (summary.isBlank()) "任务已完成，但没有返回内容。" else "结果摘要：\n$summary"
-        } else {
-            "失败原因：${latest.error?.take(500)?.takeIf { it.isNotBlank() } ?: "未知错误"}"
-        }
-        AgentNoticeBus.publish(
-            session.id,
-            "[系统通知] 后台子代理任务已结束：${latest.description}" +
-                "（task_id=${latest.id}，状态=$status）\n$body\n" +
-                "如需完整结果可用 subagent_get(task_id=${latest.id}) 读取，不要重复委派同一任务。"
-        )
+        routeSubagentCompletionNotice(session.id, latest)
     }
 
     /** 前台运行：同步执行并返回结果，供父模型在本次工具调用内拿到结论。 */
@@ -2070,6 +2098,10 @@ internal class LocalPipelineCallbacks(
                 modelUsed = result.modelName,
                 toolCalls = result.toolCalls
             )
+            // 前台子代理同样可能委派过后台子任务：进入终态后把未消费的子任务通知向上转发。
+            runCatching {
+                forwardUndeliveredSubagentTaskNotices(SubagentTaskStore.get(taskId) ?: task)
+            }
             mapOf(
                 "success" to (result.status == SubagentTaskStatus.SUCCEEDED),
                 "task_id" to taskId,
@@ -2105,7 +2137,8 @@ internal class LocalPipelineCallbacks(
                 timestamp = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
                 parentMessageId = parentMessageId
             )
-            emitEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
+            emitSubagentCardEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
+            runCatching { onSubagentThinkingCard?.invoke(card) }
         }
     }
 
@@ -2137,7 +2170,8 @@ internal class LocalPipelineCallbacks(
             timestamp = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
             parentMessageId = parentMessageId
         )
-        emitEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
+        emitSubagentCardEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
+        runCatching { onSubagentThinkingCard?.invoke(card) }
     }
 
     /** 子代理"正在输出最终结论文本"的进行中占位步骤。 */

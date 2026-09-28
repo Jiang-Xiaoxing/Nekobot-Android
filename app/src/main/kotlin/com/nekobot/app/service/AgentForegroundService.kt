@@ -28,6 +28,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Agent 执行期间的前台保活服务。
@@ -312,6 +314,36 @@ class AgentForegroundService : Service() {
                         .setAction(ACTION_RELEASE)
                         .putExtra(EXTRA_SESSION_ID, AUTOMATION_SLOT)
                 )
+            }
+        }
+
+        /**
+         * 后台任务（后台子代理 / 后台 shell 命令）专用槽位，按会话引用计数。
+         *
+         * 这些任务的生命周期超出父会话的生成过程：父会话结束后它们仍在独立协程里运行，
+         * 若此时前台服务停掉，进程可能被回收、任务随之丢失。槽位 key 与会话 id 不同，
+         * 因此父会话的 release 不会误删这里的占用；同一会话的多个后台任务共享一个槽位，
+         * 最后一个任务结束（或进程被杀重启后无遗留）时才释放。
+         */
+        private const val BACKGROUND_TASK_SLOT_PREFIX = "background_task:"
+        private val backgroundTaskCounts = ConcurrentHashMap<String, AtomicInteger>()
+
+        /** 后台任务开始：占用该会话的后台任务槽位保活。同会话多次开始只占一次。 */
+        fun acquireBackgroundTask(context: Context, sessionId: String) {
+            if (sessionId.isBlank()) return
+            val count = backgroundTaskCounts.computeIfAbsent(sessionId) { AtomicInteger() }
+            if (count.incrementAndGet() == 1) {
+                acquire(context, BACKGROUND_TASK_SLOT_PREFIX + sessionId)
+            }
+        }
+
+        /** 后台任务结束：递减引用计数；归零后释放槽位。 */
+        fun releaseBackgroundTask(context: Context, sessionId: String) {
+            if (sessionId.isBlank()) return
+            val count = backgroundTaskCounts[sessionId] ?: return
+            if (count.decrementAndGet() <= 0) {
+                backgroundTaskCounts.remove(sessionId)
+                release(context, BACKGROUND_TASK_SLOT_PREFIX + sessionId)
             }
         }
     }

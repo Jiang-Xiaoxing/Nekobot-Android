@@ -296,6 +296,8 @@
     <string name="agent_settings_subagent_max_tool_calls_desc">Maximum tool-call iterations allowed inside a single subagent (1–500, default %1$d).</string>
     <string name="agent_settings_subagent_default_background">Default to Background</string>
     <string name="agent_settings_subagent_default_background_desc">Whether a subagent runs in the background by default (returns a task id) when the AI does not explicitly set run_in_background.</string>
+    <string name="agent_settings_wake_on_notice">Wake on task completion</string>
+    <string name="agent_settings_wake_on_notice_desc">When a background task finishes and the session is idle, automatically start a new run to report the result.</string>
     <string name="agent_settings_group_limits">Output &amp; preview truncation</string>
     <string name="agent_settings_tool_output_chars">Tool output character limit</string>
     <string name="agent_settings_tool_output_chars_desc">One shared return limit for every content-reading tool (file_read, web_fetch, http_get, exec_command, browser_use, plugin_use, clipboard): %1$d–%2$d, default %3$d. It is also a hard cap — a model-supplied max_chars can only be smaller.</string>

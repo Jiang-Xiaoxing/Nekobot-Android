@@ -742,6 +742,75 @@ class ChatViewModel : BaseViewModel() {
             // 本地模式：收集 HookExecutor 事件流（hook 触发通知）
             // 独立于 localChatJob，避免阻塞聊天 flow 的 coroutineScope
             connectLocalHookEvents()
+            // 收集后台任务唤醒运行的事件流：会话空闲时收到后台任务通知会自动开一轮
+            // 新的 Agent 运行（见 LocalRepository），这里接管其渲染。
+            connectAgentWakeEvents()
+        }
+    }
+
+    /** 唤醒运行的事件采集 Job（viewModelScope：随页面销毁取消，不捕获泄漏） */
+    private var wakeEventsJob: kotlinx.coroutines.Job? = null
+    /** 是否正在接管一轮唤醒运行（无对应 localChatJob，StreamEnd 需自行释放发送状态） */
+    private var adoptingWakeRun = false
+
+    private fun connectAgentWakeEvents() {
+        if (wakeEventsJob?.isActive == true) return
+        wakeEventsJob = viewModelScope.launch {
+            com.nekobot.app.ServiceContainer.localRepository.agentWakeEvents.collect { event ->
+                val target = event.targetSessionId()
+                // 唤醒事件已统一携带会话 id；不属于当前会话的（其他会话被唤醒）不渲染。
+                if (target != null && target != currentSessionId) return@collect
+                adoptAgentWakeEvent(event)
+            }
+        }
+    }
+
+    /**
+     * 把唤醒运行的事件合并进聊天界面。
+     *
+     * 与用户发起的生成共用 handleRealtimeEvent 渲染；区别是没有对应的 localChatJob：
+     * - 用户自己发起的生成进行中时直接忽略唤醒事件，避免两路流式状态互相污染；
+     * - 唤醒运行可能早于本页创建（晚接入），首个流式事件前补一条 StreamStart 占位；
+     * - StreamEnd 后需显式释放发送状态（没有 Job completion 兜底）。
+     */
+    private fun adoptAgentWakeEvent(event: RealtimeEvent) {
+        if (runtime.hasBlockingLocalChatJob()) return
+        when (event) {
+            is RealtimeEvent.ThinkingCardUpdate -> {
+                // 后台子代理的进度卡片：主 Agent 已回复/被停止后仍要持续更新到任务终态。
+                // 不走 handleRealtimeEvent——generationStopRequested 会拦下停止后的事件；
+                // 也不建流式占位——卡片按 parentMessageId/orphan 规则挂到消息上独立渲染。
+                if (shouldApplyThinkingCardUpdate(_session.value?.sessionMode, event.card.isAgent)) {
+                    applyThinkingCardUpdate(event.card)
+                }
+            }
+            is RealtimeEvent.StreamStart -> {
+                adoptingWakeRun = true
+                handleRealtimeEvent(event)
+            }
+            is RealtimeEvent.StreamChunk,
+            is RealtimeEvent.ReasoningChunk -> {
+                if (!adoptingWakeRun) {
+                    adoptingWakeRun = true
+                    handleRealtimeEvent(RealtimeEvent.StreamStart(currentSessionId))
+                }
+                handleRealtimeEvent(event)
+            }
+            is RealtimeEvent.StreamEnd -> {
+                handleRealtimeEvent(event)
+                if (adoptingWakeRun) {
+                    adoptingWakeRun = false
+                    _sending.value = false
+                }
+            }
+            is RealtimeEvent.Error -> {
+                handleRealtimeEvent(event)
+                if (adoptingWakeRun) {
+                    adoptingWakeRun = false
+                    _sending.value = false
+                }
+            }
+            else -> handleRealtimeEvent(event)
         }
     }
 

@@ -125,6 +125,8 @@ internal object SubagentRunner {
         )
 
         // 子代理模型调用仍走与主会话相同的故障转移队列。
+        // pendingUserMessages：嵌套场景下，它委派的后台子任务完成通知在下一轮模型
+        // 调用前注入（SubagentTaskNoticeBus 按任务 id 隔离），父任务无需轮询即可拿到结果。
         val session = ToolLoopSession(
             initialMessages = messages,
             modelCall = delegate.buildModelCall(),
@@ -132,7 +134,7 @@ internal object SubagentRunner {
             maxIterations = maxToolIterations,
             maxConsecutiveErrors = 3,
             shouldStop = shouldStop,
-            pendingUserMessages = { emptyList() },
+            pendingUserMessages = { SubagentTaskNoticeBus.drain(taskId).filter(String::isNotBlank) },
             hooks = hooks,
             contextBudgetTokens = { contextBudgetTokens }
         )
@@ -161,6 +163,17 @@ internal object SubagentRunner {
                     toolCalls = loop.iterations.coerceAtMost(maxToolIterations)
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 任务被终止（subagent_kill / 协程取消）：补发终态卡片并返回 KILLED，
+            // 不向上抛出——后台清理（通知路由/额度释放）仍要完整执行。
+            LocalLogger.i(TAG, "子代理被终止: ${e.message}")
+            stepSink.finish(SubagentTaskStatus.KILLED)
+            onProgress?.invoke(stepSink.header(), true, stepSink.steps())
+            SubagentRunResult(
+                content = "",
+                error = "子代理执行已终止",
+                status = SubagentTaskStatus.KILLED
+            )
         } catch (e: ToolLoopModelError) {
             LocalLogger.w(TAG, "子代理模型循环失败（iteration=${e.iteration}）: ${e.message}")
             stepSink.finish(SubagentTaskStatus.FAILED)

@@ -299,6 +299,16 @@ class PrefsManager(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_SUBAGENT_DEFAULT_BACKGROUND, value).apply()
 
     /**
+     * 后台任务（后台子代理 / 后台命令）完成时是否自动唤醒空闲会话，默认开启。
+     *
+     * 唤醒 = 会话空闲时收到后台任务通知，自动开一轮新的 Agent 运行处理通知并汇报结果；
+     * 关闭后回退为旧行为：通知仅在会话运行中插队注入，空闲时等用户下次发消息。
+     */
+    var agentWakeOnNotice: Boolean
+        get() = prefs.getBoolean(KEY_AGENT_WAKE_ON_NOTICE, true)
+        set(value) = prefs.edit().putBoolean(KEY_AGENT_WAKE_ON_NOTICE, value).apply()
+
+    /**
      * Agent 网络访问总开关，默认开启。
      *
      * 本地 Linux 沙盒（PRoot）无法真正隔离网络，因此在策略层兜底：关闭后联网类工具
@@ -1277,6 +1287,7 @@ class PrefsManager(context: Context) {
         private const val KEY_SUBAGENT_MAX_DEPTH = "subagent_max_depth"
         private const val KEY_SUBAGENT_MAX_TOOL_CALLS = "subagent_max_tool_calls"
         private const val KEY_SUBAGENT_DEFAULT_BACKGROUND = "subagent_default_background"
+        private const val KEY_AGENT_WAKE_ON_NOTICE = "agent_wake_on_notice"
         private const val KEY_AGENT_NETWORK_ACCESS = "agent_network_access_enabled"
         private const val KEY_AGENT_ACCESSIBILITY_EXCLUDED = "agent_accessibility_excluded_packages"
         private const val KEY_AGENT_AUTO_MEMORY = "agent_auto_memory_enabled"

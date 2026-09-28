@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -341,6 +342,24 @@ fun AgentSettingsScreen(
                             onCheckedChange = {
                                 defaultBackground = it
                                 ServiceContainer.prefs.subagentDefaultBackground = it
+                            }
+                        )
+                    }
+                )
+                var wakeOnNotice by remember {
+                    mutableStateOf(ServiceContainer.prefs.agentWakeOnNotice)
+                }
+                AgentSettingRow(
+                    icon = Icons.Filled.NotificationsActive,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    title = stringResource(R.string.agent_settings_wake_on_notice),
+                    desc = stringResource(R.string.agent_settings_wake_on_notice_desc),
+                    trailing = {
+                        Switch(
+                            checked = wakeOnNotice,
+                            onCheckedChange = {
+                                wakeOnNotice = it
+                                ServiceContainer.prefs.agentWakeOnNotice = it
                             }
                         )
                     }
