@@ -138,6 +138,8 @@ class SessionDetailViewModel : BaseViewModel() {
     val inheritCharacter = MutableStateFlow(false)
     /** 继承角色能力时是否使用角色卡开场白。 */
     val inheritCharacterGreeting = MutableStateFlow(false)
+    /** 可选：长期同一条 Agent 会话的原话、经历档案与回查。 */
+    val longConversationEnabled = MutableStateFlow(false)
     // TTS / 主动聊天 / 公开分享
     val ttsEnabled = MutableStateFlow(false)
     val ttsModelId = MutableStateFlow("")
@@ -311,6 +313,7 @@ class SessionDetailViewModel : BaseViewModel() {
                 userPersona.value = s.userPersona ?: ""
                 inheritCharacter.value = s.inheritCharacter == true
                 inheritCharacterGreeting.value = s.inheritCharacterGreeting == true
+                longConversationEnabled.value = s.longConversationEnabled == true
                 // 解析 TTS / 主动聊天 / 公开分享
                 android.util.Log.d("SessionDetail", "load: s.isPublic=${s.isPublic}, s.ttsConfig=${s.ttsConfig}, s.shareConfig=${s.shareConfig}")
                 isPublic.value = false
@@ -495,7 +498,8 @@ class SessionDetailViewModel : BaseViewModel() {
                         ttsConfig = ttsJson,
                         inheritCharacter = inheritCharacter.value,
                         // 继承开关关闭时同时关闭开场白，避免留下无意义的残留状态。
-                        inheritCharacterGreeting = inheritCharacter.value && inheritCharacterGreeting.value
+                        inheritCharacterGreeting = inheritCharacter.value && inheritCharacterGreeting.value,
+                        longConversationEnabled = inheritCharacter.value && longConversationEnabled.value
                     )
                 )
             },
@@ -743,7 +747,8 @@ data class PromptStackItem(
 @Composable
 fun SessionDetailScreen(
     sessionId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenExperienceArchive: (String) -> Unit = {}
 ) {
     val vm: SessionDetailViewModel = viewModel(key = "session_detail_$sessionId")
     val session by vm.session.collectAsStateWithLifecycle()
@@ -761,6 +766,7 @@ fun SessionDetailScreen(
     val userPersona by vm.userPersona.collectAsStateWithLifecycle()
     val inheritCharacter by vm.inheritCharacter.collectAsStateWithLifecycle()
     val inheritCharacterGreeting by vm.inheritCharacterGreeting.collectAsStateWithLifecycle()
+    val longConversationEnabled by vm.longConversationEnabled.collectAsStateWithLifecycle()
     val ttsEnabled by vm.ttsEnabled.collectAsStateWithLifecycle()
     val ttsModelId by vm.ttsModelId.collectAsStateWithLifecycle()
     val ttsVoice by vm.ttsVoice.collectAsStateWithLifecycle()
@@ -794,6 +800,10 @@ fun SessionDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showBindCharacterDialog by remember { mutableStateOf(false) }
+    var showLongConversationConfirm by remember { mutableStateOf(false) }
+    var longConversationCost by remember(sessionId) {
+        mutableStateOf<com.nekobot.app.data.local.ExperienceBackfillInfo?>(null)
+    }
     var selectedPromptStackItem by remember { mutableStateOf<PromptStackItem?>(null) }
 
     LaunchedEffect(toast) {
@@ -862,6 +872,10 @@ fun SessionDetailScreen(
     val inheritCharacterOff = stringResource(R.string.sessions_detail_inherit_character_off)
     val inheritGreetingOn = stringResource(R.string.sessions_detail_inherit_greeting_on)
     val inheritGreetingOff = stringResource(R.string.sessions_detail_inherit_greeting_off)
+    val longConversationTitle = stringResource(R.string.sessions_detail_long_conversation)
+    val longConversationDesc = stringResource(R.string.sessions_detail_long_conversation_desc)
+    val longConversationOn = stringResource(R.string.sessions_detail_long_conversation_on)
+    val longConversationOff = stringResource(R.string.sessions_detail_long_conversation_off)
     val runtimeStateTitle = stringResource(R.string.sessions_detail_runtime_state)
     val moodLabel = stringResource(R.string.sessions_detail_mood)
     val intensityLabel = stringResource(R.string.sessions_detail_intensity)
@@ -936,7 +950,14 @@ fun SessionDetailScreen(
     val cancelText = stringResource(R.string.common_cancel)
     val okText = stringResource(R.string.common_ok)
 
-    LaunchedEffect(sessionId) { vm.init(sessionId) }
+    LaunchedEffect(sessionId) {
+        vm.init(sessionId)
+        if (com.nekobot.app.ServiceContainer.prefs.isLocalMode) {
+            longConversationCost = runCatching {
+                com.nekobot.app.ServiceContainer.localRepository.experienceBackfillInfo(sessionId)
+            }.getOrNull()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -1254,6 +1275,35 @@ fun SessionDetailScreen(
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     )
+                                    Spacer(Modifier.height(12.dp))
+                                    SectionHeader(title = longConversationTitle)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        longConversationDesc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    ToggleChipRow(
+                                        label = if (longConversationEnabled) longConversationOn else longConversationOff,
+                                        selected = longConversationEnabled,
+                                        onClick = {
+                                            if (longConversationEnabled) vm.longConversationEnabled.value = false
+                                            else showLongConversationConfirm = true
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    if (longConversationEnabled) {
+                                        Spacer(Modifier.height(8.dp))
+                                        OutlinedButton(
+                                            onClick = { onOpenExperienceArchive(sessionId) },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(Icons.Filled.Book, contentDescription = null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(stringResource(R.string.sessions_detail_experience_archives))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1695,6 +1745,28 @@ fun SessionDetailScreen(
                 showDeleteDialog = false
                 vm.delete(onBack)
             }
+        )
+    }
+
+    if (showLongConversationConfirm) {
+        NekoDialog(
+            onDismiss = { showLongConversationConfirm = false },
+            title = stringResource(R.string.sessions_long_conversation_cost_title),
+            message = stringResource(
+                R.string.sessions_long_conversation_cost_notice,
+                longConversationCost?.modelName ?: stringResource(R.string.experience_backfill_unknown),
+                longConversationCost?.inputPricePerMillionUsd?.toString()
+                    ?: stringResource(R.string.experience_backfill_unknown),
+                longConversationCost?.outputPricePerMillionUsd?.toString()
+                    ?: stringResource(R.string.experience_backfill_unknown)
+            ),
+            confirmText = stringResource(R.string.sessions_long_conversation_cost_confirm),
+            cancelText = stringResource(R.string.common_cancel),
+            onConfirm = {
+                vm.longConversationEnabled.value = true
+                showLongConversationConfirm = false
+            },
+            onCancel = { showLongConversationConfirm = false }
         )
     }
 

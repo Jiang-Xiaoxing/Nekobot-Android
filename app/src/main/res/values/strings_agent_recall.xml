@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tool_name_agent_recall_search">查找角色记忆和经历</string>
+    <string name="tool_name_agent_history_search">搜索会话原话</string>
+    <string name="tool_name_agent_history_read">读取会话原话</string>
+    <string name="tool_desc_agent_recall_search">同时查询当前角色记忆与此会话的经历档案，只返回少量相关线索。</string>
+    <string name="tool_desc_agent_history_search">按关键词搜索此会话可见的聊天原话。</string>
+    <string name="tool_desc_agent_history_read">按消息 ID 读取原话及邻近消息，超长内容可分段续读。</string>
+    <string name="experience_backfill_title">旧聊天经历补建</string>
+    <string name="experience_backfill_hint">已有聊天不会自动付费整理；原话现在就可按需搜索。需要分段摘要时，请先确认费用再主动补建。</string>
+    <string name="experience_backfill_progress">%1$s · %2$d/%3$d 条消息 · 新建 %4$d 份</string>
+    <string name="experience_backfill_pause">暂停整理</string>
+    <string name="experience_backfill_resume">继续整理</string>
+    <string name="experience_backfill_start">补建旧档案</string>
+    <string name="experience_backfill_confirm_title">确认可能产生的模型费用</string>
+    <string name="experience_backfill_confirm">我已了解，开始补建</string>
+    <string name="experience_backfill_unknown">未知</string>
+    <string name="experience_backfill_cost_notice">当前会话约 %1$d 条可见消息。参考模型：%2$s。参考单价：输入 %3$s 美元/百万 token，输出 %4$s 美元/百万 token。补建会调用模型并可能产生费用；总费用无法准确预估，智能路由或故障转移也可能更换模型和单价。只有确认后才开始，可随时暂停。</string>
+    <string name="experience_history_copy_title">原话工作区副本</string>
+    <string name="experience_history_copy_hint">手动把当前会话原话导出为有界分块，方便查看；数据库仍是唯一原件。原话改变后旧副本会失效，需重新建立。不调用模型。</string>
+    <string name="experience_history_copy_progress">已读取 %1$d 条</string>
+    <string name="experience_history_copy_rebuild">重建原话副本</string>
+    <string name="experience_history_copy_done">原话副本已重建，共 %1$d 条</string>
+    <string name="experience_history_copy_failed">原话副本重建失败</string>
+    <string name="sessions_long_conversation_cost_title">开启长期单会话前确认费用</string>
+    <string name="sessions_long_conversation_cost_notice">开启后，未来的新聊天达到上下文压缩阈值时，会额外调用模型生成分段经历档案（一次最多 4 段，必要时再压缩一次摘要），消耗 token 并可能收费。现有旧聊天不会自动付费补建。当前参考模型：%1$s；参考单价：输入 %2$s、输出 %3$s 美元/百万 token。总费用无法预估，智能路由或故障转移可能改变模型与单价。确认后还需保存本页设置。</string>
+    <string name="sessions_long_conversation_cost_confirm">了解费用，开启</string>
+</resources>

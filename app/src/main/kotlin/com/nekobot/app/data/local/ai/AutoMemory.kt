@@ -195,7 +195,14 @@ class AutoMemory(
             when {
                 isSingleSlotMemoryCategory(category) -> {
                     // 玩家人格和近期摘要都是单槽记忆；忽略 LLM 的 append，始终只保留最新一条。
-                    val entity = memoryToEntityWithPath(memory, characterId, targetId, path, convId, now, version = 1)
+                    val generated = memoryToEntityWithPath(memory, characterId, targetId, path, convId, now, version = 1)
+                    val manualTags = memoryDao.listByCategory(characterId, targetId, category, 1)
+                        .firstOrNull { it.tagsEdited }
+                    val entity = if (manualTags != null) {
+                        generated.copy(tagsJson = manualTags.tagsJson, tagsEdited = true)
+                    } else {
+                        generated
+                    }
                     memoryDao.replaceByCharacterTargetAndCategory(entity)
                     saved++
                 }
@@ -210,9 +217,9 @@ class AutoMemory(
                 }
                 category == "character_persona" -> {
                     if (action == "replace") {
-                        // LLM 决定 replace：删除同 path 旧值，插入新值
-                        memoryDao.deleteByPath(path)
-                        val entity = memoryToEntityWithPath(memory, characterId, targetId, path, convId, now, version = 1)
+                        // 人工标签和来源属于原记录；自动 replace 只能清除未人工标注的旧值。
+                        memoryDao.deleteGeneratedByPath(path)
+                        val entity = memoryToEntityWithPath(memory, characterId, targetId, path, convId, now, version = nextVersionForPath(path))
                         memoryDao.upsert(entity)
                     } else {
                         // append：累积到同 path，trim 保留最新 N 条
@@ -244,7 +251,7 @@ class AutoMemory(
         memoryDao.trimByPath(eventsPath, keep = MAX_EVENTS_PER_CONVERSATION)
 
         // character_persona 仍可 append，保留最新 10 条；user_persona 已在写入时原子替换为 1 条。
-        memoryDao.trimByPath(buildMemoryPath("character_persona", characterId, targetId, convId), keep = MAX_ENTRIES_PER_PATH)
+        memoryDao.trimGeneratedByPath(buildMemoryPath("character_persona", characterId, targetId, convId), keep = MAX_ENTRIES_PER_PATH)
 
         return saved
     }
@@ -309,7 +316,9 @@ class AutoMemory(
             memoryPath = buildMemoryPath("timeline", characterId, "timeline", conversationId),
             version = 1,
             updatedAt = now,
-            conversationId = conversationId
+            conversationId = conversationId,
+            tagsJson = MemoryTags.toJson((memory["tags"] as? List<*>) ?: emptyList<String>()),
+            sourceSessionId = conversationId.takeUnless { it == "general" }
         )
     }
 
@@ -338,7 +347,9 @@ class AutoMemory(
             memoryPath = path,
             version = version,
             updatedAt = now,
-            conversationId = conversationId
+            conversationId = conversationId,
+            tagsJson = MemoryTags.toJson((memory["tags"] as? List<*>) ?: emptyList<String>()),
+            sourceSessionId = conversationId.takeUnless { it == "general" }
         )
     }
 
@@ -476,7 +487,7 @@ $personaSection
 4. "recent_digest" — 本轮对话的摘要（一两句话概括发生了什么）
 
 每个记忆条目格式：
-{"category":"类别", "action":"append或replace", "title":"简短标题", "summary":"一句话摘要", "content":"详细内容", "importance":0.0-1.0}
+{"category":"类别", "action":"append或replace", "title":"简短标题", "summary":"一句话摘要", "content":"详细内容", "importance":0.0-1.0, "tags":["主题标签"]}
 
 action 字段说明：
 - "append"：新增一条记忆（适用于全新的信息、新发生的事件）
@@ -495,6 +506,7 @@ action 决策规则：
 - 尽量覆盖前 4 个类别，每类 1 条（重要的可多条）
 - 写摘要不写原始对话转录
 - importance 根据信息重要性评估（0.0-1.0）
+- tags 只写 2–5 个简短主题词，确实没有合适标签可返回空数组；不要把日期当作标签
 - 所有字段用${AiOutputLanguage.languageName()}
 
 ${AiOutputLanguage.directive()}
@@ -631,7 +643,8 @@ ${AiOutputLanguage.directive()}
             "summary" to summary.take(200),
             "content" to content.take(2000),
             "importance" to importance,
-            "type" to "long"
+            "type" to "long",
+            "tags" to MemoryTags.normalizeGenerated((item["tags"] as? List<*>) ?: emptyList<String>())
         )
     }
 
@@ -675,7 +688,8 @@ ${AiOutputLanguage.directive()}
             summary = (memory["summary"] as? String) ?: "",
             content = (memory["content"] as? String) ?: "",
             importance = importance.toInt().coerceIn(1, 10),
-            createdAt = Instant.now().toString()
+            createdAt = Instant.now().toString(),
+            tagsJson = MemoryTags.toJson((memory["tags"] as? List<*>) ?: emptyList<String>())
         )
     }
 }

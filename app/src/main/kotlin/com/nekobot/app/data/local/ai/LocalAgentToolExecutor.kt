@@ -60,6 +60,9 @@ internal val localExecutableToolIds = setOf(
     "workspace_file_info",
     "agent_memory_read",
     "agent_memory_update",
+    "agent_recall_search",
+    "agent_history_search",
+    "agent_history_read",
     "android_device_info",
     "android_battery_status",
     "android_clipboard_read",
@@ -98,13 +101,15 @@ internal val localSkillToolIds = setOf(
 )
 
 /** 将本地真正可执行的内置工具转换为 OpenAI function-calling 定义。 */
-internal fun buildLocalAgentToolDefinitions(): List<Map<String, Any>> {
+internal fun buildLocalAgentToolDefinitions(recallEnabled: Boolean = false): List<Map<String, Any>> {
     val gson = Gson()
     // 描述里的字符数不再写死：统一由「设置 → Agent 设置 → 工具输出截断字符数」决定，
     // 这里把当前生效值注入定义，避免模型按已经过时的数字行动。
     val outputLimit = AgentToolLimits.toolOutputChars()
-    return BuiltinTools.all
-        .filter { it.enabled && it.id in localExecutableToolIds }
+    // 回查工具的定义只随 recallEnabled 注入（见下方 append），这里必须排除 BuiltinTools 里的同名定义，
+    // 否则未开启长期记忆的会话也会看到并调用它们。
+    val builtins = BuiltinTools.all
+        .filter { it.enabled && it.id in localExecutableToolIds && it.id !in agentRecallToolIds }
         .map { spec ->
             @Suppress("UNCHECKED_CAST")
             val parsed = runCatching {
@@ -126,6 +131,7 @@ internal fun buildLocalAgentToolDefinitions(): List<Map<String, Any>> {
                 )
             )
         }
+    return if (recallEnabled) builtins + buildAgentRecallToolDefinitions() else builtins
 }
 
 /** 接受 `max_chars` 参数的工具：这些工具的长度上限统一由设置决定。 */
@@ -238,6 +244,8 @@ internal class LocalAgentToolExecutor(
     sharedWorkspaceRoot: File? = null,
     private val globalAgentMemoryStore: GlobalAgentMemoryStore? =
         runCatching { ServiceContainer.globalAgentMemory }.getOrNull(),
+    /** Database-backed retrieval for the current long-conversation Agent session. */
+    private val recallReader: AgentRecallReader? = null,
     /**
      * 任务列表更新回调（todo_write 工具）：把解析后的任务列表交给管线
      * 持久化到会话实体并推送 AgentTodosUpdated 事件刷新 UI。
@@ -303,6 +311,9 @@ internal class LocalAgentToolExecutor(
             onInstallConfirmationRequired = onPluginInstallConfirmationRequired
         )
     }
+    private val recallTool by lazy {
+        recallReader?.let { AgentRecallToolHandler(sessionId, it) }
+    }
 
     suspend fun execute(toolName: String, args: Map<String, Any>): Map<String, Any> {
         if (generationController.isStopped) return stoppedFailure()
@@ -343,6 +354,9 @@ internal class LocalAgentToolExecutor(
                 "workspace_file_info" -> workspaceFileInfo(args)
                 "agent_memory_read" -> readGlobalAgentMemory()
                 "agent_memory_update" -> updateGlobalAgentMemory(args)
+                "agent_recall_search", "agent_history_search", "agent_history_read" ->
+                    recallTool?.execute(toolName, args)
+                        ?: failure("当前会话未开启长期记忆回查")
                 "android_step" -> androidStep(args)
                 "android_screenshot" -> attachScreenshotToResult(androidToolExecutor.execute(toolName, args))
                 "android_device_info",

@@ -97,7 +97,10 @@ object SessionToolCatalog {
             id = "memory",
             toolIds = listOf(
                 "agent_memory_read",
-                "agent_memory_update"
+                "agent_memory_update",
+                "agent_recall_search",
+                "agent_history_search",
+                "agent_history_read"
             )
         ),
         // 任务与提问

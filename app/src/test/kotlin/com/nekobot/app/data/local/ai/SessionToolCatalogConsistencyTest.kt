@@ -34,7 +34,7 @@ class SessionToolCatalogConsistencyTest {
 
     @Test
     fun `可执行工具都有 function-calling 定义`() {
-        val definedIds = buildLocalAgentToolDefinitions()
+        val definedIds = buildLocalAgentToolDefinitions(recallEnabled = true)
             .mapNotNull { toolNameOf(it) }
             .toSet()
         val missing = localExecutableToolIds - definedIds
@@ -68,7 +68,7 @@ class SessionToolCatalogConsistencyTest {
 
     @Test
     fun `内置工具定义都带必填参数与合法 schema`() {
-        buildLocalAgentToolDefinitions().forEach { definition ->
+        buildLocalAgentToolDefinitions(recallEnabled = true).forEach { definition ->
             val function = definition["function"] as Map<*, *>
             val name = function["name"]
             assertTrue("工具定义缺少名称", name is String && name.isNotBlank())
@@ -83,6 +83,20 @@ class SessionToolCatalogConsistencyTest {
         val toolId = "mcp__deadbeef__search_docs"
         assertEquals(SessionToolCatalog.MCP_CATEGORY_ID, SessionToolCatalog.categoryIdOf(toolId))
         assertTrue("MCP 工具必须受会话工具集管辖", SessionToolCatalog.isManagedTool(toolId))
+    }
+
+    /**
+     * 工具界面（ToolsScreen）只显示 `BuiltinTools` 同步进数据库的工具，回查工具必须登记；
+     * 同时开启长期记忆时不能因为登记而重复注入定义。
+     */
+    @Test
+    fun `长期记忆回查工具登记进工具界面定义且不重复注入`() {
+        val builtinIds = BuiltinTools.all.map { it.id }.toSet()
+        val missing = agentRecallToolIds - builtinIds
+        assertTrue("BuiltinTools 缺少回查工具，工具界面无法显示: $missing", missing.isEmpty())
+
+        val names = buildLocalAgentToolDefinitions(recallEnabled = true).mapNotNull { toolNameOf(it) }
+        assertEquals("回查工具不应重复注入定义", names.size, names.toSet().size)
     }
 
     @Test

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_tag_all">全部标签</string>
+    <string name="memory_entries_and_tags">记忆条目与标签</string>
+    <string name="memory_edit_tags">编辑标签</string>
+    <string name="memory_tags_separator_hint">用逗号或换行分隔标签。修改只作用于当前记忆。</string>
+    <string name="memory_tags_saved">标签已保存</string>
+    <string name="memory_tags_missing">这条记忆已不存在，请刷新</string>
+</resources>

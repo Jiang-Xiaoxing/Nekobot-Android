@@ -6,6 +6,7 @@ import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocalImageResult
 import com.nekobot.app.data.local.VISION_FAILURE_MARKER
 import com.nekobot.app.data.local.agentContextWindow
+import com.nekobot.app.data.local.listAgentRowsWithBoundary
 import com.nekobot.app.data.local.isAgentContextSummary
 import com.nekobot.app.data.local.isLocalCommandMessage
 import com.nekobot.app.data.local.shouldInjectWorldBooks
@@ -57,6 +58,8 @@ internal class LocalPipelineCallbacks(
      * 同时作为历史截断点——上下文只取该消息之前的内容，不删除任何落库数据。
      */
     private val variantTargetMessageId: String? = null,
+    /** Production writes variants through the repository so summaries and history copies are invalidated. */
+    private val appendVariantThroughRepository: (suspend (String, String, String?, String?, Int?, Int?, Double?) -> Int)? = null,
     /** 助手消息来源标记；后台主动聊天用 proactive_chat，普通聊天为空。 */
     private val assistantSource: String? = null,
     /** 本地知识库检索入口。 */
@@ -136,6 +139,10 @@ internal class LocalPipelineCallbacks(
      * 子代理复用的 MCP 工具定义清单（与主会话一致）。为空时子代理只获得本地/Skill/数据库工具。
      */
     private val mcpToolDefinitions: List<Map<String, Any>> = emptyList(),
+    /** Optional database-backed retrieval, only available in an opted-in inherited Agent session. */
+    private val recallReader: AgentRecallReader? = null,
+    /** Execution gate must agree with the visible per-session tool set, including queued calls. */
+    private val isSessionToolEnabled: ((String) -> Boolean)? = null,
     /**
      * 会话工具集过滤器：子代理工具清单必须与父会话一样受“Agent 工具集”勾选约束，
      * 否则用户在父会话里关掉的工具会经由子代理重新变得可用。为空时不额外过滤。
@@ -206,6 +213,7 @@ internal class LocalPipelineCallbacks(
             },
             generationController = generationController,
             sharedWorkspaceRoot = sharedWorkspaceRoot,
+            recallReader = recallReader,
             askUserQuestionManager = askUserQuestionManager,
             onAskUserQuestionRequired = { request ->
                 // 与命令授权一致：优先走 LocalRepository SharedFlow（ChatViewModel 始终收集），
@@ -408,12 +416,17 @@ internal class LocalPipelineCallbacks(
     override fun loadMessages(ctx: PipelineContext): List<Map<String, Any>> {
         val isAgentSession = session.sessionMode.equals("agent", ignoreCase = true)
         val history = kotlinx.coroutines.runBlocking {
-            messageDao.listBySession(session.id)
+            if (isAgentSession) messageDao.listAgentRowsWithBoundary(
+                session.id,
+                strictBoundary = session.longConversationEnabled
+            )
+            else messageDao.listBySession(session.id)
         }.let { messages ->
             // swipes：重新生成只截到目标消息之前，被替换的旧回复与其后的历史都保留在库里。
             variantTargetMessageId?.let { targetId ->
                 val targetIndex = messages.indexOfFirst { it.id == targetId }
-                if (targetIndex >= 0) messages.take(targetIndex) else messages
+                if (targetIndex >= 0) messages.take(targetIndex)
+                else error("重新生成目标不在当前安全上下文窗口中")
             } ?: messages
         }.let { messages ->
             if (isAgentSession) messages.agentContextWindow() else messages
@@ -426,11 +439,24 @@ internal class LocalPipelineCallbacks(
             // 角色执行时，最后一条已经是前一名角色回复，会被错误删掉并重复注入用户消息。
             .filterNot { it.id == parentMessageId }
 
-        val contextHistory = if (isAgentSession) {
+        val restoredHistory = if (isAgentSession) {
             addLegacyAgentContextFallback(history)
         } else {
             history
         }
+        // A retained, already completed dialogue turn supplies its visible answer, not the
+        // potentially hundreds of intermediate tool messages folded into that answer row.
+        // The original database row remains untouched for the chat UI and history lookup.
+        val retainedEnd = if (isAgentSession && session.longConversationEnabled) {
+            restoredHistory.indexOfFirst { it.id == session.longConversationTailUntilId }
+        } else -1
+        val contextHistory = if (retainedEnd >= 0) {
+            restoredHistory.mapIndexed { index, row ->
+                if (index <= retainedEnd && !row.isAgentContextSummary()) {
+                    row.copy(toolCallHistory = null, reasoningContent = null)
+                } else row
+            }
+        } else restoredHistory
 
         // 进行中/已中断的一轮：工具消息逐条落库在独立表里，恢复时按行重建完整轨迹。
         // 这些行只在"本轮未正常结束"时存在（正常结束会清空），因此这里读到即代表需要续跑。
@@ -727,7 +753,10 @@ internal class LocalPipelineCallbacks(
             if (variantTargetMessageId != null) {
                 // swipes：本轮回复作为同一条助手消息的新候选落库，消息本体同步切换过去。
                 // 旧回复被备份为候选 0，永不丢失（改造前这里是删除整段历史后新建消息）。
-                val variantTotal = appendAssistantVariant(
+                val variantTotal = appendVariantThroughRepository?.invoke(
+                    variantTargetMessageId, content, reasoningContent, modelName,
+                    inputTokens, outputTokens, durationMs
+                ) ?: appendAssistantVariant(
                     messageId = variantTargetMessageId,
                     content = content,
                     reasoningContent = reasoningContent,
@@ -1495,6 +1524,9 @@ internal class LocalPipelineCallbacks(
         args: Map<String, Any>,
         toolContext: Map<String, Any>
     ): Map<String, Any> {
+        if (toolName in agentRecallToolIds && isSessionToolEnabled?.invoke(toolName) != true) {
+            return mapOf("success" to false, "error" to "当前会话未启用此记忆回查工具")
+        }
         // 策略闸门：网络总开关 + 共享工作区破坏性操作确认。必须在任何执行之前拦截，
         // 否则“删除共享工作区文件/写入共享工作区”会在用户毫不知情的情况下生效。
         enforceToolPolicy(toolName, args)?.let { return it }
@@ -2097,7 +2129,7 @@ internal class LocalPipelineCallbacks(
         // 子代理工具清单与父会话一致（当前会话已启用的本地工具 + MCP + Skill + 数据库工具），
         // 并且必须经过会话工具集过滤：否则用户在父会话关掉的工具会经由子代理重新可用。
         val rawToolDefinitions = mergeSubagentToolDefinitions(
-            buildLocalAgentToolDefinitions() +
+            buildLocalAgentToolDefinitions(recallEnabled = session.longConversationEnabled && session.inheritCharacter) +
                 buildLocalSkillToolDefinitions() +
                 buildLocalDbToolDefinitions() +
                 mcpToolDefinitions

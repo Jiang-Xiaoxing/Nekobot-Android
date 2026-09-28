@@ -131,6 +131,11 @@
     <string name="sessions_detail_inherit_character_desc">Reply in character while keeping all Agent tools; loads the character card, memories, world book, and relationship state.</string>
     <string name="sessions_detail_inherit_character_on">Inherit full character abilities: on</string>
     <string name="sessions_detail_inherit_character_off">Inherit full character abilities: off</string>
+    <string name="sessions_detail_long_conversation">Long conversation memory</string>
+    <string name="sessions_detail_long_conversation_desc">Keep recent dialogue and look up memories, episodes, and original messages. Enabling this will not automatically process old history; building old episodes requires separate cost confirmation.</string>
+    <string name="sessions_detail_long_conversation_on">Long conversation memory: on</string>
+    <string name="sessions_detail_long_conversation_off">Long conversation memory: off</string>
+    <string name="sessions_detail_experience_archives">View experience archives</string>
     <string name="sessions_detail_inherit_greeting_on">Use character greeting: on</string>
     <string name="sessions_detail_inherit_greeting_off">Use character greeting: off</string>
     <string name="sessions_detail_runtime_state">Character runtime state</string>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="experience_archive_title">Experience archives</string>
+    <string name="experience_archive_empty">No experiences yet</string>
+    <string name="experience_archive_empty_hint">Older turns are archived in segments. Processing a large existing history must be started manually.</string>
+    <string name="experience_archive_entries">Experiences in this session</string>
+    <string name="experience_archive_related_memories">Character memories with this tag</string>
+    <string name="experience_archive_load_more">Load more experiences</string>
+    <string name="experience_archive_status">Status: %1$s</string>
+    <string name="experience_archive_ready">Ready to recall</string>
+    <string name="experience_archive_stale">Original chat changed; rebuild needed</string>
+    <string name="experience_archive_processing">Processing</string>
+    <string name="experience_archive_failed">Processing failed</string>
+    <string name="experience_archive_source_range">Source messages: %1$s to %2$s</string>
+    <string name="experience_archive_edit">Edit this experience</string>
+    <string name="experience_archive_summary">Experience summary</string>
+    <string name="experience_archive_tags">Topic tags</string>
+    <string name="experience_archive_saved">Experience saved</string>
+    <string name="experience_archive_missing">This experience is gone. Refresh the list.</string>
+</resources>

@@ -1693,8 +1693,8 @@ class ChatViewModel : BaseViewModel() {
                 return@launch
             }
             repeat(20) {
-                val candidate = when (val result = unified.listMessages(sessionId)) {
-                    is Resource.Success -> findCandidate(result.data)
+                val candidate = when (val result = unified.listRecentMessages(sessionId, 24)) {
+                    is Resource.Success -> findCandidate(result.data.messages)
                     else -> null
                 }
                 if (candidate != null) {
