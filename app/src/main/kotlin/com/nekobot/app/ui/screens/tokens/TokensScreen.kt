@@ -1665,6 +1665,7 @@ private fun purposeLabel(purpose: String): String = when (purpose.lowercase()) {
     "plugin" -> ServiceContainer.getString(R.string.tokens_purpose_plugin)
     "react" -> "ReAct"
     "image_gen" -> ServiceContainer.getString(R.string.tokens_purpose_image_gen)
+    "subagent" -> ServiceContainer.getString(R.string.tokens_purpose_subagent)
     else -> purpose.ifBlank { ServiceContainer.getString(R.string.tokens_purpose_uncategorized) }
 }
 
@@ -1674,7 +1675,7 @@ private fun purposeLabel(purpose: String): String = when (purpose.lowercase()) {
  */
 @Composable
 private fun purposeColor(purpose: String): Color = when (purpose.lowercase()) {
-    "chat", "react" -> MaterialTheme.colorScheme.primary
+    "chat", "react", "subagent" -> MaterialTheme.colorScheme.primary
     "memory", "vision", "video", "embedding" -> MaterialTheme.colorScheme.secondary
     "plot", "decision", "tts", "stt" -> MaterialTheme.colorScheme.tertiary
     "utility", "heartbeat", "image_gen" -> MaterialTheme.colorScheme.error

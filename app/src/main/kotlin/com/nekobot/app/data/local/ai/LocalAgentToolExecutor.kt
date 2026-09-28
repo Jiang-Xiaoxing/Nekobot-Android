@@ -199,6 +199,103 @@ internal fun buildLocalSkillToolDefinitions(): List<Map<String, Any>> {
     )
 }
 
+/** 任务列表上限：避免 AI 生成超长列表刷屏 */
+internal const val AGENT_MAX_TODO_ITEMS = 50
+
+/** 单条任务内容长度上限 */
+internal const val AGENT_MAX_TODO_CONTENT_LENGTH = 200
+
+/** todo_write 参数解析结果。 */
+internal sealed interface AgentTodoWriteResult {
+    /** 解析成功（空列表也算成功，语义为清空清单）。 */
+    data class Ok(val todos: List<com.nekobot.app.data.model.AgentTodo>) : AgentTodoWriteResult
+
+    /** 参数非法，[error] 为给模型的提示。 */
+    data class Invalid(val error: String) : AgentTodoWriteResult
+}
+
+/**
+ * 解析 todo_write 的 todos 参数（全量替换语义）。
+ *
+ * 参考 Claude Code / opencode 的 todowrite：AI 每次传入完整列表，
+ * 无效项被丢弃，非法 status/priority 归一化为默认值。主会话与子代理共用。
+ */
+internal fun parseAgentTodoWrites(rawTodos: Any?): AgentTodoWriteResult {
+    val rawList = rawTodos as? List<*>
+        ?: return AgentTodoWriteResult.Invalid("todos 必须是任务数组")
+    if (rawList.isEmpty()) return AgentTodoWriteResult.Ok(emptyList())
+    if (rawList.size > AGENT_MAX_TODO_ITEMS) {
+        return AgentTodoWriteResult.Invalid("任务数量过多（最多 $AGENT_MAX_TODO_ITEMS 项），请拆分或精简")
+    }
+    val todos = rawList.mapIndexedNotNull { index, item ->
+        val map = (item as? Map<*, *>) ?: return@mapIndexedNotNull null
+        val content = map["content"]?.toString()?.trim().orEmpty()
+        if (content.isEmpty()) return@mapIndexedNotNull null
+        com.nekobot.app.data.model.AgentTodo(
+            id = map["id"]?.toString()?.takeIf(String::isNotBlank)
+                ?: "todo_${index + 1}",
+            content = content.take(AGENT_MAX_TODO_CONTENT_LENGTH),
+            status = com.nekobot.app.data.model.AgentTodo.normalizeStatus(
+                map["status"]?.toString()
+            ),
+            priority = com.nekobot.app.data.model.AgentTodo.normalizePriority(
+                map["priority"]?.toString()
+            )
+        )
+    }
+    if (todos.isEmpty()) return AgentTodoWriteResult.Invalid("任务列表为空：每项必须包含非空 content")
+    return AgentTodoWriteResult.Ok(todos)
+}
+
+/**
+ * 组装 todo_read 的返回：清单正文（[ ]/[~]/[x]/[-] 前缀）+ 结构化 items。
+ *
+ * [scopeLabel] 标明清单归属（主会话传"当前会话"，子代理传"当前子代理"），
+ * 让两个链路的空态与标题文案保持一致。
+ */
+internal fun formatAgentTodoRead(
+    todos: List<com.nekobot.app.data.model.AgentTodo>,
+    scopeLabel: String = "当前会话"
+): Map<String, Any> {
+    if (todos.isEmpty()) {
+        return mapOf(
+            "success" to true,
+            "content" to "${scopeLabel}没有任何任务条目。需要多步骤工作流时先用 todo_write 建立任务列表。",
+            "count" to 0,
+            "items" to emptyList<Map<String, Any>>()
+        )
+    }
+    val items = todos.map { todo ->
+        mapOf(
+            "content" to todo.content,
+            "status" to todo.status,
+            "priority" to todo.priority
+        )
+    }
+    val mark = mapOf(
+        com.nekobot.app.data.model.AgentTodo.STATUS_PENDING to "[ ]",
+        com.nekobot.app.data.model.AgentTodo.STATUS_IN_PROGRESS to "[~]",
+        com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED to "[x]",
+        com.nekobot.app.data.model.AgentTodo.STATUS_CANCELLED to "[-]"
+    )
+    val activeCount = todos.count {
+        it.status != com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED &&
+            it.status != com.nekobot.app.data.model.AgentTodo.STATUS_CANCELLED
+    }
+    val content = buildString {
+        appendLine("${scopeLabel}的任务清单（共 ${todos.size} 条，未完成 $activeCount 条）：")
+        todos.forEach { todo ->
+            appendLine("${mark[todo.status] ?: "[ ]"} ${todo.content}")
+        }
+        if (activeCount > 0) {
+            append("继续推进未完成的任务；每完成一项用 todo_write 更新对应条目的状态。")
+        } else {
+            append("所有条目均已完成或取消。除非用户提出新需求，不要重复这些工作。")
+        }
+    }
+    return mapOf("success" to true, "content" to content, "count" to todos.size, "items" to items)
+}
+
 /**
  * Qwen Realtime Agent 一轮通话所需的本地工具运行时。
  *
@@ -280,10 +377,6 @@ internal class LocalAgentToolExecutor(
 ) {
     private val gson = Gson()
     private val imageGenerationSizes = setOf("1024x1024", "1792x1024", "1024x1792")
-    /** 任务列表上限：避免 AI 生成超长列表刷屏 */
-    private val MAX_TODO_ITEMS = 50
-    /** 单条任务内容长度上限 */
-    private val MAX_TODO_CONTENT_LENGTH = 200
     /** list_stickers 单次返回的最大名称数量：避免表情过多时灌满上下文。 */
     private val MAX_STICKER_LIST_ITEMS = 2000
     private val workspace = workspaceRoot?.canonicalFile
@@ -535,90 +628,30 @@ internal class LocalAgentToolExecutor(
     }
 
     /**
-     * todo_write：全量替换当前会话的任务列表。
-     * 参考 Claude Code / opencode 的 todowrite：AI 每次传入完整列表，
-     * 无效项被丢弃，非法 status/priority 归一化为默认值。
-     */
-    /**
      * todo_read：读取当前会话的任务列表原样状态。
      *
      * 与 todo_write 的区别：不会改动任何条目，只回答"现在列表是什么样"，
      * 适合在长任务中途确认进度，或校正模型自己记错的条目。
      */
     private fun readTodos(): Map<String, Any> {
-        val todos = runCatching { todosProvider() }.getOrDefault(emptyList())
-        if (todos.isEmpty()) {
-            return success(
-                "content" to "当前会话没有任何任务条目。需要多步骤工作流时先用 todo_write 建立任务列表。",
-                "count" to 0,
-                "items" to emptyList<Map<String, Any>>()
-            )
-        }
-        val items = todos.map { todo ->
-            mapOf(
-                "content" to todo.content,
-                "status" to todo.status,
-                "priority" to todo.priority
-            )
-        }
-        val mark = mapOf(
-            com.nekobot.app.data.model.AgentTodo.STATUS_PENDING to "[ ]",
-            com.nekobot.app.data.model.AgentTodo.STATUS_IN_PROGRESS to "[~]",
-            com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED to "[x]",
-            com.nekobot.app.data.model.AgentTodo.STATUS_CANCELLED to "[-]"
-        )
-        val activeCount = todos.count {
-            it.status != com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED &&
-                it.status != com.nekobot.app.data.model.AgentTodo.STATUS_CANCELLED
-        }
-        val content = buildString {
-            appendLine("当前任务列表（共 ${todos.size} 条，未完成 $activeCount 条）：")
-            todos.forEach { todo ->
-                appendLine("${mark[todo.status] ?: "[ ]"} ${todo.content}")
-            }
-            if (activeCount > 0) {
-                append("继续推进未完成的任务；每完成一项用 todo_write 更新对应条目的状态。")
-            } else {
-                append("所有条目均已完成或取消。除非用户提出新需求，不要重复这些工作。")
-            }
-        }
-        return success("content" to content, "count" to todos.size, "items" to items)
+        return formatAgentTodoRead(runCatching { todosProvider() }.getOrDefault(emptyList()))
     }
 
+    /** todo_write：解析后全量替换当前会话的任务列表（解析规则见 [parseAgentTodoWrites]）。 */
     private fun writeTodos(args: Map<String, Any>): Map<String, Any> {
-        val rawTodos = args["todos"] as? List<*>
-        if (rawTodos == null) return failure("todos 必须是任务数组")
-        if (rawTodos.isEmpty()) {
-            // 空数组 = 清空任务列表
-            onTodosUpdated(emptyList())
-            return success("total" to 0, "todos" to emptyList<Any>())
-        }
-        if (rawTodos.size > MAX_TODO_ITEMS) {
-            return failure("任务数量过多（最多 $MAX_TODO_ITEMS 项），请拆分或精简")
-        }
-        val todos = rawTodos.mapIndexedNotNull { index, item ->
-            val map = (item as? Map<*, *>) ?: return@mapIndexedNotNull null
-            val content = map["content"]?.toString()?.trim().orEmpty()
-            if (content.isEmpty()) return@mapIndexedNotNull null
-            com.nekobot.app.data.model.AgentTodo(
-                id = map["id"]?.toString()?.takeIf(String::isNotBlank)
-                    ?: "todo_${index + 1}",
-                content = content.take(MAX_TODO_CONTENT_LENGTH),
-                status = com.nekobot.app.data.model.AgentTodo.normalizeStatus(
-                    map["status"]?.toString()
-                ),
-                priority = com.nekobot.app.data.model.AgentTodo.normalizePriority(
-                    map["priority"]?.toString()
+        return when (val parsed = parseAgentTodoWrites(args["todos"])) {
+            is AgentTodoWriteResult.Invalid -> failure(parsed.error)
+            is AgentTodoWriteResult.Ok -> {
+                onTodosUpdated(parsed.todos)
+                success(
+                    "total" to parsed.todos.size,
+                    "completed" to parsed.todos.count {
+                        it.status == com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED
+                    },
+                    "todos" to parsed.todos
                 )
-            )
+            }
         }
-        if (todos.isEmpty()) return failure("任务列表为空：每项必须包含非空 content")
-        onTodosUpdated(todos)
-        return success(
-            "total" to todos.size,
-            "completed" to todos.count { it.status == com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED },
-            "todos" to todos
-        )
     }
 
     /**

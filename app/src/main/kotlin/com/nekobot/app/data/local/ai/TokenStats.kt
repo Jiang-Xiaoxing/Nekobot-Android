@@ -28,6 +28,7 @@ class TokenStatsManager {
         const val PURPOSE_EMBEDDING = "embedding"
         const val PURPOSE_TTS = "tts"
         const val PURPOSE_IMAGE_GEN = "image_gen"
+        const val PURPOSE_SUBAGENT = "subagent"
 
         val PURPOSE_LABELS = mapOf(
             PURPOSE_CHAT to "对话",
@@ -40,7 +41,8 @@ class TokenStatsManager {
             PURPOSE_HEARTBEAT to "心跳",
             PURPOSE_EMBEDDING to "向量",
             PURPOSE_TTS to "TTS",
-            PURPOSE_IMAGE_GEN to "图片生成"
+            PURPOSE_IMAGE_GEN to "图片生成",
+            PURPOSE_SUBAGENT to "子代理"
         )
 
         private const val MAX_HISTORY_DAYS = 90

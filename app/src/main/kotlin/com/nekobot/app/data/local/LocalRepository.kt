@@ -5385,7 +5385,9 @@ class LocalRepository(
                 }
                 val record = JsonObject().apply {
                     addProperty("id", UUID.randomUUID().toString())
-                    messageId?.let { addProperty("message_id", it) }
+                    // 子代理等非消息链路的记录没有关联消息，空值不写入，
+                    // 避免留下空 message_id 干扰按消息回补的匹配逻辑。
+                    messageId?.takeIf { it.isNotBlank() }?.let { addProperty("message_id", it) }
                     addProperty("session_id", sessionId)
                     addProperty("model", model)
                     // 实际模型标识，用于排行榜按模型聚合（相同模型名、不同提供商可合并）

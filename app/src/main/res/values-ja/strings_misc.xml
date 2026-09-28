@@ -82,6 +82,7 @@
     <string name="tokens_purpose_heartbeat">ハートビート</string>
     <string name="tokens_purpose_image_gen">画像生成</string>
     <string name="tokens_purpose_plugin">プラグイン</string>
+    <string name="tokens_purpose_subagent">サブエージェント</string>
     <string name="tokens_purpose_uncategorized">未分類</string>
     <string name="tokens_source_plot">プロット</string>
     <string name="tokens_source_state">状態評価</string>

@@ -82,6 +82,7 @@
     <string name="tokens_purpose_heartbeat">하트비트</string>
     <string name="tokens_purpose_image_gen">이미지 생성</string>
     <string name="tokens_purpose_plugin">플러그인</string>
+    <string name="tokens_purpose_subagent">서브에이전트</string>
     <string name="tokens_purpose_uncategorized">미분류</string>
     <string name="tokens_source_plot">플롯</string>
     <string name="tokens_source_state">상태 평가</string>

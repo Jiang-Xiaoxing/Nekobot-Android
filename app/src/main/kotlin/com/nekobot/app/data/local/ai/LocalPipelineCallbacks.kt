@@ -1530,6 +1530,12 @@ internal class LocalPipelineCallbacks(
         // 策略闸门：网络总开关 + 共享工作区破坏性操作确认。必须在任何执行之前拦截，
         // 否则“删除共享工作区文件/写入共享工作区”会在用户毫不知情的情况下生效。
         enforceToolPolicy(toolName, args)?.let { return it }
+        // 子代理的任务清单独立存放：不读写主会话的任务列表，也不推送输入框上方的任务面板。
+        val ownerSubagentTaskId = (toolContext[SUBAGENT_TASK_CONTEXT_KEY] as? String)
+            ?.takeIf { it.isNotBlank() }
+        if (ownerSubagentTaskId != null && (toolName == "todo_write" || toolName == "todo_read")) {
+            return executeSubagentTodoTool(toolName, args, ownerSubagentTaskId)
+        }
         if (toolName in subagentToolIds) {
             return executeSubagentTool(toolName, args, toolContext)
         }
@@ -1757,6 +1763,42 @@ internal class LocalPipelineCallbacks(
             0 to prefs.subagentMaxToolCalls
         } else {
             prefs.subagentMaxDepth to prefs.subagentMaxToolCalls
+        }
+    }
+
+    /**
+     * 子代理的 todo_write / todo_read：读写子代理自己的独立任务清单。
+     *
+     * 清单按子代理任务 id 隔离存放在进程内的 [SubagentTodoStore]，不写入会话实体、
+     * 不推送 AgentTodosUpdated 事件，因此主会话的任务列表与输入框上方的任务面板均不受影响；
+     * 主会话的 todo 工具也读不到子代理的清单。
+     */
+    private fun executeSubagentTodoTool(
+        toolName: String,
+        args: Map<String, Any>,
+        ownerTaskId: String
+    ): Map<String, Any> {
+        return when (toolName) {
+            "todo_write" -> when (val parsed = parseAgentTodoWrites(args["todos"])) {
+                is AgentTodoWriteResult.Invalid -> mapOf("success" to false, "error" to parsed.error)
+                is AgentTodoWriteResult.Ok -> {
+                    SubagentTodoStore.set(ownerTaskId, parsed.todos)
+                    mapOf(
+                        "success" to true,
+                        "total" to parsed.todos.size,
+                        "completed" to parsed.todos.count {
+                            it.status == com.nekobot.app.data.model.AgentTodo.STATUS_COMPLETED
+                        },
+                        "todos" to parsed.todos,
+                        "instruction" to "任务清单已更新。这是当前子代理的独立清单，与主会话的任务列表互不相通；" +
+                            "可用 todo_read 查看当前进度。"
+                    )
+                }
+            }
+            else -> formatAgentTodoRead(
+                SubagentTodoStore.get(ownerTaskId),
+                scopeLabel = "当前子代理"
+            )
         }
     }
 
@@ -2153,6 +2195,7 @@ internal class LocalPipelineCallbacks(
                 if (toolDefinitions.isNotEmpty()) put("tools", toolDefinitions)
                 put("reasoning_effort", reasoningEffort.wireValue)
             }
+            val startedAt = System.currentTimeMillis()
             val result = try {
                 kotlinx.coroutines.runBlocking {
                     coordinator?.let { c ->
@@ -2186,6 +2229,7 @@ internal class LocalPipelineCallbacks(
             if (result.error != null) {
                 throw RuntimeException(result.error)
             }
+            recordSubagentModelUsage(messages, result, (System.currentTimeMillis() - startedAt).toDouble())
             buildMap<String, Any> {
                 put("content", result.content)
                 put("usage", result.usage)
@@ -2215,6 +2259,67 @@ internal class LocalPipelineCallbacks(
                 executeTool(name, callArgs, context)
             }
         return SubagentDelegateScope(buildModelCall = { modelCall }, toolExecutor = toolExecutor)
+    }
+
+    /**
+     * 记录子代理单次模型调用的 Token 用量（内存统计 + SharedPreferences 明细）。
+     *
+     * 子代理的模型调用不经过主管线的回复落库路径（没有 assistant 消息可挂用量），
+     * 此前这部分消耗完全不会被记录；这里对齐主对话的记账口径，用途标记为 subagent，
+     * 归属当前会话，明细不关联消息 id。
+     */
+    private fun recordSubagentModelUsage(
+        messages: List<Map<String, Any>>,
+        result: LocalAiResult,
+        durationMs: Double
+    ) {
+        val usage = runCatching {
+            resolveLocalTokenUsage(result.usage, messages, result.content)
+        }.getOrNull() ?: return
+        if (usage.inputTokens <= 0 && usage.outputTokens <= 0) return
+        val modelName = result.usedModelName ?: activeModel.name
+        val actualModelName = result.usedModelActualName ?: activeModel.model
+        val priceModel = modelQueue.firstOrNull { model ->
+            model.model == actualModelName || model.name == modelName
+        } ?: activeModel
+        try {
+            getGlobalTokenStatsManager().recordUsage(
+                promptTokens = usage.inputTokens,
+                completionTokens = usage.outputTokens,
+                model = modelName,
+                actualModel = actualModelName,
+                sessionId = session.id,
+                userId = "local-user",
+                source = "chat",
+                purpose = TokenStatsManager.PURPOSE_SUBAGENT,
+                durationMs = durationMs,
+                provider = priceModel.provider,
+                inputPricePerMillion = priceModel.inputPrice,
+                outputPricePerMillion = priceModel.outputPrice
+            )
+        } catch (e: Exception) {
+            com.nekobot.app.data.local.LocalLogger.w(TAG, "子代理 TokenStats 记录失败: ${e.message}")
+        }
+        try {
+            onTokenRecorded?.invoke(
+                session.id,
+                "",
+                modelName,
+                actualModelName,
+                usage.inputTokens,
+                usage.outputTokens,
+                com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
+                TokenStatsManager.PURPOSE_SUBAGENT,
+                usage.estimated,
+                durationMs,
+                null,
+                priceModel.provider,
+                priceModel.inputPrice,
+                priceModel.outputPrice
+            )
+        } catch (e: Exception) {
+            com.nekobot.app.data.local.LocalLogger.w(TAG, "子代理 Token 明细持久化失败: ${e.message}")
+        }
     }
 
     private fun parseSubagentJsonArgs(argsStr: String): Map<String, Any> {

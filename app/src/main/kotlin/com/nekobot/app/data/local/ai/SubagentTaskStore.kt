@@ -171,7 +171,9 @@ object SubagentTaskStore {
 
     /** 清理指定会话下的任务记录（会话删除时调用）。 */
     fun clearSession(sessionId: String) {
-        tasks.keys.filter { tasks[it]?.sessionId == sessionId }.forEach(tasks::remove)
+        val removedIds = tasks.keys.filter { tasks[it]?.sessionId == sessionId }
+        removedIds.forEach(tasks::remove)
+        SubagentTodoStore.clearTasks(removedIds.toSet())
     }
 
     fun size(): Int = tasks.size
@@ -180,5 +182,33 @@ object SubagentTaskStore {
     fun toJsonList(gson: Gson = this.gson, sessionId: String? = null): String {
         val list = if (sessionId == null) all() else listForSession(sessionId)
         return gson.toJson(list)
+    }
+}
+
+/**
+ * 子代理的独立任务清单存储（进程内单例）。
+ *
+ * 子代理调用 todo_write / todo_read 时读写这里，按子代理任务 id 隔离；
+ * 与主会话的任务列表（local_sessions.agent_todos）完全无关，也不推送任何 UI 事件，
+ * 因此子代理的任务既不会覆盖主会话的清单，也不会出现在输入框上方的任务面板里。
+ * 生命周期与 [SubagentTaskStore] 一致：进程重启丢弃，会话清理时一并移除。
+ */
+object SubagentTodoStore {
+
+    private val todosByTask = ConcurrentHashMap<String, List<com.nekobot.app.data.model.AgentTodo>>()
+
+    /** 读取某个子代理任务的任务清单（无记录时返回空列表）。 */
+    fun get(taskId: String): List<com.nekobot.app.data.model.AgentTodo> =
+        todosByTask[taskId] ?: emptyList()
+
+    /** 全量写入某个子代理任务的任务清单。 */
+    fun set(taskId: String, todos: List<com.nekobot.app.data.model.AgentTodo>) {
+        todosByTask[taskId] = todos
+    }
+
+    /** 移除一批子代理任务的任务清单（任务记录被清理时调用）。 */
+    fun clearTasks(taskIds: Collection<String>) {
+        if (taskIds.isEmpty()) return
+        taskIds.forEach(todosByTask::remove)
     }
 }

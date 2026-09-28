@@ -83,6 +83,7 @@
     <string name="tokens_purpose_heartbeat">Heartbeat</string>
     <string name="tokens_purpose_image_gen">Image generation</string>
     <string name="tokens_purpose_plugin">Plugin</string>
+    <string name="tokens_purpose_subagent">Subagent</string>
     <string name="tokens_purpose_uncategorized">Uncategorized</string>
     <string name="tokens_source_plot">Plot</string>
     <string name="tokens_source_state">State evaluation</string>
