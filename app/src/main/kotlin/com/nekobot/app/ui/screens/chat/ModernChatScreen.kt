@@ -194,6 +194,8 @@ fun ModernChatScreen(
     val viewModel: ChatViewModel = viewModel()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
+    // 会话级"AI 正在运行"（含后台收尾/唤醒运行）：主操作按钮据此保留停止入口
+    val sessionGenerating by viewModel.sessionGenerating.collectAsStateWithLifecycle()
     val compressing by viewModel.agentContextCompressionInProgress.collectAsStateWithLifecycle()
     val plotChoices by viewModel.plotChoices.collectAsStateWithLifecycle()
     val plotChoicesLoading by viewModel.plotChoicesLoading.collectAsStateWithLifecycle()
@@ -257,6 +259,7 @@ fun ModernChatScreen(
             session = session,
             messages = messages,
             sending = sending,
+            sessionGenerating = sessionGenerating,
             compressing = compressing,
             plotChoices = plotChoices,
             plotChoicesLoading = plotChoicesLoading,
@@ -676,6 +679,8 @@ private fun ModernChatComposer(
     session: Session?,
     messages: List<Message>,
     sending: Boolean,
+    /** 会话级"AI 正在运行"（前台发送 ∨ 全局生成登记）：后台收尾/唤醒运行阶段也显示停止按钮。 */
+    sessionGenerating: Boolean,
     /** 上下文压缩进行中：压缩按钮切换为进行中样式。 */
     compressing: Boolean,
     plotChoices: List<PlotChoice>,
@@ -1448,11 +1453,13 @@ private fun ModernChatComposer(
 
                             // 主操作按钮：背景和图标同步过渡，避免语音/发送/停止状态生硬跳变
                             // Agent 会话生成中：已输入内容时切换为发送（消息进入排队队列），否则保持停止
+                            // 后台生成（标题总结/剧情选项/记忆沉淀/唤醒运行等）进行中：无草稿时也提供停止入口
                             val hasDraft = input.isNotBlank() || pendingImageAttachments.isNotEmpty()
                             val action = when {
                                 sending && isAgentSession && hasDraft -> ModernComposerAction.SEND
                                 sending -> ModernComposerAction.STOP
                                 hasDraft -> ModernComposerAction.SEND
+                                sessionGenerating -> ModernComposerAction.STOP
                                 else -> ModernComposerAction.VOICE
                             }
                             val idleActionColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)

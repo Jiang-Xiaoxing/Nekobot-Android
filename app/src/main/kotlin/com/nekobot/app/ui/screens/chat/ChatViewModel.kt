@@ -316,6 +316,22 @@ class ChatViewModel : BaseViewModel() {
         .flatMapLatest { it }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private val _sending: MutableStateFlow<Boolean> get() = runtime.sending
+
+    /**
+     * 会话级"AI 正在运行"：前台发送状态（[sending]）∨ 全局生成登记。
+     *
+     * 本地模式 sending 在最终回复落地时提前释放，而标题总结/剧情选项/记忆沉淀等后台
+     * 生成、以及后台唤醒运行仍在进行——这些阶段由 ServiceContainer.generatingSessions
+     * 标记（本地为 activeGenerations 登记，服务器为 sending 同步）。会话列表竖条与
+     * 停止按钮都跟随本状态，保证重进会话后停止入口不消失。
+     */
+    val sessionGenerating: StateFlow<Boolean> = combine(
+        _runtime.map { it.sessionId }.distinctUntilChanged(),
+        sending,
+        ServiceContainer.generatingSessions
+    ) { sid, sending, generating ->
+        sending || (sid.isNotBlank() && sid in generating)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private val _editingMessage = MutableStateFlow(false)
 
     /**
