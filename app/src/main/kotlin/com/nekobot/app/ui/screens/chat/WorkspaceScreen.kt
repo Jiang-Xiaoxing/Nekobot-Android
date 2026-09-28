@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,6 +41,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.gson.JsonObject
 import com.nekobot.app.R
+import com.nekobot.app.data.local.ai.SANDBOX_SHARED_MOUNT
+import com.nekobot.app.data.local.ai.SANDBOX_WORKSPACE_MOUNT
+import com.nekobot.app.data.local.ai.terminal.LocalTerminalSession
+import com.nekobot.app.data.local.ai.terminal.TerminalEmulator
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
@@ -47,8 +52,13 @@ import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.GlassDropdownMenu
 import com.nekobot.app.ui.components.NekoDialog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,11 +102,100 @@ class WorkspaceViewModel : BaseViewModel() {
 
     private var sessionId: String = ""
 
+    // ===== 沙箱终端（与聊天页共用同一个会话 shell）=====
+
+    /** 终端入口是否可用：本地模式 + Agent 会话才有沙箱。 */
+    private val _terminalAvailable = MutableStateFlow(false)
+    internal val terminalAvailable: StateFlow<Boolean> = _terminalAvailable.asStateFlow()
+
+    private val _terminalState = MutableStateFlow(LocalTerminalSession.State.IDLE)
+    internal val terminalState: StateFlow<LocalTerminalSession.State> = _terminalState.asStateFlow()
+
+    /** 终端的原始 PTY 输出，界面层收集后喂给终端仿真器。 */
+    private val _terminalOutput = MutableSharedFlow<ByteArray>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    internal val terminalOutput: SharedFlow<ByteArray> = _terminalOutput.asSharedFlow()
+
+    private var terminal: LocalTerminalSession? = null
+    private var terminalOutputJob: Job? = null
+    private var terminalStateJob: Job? = null
+
     fun init(id: String) {
         if (id == sessionId && _files.value.isNotEmpty()) return
         sessionId = id
         load("")
+        refreshTerminalAvailability()
     }
+
+    private fun refreshTerminalAvailability() {
+        if (!isLocalMode) return
+        viewModelScope.launch {
+            _terminalAvailable.value = when (val res = unified.getSession(sessionId)) {
+                is Resource.Success -> res.data?.sessionMode.equals("agent", ignoreCase = true)
+                else -> false
+            }
+        }
+    }
+
+    /**
+     * 打开会话沙箱终端并定位到 [directory]（沙箱内绝对路径）。
+     *
+     * 终端尚未启动时通过 PRoot 的 -w 直接落在目标目录；
+     * shell 已在运行则注入一条 cd 命令。与聊天页共用同一个 shell。
+     */
+    fun openTerminal(directory: String, cols: Int, rows: Int) {
+        if (sessionId.isBlank()) return
+        viewModelScope.launch {
+            val session = terminal?.takeIf { it.sessionId == sessionId }
+                ?: unified.sandboxTerminal(sessionId)
+            if (session == null) {
+                _terminalState.value = LocalTerminalSession.State.UNAVAILABLE
+                return@launch
+            }
+            if (terminal !== session) {
+                terminal = session
+                terminalOutputJob?.cancel()
+                terminalOutputJob = viewModelScope.launch {
+                    session.output.collect { chunk -> _terminalOutput.emit(chunk) }
+                }
+                terminalStateJob?.cancel()
+                terminalStateJob = viewModelScope.launch {
+                    session.state.collect { state -> _terminalState.value = state }
+                }
+            }
+            if (session.isRunning) {
+                session.setWindowSize(cols, rows)
+                // 先清掉半行输入再 cd，避免和用户没敲完的命令拼在一起
+                session.sendBytes(byteArrayOf(TERMINAL_CTRL_U))
+                session.sendText("cd ${shellQuote(directory)}\r")
+            } else {
+                session.start(cols, rows, workingDir = directory)
+            }
+        }
+    }
+
+    /** 转发一段原始字节（按键、控制码、粘贴文本）。 */
+    fun sendTerminalBytes(bytes: ByteArray) {
+        terminal?.takeIf { it.sessionId == sessionId }?.sendBytes(bytes)
+    }
+
+    /** 终端可见尺寸变化：同步给 PTY。 */
+    fun resizeTerminal(cols: Int, rows: Int) {
+        terminal?.takeIf { it.sessionId == sessionId }?.setWindowSize(cols, rows)
+    }
+
+    /** 重启终端：结束当前 shell 后按上次的目标目录重新拉起。 */
+    fun restartTerminal() {
+        terminal?.takeIf { it.sessionId == sessionId }?.let { session ->
+            session.stop()
+            session.start()
+        }
+    }
+
+    /** 单引号包裹，处理路径里的空格与特殊字符。 */
+    private fun shellQuote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
 
     fun load(path: String = _currentPath.value) {
         if (sessionId.isBlank()) return
@@ -567,6 +666,8 @@ fun WorkspaceScreen(
     val uploading by viewModel.uploading.collectAsStateWithLifecycle()
     val currentPath by viewModel.currentPath.collectAsStateWithLifecycle()
     val sharedPath by viewModel.sharedPath.collectAsStateWithLifecycle()
+    val terminalAvailable by viewModel.terminalAvailable.collectAsStateWithLifecycle()
+    val terminalState by viewModel.terminalState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -580,6 +681,8 @@ fun WorkspaceScreen(
     var previewFileMime by remember { mutableStateOf("") }
     var previewLoading by remember { mutableStateOf(false) }
     var pendingLegacyDownload by remember { mutableStateOf<Pair<WorkspaceFile, Boolean>?>(null) } // (file, isShared)
+    var showTerminal by remember { mutableStateOf(false) }
+    var terminalDir by remember { mutableStateOf("") }
     val snackbarHost = remember { SnackbarHostState() }
 
     LaunchedEffect(sessionId) { viewModel.init(sessionId) }
@@ -591,6 +694,12 @@ fun WorkspaceScreen(
     }
     LaunchedEffect(error) {
         if (error != null) { snackbarHost.showSnackbar(error!!); viewModel.clearError() }
+    }
+
+    // 终端仿真器按会话持有：关掉浮层再打开时输出与回滚历史仍在
+    val terminalEmulator = remember(sessionId) { TerminalEmulator() }
+    LaunchedEffect(terminalEmulator) {
+        viewModel.terminalOutput.collect { bytes -> terminalEmulator.feed(bytes) }
     }
     val activePath = if (tabIndex == 0) currentPath else sharedPath
     BackHandler(enabled = activePath.isNotBlank()) {
@@ -743,6 +852,7 @@ fun WorkspaceScreen(
                                     isSharedMode = isShared,
                                     downloading = downloading == f.path,
                                     previewLoading = previewLoading && previewFileName == f.path,
+                                    terminalAvailable = terminalAvailable,
                                     onOpenDirectory = {
                                         val source = draggingFile
                                         if (source != null) {
@@ -757,6 +867,12 @@ fun WorkspaceScreen(
                                     onLongClick = { draggingFile = f },
                                     onDelete = { deletingFile = f },
                                     onMove = { movingFile = f },
+                                    onOpenTerminal = {
+                                        // 浏览器里的相对路径映射到沙箱内挂载点
+                                        val mount = if (isShared) SANDBOX_SHARED_MOUNT else SANDBOX_WORKSPACE_MOUNT
+                                        terminalDir = "$mount/${f.path.trim('/')}"
+                                        showTerminal = true
+                                    },
                                     onDownload = {
                                         if (downloading == null) {
                                             downloading = f.path
@@ -866,6 +982,21 @@ fun WorkspaceScreen(
             }
         )
     }
+
+    // 沙箱终端浮层：与聊天页共用同一个 shell，进入时 cd 到来源文件夹
+    if (showTerminal) {
+        LaunchedEffect(Unit) {
+            viewModel.openTerminal(terminalDir, TerminalEmulator.DEFAULT_COLS, TerminalEmulator.DEFAULT_ROWS)
+        }
+        SandboxTerminalOverlay(
+            emulator = terminalEmulator,
+            state = terminalState,
+            onRestart = { viewModel.restartTerminal() },
+            onSendBytes = { bytes -> viewModel.sendTerminalBytes(bytes) },
+            onResize = { cols, rows -> viewModel.resizeTerminal(cols, rows) },
+            onDismiss = { showTerminal = false },
+        )
+    }
 }
 
 @Composable
@@ -875,10 +1006,12 @@ private fun WorkspaceFileItem(
     isSharedMode: Boolean = false,
     downloading: Boolean,
     previewLoading: Boolean,
+    terminalAvailable: Boolean = false,
     onOpenDirectory: () -> Unit,
     onLongClick: () -> Unit,
     onDelete: () -> Unit,
     onMove: () -> Unit,
+    onOpenTerminal: () -> Unit = {},
     onDownload: () -> Unit,
     onPreview: () -> Unit
 ) {
@@ -942,6 +1075,22 @@ private fun WorkspaceFileItem(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false }
                 ) {
+                    if (file.isDirectory && terminalAvailable) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.workspace_open_terminal)) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Terminal,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onOpenTerminal()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(stringResource(if (isSharedMode) R.string.shared_move_to_private else R.string.shared_move_to_shared)) },
                         leadingIcon = {
@@ -990,3 +1139,6 @@ private fun formatSize(bytes: Long): String = when {
     bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
     else -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
 }
+
+/** Ctrl+U：注入 cd 前先清掉 shell 里半行输入。 */
+private const val TERMINAL_CTRL_U = 0x15.toByte()

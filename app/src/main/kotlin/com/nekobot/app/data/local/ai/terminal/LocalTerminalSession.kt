@@ -5,6 +5,7 @@ import android.util.Log
 import com.nekobot.app.data.local.LocalWorkspaceStorage
 import com.nekobot.app.data.local.ai.LocalLinuxRootfsManager
 import com.nekobot.app.data.local.ai.LocalLinuxRuntime
+import com.nekobot.app.data.local.ai.SANDBOX_WORKSPACE_MOUNT
 import com.nekobot.app.data.local.ai.buildLocalProotPrefix
 import com.nekobot.app.data.local.ai.localPosixTimezone
 import java.io.File
@@ -69,6 +70,10 @@ internal class LocalTerminalSession(
     @Volatile
     private var rows: Int = TerminalEmulator.DEFAULT_ROWS
 
+    /** 下次启动 shell 时进入的沙箱内目录（PRoot -w），默认落在会话工作区根。 */
+    @Volatile
+    private var initialCwd: String = SANDBOX_WORKSPACE_MOUNT
+
     @Volatile
     private var stopping: Boolean = false
 
@@ -81,9 +86,10 @@ internal class LocalTerminalSession(
     /**
      * 启动 PTY shell；重复调用（启动中/运行中）直接返回 true。
      *
+     * [workingDir] 指定 shell 的沙箱内起始目录（仅对本次冷启动生效）。
      * rootfs 解包等重活在线程池里做，界面通过 [state] 观察进度。
      */
-    fun start(initialCols: Int = cols, initialRows: Int = rows): Boolean {
+    fun start(initialCols: Int = cols, initialRows: Int = rows, workingDir: String = initialCwd): Boolean {
         when (_state.value) {
             State.RUNNING, State.STARTING -> return true
             else -> Unit
@@ -94,6 +100,7 @@ internal class LocalTerminalSession(
         }
         cols = initialCols.coerceAtLeast(2)
         rows = initialRows.coerceAtLeast(2)
+        initialCwd = workingDir.ifBlank { SANDBOX_WORKSPACE_MOUNT }
         stopping = false
         _state.value = State.STARTING
         scope.launch { boot() }
@@ -181,6 +188,7 @@ internal class LocalTerminalSession(
                 rootfs = runtime.rootfs,
                 workspace = workspace,
                 sharedWorkspace = sharedWorkspace,
+                guestCwd = initialCwd,
             ) + listOf(SHELL, "-l", "-i")
 
             val outPid = IntArray(1)

@@ -131,7 +131,7 @@ private const val CURSOR_BLINK_INTERVAL_MS = 500L
 internal fun SandboxTerminalOverlay(
     emulator: TerminalEmulator,
     state: LocalTerminalSession.State,
-    onOpenFiles: () -> Unit,
+    onOpenFiles: (() -> Unit)? = null,
     onRestart: () -> Unit,
     onSendBytes: (ByteArray) -> Unit,
     onResize: (cols: Int, rows: Int) -> Unit,
@@ -970,7 +970,7 @@ private class TerminalInputEditText @JvmOverloads constructor(
 @Composable
 private fun TerminalTopBar(
     state: LocalTerminalSession.State,
-    onOpenFiles: () -> Unit,
+    onOpenFiles: (() -> Unit)?,
     onRestart: () -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
@@ -1014,12 +1014,14 @@ private fun TerminalTopBar(
                 maxLines = 1,
             )
         }
-        IconButton(onClick = onOpenFiles) {
-            Icon(
-                Icons.Filled.Folder,
-                contentDescription = stringResource(R.string.chat_sandbox_files_open),
-                tint = TerminalForeground,
-            )
+        if (onOpenFiles != null) {
+            IconButton(onClick = onOpenFiles) {
+                Icon(
+                    Icons.Filled.Folder,
+                    contentDescription = stringResource(R.string.chat_sandbox_files_open),
+                    tint = TerminalForeground,
+                )
+            }
         }
         IconButton(onClick = onRestart) {
             Icon(

@@ -59,6 +59,12 @@ data class LocalSandboxStatus(
     val mirrors: LocalSandboxMirrors,
 )
 
+/** 会话工作区在沙箱内的挂载点。 */
+internal const val SANDBOX_WORKSPACE_MOUNT = "/workspace"
+
+/** 跨会话共享工作区在沙箱内的挂载点。 */
+internal const val SANDBOX_SHARED_MOUNT = "/shared"
+
 /**
  * Agent 模式使用的 Alpine Linux 沙盒。
  *
@@ -764,6 +770,7 @@ internal fun buildLocalProotPrefix(
     rootfs: File,
     workspace: File,
     sharedWorkspace: File? = null,
+    guestCwd: String = SANDBOX_WORKSPACE_MOUNT,
 ): List<String> = buildList {
     add(proot.absolutePath)
     add("-0")
@@ -777,13 +784,13 @@ internal fun buildLocalProotPrefix(
     add("-b")
     add("/sys")
     add("-b")
-    add("${workspace.absolutePath}:/workspace")
+    add("${workspace.absolutePath}:$SANDBOX_WORKSPACE_MOUNT")
     if (sharedWorkspace != null) {
         add("-b")
-        add("${sharedWorkspace.absolutePath}:/shared")
+        add("${sharedWorkspace.absolutePath}:$SANDBOX_SHARED_MOUNT")
     }
     add("-w")
-    add("/workspace")
+    add(guestCwd)
 }
 
 /** 生成持久 shell 的 PRoot 启动参数：前缀 + /bin/sh。 */
