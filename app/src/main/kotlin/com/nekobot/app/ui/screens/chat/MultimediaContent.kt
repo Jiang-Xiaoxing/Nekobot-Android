@@ -914,8 +914,15 @@ fun HtmlRenderer(
 private fun FullscreenHtmlDialog(content: String, onDismiss: () -> Unit) {
     val exitFullscreenDesc = stringResource(R.string.chat_media_exit_fullscreen)
     var webView by remember { mutableStateOf<WebView?>(null) }
+    val (hostStatusBarHeight, hostNavBarHeight) = rememberHostSystemBarInsetsDp()
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
         BackHandler {
             webView?.takeIf(WebView::canGoBack)?.goBack() ?: onDismiss()
         }
@@ -929,6 +936,7 @@ private fun FullscreenHtmlDialog(content: String, onDismiss: () -> Unit) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .padding(top = hostStatusBarHeight)
                     .padding(8.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(Color.Black.copy(alpha = 0.55f))
@@ -959,7 +967,10 @@ private fun FullscreenHtmlDialog(content: String, onDismiss: () -> Unit) {
                         webView = this
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = hostStatusBarHeight)
+                    .padding(bottom = hostNavBarHeight)
             )
         }
     }
@@ -1078,8 +1089,15 @@ fun UrlPreviewDialog(url: String, onDismiss: () -> Unit) {
     val cleanUrl = remember(url) { url.substringBefore('?').substringBefore('#') }
     val markdown = remember(cleanUrl) { isMarkdownFileName(cleanUrl) }
     val plainText = remember(cleanUrl) { fileExt(cleanUrl) == "txt" }
+    val (hostStatusBarHeight, hostNavBarHeight) = rememberHostSystemBarInsetsDp()
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1090,6 +1108,7 @@ fun UrlPreviewDialog(url: String, onDismiss: () -> Unit) {
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(top = hostStatusBarHeight)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1112,7 +1131,8 @@ fun UrlPreviewDialog(url: String, onDismiss: () -> Unit) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 48.dp)
+                    .padding(top = 48.dp + hostStatusBarHeight)
+                    .padding(bottom = hostNavBarHeight)
             ) {
                 if (markdown || plainText) {
                     TxtRenderer(
@@ -1168,6 +1188,27 @@ private fun android.content.Context.findActivity(): android.app.Activity? {
         context = context.baseContext
     }
     return null
+}
+
+/**
+ * 读取宿主 Activity 窗口的真实系统栏高度（状态栏高 to 导航栏高）。
+ *
+ * Dialog 窗口的 insets 派发在部分系统上不可靠（内容侧读到 0，导致 padding 类
+ * modifier 完全失效，沙箱终端/文件浏览器也因此改用主窗口覆盖层实现），
+ * 预览弹窗改为直接读宿主窗口 insets，保证留白与主界面一致。
+ */
+@Composable
+private fun rememberHostSystemBarInsetsDp(): Pair<Dp, Dp> {
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val insets = remember(view) {
+        view.context.findActivity()?.window?.decorView
+            ?.rootWindowInsets
+            ?.let(WindowInsetsCompat::toWindowInsetsCompat)
+    }
+    val top = insets?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
+    val bottom = insets?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+    return with(density) { top.toDp() to bottom.toDp() }
 }
 
 /** 获取文件扩展名（小写，不含点） */
@@ -2021,10 +2062,15 @@ fun FilePreviewDialog(fileName: String, file: File, mimeType: String = "", onDis
     val exitFullscreenDesc = stringResource(R.string.chat_media_exit_fullscreen)
     var webView by remember { mutableStateOf<WebView?>(null) }
     var fullscreen by remember { mutableStateOf(false) }
+    // Dialog 窗口 insets 派发不可靠，留白取宿主窗口的真实系统栏高度
+    val (hostStatusBarHeight, hostNavBarHeight) = rememberHostSystemBarInsetsDp()
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         // 必须放在 Dialog 内部，才能拿到弹窗自己的 window 来隐藏系统栏
         ImmersiveSystemBars(hidden = fullscreen)
@@ -2049,6 +2095,7 @@ fun FilePreviewDialog(fileName: String, file: File, mimeType: String = "", onDis
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(top = hostStatusBarHeight)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -2087,11 +2134,12 @@ fun FilePreviewDialog(fileName: String, file: File, mimeType: String = "", onDis
                     Icon(Icons.Filled.FullscreenExit, contentDescription = exitFullscreenDesc, tint = Color.White)
                 }
             }
-            // 内容区：全屏时不留给顶栏
+            // 内容区：全屏时系统栏已隐藏，不留任何留白直接铺满整屏
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = if (fullscreen) 0.dp else 48.dp)
+                    .padding(top = if (fullscreen) 0.dp else 48.dp + hostStatusBarHeight)
+                    .padding(bottom = if (fullscreen) 0.dp else hostNavBarHeight)
             ) {
                 when (previewType) {
                     FilePreviewType.IMAGE -> {
