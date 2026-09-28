@@ -1658,6 +1658,48 @@ internal fun openLocalWorkspaceFile(
         false
     }
 
+/**
+ * 通过系统分享面板把文件交给用户选择的应用。
+ *
+ * ACTION_SEND + 系统选择器：分享出去的应用即用它打开该文件。
+ */
+internal fun shareLocalFile(context: android.content.Context, file: File): Boolean =
+    runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val mime = android.webkit.MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(file.extension.lowercase())
+            ?: "application/octet-stream"
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            clipData = android.content.ClipData.newRawUri(file.name, uri)
+            addFlags(
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(intent, null).apply {
+                addFlags(
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+            }
+        )
+        true
+    }.getOrElse {
+        android.widget.Toast.makeText(
+            context,
+            context.getString(R.string.chat_media_open_file_failed),
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+        false
+    }
+
 /** 不支持直接预览的文件卡片：显示文件名 + 下载按钮 */
 @Composable
 private fun UnsupportedFileCard(
@@ -2057,6 +2099,7 @@ fun FilePreviewDialog(fileName: String, file: File, mimeType: String = "", onDis
     val unsupportedPreview = stringResource(R.string.chat_media_unsupported_preview)
     val truncatedFmt = stringResource(R.string.chat_media_markdown_truncated)
     val openWithAppDesc = stringResource(R.string.chat_media_open_with_other_app)
+    val shareFileDesc = stringResource(R.string.chat_media_share_file)
     val fileDownloadedTo = stringResource(R.string.chat_media_file_downloaded_to, file.name)
     val fullscreenDesc = stringResource(R.string.chat_media_fullscreen)
     val exitFullscreenDesc = stringResource(R.string.chat_media_exit_fullscreen)
@@ -2108,6 +2151,10 @@ fun FilePreviewDialog(fileName: String, file: File, mimeType: String = "", onDis
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    // 所有格式均可分享：弹出系统选择器挑选接收该文件的应用
+                    IconButton(onClick = { shareLocalFile(context, file) }) {
+                        Icon(Icons.Filled.Share, contentDescription = shareFileDesc, tint = Color.White)
+                    }
                     // 文本预览：保留一条交给外部应用打开的通道（如系统阅读器/编辑器）
                     if (previewType == FilePreviewType.TEXT) {
                         IconButton(onClick = { openLocalWorkspaceFile(context, file, forceChooser = true) }) {
