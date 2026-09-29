@@ -47,7 +47,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LocalMessageVariantEntity::class,
         LocalStickerEntity::class
     ],
-    version = 46,
+    version = 47,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
@@ -1025,6 +1025,14 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+        /** v46 → v47：为本地会话增加可配置的延迟回复。 */
+        val MIGRATION_46_47 = object : Migration(46, 47) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_sessions ADD COLUMN delay_reply_enabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_sessions ADD COLUMN delay_reply_delay_seconds INTEGER NOT NULL DEFAULT 2")
+            }
+        }
+
         /** Room 不声明触发器；数据库打开时也安装一次，覆盖全新安装。 */
         private fun installExperienceInvalidationTriggers(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -1076,7 +1084,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37,
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
-            MIGRATION_45_46
+            MIGRATION_45_46, MIGRATION_46_47
         )
 
         fun get(context: Context): NekobotDatabase =

@@ -195,7 +195,9 @@ class UnifiedRepository(
                 archived = req.archived,
                 inheritCharacter = req.inheritCharacter,
                 inheritCharacterGreeting = req.inheritCharacterGreeting,
-                longConversationEnabled = req.longConversationEnabled
+                longConversationEnabled = req.longConversationEnabled,
+                delayReplyEnabled = req.delayReplyEnabled,
+                delayReplyDelaySeconds = req.delayReplyDelaySeconds
             )
             local.getSession(id)?.let { Resource.Success(it) } ?: Resource.Error("会话不存在")
         } else remote.updateSession(id, req)
@@ -422,7 +424,8 @@ class UnifiedRepository(
         message: String,
         attachments: List<Map<String, Any>> = emptyList(),
         reasoningEffort: com.nekobot.app.data.model.ReasoningEffort = com.nekobot.app.data.model.ReasoningEffort.NONE,
-        pendingUserMessages: (() -> List<String>)? = null
+        pendingUserMessages: (() -> List<String>)? = null,
+        batchedUserMessages: List<String> = emptyList()
     ): Flow<RealtimeEvent>? {
         if (!isLocal) return null
         val model = local.getRoutedModel(id, message, attachments) ?: return null
@@ -430,7 +433,8 @@ class UnifiedRepository(
         return local.chatWithPipeline(
             id, message, model, attachments,
             reasoningEffort = reasoningEffort,
-            pendingUserMessages = pendingUserMessages
+            pendingUserMessages = pendingUserMessages,
+            batchedUserMessages = batchedUserMessages
         )
     }
 

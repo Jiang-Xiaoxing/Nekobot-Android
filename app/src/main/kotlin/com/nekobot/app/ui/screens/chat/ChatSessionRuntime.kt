@@ -384,6 +384,11 @@ class ChatSessionState(
      */
     val urgentMessages = java.util.concurrent.ConcurrentLinkedQueue<QueuedChatMessage>()
 
+    // ============ 延迟回复（按会话跨 ViewModel 保留） ============
+    val delayReply = DelayReplyStateMachine()
+    @Volatile
+    var delayReplyJob: Job? = null
+
     /** 将未消费的加急消息移回排队队列队首（生成已结束时兜底回收）。 */
     fun recycleUrgentMessages() {
         if (urgentMessages.isEmpty()) return
@@ -520,6 +525,8 @@ class ChatSessionState(
     fun hasActiveJobs(): Boolean =
         hasActiveGeneration() ||
             localChatJob?.isActive == true ||
+            delayReplyJob?.isActive == true ||
+            delayReply.hasPending() ||
             eventsJob?.isActive == true ||
             ttsJobs.values.any { it.isActive }
 
@@ -531,6 +538,8 @@ class ChatSessionState(
         sending.value ||
             localChatJob?.isActive == true ||
             compressionJob?.isActive == true ||
+            delayReplyJob?.isActive == true ||
+            delayReply.hasPending() ||
             ttsJobs.values.any { it.isActive } ||
             queuedMessages.value.isNotEmpty() ||
             urgentMessages.isNotEmpty()
@@ -612,6 +621,8 @@ object ChatSessionManager {
         sessions.values.forEach { state ->
             state.localChatJob?.cancel()
             state.compressionJob?.cancel()
+            state.delayReplyJob?.cancel()
+            state.delayReply.cancel()
             state.eventsJob?.cancel()
             state.generatingSyncJob?.cancel()
             state.ttsJobs.values.forEach { it.cancel() }

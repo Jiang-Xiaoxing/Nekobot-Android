@@ -119,7 +119,13 @@ data class Session(
     val inheritCharacterGreeting: Boolean? = null,
     /** 本地 Agent 可选的长期单会话记忆模式。 */
     @SerializedName(value = "long_conversation_enabled", alternate = ["longConversationEnabled"])
-    val longConversationEnabled: Boolean? = null
+    val longConversationEnabled: Boolean? = null,
+    /** 本地会话是否启用延迟回复。 */
+    @SerializedName(value = "delay_reply_enabled", alternate = ["delayReplyEnabled"])
+    val delayReplyEnabled: Boolean? = null,
+    /** 本地会话延迟回复等待秒数。 */
+    @SerializedName(value = "delay_reply_delay_seconds", alternate = ["delayReplyDelaySeconds"])
+    val delayReplyDelaySeconds: Int? = null
 ) {
     val displayName: String get() = name?.takeIf { it.isNotBlank() } ?: "未命名会话"
     /** 角色立绘 URL：优先 portrait，回退 characterAvatar */
@@ -174,7 +180,11 @@ data class UpdateSessionRequest(
     /** 继承角色能力时使用角色卡开场白。 */
     @SerializedName("inherit_character_greeting") val inheritCharacterGreeting: Boolean? = null,
     /** 仅本地 Agent 使用；服务器模式不发送此开关。 */
-    @SerializedName("long_conversation_enabled") val longConversationEnabled: Boolean? = null
+    @SerializedName("long_conversation_enabled") val longConversationEnabled: Boolean? = null,
+    /** 仅本地普通角色和继承角色能力的 Agent 会话使用。 */
+    @SerializedName("delay_reply_enabled") val delayReplyEnabled: Boolean? = null,
+    /** 仅本地会话使用，单位为秒。 */
+    @SerializedName("delay_reply_delay_seconds") val delayReplyDelaySeconds: Int? = null
 )
 
 /** 创建或更新公开分享时提交给独立 public API 的配置。 */

@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import com.nekobot.app.data.local.LocalSlashCommands
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.StartOffset
@@ -236,6 +238,8 @@ class ChatViewModel : BaseViewModel() {
         const val STREAM_FALLBACK_PREFIX = "_stream_fallback_"
         /** 排队消息“立即发送”乐观气泡的 id 前缀（本地注入/服务器直发期间显示）。 */
         const val URGENT_BUBBLE_PREFIX = "_queued_urgent_"
+        /** 延迟回复尚未落库时的乐观用户气泡 id 前缀。 */
+        const val DELAY_REPLY_BUBBLE_PREFIX = "_delay_reply_"
 
         /**
          * 聊天界面单页消息条数：进入会话只加载最近一页，向上滚动时按页补更早历史。
@@ -267,6 +271,12 @@ class ChatViewModel : BaseViewModel() {
         .flatMapLatest { it }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _messages: MutableStateFlow<List<Message>> get() = runtime.messages
+
+    val delayReplyPending: StateFlow<Boolean> = _runtime
+        .map { it.delayReply.pendingState }
+        .distinctUntilChanged()
+        .flatMapLatest { it }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** 是否还有更早的历史消息未加载（聊天界面滚动到顶部时据此触发分页加载）。 */
     val hasOlderMessages: StateFlow<Boolean> = _runtime
@@ -706,6 +716,13 @@ class ChatViewModel : BaseViewModel() {
         // 获取（或创建）跨 VM 共享的运行时状态，引用计数 +1
         // 通过 _runtime.value 赋值使 Compose 的 flatMapLatest 自动切换到新 runtime
         _runtime.value = ChatSessionManager.acquire(sessionId)
+        val inputPlan = runtime.delayReply.setInputActive(latestChatInputActive, elapsedRealtimeMs())
+        when {
+            inputPlan != null -> installDelayReplyPlan(runtime, inputPlan)
+            runtime.delayReply.hasPending() && runtime.delayReplyJob?.isActive != true -> {
+                runtime.delayReply.currentPlan(elapsedRealtimeMs())?.let { installDelayReplyPlan(runtime, it) }
+            }
+        }
         // 自动技能沉淀提示是持久显示的：进入会话时从设置恢复上次的沉淀结果。
         runtime.restoreAutoSkillNotice()
         // 自动长期记忆提示同理：恢复上次的写入结果，避免提示消失后无处可查。
@@ -749,7 +766,7 @@ class ChatViewModel : BaseViewModel() {
         loadSession(sessionId)
         // 仅当该会话没有正在进行的 AI 生成时才重新加载消息，
         // 否则保留 runtime 中的流式状态（用户切回正在生成的会话时能看到进度）。
-        if (!runtime.hasActiveGeneration()) {
+        if (!runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
             loadMessages()
         }
         if (!isLocalMode) {
@@ -1428,7 +1445,7 @@ class ChatViewModel : BaseViewModel() {
      */
     fun refreshSession() {
         val sid = currentSessionId.takeIf { it.isNotBlank() } ?: return
-        if (!runtime.hasActiveGeneration()) {
+        if (!runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
             loadMessages()
         }
         launchResult(
@@ -1550,8 +1567,18 @@ class ChatViewModel : BaseViewModel() {
                             msg.content in freshAssistantContents)
                 }
 
+                val delayedBubbles = target.delayReply.pendingMessages().map { pending ->
+                    current.firstOrNull { it.id == pending.bubbleId } ?: Message(
+                        id = pending.bubbleId,
+                        role = "user",
+                        content = pending.content,
+                        timestamp = pending.timestamp
+                    )
+                }
                 val nextMessages = deduplicateMessagesById(
-                    olderPrefix + if (orphanAssistants.isEmpty()) merged else merged + orphanAssistants
+                    olderPrefix +
+                        (if (orphanAssistants.isEmpty()) merged else merged + orphanAssistants) +
+                        delayedBubbles
                 )
                 _messages.value = nextMessages
                 val nextTtsStates = _ttsStates.value.toMutableMap()
@@ -2192,6 +2219,7 @@ class ChatViewModel : BaseViewModel() {
      */
     fun resumeAgentRun() {
         val recovery = _agentRecovery.value ?: return
+        if (blockHistoryMutationWhileDelayPending()) return
         if (!isLocalMode || _sending.value || runtime.hasBlockingLocalChatJob()) return
 
         generationStopRequested = false
@@ -2326,9 +2354,40 @@ class ChatViewModel : BaseViewModel() {
         val target = id?.let { targetId -> queue.firstOrNull { it.id == targetId } } ?: queue.first()
         _queuedMessages.value = queue.filterNot { it.id == target.id }
         _messages.value = _messages.value.filter { it.id != queuedUrgentBubbleId(target.id) }
+        if (runtime.delayReply.hasPending()) {
+            val timestamp = System.currentTimeMillis().toString()
+            val bubbleId = "$DELAY_REPLY_BUBBLE_PREFIX${java.util.UUID.randomUUID()}"
+            val messageContent = buildChatMessageContent(target.content, target.attachments)
+            _messages.value = _messages.value + Message(
+                id = bubbleId,
+                role = "user",
+                content = messageContent,
+                timestamp = timestamp
+            )
+            runtime.delayReply.arm(
+                DelayedReplyMessage(
+                    bubbleId = bubbleId,
+                    content = messageContent,
+                    attachments = target.attachments,
+                    reasoningEffort = target.reasoningEffort,
+                    timestamp = timestamp
+                ),
+                nowMs = elapsedRealtimeMs(),
+                delayMs = delayReplyDelayMs()
+            )
+            runtime.delayReplyJob?.cancel()
+            runtime.delayReplyJob = null
+            fireDelayedReply(runtime, runtime.delayReply.flush())
+            return
+        }
         val busyGenerating = _sending.value || runtime.hasBlockingLocalChatJob()
         if (!busyGenerating) {
-            sendMessage(target.content, attachments = target.attachments, reasoningEffort = target.reasoningEffort)
+            sendMessage(
+                target.content,
+                attachments = target.attachments,
+                reasoningEffort = target.reasoningEffort,
+                allowDelay = false
+            )
             return
         }
         if (isLocalMode) {
@@ -2374,7 +2433,7 @@ class ChatViewModel : BaseViewModel() {
     private fun maybeAutoSendQueuedMessage() {
         if (currentSessionId.isBlank()) return
         if (!_session.value?.sessionMode.equals("agent", ignoreCase = true)) return
-        if (_sending.value || runtime.hasBlockingLocalChatJob()) return
+        if (_sending.value || runtime.hasBlockingLocalChatJob() || runtime.delayReply.hasPending()) return
         if (generationStopRequested) return
         if (_execConfirmation.value != null) return
         // AI 正在等待用户回答提问时，不自动发送排队消息
@@ -2387,7 +2446,12 @@ class ChatViewModel : BaseViewModel() {
         val top = queue.first()
         _queuedMessages.value = queue.drop(1)
         _messages.value = _messages.value.filter { it.id != queuedUrgentBubbleId(top.id) }
-        sendMessage(top.content, attachments = top.attachments, reasoningEffort = top.reasoningEffort)
+        sendMessage(
+            top.content,
+            attachments = top.attachments,
+            reasoningEffort = top.reasoningEffort,
+            allowDelay = false
+        )
     }
 
     /** 订阅生成状态/队列变化，在每轮生成结束后自动发送队顶排队消息。 */
@@ -2415,14 +2479,31 @@ class ChatViewModel : BaseViewModel() {
         text: String,
         plotChoiceId: String? = null,
         attachments: List<Map<String, Any>> = emptyList(),
-        reasoningEffort: com.nekobot.app.data.model.ReasoningEffort = com.nekobot.app.data.model.ReasoningEffort.NONE
+        reasoningEffort: com.nekobot.app.data.model.ReasoningEffort = com.nekobot.app.data.model.ReasoningEffort.NONE,
+        allowDelay: Boolean = true
     ) {
         val content = text.trim()
         val messageContent = buildChatMessageContent(content, attachments)
         if (messageContent.isBlank()) return
         if (currentSessionId.isBlank()) return
+        val slashCommand = LocalSlashCommands.parse(content)
+        val delayReplyEnabled = shouldUseDelayReply(
+            sessionEnabled = _session.value?.delayReplyEnabled == true,
+            allowDelay = allowDelay,
+            isLocalMode = isLocalMode,
+            sessionMode = _session.value?.sessionMode,
+            inheritCharacter = _session.value?.inheritCharacter,
+            isSlashCommand = slashCommand != null
+        )
+        if (plotChoiceId != null && runtime.delayReply.hasPending()) {
+            showToast(string(R.string.chat_delay_reply_plot_blocked))
+            return
+        }
         // Agent 会话：AI 生成期间发送的消息进入排队队列，生成结束后自动发送队顶
-        val busyGenerating = _sending.value || runtime.hasBlockingLocalChatJob()
+        val busyGenerating =
+            _sending.value ||
+                runtime.hasBlockingLocalChatJob() ||
+                (runtime.delayReply.hasPending() && !delayReplyEnabled)
         if (
             busyGenerating &&
             plotChoiceId == null &&
@@ -2431,22 +2512,70 @@ class ChatViewModel : BaseViewModel() {
             enqueueQueuedMessage(content, attachments, reasoningEffort)
             return
         }
+        if (runtime.delayReply.hasPending() && !delayReplyEnabled) {
+            showToast(string(R.string.chat_delay_reply_pending_wait))
+            return
+        }
         if (_sending.value || _editingMessage.value || runtime.hasBlockingLocalChatJob()) return
         if (plotChoiceId != null) {
             viewModelScope.launch {
                 commitPlotChoiceSelection(plotChoiceId)
-                sendMessage(content, attachments = attachments, reasoningEffort = reasoningEffort)
+                sendMessage(
+                    content,
+                    attachments = attachments,
+                    reasoningEffort = reasoningEffort,
+                    allowDelay = false
+                )
             }
             return
         }
+        val timestamp = System.currentTimeMillis().toString()
+        val delayBubbleId = if (delayReplyEnabled) {
+            "$DELAY_REPLY_BUBBLE_PREFIX${java.util.UUID.randomUUID()}"
+        } else {
+            null
+        }
         // 乐观更新
         val optimistic = Message(
+            id = delayBubbleId,
             role = "user",
             content = messageContent,
-            timestamp = System.currentTimeMillis().toString()
+            timestamp = timestamp
         )
         _messages.value = _messages.value + optimistic
         generationStopRequested = false
+
+        // 延迟回复仅用于符合条件的本地角色会话；命令、剧情选择和队列发送保持即时语义。
+        if (delayReplyEnabled) {
+            val delaySeconds = normalizeDelayReplySeconds(_session.value?.delayReplyDelaySeconds)
+            val restarting = runtime.delayReply.hasPending()
+            if (restarting) {
+                showToast(string(R.string.chat_delay_reply_restarted, delaySeconds))
+            } else {
+                showToast(string(R.string.chat_delay_reply_scheduled, delaySeconds))
+            }
+            armDelayReply(
+                DelayedReplyMessage(
+                    bubbleId = requireNotNull(delayBubbleId),
+                    content = messageContent,
+                    attachments = attachments,
+                    reasoningEffort = reasoningEffort,
+                    timestamp = timestamp
+                )
+            )
+            return
+        }
+
+        startAiRequest(messageContent, attachments, reasoningEffort)
+    }
+
+    /** 真正发起 AI 请求（延迟倒计时结束后调用，或未启用延迟时直接调用）。 */
+    private fun startAiRequest(
+        messageContent: String,
+        attachments: List<Map<String, Any>>,
+        reasoningEffort: com.nekobot.app.data.model.ReasoningEffort,
+        batchedUserMessages: List<String> = emptyList()
+    ) {
         // 普通发送：流式占位追加到末尾，清掉上一轮 swipes 留下的锚点。
         streamingAnchorMessageId = null
         _sending.value = true
@@ -2475,7 +2604,8 @@ class ChatViewModel : BaseViewModel() {
                         messageContent,
                         attachments,
                         reasoningEffort,
-                        pendingUserMessages = ::drainUrgentMessagesForInjection
+                        pendingUserMessages = ::drainUrgentMessagesForInjection,
+                        batchedUserMessages = batchedUserMessages
                     )
                 } catch (_: kotlinx.coroutines.CancellationException) {
                     return@startLocalChatCollection
@@ -2521,6 +2651,85 @@ class ChatViewModel : BaseViewModel() {
             launchHttpChat(messageContent, attachments, reasoningEffort)
         }
     }
+
+    // ============ 延迟回复（会话级状态，跨页面实例保留） ============
+    private var latestChatInputActive: Boolean = false
+
+    /** 输入法可见性变化（由聊天页 IME insets 上报）：弹出=输入中，暂停倒计时无限顺延；收起后从剩余时间继续。 */
+    fun onChatInputFocusChanged(focused: Boolean) {
+        latestChatInputActive = focused
+        val target = runtime
+        val plan = target.delayReply.setInputActive(focused, elapsedRealtimeMs()) ?: return
+        installDelayReplyPlan(target, plan)
+        if (focused && target.delayReply.hasPending()) {
+            showToast(string(R.string.chat_delay_reply_paused))
+        }
+    }
+
+    private fun armDelayReply(message: DelayedReplyMessage) {
+        val target = runtime
+        val plan = target.delayReply.arm(
+            message = message,
+            nowMs = elapsedRealtimeMs(),
+            delayMs = delayReplyDelayMs()
+        )
+        installDelayReplyPlan(target, plan)
+    }
+
+    private fun installDelayReplyPlan(target: ChatSessionState, plan: DelayReplyPlan) {
+        target.delayReplyJob?.cancel()
+        target.delayReplyJob = null
+        val duration = plan.delayMs ?: return
+        lateinit var scheduledJob: kotlinx.coroutines.Job
+        scheduledJob = ServiceContainer.applicationScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            kotlinx.coroutines.delay(duration)
+            if (target.delayReplyJob === scheduledJob) target.delayReplyJob = null
+            when (val result = target.delayReply.onTimerFired(plan.generation, elapsedRealtimeMs())) {
+                DelayReplyTimerResult.Stale -> Unit
+                is DelayReplyTimerResult.Paused -> {
+                    installDelayReplyPlan(target, result.plan)
+                    showToast(string(R.string.chat_delay_reply_paused))
+                }
+                is DelayReplyTimerResult.Reschedule -> installDelayReplyPlan(target, result.plan)
+                is DelayReplyTimerResult.Ready -> fireDelayedReply(target, result.messages)
+            }
+        }
+        target.delayReplyJob = scheduledJob
+    }
+
+    private fun fireDelayedReply(target: ChatSessionState, messages: List<DelayedReplyMessage>) {
+        if (messages.isEmpty() || runtime !== target || currentSessionId != target.sessionId) return
+        val request = buildDelayReplyRequest(messages) ?: return
+        showToast(string(R.string.chat_delay_reply_started))
+        startAiRequest(
+            messageContent = request.messageContent,
+            attachments = request.attachments,
+            reasoningEffort = request.reasoningEffort,
+            batchedUserMessages = request.precedingMessages
+        )
+    }
+
+    private fun cancelDelayedReply(removeBubbles: Boolean) {
+        val target = runtime
+        target.delayReplyJob?.cancel()
+        target.delayReplyJob = null
+        val cancelled = target.delayReply.cancel()
+        if (removeBubbles && cancelled.isNotEmpty()) {
+            val ids = cancelled.mapTo(HashSet()) { it.bubbleId }
+            _messages.value = _messages.value.filterNot { it.id in ids }
+        }
+    }
+
+    private fun blockHistoryMutationWhileDelayPending(): Boolean {
+        if (!runtime.delayReply.hasPending()) return false
+        showToast(string(R.string.chat_delay_reply_pending_history))
+        return true
+    }
+
+    private fun delayReplyDelayMs(): Long =
+        normalizeDelayReplySeconds(_session.value?.delayReplyDelaySeconds) * 1_000L
+
+    private fun elapsedRealtimeMs(): Long = android.os.SystemClock.elapsedRealtime()
 
     /** HTTP /chat 回退路径：触发后等待 socket 推送或轮询。 */
     private fun launchHttpChat(
@@ -2694,6 +2903,7 @@ class ChatViewModel : BaseViewModel() {
     }
 
     private fun regenerateMessageById(messageId: String) {
+        if (blockHistoryMutationWhileDelayPending()) return
         if (_sending.value || runtime.hasBlockingLocalChatJob() || currentSessionId.isBlank()) return
         // 流式占位直接落在被重抽的气泡位置，而不是永远追加到列表末尾。
         // 群聊一轮可能由多名角色发言，回复会作为新消息追加而不是候选，因此不设锚点。
@@ -2809,6 +3019,7 @@ class ChatViewModel : BaseViewModel() {
      * @param delta -1 上一版，+1 下一版
      */
     fun switchMessageVariant(message: Message, delta: Int) {
+        if (blockHistoryMutationWhileDelayPending()) return
         if (_sending.value || runtime.hasBlockingLocalChatJob()) return
         val messageId = message.id?.takeIf { it.isNotBlank() } ?: return
         val total = message.variantCount ?: 0
@@ -2864,6 +3075,7 @@ class ChatViewModel : BaseViewModel() {
      * 服务器模式：走 regenerate API（传首条消息 id）。
      */
     fun regenerateGreeting() {
+        if (blockHistoryMutationWhileDelayPending()) return
         if (_sending.value || runtime.hasBlockingLocalChatJob() || currentSessionId.isBlank()) return
         // 找到首条 assistant 消息
         val firstAssistant = _messages.value.firstOrNull { !it.isUser }
@@ -2938,6 +3150,11 @@ class ChatViewModel : BaseViewModel() {
     fun stop() {
         val sessionId = currentSessionId.ifBlank { return }
         generationStopRequested = true
+        if (runtime.delayReply.hasPending()) {
+            cancelDelayedReply(removeBubbles = true)
+            showToast(string(R.string.chat_delay_reply_cancelled))
+            return
+        }
 
         _execConfirmation.value?.let { request ->
             val confirmationSessionId = request.sessionId.ifBlank { sessionId }
@@ -3121,6 +3338,7 @@ class ChatViewModel : BaseViewModel() {
     /** 压缩上下文：将早期消息摘要化以节省 token。 */
     fun compressContext() {
         if (currentSessionId.isBlank()) return
+        if (blockHistoryMutationWhileDelayPending()) return
         // AI 持续 loop 期间禁止手动压缩上下文（UI 层禁用）：压缩会重写历史边界，
         // 正在执行的 Agent 任务会因此丢失工作记忆；达到阈值后的自动压缩不受影响。
         if (_sending.value || runtime.hasBlockingLocalChatJob()) {
@@ -3366,6 +3584,7 @@ class ChatViewModel : BaseViewModel() {
 
     /** 删除单条消息，成功后回调 [onSuccess]。 */
     fun deleteMessage(sessionId: String, messageId: String, onSuccess: () -> Unit = {}) {
+        if (blockHistoryMutationWhileDelayPending()) return
         // 先从列表移除：孤儿 assistant 保留逻辑会跳过这里记录的 id，
         // 避免随后的 loadMessages 把刚删除的消息当作未落库的孤儿重新加回。
         runtime.deletedMessageIds.add(messageId)
@@ -3410,6 +3629,7 @@ class ChatViewModel : BaseViewModel() {
             showError(string(R.string.chat_edit_message_empty))
             return
         }
+        if (blockHistoryMutationWhileDelayPending()) return
         if (_sending.value || _editingMessage.value || runtime.hasBlockingLocalChatJob()) return
         val sessionId = currentSessionId.takeIf(String::isNotBlank) ?: return
         val messageId = message.id?.takeIf(String::isNotBlank) ?: return
@@ -3505,6 +3725,7 @@ class ChatViewModel : BaseViewModel() {
             return
         }
         if (message.isUser) return
+        if (blockHistoryMutationWhileDelayPending()) return
         if (_sending.value || _editingMessage.value || runtime.hasBlockingLocalChatJob()) return
         val sessionId = currentSessionId.takeIf(String::isNotBlank) ?: return
         val messageId = message.id?.takeIf(String::isNotBlank) ?: return
@@ -3648,6 +3869,7 @@ class ChatViewModel : BaseViewModel() {
 
     /** 删除所有选中的消息，完成后退出多选模式并刷新列表。 */
     fun deleteSelectedMessages() {
+        if (blockHistoryMutationWhileDelayPending()) return
         val ids = _selectedMessageIds.value.toList()
         if (ids.isEmpty()) return
         val sid = currentSessionId
@@ -3665,6 +3887,7 @@ class ChatViewModel : BaseViewModel() {
 
     /** 清空会话所有消息，成功后回调 [onSuccess]。 */
     fun clearMessages(sessionId: String, onSuccess: () -> Unit = {}) {
+        if (sessionId == currentSessionId) cancelDelayedReply(removeBubbles = true)
         launchResult(
             block = { unified.clearMessages(sessionId) },
             onSuccess = {

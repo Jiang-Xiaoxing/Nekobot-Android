@@ -1692,6 +1692,8 @@ class LocalRepository(
             sessionMode = sessionMode,
             inheritCharacter = sessionObj.boolVal("inherit_character", "inheritCharacter") ?: false,
             inheritCharacterGreeting = sessionObj.boolVal("inherit_character_greeting", "inheritCharacterGreeting") ?: false,
+            delayReplyEnabled = sessionObj.boolVal("delay_reply_enabled", "delayReplyEnabled") ?: false,
+            delayReplyDelaySeconds = sessionObj.intVal("delay_reply_delay_seconds", "delayReplyDelaySeconds") ?: 2,
             groupId = if (isGroup) "gc_${UUID.randomUUID().toString().replace("-", "").take(12)}" else null,
             characterIds = if (isGroup && groupCharacterIds.isNotEmpty()) gson.toJson(groupCharacterIds) else null
         )
@@ -1851,7 +1853,9 @@ class LocalRepository(
         archived: Boolean? = null,
         inheritCharacter: Boolean? = null,
         inheritCharacterGreeting: Boolean? = null,
-        longConversationEnabled: Boolean? = null
+        longConversationEnabled: Boolean? = null,
+        delayReplyEnabled: Boolean? = null,
+        delayReplyDelaySeconds: Int? = null
     ) = withContext(Dispatchers.IO) {
         val entity = sessionDao.getById(id) ?: run {
             android.util.Log.d("LocalRepo", "updateSession: entity not found for id=$id")
@@ -1882,6 +1886,8 @@ class LocalRepository(
             inheritCharacter = inheritCharacter ?: entity.inheritCharacter,
             inheritCharacterGreeting = inheritCharacterGreeting ?: entity.inheritCharacterGreeting,
             longConversationEnabled = longConversationEnabled ?: entity.longConversationEnabled,
+            delayReplyEnabled = delayReplyEnabled ?: entity.delayReplyEnabled,
+            delayReplyDelaySeconds = delayReplyDelaySeconds ?: entity.delayReplyDelaySeconds,
             updatedAt = nowIso()
         )
         // Existing imported history must not trigger hundreds of paid summary calls on the
@@ -6735,6 +6741,7 @@ class LocalRepository(
         userMessage: String,
         activeModel: LocalAiModelEntity,
         attachments: List<Map<String, Any>> = emptyList(),
+        batchedUserMessages: List<String> = emptyList(),
         persistUserMessage: Boolean = true,
         existingParentMessageId: String? = null,
         internalMetadata: Map<String, Any> = emptyMap(),
@@ -6770,21 +6777,26 @@ class LocalRepository(
         // 标记当前会话，供二级 LLM 调用（AutoState/记忆）token 记账归属
         currentSessionId = sessionId
 
-        // 0. 发送前钩子：声明 message.beforeSend 的插件可改写本条用户消息（失败/超时保持原文）
-        val outgoingMessage = if (persistUserMessage) {
-            runCatching {
-                ServiceContainer.pluginManager.runMessageBeforeSendHooks(sessionId, userMessage)
-            }.getOrDefault(userMessage)
+        // 0. 延迟回复批次中的消息逐条执行发送前钩子并保存；最后一条驱动本轮生成。
+        val originalUserMessages = (batchedUserMessages + userMessage).filter(String::isNotBlank)
+        val outgoingMessages = if (persistUserMessage) {
+            originalUserMessages.map { content ->
+                runCatching {
+                    ServiceContainer.pluginManager.runMessageBeforeSendHooks(sessionId, content)
+                }.getOrDefault(content)
+            }
         } else {
-            userMessage
+            listOf(userMessage)
         }
+        val outgoingMessage = outgoingMessages.lastOrNull() ?: userMessage
 
-        // 1. 保存用户消息
-        val savedUserMessage = if (persistUserMessage) {
-            addMessage(sessionId, "user", outgoingMessage)
+        // 1. 按用户发送顺序逐条保存，保留多气泡语义；最后一条作为回复锚点。
+        val savedUserMessages = if (persistUserMessage) {
+            outgoingMessages.map { content -> addMessage(sessionId, "user", content) }
         } else {
-            null
+            emptyList()
         }
+        val savedUserMessage = savedUserMessages.lastOrNull()
         val parentMessageId = savedUserMessage?.id ?: existingParentMessageId
 
         val session = sessionDao.getById(sessionId) ?: run {
@@ -6908,7 +6920,7 @@ class LocalRepository(
                 maxContextTokens = maxContextTokens,
                 automatic = true,
                 // 本轮用户消息刚落库，属于边界之后的新消息，不参与摘要。
-                protectedMessageIds = setOfNotNull(savedUserMessage?.id)
+                protectedMessageIds = savedUserMessages.mapNotNullTo(mutableSetOf()) { it.id }
             )
             emit(
                 RealtimeEvent.ContextCompressionStatus(
@@ -10523,7 +10535,9 @@ ${AiOutputLanguage.directive()}
         agentSpec = agentSpec,
         inheritCharacter = inheritCharacter,
         inheritCharacterGreeting = inheritCharacterGreeting,
-        longConversationEnabled = longConversationEnabled
+        longConversationEnabled = longConversationEnabled,
+        delayReplyEnabled = delayReplyEnabled,
+        delayReplyDelaySeconds = delayReplyDelaySeconds
     )
 
     private fun LocalMessageEntity.toMessage(): Message = Message(

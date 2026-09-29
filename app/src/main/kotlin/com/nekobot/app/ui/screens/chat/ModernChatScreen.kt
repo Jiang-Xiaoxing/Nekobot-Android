@@ -32,10 +32,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -115,6 +117,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -192,10 +195,18 @@ fun ModernChatScreen(
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
     val viewModel: ChatViewModel = viewModel()
+    // 延迟回复：以输入法可见性为准——弹出=输入中（暂停倒计时），收起=继续。
+    // 不用 BasicTextField 焦点：BACK 收起输入法后焦点仍留在输入框上，会导致暂停判定失效。
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(imeVisible) {
+        viewModel.onChatInputFocusChanged(imeVisible)
+    }
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
     // 会话级"AI 正在运行"（含后台收尾/唤醒运行）：主操作按钮据此保留停止入口
     val sessionGenerating by viewModel.sessionGenerating.collectAsStateWithLifecycle()
+    val delayReplyPending by viewModel.delayReplyPending.collectAsStateWithLifecycle()
+    val replyBusy = sending || delayReplyPending
     val compressing by viewModel.agentContextCompressionInProgress.collectAsStateWithLifecycle()
     val plotChoices by viewModel.plotChoices.collectAsStateWithLifecycle()
     val plotChoicesLoading by viewModel.plotChoicesLoading.collectAsStateWithLifecycle()
@@ -242,7 +253,7 @@ fun ModernChatScreen(
         Column(
             modifier = Modifier.padding(bottom = embeddedBottomBarClearance)
         ) {
-            if (agentRecovery != null && !sending) {
+            if (agentRecovery != null && !replyBusy) {
                 AgentRecoveryBar(
                     state = agentRecovery!!,
                     onResume = viewModel::resumeAgentRun,
@@ -258,7 +269,7 @@ fun ModernChatScreen(
             sessionId = sessionId,
             session = session,
             messages = messages,
-            sending = sending,
+            sending = replyBusy,
             sessionGenerating = sessionGenerating,
             compressing = compressing,
             plotChoices = plotChoices,
