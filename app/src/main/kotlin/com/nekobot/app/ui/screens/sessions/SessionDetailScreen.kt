@@ -92,6 +92,7 @@ import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.screens.chat.DEFAULT_DELAY_REPLY_SECONDS
 import com.nekobot.app.ui.screens.chat.MAX_DELAY_REPLY_SECONDS
 import com.nekobot.app.ui.screens.chat.MIN_DELAY_REPLY_SECONDS
+import com.nekobot.app.ui.screens.chat.ChatSessionManager
 import com.nekobot.app.ui.screens.chat.normalizeDelayReplySeconds
 import kotlin.math.roundToInt
 import com.nekobot.app.ui.components.ErrorBanner
@@ -492,6 +493,10 @@ class SessionDetailViewModel : BaseViewModel() {
             s.sessionMode.equals("character", ignoreCase = true) ||
                 (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter.value)
             )
+        val savedDelayReplyEnabled = delayReplyEligible && delayReplyEnabled.value
+        if (!savedDelayReplyEnabled) {
+            ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
+        }
         launchResult(
             block = {
                 unified.updateSession(
@@ -517,7 +522,7 @@ class SessionDetailViewModel : BaseViewModel() {
                         inheritCharacterGreeting = inheritCharacter.value && inheritCharacterGreeting.value,
                         longConversationEnabled = inheritCharacter.value && longConversationEnabled.value,
                         delayReplyEnabled = if (isLocalMode) {
-                            delayReplyEligible && delayReplyEnabled.value
+                            savedDelayReplyEnabled
                         } else null,
                         delayReplyDelaySeconds = if (isLocalMode) {
                             normalizeDelayReplySeconds(delayReplyDelaySeconds.value)
@@ -608,6 +613,7 @@ class SessionDetailViewModel : BaseViewModel() {
 
     fun delete(onSuccess: () -> Unit) {
         val s = _session.value ?: return
+        ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
         launchResult(
             block = { unified.deleteSession(s.id.orEmpty()) },
             onSuccess = {
@@ -770,6 +776,7 @@ data class PromptStackItem(
 fun SessionDetailScreen(
     sessionId: String,
     onBack: () -> Unit,
+    onDeleted: () -> Unit = onBack,
     onOpenExperienceArchive: (String) -> Unit = {}
 ) {
     val vm: SessionDetailViewModel = viewModel(key = "session_detail_$sessionId")
@@ -1823,7 +1830,7 @@ fun SessionDetailScreen(
             confirmText = deleteDesc,
             onConfirm = {
                 showDeleteDialog = false
-                vm.delete(onBack)
+                vm.delete(onDeleted)
             }
         )
     }

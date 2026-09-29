@@ -221,6 +221,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
@@ -277,6 +279,27 @@ class ChatViewModel : BaseViewModel() {
         .distinctUntilChanged()
         .flatMapLatest { it }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val delayReplyBubbleStatus: StateFlow<DelayReplyBubbleStatus?> = _runtime
+        .flatMapLatest { target ->
+            target.delayReply.pendingState.flatMapLatest { pending ->
+                if (!pending) flowOf<DelayReplyBubbleStatus?>(null) else flow<DelayReplyBubbleStatus?> {
+                    while (true) {
+                        val last = target.delayReply.pendingMessages().lastOrNull()
+                        emit(last?.let {
+                            DelayReplyBubbleStatus(
+                                bubbleId = it.bubbleId,
+                                paused = target.delayReply.isPaused(),
+                                remainingSeconds = ((target.delayReply.remainingMs(elapsedRealtimeMs()) + 999L) / 1_000L).toInt()
+                            )
+                        })
+                        kotlinx.coroutines.delay(250L)
+                    }
+                }
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /** 是否还有更早的历史消息未加载（聊天界面滚动到顶部时据此触发分页加载）。 */
     val hasOlderMessages: StateFlow<Boolean> = _runtime
@@ -700,8 +723,7 @@ class ChatViewModel : BaseViewModel() {
         if (currentSessionId.isNotBlank() && currentSessionId != sessionId) {
             // 同一 VM 切到其它会话时，不能让旧计时器在后台先消费批次、再因会话不匹配而丢弃。
             // 只取消计时任务，保留 delayReply 中的消息；重新进入旧会话后由 currentPlan() 恢复。
-            runtime.delayReplyJob?.cancel()
-            runtime.delayReplyJob = null
+            runtime.installDelayReplyJob(null)
             ChatSessionManager.release(currentSessionId)
         }
         currentSessionId = sessionId
@@ -766,7 +788,7 @@ class ChatViewModel : BaseViewModel() {
         loadSession(sessionId)
         // 仅当该会话没有正在进行的 AI 生成时才重新加载消息，
         // 否则保留 runtime 中的流式状态（用户切回正在生成的会话时能看到进度）。
-        if (!runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
+        if (runtime.shouldLoadPersistedMessagesOnEntry()) {
             loadMessages()
         }
         if (!isLocalMode) {
@@ -1576,9 +1598,11 @@ class ChatViewModel : BaseViewModel() {
                     )
                 }
                 val nextMessages = deduplicateMessagesById(
-                    olderPrefix +
-                        (if (orphanAssistants.isEmpty()) merged else merged + orphanAssistants) +
+                    mergeDelayedReplyBubbles(
+                        olderPrefix +
+                            (if (orphanAssistants.isEmpty()) merged else merged + orphanAssistants),
                         delayedBubbles
+                    )
                 )
                 _messages.value = nextMessages
                 val nextTtsStates = _ttsStates.value.toMutableMap()
@@ -2475,6 +2499,23 @@ class ChatViewModel : BaseViewModel() {
 
     private var queuedAutoSendJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * 聊天页和输入框共用的延迟回复资格判断。
+     *
+     * 资格只在 ViewModel 计算，避免界面与真正发送路径各自复制一份规则后发生偏差。
+     */
+    fun shouldUseDelayReplyForInput(text: String, allowDelay: Boolean = true): Boolean {
+        val current = _session.value
+        return shouldUseDelayReply(
+            sessionEnabled = current?.delayReplyEnabled == true,
+            allowDelay = allowDelay,
+            isLocalMode = isLocalMode,
+            sessionMode = current?.sessionMode,
+            inheritCharacter = current?.inheritCharacter,
+            isSlashCommand = LocalSlashCommands.parse(text.trim()) != null
+        )
+    }
+
     fun sendMessage(
         text: String,
         plotChoiceId: String? = null,
@@ -2486,14 +2527,9 @@ class ChatViewModel : BaseViewModel() {
         val messageContent = buildChatMessageContent(content, attachments)
         if (messageContent.isBlank()) return
         if (currentSessionId.isBlank()) return
-        val slashCommand = LocalSlashCommands.parse(content)
-        val delayReplyEnabled = shouldUseDelayReply(
-            sessionEnabled = _session.value?.delayReplyEnabled == true,
-            allowDelay = allowDelay,
-            isLocalMode = isLocalMode,
-            sessionMode = _session.value?.sessionMode,
-            inheritCharacter = _session.value?.inheritCharacter,
-            isSlashCommand = slashCommand != null
+        val delayReplyEnabled = shouldUseDelayReplyForInput(
+            text = content,
+            allowDelay = allowDelay && plotChoiceId == null
         )
         if (plotChoiceId != null && runtime.delayReply.hasPending()) {
             showToast(string(R.string.chat_delay_reply_plot_blocked))
@@ -2665,22 +2701,47 @@ class ChatViewModel : BaseViewModel() {
     }
 
     private fun installDelayReplyPlan(target: ChatSessionState, plan: DelayReplyPlan) {
-        target.delayReplyJob?.cancel()
-        target.delayReplyJob = null
-        val duration = plan.delayMs ?: return
+        val duration = plan.delayMs
+        if (duration == null) {
+            target.installDelayReplyJob(null)
+            return
+        }
         lateinit var scheduledJob: kotlinx.coroutines.Job
-        scheduledJob = ServiceContainer.applicationScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+        scheduledJob = ServiceContainer.applicationScope.launch(
+            context = kotlinx.coroutines.Dispatchers.Main.immediate,
+            start = kotlinx.coroutines.CoroutineStart.LAZY
+        ) {
             kotlinx.coroutines.delay(duration)
-            if (target.delayReplyJob === scheduledJob) target.delayReplyJob = null
             // 会话已在同一 VM 中切换时保留旧批次，等待重新进入后恢复计时；不要先消费再丢弃。
             if (runtime !== target || currentSessionId != target.sessionId) return@launch
+            // 到期前重新读取会话：删除会话、关闭延迟回复或关闭 Agent 角色继承后必须静默撤回。
+            val latestSession = when (val result = unified.getSession(target.sessionId)) {
+                is Resource.Success -> result.data
+                is Resource.Error, is Resource.Loading -> null
+            }
+            val stillEligible = shouldUseDelayReply(
+                sessionEnabled = latestSession?.delayReplyEnabled == true,
+                allowDelay = true,
+                isLocalMode = isLocalMode,
+                sessionMode = latestSession?.sessionMode,
+                inheritCharacter = latestSession?.inheritCharacter,
+                isSlashCommand = false
+            )
+            // getSession 会挂起；期间可能切换会话、撤回批次或重新计时，旧任务不得继续消费。
+            if (runtime !== target || currentSessionId != target.sessionId) return@launch
+            if (!target.clearDelayReplyJob(scheduledJob)) return@launch
+            if (!stillEligible) {
+                target.cancelDelayedReply(removeBubbles = true)
+                return@launch
+            }
             when (val result = target.delayReply.onTimerFired(plan.generation, elapsedRealtimeMs())) {
                 DelayReplyTimerResult.Stale -> Unit
                 is DelayReplyTimerResult.Reschedule -> installDelayReplyPlan(target, result.plan)
                 is DelayReplyTimerResult.Ready -> fireDelayedReply(target, result.messages)
             }
         }
-        target.delayReplyJob = scheduledJob
+        target.installDelayReplyJob(scheduledJob)
+        scheduledJob.start()
     }
 
     private fun fireDelayedReply(target: ChatSessionState, messages: List<DelayedReplyMessage>) {
@@ -2696,13 +2757,15 @@ class ChatViewModel : BaseViewModel() {
 
     private fun cancelDelayedReply(removeBubbles: Boolean) {
         val target = runtime
-        target.delayReplyJob?.cancel()
-        target.delayReplyJob = null
-        val cancelled = target.delayReply.cancel()
-        if (removeBubbles && cancelled.isNotEmpty()) {
-            val ids = cancelled.mapTo(HashSet()) { it.bubbleId }
-            _messages.value = _messages.value.filterNot { it.id in ids }
-        }
+        target.cancelDelayedReply(removeBubbles)
+    }
+
+    /** 撤回尚未发送给 AI 的整批消息，随后让独立的 Agent 排队消息继续按原规则发送。 */
+    fun withdrawDelayedReplyBatch() {
+        if (!runtime.delayReply.hasPending()) return
+        cancelDelayedReply(removeBubbles = true)
+        generationStopRequested = false
+        maybeAutoSendQueuedMessage()
     }
 
     private fun blockHistoryMutationWhileDelayPending(): Boolean {
@@ -3134,11 +3197,11 @@ class ChatViewModel : BaseViewModel() {
     /** 停止生成。 */
     fun stop() {
         val sessionId = currentSessionId.ifBlank { return }
-        generationStopRequested = true
         if (runtime.delayReply.hasPending()) {
-            cancelDelayedReply(removeBubbles = true)
+            withdrawDelayedReplyBatch()
             return
         }
+        generationStopRequested = true
 
         _execConfirmation.value?.let { request ->
             val confirmationSessionId = request.sessionId.ifBlank { sessionId }
@@ -3692,7 +3755,7 @@ class ChatViewModel : BaseViewModel() {
             } finally {
                 _editingMessage.value = false
             }
-            if (shouldResend) sendMessage(content)
+            if (shouldResend) sendMessage(content, allowDelay = false)
         }
     }
 

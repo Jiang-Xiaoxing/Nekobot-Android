@@ -6,6 +6,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -111,5 +112,41 @@ class ChatSessionRuntimeTest {
         assertTrue(state.localChatJob === second)
 
         second.cancelAndJoin()
+    }
+
+    @Test
+    fun cancellingDelayedBatchStopsTimerAndRemovesEveryPendingBubble() = runBlocking {
+        val sessionId = "delay-cancel-${System.nanoTime()}"
+        val state = ChatSessionManager.acquire(sessionId)
+        val first = DelayedReplyMessage(
+            bubbleId = "pending-a",
+            content = "A",
+            timestamp = "1"
+        )
+        val second = DelayedReplyMessage(
+            bubbleId = "pending-b",
+            content = "B",
+            timestamp = "2"
+        )
+        state.delayReply.arm(first, nowMs = 0L, delayMs = 10_000L)
+        state.delayReply.arm(second, nowMs = 1L, delayMs = 10_000L)
+        state.messages.value = listOf(
+            com.nekobot.app.data.model.Message(id = "stored", role = "assistant", content = "旧回复"),
+            com.nekobot.app.data.model.Message(id = first.bubbleId, role = "user", content = first.content),
+            com.nekobot.app.data.model.Message(id = second.bubbleId, role = "user", content = second.content)
+        )
+        state.generationStopRequested = true
+        val timer = launch { awaitCancellation() }
+        state.installDelayReplyJob(timer)
+        yield()
+
+        assertTrue(ChatSessionManager.cancelDelayedReply(sessionId, removeBubbles = true))
+        timer.join()
+
+        assertFalse(state.delayReply.hasPending())
+        assertNull(state.delayReplyJob)
+        assertFalse(state.generationStopRequested)
+        assertEquals(listOf("stored"), state.messages.value.map { it.id })
+        ChatSessionManager.release(sessionId)
     }
 }

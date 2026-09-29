@@ -149,6 +149,9 @@
     <string name="chat_delay_reply_pending_wait">延迟回复等待中，请等待当前批次开始回复</string>
     <string name="chat_delay_reply_pending_history">延迟回复等待中，请先发送或取消当前等待</string>
     <string name="chat_delay_reply_plot_blocked">延迟回复等待中，回复开始后再选择剧情选项</string>
+    <string name="chat_delay_reply_countdown">%1$d 秒后回复</string>
+    <string name="chat_delay_reply_paused_draft">已暂停 · 草稿有内容</string>
+    <string name="chat_delay_reply_withdraw_batch">撤回整批</string>
     <string name="sessions_detail_experience_archives">查看经历档案</string>
     <string name="sessions_detail_inherit_greeting_on">使用角色开场白：开</string>
     <string name="sessions_detail_inherit_greeting_off">使用角色开场白：关</string>

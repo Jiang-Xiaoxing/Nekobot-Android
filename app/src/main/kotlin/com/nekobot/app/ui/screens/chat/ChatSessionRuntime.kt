@@ -389,6 +389,46 @@ class ChatSessionState(
     @Volatile
     var delayReplyJob: Job? = null
 
+    /**
+     * 安装延迟回复计时任务。
+     *
+     * 调用方使用 LAZY Job：先登记所有权再启动，避免极短延迟下协程先执行、
+     * 随后才写入 [delayReplyJob] 而留下错误所有者。
+     */
+    @Synchronized
+    fun installDelayReplyJob(job: Job?) {
+        val previous = delayReplyJob
+        delayReplyJob = job
+        if (previous !== job) previous?.cancel()
+    }
+
+    /** 仅允许计时任务清理自己，避免旧任务误清掉新一轮计时。 */
+    @Synchronized
+    fun clearDelayReplyJob(job: Job): Boolean {
+        if (delayReplyJob !== job) return false
+        delayReplyJob = null
+        return true
+    }
+
+    /**
+     * 取消当前尚未交给 AI 的整批消息，并按需移除对应的乐观气泡。
+     *
+     * 关闭延迟回复、关闭 Agent 角色继承、删除会话和用户点击“撤回整批”
+     * 都走这里，保证计时任务、状态机与界面列表同步清理。
+     */
+    @Synchronized
+    fun cancelDelayedReply(removeBubbles: Boolean = true): List<DelayedReplyMessage> {
+        delayReplyJob?.cancel()
+        delayReplyJob = null
+        val cancelled = delayReply.cancel()
+        generationStopRequested = false
+        if (removeBubbles && cancelled.isNotEmpty()) {
+            val bubbleIds = cancelled.mapTo(HashSet()) { it.bubbleId }
+            messages.value = messages.value.filterNot { it.id in bubbleIds }
+        }
+        return cancelled
+    }
+
     /** 将未消费的加急消息移回排队队列队首（生成已结束时兜底回收）。 */
     fun recycleUrgentMessages() {
         if (urgentMessages.isEmpty()) return
@@ -521,12 +561,14 @@ class ChatSessionState(
     fun hasActiveGeneration(): Boolean =
         sending.value || hasBlockingLocalChatJob()
 
+    /** 进入会话时是否应刷新 Room 消息；延迟批次还在内存中时必须保留乐观气泡。 */
+    fun shouldLoadPersistedMessagesOnEntry(): Boolean =
+        !hasActiveGeneration() && !delayReply.hasPending()
+
     /** 是否还有活跃的后台 Job */
     fun hasActiveJobs(): Boolean =
         hasActiveGeneration() ||
             localChatJob?.isActive == true ||
-            delayReplyJob?.isActive == true ||
-            delayReply.hasPending() ||
             eventsJob?.isActive == true ||
             ttsJobs.values.any { it.isActive }
 
@@ -616,13 +658,20 @@ object ChatSessionManager {
     /** 不增加引用计数地访问会话状态（可能为 null，如尚未 init 或已清理）。 */
     fun get(sessionId: String): ChatSessionState? = sessions[sessionId]
 
+    /** 从设置页、会话列表等聊天页之外的入口取消尚未发送的延迟批次。 */
+    fun cancelDelayedReply(sessionId: String, removeBubbles: Boolean = true): Boolean {
+        val state = sessions[sessionId] ?: return false
+        val cancelled = state.cancelDelayedReply(removeBubbles)
+        pruneIfIdle(sessionId)
+        return cancelled.isNotEmpty()
+    }
+
     /** 应用退出时清理所有会话状态（取消所有后台 Job）。 */
     fun releaseAll() {
         sessions.values.forEach { state ->
             state.localChatJob?.cancel()
             state.compressionJob?.cancel()
-            state.delayReplyJob?.cancel()
-            state.delayReply.cancel()
+            state.cancelDelayedReply(removeBubbles = false)
             state.eventsJob?.cancel()
             state.generatingSyncJob?.cancel()
             state.ttsJobs.values.forEach { it.cancel() }

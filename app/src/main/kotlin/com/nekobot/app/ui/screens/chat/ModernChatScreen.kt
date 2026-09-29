@@ -295,6 +295,7 @@ fun ModernChatScreen(
                 }
             },
             onDelayInputContentChanged = viewModel::onChatInputContentChanged,
+            shouldKeepComposerOpen = viewModel::shouldUseDelayReplyForInput,
             onStop = viewModel::stop,
             onCompress = viewModel::compressContext,
             onOpenContextAnalysis = { onOpenContextAnalysis(sessionId) },
@@ -705,6 +706,7 @@ private fun ModernChatComposer(
     onToggleYolo: () -> Unit,
     onSend: (String, String?, List<Map<String, Any>>, ReasoningEffort) -> Unit,
     onDelayInputContentChanged: (Boolean) -> Unit,
+    shouldKeepComposerOpen: (String, Boolean) -> Boolean,
     onStop: () -> Unit,
     onCompress: () -> Unit,
     onOpenContextAnalysis: () -> Unit,
@@ -1501,13 +1503,9 @@ private fun ModernChatComposer(
                                             val text = input
                                             val choiceId = pendingPlotChoiceId
                                             val attachments = pendingImageAttachments
-                                            val keepComposerOpen = shouldUseDelayReply(
-                                                sessionEnabled = session?.delayReplyEnabled == true,
-                                                allowDelay = choiceId == null,
-                                                isLocalMode = ServiceContainer.prefs.isLocalMode,
-                                                sessionMode = session?.sessionMode,
-                                                inheritCharacter = session?.inheritCharacter,
-                                                isSlashCommand = LocalSlashCommands.parse(text) != null
+                                            val keepComposerOpen = shouldKeepComposerOpen(
+                                                text,
+                                                choiceId == null
                                             )
                                             updateInput("")
                                             inputExpanded = keepComposerOpen

@@ -459,6 +459,12 @@ fun NekobotNavGraph() {
                 SessionDetailScreen(
                     sessionId = entry.arguments?.getString("sessionId").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onDeleted = {
+                        navController.navigate(Routes.SESSIONS) {
+                            popUpTo(Routes.SESSIONS) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
                     onOpenExperienceArchive = { id -> navController.navigate(Routes.experienceArchive(id)) }
                 )
             }

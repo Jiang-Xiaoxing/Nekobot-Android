@@ -1,6 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
 import com.nekobot.app.data.model.ReasoningEffort
+import com.nekobot.app.data.model.Message
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -168,6 +169,47 @@ data class DelayReplyRequest(
     val attachments: List<Map<String, Any>>,
     val reasoningEffort: ReasoningEffort
 )
+
+/** 仅给最后一条待发气泡显示状态；同一批次不会重复铺满整段聊天记录。 */
+data class DelayReplyBubbleStatus(
+    val bubbleId: String,
+    val paused: Boolean,
+    val remainingSeconds: Int
+)
+
+/** 保留已加载消息的原有顺序，把尚未落库的气泡插回其发送时间所在的位置。 */
+internal fun mergeDelayedReplyBubbles(
+    loadedMessages: List<Message>,
+    delayedBubbles: List<Message>
+): List<Message> {
+    if (delayedBubbles.isEmpty()) return loadedMessages
+    val result = loadedMessages.toMutableList()
+    delayedBubbles.forEach { bubble ->
+        val bubbleTime = messageTimeMillis(bubble.timestamp ?: bubble.createdAt)
+        val insertAt = if (bubbleTime == null) -1 else result.indexOfFirst { message ->
+            val messageTime = messageTimeMillis(message.timestamp ?: message.createdAt)
+            messageTime != null && messageTime > bubbleTime
+        }
+        result.add(if (insertAt < 0) result.size else insertAt, bubble)
+    }
+    return result
+}
+
+private fun messageTimeMillis(raw: String?): Long? {
+    val value = raw?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    value.toLongOrNull()?.let { numeric ->
+        return if (numeric < 100_000_000_000L) numeric * 1_000L else numeric
+    }
+    val normalized = value.replace(' ', 'T')
+    return runCatching { java.time.Instant.parse(normalized).toEpochMilli() }.getOrNull()
+        ?: runCatching { java.time.OffsetDateTime.parse(normalized).toInstant().toEpochMilli() }.getOrNull()
+        ?: runCatching {
+            java.time.LocalDateTime.parse(normalized)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        }.getOrNull()
+}
 
 internal fun buildDelayReplyRequest(messages: List<DelayedReplyMessage>): DelayReplyRequest? {
     val last = messages.lastOrNull() ?: return null

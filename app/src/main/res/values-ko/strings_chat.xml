@@ -143,6 +143,9 @@
     <string name="chat_delay_reply_pending_wait">지연 답변 대기 중입니다. 현재 답변이 시작될 때까지 기다려 주세요.</string>
     <string name="chat_delay_reply_pending_history">지연 답변 대기 중입니다. 먼저 보내거나 취소해 주세요.</string>
     <string name="chat_delay_reply_plot_blocked">지연 답변 대기 중입니다. 답변이 시작된 뒤 스토리 선택지를 골라 주세요.</string>
+    <string name="chat_delay_reply_countdown">%1$d초 후 답변</string>
+    <string name="chat_delay_reply_paused_draft">일시정지 · 작성 중인 내용 있음</string>
+    <string name="chat_delay_reply_withdraw_batch">묶음 취소</string>
     <string name="sessions_detail_experience_archives">경험 기록 보기</string>
     <string name="sessions_detail_inherit_greeting_on">캐릭터 인사말 사용: 켬</string>
     <string name="sessions_detail_inherit_greeting_off">캐릭터 인사말 사용: 끔</string>

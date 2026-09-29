@@ -143,6 +143,9 @@
     <string name="chat_delay_reply_pending_wait">遅延返信の待機中です。現在の返信が始まるまでお待ちください。</string>
     <string name="chat_delay_reply_pending_history">遅延返信の待機中です。先に送信またはキャンセルしてください。</string>
     <string name="chat_delay_reply_plot_blocked">遅延返信の待機中です。返信開始後にストーリーの選択肢を選んでください。</string>
+    <string name="chat_delay_reply_countdown">%1$d 秒後に返信</string>
+    <string name="chat_delay_reply_paused_draft">一時停止 · 下書きあり</string>
+    <string name="chat_delay_reply_withdraw_batch">まとめて取り消す</string>
     <string name="sessions_detail_experience_archives">経験アーカイブを見る</string>
     <string name="sessions_detail_inherit_greeting_on">キャラクターの挨拶を使用：オン</string>
     <string name="sessions_detail_inherit_greeting_off">キャラクターの挨拶を使用：オフ</string>

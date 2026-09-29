@@ -1,5 +1,6 @@
 package com.nekobot.app.ui.screens.chat
 
+import com.nekobot.app.data.model.Message
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -86,13 +87,14 @@ class DelayReplyStateMachineTest {
         session.delayReply.arm(message("A"), nowMs = 0L, delayMs = 10_000L)
 
         assertFalse(session.hasActiveGeneration())
-        assertTrue(session.hasActiveJobs())
         assertTrue(session.hasRetainedWork())
+        assertFalse(session.shouldLoadPersistedMessagesOnEntry())
 
         session.delayReply.cancel()
         assertFalse(session.hasActiveGeneration())
         assertFalse(session.hasActiveJobs())
         assertFalse(session.hasRetainedWork())
+        assertTrue(session.shouldLoadPersistedMessagesOnEntry())
     }
 
     @Test
@@ -156,6 +158,35 @@ class DelayReplyStateMachineTest {
         assertEquals(1, normalizeDelayReplySeconds(0))
         assertEquals(12, normalizeDelayReplySeconds(12))
         assertEquals(30, normalizeDelayReplySeconds(60))
+    }
+
+    @Test
+    fun `pending bubbles stay before newer stored messages after reload`() {
+        val first = Message(id = "stored-before", role = "user", timestamp = "2026-09-29T00:00:00Z")
+        val pendingTime = java.time.Instant.parse("2026-09-29T00:00:01Z").toEpochMilli().toString()
+        val pending = Message(id = "pending", role = "user", timestamp = pendingTime)
+        val later = Message(id = "stored-after", role = "assistant", timestamp = "2026-09-29T00:00:02Z")
+
+        val merged = mergeDelayedReplyBubbles(listOf(first, later), listOf(pending))
+
+        assertEquals(listOf("stored-before", "pending", "stored-after"), merged.map { it.id })
+    }
+
+    @Test
+    fun `equal timestamps retain stored order and delayed batch order`() {
+        val timestamp = "2026-09-29T00:00:00Z"
+        val stored = listOf(
+            Message(id = "stored-A", role = "user", timestamp = timestamp),
+            Message(id = "stored-B", role = "assistant", timestamp = timestamp)
+        )
+        val pending = listOf(
+            Message(id = "pending-A", role = "user", timestamp = timestamp),
+            Message(id = "pending-B", role = "user", timestamp = timestamp)
+        )
+
+        val merged = mergeDelayedReplyBubbles(stored, pending)
+
+        assertEquals(listOf("stored-A", "stored-B", "pending-A", "pending-B"), merged.map { it.id })
     }
 
     private fun message(content: String) = DelayedReplyMessage(

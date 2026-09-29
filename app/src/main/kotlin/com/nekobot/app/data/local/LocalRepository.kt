@@ -227,6 +227,33 @@ private const val AGENT_CONTEXT_OUTPUT_RESERVE_RATIO = 0.8
 internal const val MANUAL_COMPRESSION_CONTEXT_RATIO = 0.10f
 
 /**
+ * 一轮请求里已经依次经过发送前钩子并持久化的用户消息。
+ * 延迟回复会把多条气泡合并成一次 AI 请求，但这里仍保留每条用户消息及其 ID。
+ */
+internal data class PreparedUserMessageBatch(
+    val outgoingMessages: List<String>,
+    val savedMessages: List<Message>
+) {
+    val latestOutgoingMessage: String? get() = outgoingMessages.lastOrNull()
+    val latestSavedMessage: Message? get() = savedMessages.lastOrNull()
+    val protectedMessageIds: Set<String>
+        get() = savedMessages.mapNotNullTo(linkedSetOf()) { it.id?.takeIf(String::isNotBlank) }
+}
+
+/** 每条用户消息恰好执行一次发送前钩子，再按原顺序逐条保存。 */
+internal suspend fun prepareUserMessageBatch(
+    messages: List<String>,
+    beforeSend: suspend (String) -> String,
+    persist: suspend (String) -> Message
+): PreparedUserMessageBatch {
+    val outgoing = messages.filter(String::isNotBlank).map { beforeSend(it) }
+    return PreparedUserMessageBatch(
+        outgoingMessages = outgoing,
+        savedMessages = outgoing.map { persist(it) }
+    )
+}
+
+/**
  * Agent 压缩摘要提示词：
  * 固定小节结构、要点式输出、保留确切路径/命令/报错，并附带滚动合并规则。
  */
@@ -6778,25 +6805,24 @@ class LocalRepository(
         currentSessionId = sessionId
 
         // 0. 延迟回复批次中的消息逐条执行发送前钩子并保存；最后一条驱动本轮生成。
-        val originalUserMessages = (batchedUserMessages + userMessage).filter(String::isNotBlank)
-        val outgoingMessages = if (persistUserMessage) {
-            originalUserMessages.map { content ->
-                runCatching {
-                    ServiceContainer.pluginManager.runMessageBeforeSendHooks(sessionId, content)
-                }.getOrDefault(content)
-            }
+        val preparedUserBatch = if (persistUserMessage) {
+            prepareUserMessageBatch(
+                messages = batchedUserMessages + userMessage,
+                beforeSend = { content ->
+                    runCatching {
+                        ServiceContainer.pluginManager.runMessageBeforeSendHooks(sessionId, content)
+                    }.getOrDefault(content)
+                },
+                persist = { content -> addMessage(sessionId, "user", content) }
+            )
         } else {
-            listOf(userMessage)
+            PreparedUserMessageBatch(listOf(userMessage), emptyList())
         }
-        val outgoingMessage = outgoingMessages.lastOrNull() ?: userMessage
+        val outgoingMessage = preparedUserBatch.latestOutgoingMessage ?: userMessage
 
         // 1. 按用户发送顺序逐条保存，保留多气泡语义；最后一条作为回复锚点。
-        val savedUserMessages = if (persistUserMessage) {
-            outgoingMessages.map { content -> addMessage(sessionId, "user", content) }
-        } else {
-            emptyList()
-        }
-        val savedUserMessage = savedUserMessages.lastOrNull()
+        val savedUserMessages = preparedUserBatch.savedMessages
+        val savedUserMessage = preparedUserBatch.latestSavedMessage
         val parentMessageId = savedUserMessage?.id ?: existingParentMessageId
 
         val session = sessionDao.getById(sessionId) ?: run {
@@ -6920,7 +6946,7 @@ class LocalRepository(
                 maxContextTokens = maxContextTokens,
                 automatic = true,
                 // 本轮用户消息刚落库，属于边界之后的新消息，不参与摘要。
-                protectedMessageIds = savedUserMessages.mapNotNullTo(mutableSetOf()) { it.id }
+                protectedMessageIds = preparedUserBatch.protectedMessageIds
             )
             emit(
                 RealtimeEvent.ContextCompressionStatus(
