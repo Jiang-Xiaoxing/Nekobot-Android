@@ -123,6 +123,29 @@
     <string name="maintenance_no_db_file">Local database file not found</string>
     <string name="maintenance_export_failed">Export failed</string>
 
+    <!-- Chat workspace management -->
+    <string name="workspace_manager_title">Chat workspaces</string>
+    <string name="workspace_manager_subtitle">View and clean chat workspace files</string>
+    <string name="workspace_manager_desc">Workspace files are kept after a chat is deleted; remove them here.</string>
+    <string name="workspace_manager_open">Open workspace manager</string>
+    <string name="workspace_manager_files_title">Workspace files</string>
+    <string name="workspace_manager_summary">%1$d workspaces · %2$s total</string>
+    <string name="workspace_manager_group_alive">Chats that still exist</string>
+    <string name="workspace_manager_group_orphan">Deleted chats (leftovers)</string>
+    <string name="workspace_manager_tag_orphan">Deleted chat</string>
+    <string name="workspace_manager_tag_legacy">Legacy folder</string>
+    <string name="workspace_manager_meta">%1$d files · %2$s</string>
+    <string name="workspace_manager_profile">Profile: %1$s</string>
+    <string name="workspace_manager_root">Root</string>
+    <string name="workspace_manager_empty">No workspace files to clean</string>
+    <string name="workspace_manager_delete_workspace">Delete entire workspace</string>
+    <string name="workspace_manager_delete_workspace_msg">This permanently deletes every file in this workspace (including plugin and browser data). Continue?</string>
+    <string name="workspace_manager_delete_file_title">Delete file</string>
+    <string name="workspace_manager_delete_file_msg">Delete "%1$s"? This cannot be undone.</string>
+    <string name="workspace_manager_deleted">Deleted</string>
+    <string name="workspace_manager_delete_failed">Delete failed</string>
+    <string name="workspace_manager_truncated">Too many files; showing the first %1$d</string>
+
     <!-- ==================== Config transfer ==================== -->
     <string name="transfer_title">Config transfer</string>
     <string name="transfer_server_only">This feature is only available in server mode</string>

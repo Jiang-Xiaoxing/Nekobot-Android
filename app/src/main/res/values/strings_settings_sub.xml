@@ -123,6 +123,29 @@
     <string name="maintenance_no_db_file">未找到本地数据库文件</string>
     <string name="maintenance_export_failed">导出失败</string>
 
+    <!-- 会话工作区管理 -->
+    <string name="workspace_manager_title">会话工作区</string>
+    <string name="workspace_manager_subtitle">查看并清理会话工作区文件</string>
+    <string name="workspace_manager_desc">会话工作区文件不会随会话删除而清理，可在此逐项删除。</string>
+    <string name="workspace_manager_open">打开工作区管理</string>
+    <string name="workspace_manager_files_title">工作区文件</string>
+    <string name="workspace_manager_summary">%1$d 个工作区 · 共 %2$s</string>
+    <string name="workspace_manager_group_alive">会话存在</string>
+    <string name="workspace_manager_group_orphan">会话已删除（残留）</string>
+    <string name="workspace_manager_tag_orphan">已删除会话</string>
+    <string name="workspace_manager_tag_legacy">旧版目录</string>
+    <string name="workspace_manager_meta">%1$d 个文件 · %2$s</string>
+    <string name="workspace_manager_profile">档案：%1$s</string>
+    <string name="workspace_manager_root">根目录</string>
+    <string name="workspace_manager_empty">没有可清理的工作区文件</string>
+    <string name="workspace_manager_delete_workspace">删除整个工作区</string>
+    <string name="workspace_manager_delete_workspace_msg">将永久删除该工作区的全部文件（含插件与浏览器数据），且不可恢复。确定继续吗？</string>
+    <string name="workspace_manager_delete_file_title">删除文件</string>
+    <string name="workspace_manager_delete_file_msg">将删除「%1$s」，且不可恢复。确定继续吗？</string>
+    <string name="workspace_manager_deleted">已删除</string>
+    <string name="workspace_manager_delete_failed">删除失败</string>
+    <string name="workspace_manager_truncated">文件过多，仅显示前 %1$d 项</string>
+
     <!-- ==================== 配置迁移 ==================== -->
     <string name="transfer_title">配置迁移</string>
     <string name="transfer_server_only">此功能仅服务器模式可用</string>

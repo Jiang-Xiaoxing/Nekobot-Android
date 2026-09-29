@@ -69,6 +69,7 @@ import com.nekobot.app.ui.screens.sessions.SessionDetailScreen
 import com.nekobot.app.ui.screens.plot.StoryGraphScreen
 import com.nekobot.app.ui.screens.settings.ConfigTransferScreen
 import com.nekobot.app.ui.screens.settings.DataMaintenanceScreen
+import com.nekobot.app.ui.screens.settings.WorkspaceManagerScreen
 import com.nekobot.app.ui.screens.settings.DataPortabilityScreen
 import com.nekobot.app.ui.screens.settings.DbProfileScreen
 import com.nekobot.app.ui.screens.settings.DiagnosticCenterScreen
@@ -667,7 +668,13 @@ fun NekobotNavGraph() {
                 SandboxManagementScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.DATA_MAINTENANCE) {
-                DataMaintenanceScreen(onBack = { navController.popBackStack() })
+                DataMaintenanceScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigate = { route -> navController.navigate(route) }
+                )
+            }
+            composable(Routes.WORKSPACE_MANAGER) {
+                WorkspaceManagerScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.DATA_PORTABILITY) {
                 DataPortabilityScreen(onBack = { navController.popBackStack() })

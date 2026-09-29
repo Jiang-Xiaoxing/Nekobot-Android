@@ -387,7 +387,7 @@ internal class WorkspaceHistoryChunkWriter(
 }
 
 /** Files.walkFileTree 默认不跟随符号链接，只删除经过校验的目标树本身。 */
-private fun deleteTreeWithoutFollowingLinks(root: File) {
+internal fun deleteTreeWithoutFollowingLinks(root: File) {
     Files.walkFileTree(root.toPath(), object : SimpleFileVisitor<Path>() {
         override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
             Files.delete(file)

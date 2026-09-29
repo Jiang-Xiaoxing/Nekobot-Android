@@ -123,6 +123,29 @@
     <string name="maintenance_no_db_file">로컬 데이터베이스 파일을 찾을 수 없어요</string>
     <string name="maintenance_export_failed">내보내기 실패</string>
 
+    <!-- 세션 작업 공간 관리 -->
+    <string name="workspace_manager_title">세션 작업 공간</string>
+    <string name="workspace_manager_subtitle">세션 작업 공간 파일 보기 및 정리</string>
+    <string name="workspace_manager_desc">작업 공간 파일은 세션 삭제 후에도 남아 있어요. 여기서 개별 삭제할 수 있어요.</string>
+    <string name="workspace_manager_open">작업 공간 관리 열기</string>
+    <string name="workspace_manager_files_title">작업 공간 파일</string>
+    <string name="workspace_manager_summary">작업 공간 %1$d개 · 총 %2$s</string>
+    <string name="workspace_manager_group_alive">세션 있음</string>
+    <string name="workspace_manager_group_orphan">삭제된 세션(잔여)</string>
+    <string name="workspace_manager_tag_orphan">삭제된 세션</string>
+    <string name="workspace_manager_tag_legacy">구버전 폴더</string>
+    <string name="workspace_manager_meta">파일 %1$d개 · %2$s</string>
+    <string name="workspace_manager_profile">프로필: %1$s</string>
+    <string name="workspace_manager_root">루트</string>
+    <string name="workspace_manager_empty">정리할 작업 공간 파일이 없어요</string>
+    <string name="workspace_manager_delete_workspace">작업 공간 삭제</string>
+    <string name="workspace_manager_delete_workspace_msg">이 작업 공간의 모든 파일(플러그인 및 브라우저 데이터 포함)을 영구 삭제하며 되돌릴 수 없어요. 계속할까요?</string>
+    <string name="workspace_manager_delete_file_title">파일 삭제</string>
+    <string name="workspace_manager_delete_file_msg">"%1$s"을(를) 삭제하며 되돌릴 수 없어요. 계속할까요?</string>
+    <string name="workspace_manager_deleted">삭제했어요</string>
+    <string name="workspace_manager_delete_failed">삭제 실패</string>
+    <string name="workspace_manager_truncated">파일이 많아 처음 %1$d개만 표시해요</string>
+
     <!-- ==================== 설정 전송 ==================== -->
     <string name="transfer_title">설정 전송</string>
     <string name="transfer_server_only">이 기능은 서버 모드에서만 사용할 수 있어요</string>

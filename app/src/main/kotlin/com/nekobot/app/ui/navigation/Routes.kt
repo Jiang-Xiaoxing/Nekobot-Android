@@ -71,6 +71,8 @@ object Routes {
     const val DATA_PORTABILITY = "data_portability"
     const val FEATURE_SWITCHES = "feature_switches"
     const val DATA_MAINTENANCE = "data_maintenance"
+    /** 本地模式：会话工作区文件管理（查看 / 删除残留工作区文件） */
+    const val WORKSPACE_MANAGER = "workspace_manager"
     /** Agent 设置 */
     const val AGENT_SETTINGS = "agent_settings"
     /** browser_use 浏览器工具配置（User-Agent / 视口 / 脚本与图片加载） */

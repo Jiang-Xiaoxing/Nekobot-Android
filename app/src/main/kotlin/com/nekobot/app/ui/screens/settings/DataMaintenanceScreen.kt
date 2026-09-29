@@ -64,6 +64,7 @@ import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.local.LocalPlotStoryStore
 import com.nekobot.app.data.local.PrefsManager
 import com.nekobot.app.data.local.db.NekobotDatabase
+import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.ErrorBanner
 import com.nekobot.app.ui.components.GlassCard
@@ -262,7 +263,7 @@ class DataMaintenanceViewModel : BaseViewModel() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DataMaintenanceScreen(onBack: () -> Unit) {
+fun DataMaintenanceScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     val vm: DataMaintenanceViewModel = viewModel()
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val storageInfo by vm.storageInfo.collectAsStateWithLifecycle()
@@ -416,6 +417,26 @@ fun DataMaintenanceScreen(onBack: () -> Unit) {
                             Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.maintenance_open_cache_folder))
+                        }
+                    }
+
+                    // 5. 会话工作区文件管理
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        SectionHeader(title = stringResource(R.string.workspace_manager_title), subtitle = stringResource(R.string.workspace_manager_subtitle))
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(R.string.workspace_manager_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { onNavigate(Routes.WORKSPACE_MANAGER) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.workspace_manager_open))
                         }
                     }
                 }

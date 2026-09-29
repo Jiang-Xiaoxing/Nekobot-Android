@@ -123,6 +123,29 @@
     <string name="maintenance_no_db_file">ローカルデータベースファイルが見つかりません</string>
     <string name="maintenance_export_failed">エクスポートに失敗しました</string>
 
+    <!-- セッション作業スペース管理 -->
+    <string name="workspace_manager_title">セッション作業スペース</string>
+    <string name="workspace_manager_subtitle">作業スペースのファイルを表示・整理</string>
+    <string name="workspace_manager_desc">作業スペースのファイルはセッション削除後も残ります。ここで個別に削除できます。</string>
+    <string name="workspace_manager_open">作業スペース管理を開く</string>
+    <string name="workspace_manager_files_title">作業スペースのファイル</string>
+    <string name="workspace_manager_summary">%1$d 件の作業スペース · 合計 %2$s</string>
+    <string name="workspace_manager_group_alive">セッションが存在</string>
+    <string name="workspace_manager_group_orphan">セッション削除済み（残存）</string>
+    <string name="workspace_manager_tag_orphan">削除済みセッション</string>
+    <string name="workspace_manager_tag_legacy">旧版フォルダ</string>
+    <string name="workspace_manager_meta">%1$d ファイル · %2$s</string>
+    <string name="workspace_manager_profile">プロファイル: %1$s</string>
+    <string name="workspace_manager_root">ルート</string>
+    <string name="workspace_manager_empty">整理できる作業スペースのファイルはありません</string>
+    <string name="workspace_manager_delete_workspace">作業スペースを削除</string>
+    <string name="workspace_manager_delete_workspace_msg">この作業スペースの全ファイル（プラグインとブラウザのデータを含む）を完全に削除します。元に戻せません。続行しますか？</string>
+    <string name="workspace_manager_delete_file_title">ファイルを削除</string>
+    <string name="workspace_manager_delete_file_msg">「%1$s」を削除します。元に戻せません。続行しますか？</string>
+    <string name="workspace_manager_deleted">削除しました</string>
+    <string name="workspace_manager_delete_failed">削除に失敗しました</string>
+    <string name="workspace_manager_truncated">ファイルが多いため、先頭 %1$d 件のみ表示</string>
+
     <!-- ==================== 設定転送 ==================== -->
     <string name="transfer_title">設定転送</string>
     <string name="transfer_server_only">この機能はサーバーモードでのみ使用できます</string>
