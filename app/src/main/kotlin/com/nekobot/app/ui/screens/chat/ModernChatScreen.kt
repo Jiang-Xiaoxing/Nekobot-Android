@@ -32,12 +32,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -117,7 +115,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -195,12 +192,6 @@ fun ModernChatScreen(
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
     val viewModel: ChatViewModel = viewModel()
-    // 延迟回复：以输入法可见性为准——弹出=输入中（暂停倒计时），收起=继续。
-    // 不用 BasicTextField 焦点：BACK 收起输入法后焦点仍留在输入框上，会导致暂停判定失效。
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    LaunchedEffect(imeVisible) {
-        viewModel.onChatInputFocusChanged(imeVisible)
-    }
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
     // 会话级"AI 正在运行"（含后台收尾/唤醒运行）：主操作按钮据此保留停止入口
@@ -269,7 +260,8 @@ fun ModernChatScreen(
             sessionId = sessionId,
             session = session,
             messages = messages,
-            sending = replyBusy,
+            sending = sending,
+            delayReplyPending = delayReplyPending,
             sessionGenerating = sessionGenerating,
             compressing = compressing,
             plotChoices = plotChoices,
@@ -302,6 +294,7 @@ fun ModernChatScreen(
                     viewModel.sendMessage(text, plotChoiceId, attachments, reasoningEffort)
                 }
             },
+            onDelayInputContentChanged = viewModel::onChatInputContentChanged,
             onStop = viewModel::stop,
             onCompress = viewModel::compressContext,
             onOpenContextAnalysis = { onOpenContextAnalysis(sessionId) },
@@ -690,6 +683,7 @@ private fun ModernChatComposer(
     session: Session?,
     messages: List<Message>,
     sending: Boolean,
+    delayReplyPending: Boolean,
     /** 会话级"AI 正在运行"（前台发送 ∨ 全局生成登记）：后台收尾/唤醒运行阶段也显示停止按钮。 */
     sessionGenerating: Boolean,
     /** 上下文压缩进行中：压缩按钮切换为进行中样式。 */
@@ -710,6 +704,7 @@ private fun ModernChatComposer(
     onOpenStickers: () -> Unit = {},
     onToggleYolo: () -> Unit,
     onSend: (String, String?, List<Map<String, Any>>, ReasoningEffort) -> Unit,
+    onDelayInputContentChanged: (Boolean) -> Unit,
     onStop: () -> Unit,
     onCompress: () -> Unit,
     onOpenContextAnalysis: () -> Unit,
@@ -742,6 +737,9 @@ private fun ModernChatComposer(
     // 输入框草稿持久化：退出会话后保留
     LaunchedEffect(input, sessionId) {
         ServiceContainer.prefs.setChatInputDraft(sessionId, input)
+    }
+    LaunchedEffect(input.isNotBlank()) {
+        onDelayInputContentChanged(input.isNotBlank())
     }
     var panelExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 表情包选择面板开关
@@ -1046,6 +1044,7 @@ private fun ModernChatComposer(
     }
 
     val closePanel = { panelExpanded = false }
+    val replyBusy = sending || delayReplyPending
     // 快捷工具栏动作分发：复用 + 面板与现有回调的同一批行为
     val handleQuickAction: (String) -> Unit = { id ->
         when (id) {
@@ -1073,7 +1072,7 @@ private fun ModernChatComposer(
             ChatQuickAction.CONTEXT -> onOpenContextAnalysis()
             ChatQuickAction.COMPRESS -> {
                 // AI 持续 loop 期间禁用（按钮已置灰，这里兜底防御）
-                if (!compressing && !sending) onCompress()
+                if (!compressing && !replyBusy) onCompress()
             }
             ChatQuickAction.CLEAR -> showClearConfirm = true
             ChatQuickAction.LATEST -> onJumpToLatest()
@@ -1199,11 +1198,11 @@ private fun ModernChatComposer(
                     loading = plotChoicesLoading,
                     choices = plotChoices,
                     selectedId = pendingPlotChoiceId,
-                    enabled = !sending,
+                    enabled = !replyBusy,
                     layoutMode = chatInputLayout,
                     inputVisible = inputVisible,
                     panelExpanded = panelExpanded,
-                    sending = sending,
+                    sending = replyBusy,
                     onSelect = { choice ->
                         pendingPlotChoiceId = choice.id
                         updateInput(choice.title)
@@ -1225,7 +1224,7 @@ private fun ModernChatComposer(
                 // Agent 排队消息条：生成期间发送的消息在此排队，队顶可“立即发送”注入
                 QueuedMessagesBar(
                     items = queuedMessages,
-                    sending = sending,
+                    sending = replyBusy,
                     onSendNow = onSendQueuedNow,
                     onRemove = onRemoveQueued
                 )
@@ -1410,7 +1409,7 @@ private fun ModernChatComposer(
                                         }
                                     },
                                     // Agent 会话生成中仍可输入，发送的消息会进入排队队列
-                                    enabled = !sending || isAgentSession,
+                                    enabled = delayReplyPending || !sending || isAgentSession,
                                     maxLines = 5,
                                     visualTransformation = commandCapsuleTransformation,
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1467,6 +1466,8 @@ private fun ModernChatComposer(
                             // 后台生成（标题总结/剧情选项/记忆沉淀/唤醒运行等）进行中：无草稿时也提供停止入口
                             val hasDraft = input.isNotBlank() || pendingImageAttachments.isNotEmpty()
                             val action = when {
+                                delayReplyPending && hasDraft -> ModernComposerAction.SEND
+                                delayReplyPending -> ModernComposerAction.STOP
                                 sending && isAgentSession && hasDraft -> ModernComposerAction.SEND
                                 sending -> ModernComposerAction.STOP
                                 hasDraft -> ModernComposerAction.SEND
@@ -1500,12 +1501,20 @@ private fun ModernChatComposer(
                                             val text = input
                                             val choiceId = pendingPlotChoiceId
                                             val attachments = pendingImageAttachments
+                                            val keepComposerOpen = shouldUseDelayReply(
+                                                sessionEnabled = session?.delayReplyEnabled == true,
+                                                allowDelay = choiceId == null,
+                                                isLocalMode = ServiceContainer.prefs.isLocalMode,
+                                                sessionMode = session?.sessionMode,
+                                                inheritCharacter = session?.inheritCharacter,
+                                                isSlashCommand = LocalSlashCommands.parse(text) != null
+                                            )
                                             updateInput("")
-                                            inputExpanded = false
+                                            inputExpanded = keepComposerOpen
                                             pendingPlotChoiceId = null
                                             pendingImageAttachments = emptyList()
                                             closePanel()
-                                            keyboard?.hide()
+                                            if (!keepComposerOpen) keyboard?.hide()
                                             onSend(text, choiceId, attachments, reasoningEffort)
                                         }
                                         ModernComposerAction.VOICE -> requestMicPermission.launch(

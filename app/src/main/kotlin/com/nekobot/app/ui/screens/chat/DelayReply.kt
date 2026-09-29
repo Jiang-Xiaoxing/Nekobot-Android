@@ -43,7 +43,7 @@ data class DelayedReplyMessage(
     val timestamp: String
 )
 
-/** 状态变化后需要安装的新计时任务；[delayMs] 为 null 表示当前处于暂停态。 */
+/** 状态变化后需要安装的新计时任务；[delayMs] 为 null 表示当前批次被草稿文字无限延长。 */
 data class DelayReplyPlan(
     val generation: Long,
     val delayMs: Long?
@@ -51,7 +51,6 @@ data class DelayReplyPlan(
 
 sealed interface DelayReplyTimerResult {
     data object Stale : DelayReplyTimerResult
-    data class Paused(val plan: DelayReplyPlan) : DelayReplyTimerResult
     data class Reschedule(val plan: DelayReplyPlan) : DelayReplyTimerResult
     data class Ready(val messages: List<DelayedReplyMessage>) : DelayReplyTimerResult
 }
@@ -67,7 +66,6 @@ class DelayReplyStateMachine {
     val pendingState: StateFlow<Boolean> = _pendingState
     private val pending = mutableListOf<DelayedReplyMessage>()
     private var generation = 0L
-    private var inputActive = false
     private var paused = false
     private var remainingMs = 0L
     private var deadlineMs = 0L
@@ -82,44 +80,25 @@ class DelayReplyStateMachine {
         _pendingState.value = true
         generation += 1
         remainingMs = delayMs.coerceAtLeast(1L)
-        paused = inputActive
-        deadlineMs = if (paused) 0L else nowMs + remainingMs
-        return DelayReplyPlan(generation, remainingMs.takeUnless { paused })
+        paused = false
+        deadlineMs = nowMs + remainingMs
+        return DelayReplyPlan(generation, remainingMs)
     }
 
     @Synchronized
-    fun setInputActive(active: Boolean, nowMs: Long): DelayReplyPlan? {
-        if (inputActive == active) return null
-        inputActive = active
-        if (pending.isEmpty()) return null
-
+    fun latchForDraftText(nowMs: Long): DelayReplyPlan? {
+        if (pending.isEmpty() || paused) return null
         generation += 1
-        if (active) {
-            if (!paused) {
-                remainingMs = (deadlineMs - nowMs).coerceAtLeast(1L)
-                paused = true
-                deadlineMs = 0L
-            }
-            return DelayReplyPlan(generation, null)
-        }
-
-        if (!paused) return null
-        paused = false
-        deadlineMs = nowMs + remainingMs.coerceAtLeast(1L)
-        return DelayReplyPlan(generation, remainingMs.coerceAtLeast(1L))
+        remainingMs = (deadlineMs - nowMs).coerceAtLeast(1L)
+        paused = true
+        deadlineMs = 0L
+        return DelayReplyPlan(generation, null)
     }
 
     @Synchronized
     fun onTimerFired(expectedGeneration: Long, nowMs: Long): DelayReplyTimerResult {
         if (expectedGeneration != generation || pending.isEmpty() || paused) {
             return DelayReplyTimerResult.Stale
-        }
-        if (inputActive) {
-            generation += 1
-            paused = true
-            remainingMs = (deadlineMs - nowMs).coerceAtLeast(1L)
-            deadlineMs = 0L
-            return DelayReplyTimerResult.Paused(DelayReplyPlan(generation, null))
         }
         if (nowMs < deadlineMs) {
             generation += 1

@@ -716,12 +716,8 @@ class ChatViewModel : BaseViewModel() {
         // 获取（或创建）跨 VM 共享的运行时状态，引用计数 +1
         // 通过 _runtime.value 赋值使 Compose 的 flatMapLatest 自动切换到新 runtime
         _runtime.value = ChatSessionManager.acquire(sessionId)
-        val inputPlan = runtime.delayReply.setInputActive(latestChatInputActive, elapsedRealtimeMs())
-        when {
-            inputPlan != null -> installDelayReplyPlan(runtime, inputPlan)
-            runtime.delayReply.hasPending() && runtime.delayReplyJob?.isActive != true -> {
-                runtime.delayReply.currentPlan(elapsedRealtimeMs())?.let { installDelayReplyPlan(runtime, it) }
-            }
+        if (runtime.delayReply.hasPending() && runtime.delayReplyJob?.isActive != true) {
+            runtime.delayReply.currentPlan(elapsedRealtimeMs())?.let { installDelayReplyPlan(runtime, it) }
         }
         // 自动技能沉淀提示是持久显示的：进入会话时从设置恢复上次的沉淀结果。
         runtime.restoreAutoSkillNotice()
@@ -2547,13 +2543,6 @@ class ChatViewModel : BaseViewModel() {
 
         // 延迟回复仅用于符合条件的本地角色会话；命令、剧情选择和队列发送保持即时语义。
         if (delayReplyEnabled) {
-            val delaySeconds = normalizeDelayReplySeconds(_session.value?.delayReplyDelaySeconds)
-            val restarting = runtime.delayReply.hasPending()
-            if (restarting) {
-                showToast(string(R.string.chat_delay_reply_restarted, delaySeconds))
-            } else {
-                showToast(string(R.string.chat_delay_reply_scheduled, delaySeconds))
-            }
             armDelayReply(
                 DelayedReplyMessage(
                     bubbleId = requireNotNull(delayBubbleId),
@@ -2653,17 +2642,12 @@ class ChatViewModel : BaseViewModel() {
     }
 
     // ============ 延迟回复（会话级状态，跨页面实例保留） ============
-    private var latestChatInputActive: Boolean = false
-
-    /** 输入法可见性变化（由聊天页 IME insets 上报）：弹出=输入中，暂停倒计时无限顺延；收起后从剩余时间继续。 */
-    fun onChatInputFocusChanged(focused: Boolean) {
-        latestChatInputActive = focused
+    /** 等待期间一旦输入框出现文字，本批次无限延长；清空草稿不会恢复，发送新消息才重新计时。 */
+    fun onChatInputContentChanged(hasText: Boolean) {
+        if (!hasText) return
         val target = runtime
-        val plan = target.delayReply.setInputActive(focused, elapsedRealtimeMs()) ?: return
+        val plan = target.delayReply.latchForDraftText(elapsedRealtimeMs()) ?: return
         installDelayReplyPlan(target, plan)
-        if (focused && target.delayReply.hasPending()) {
-            showToast(string(R.string.chat_delay_reply_paused))
-        }
     }
 
     private fun armDelayReply(message: DelayedReplyMessage) {
@@ -2686,10 +2670,6 @@ class ChatViewModel : BaseViewModel() {
             if (target.delayReplyJob === scheduledJob) target.delayReplyJob = null
             when (val result = target.delayReply.onTimerFired(plan.generation, elapsedRealtimeMs())) {
                 DelayReplyTimerResult.Stale -> Unit
-                is DelayReplyTimerResult.Paused -> {
-                    installDelayReplyPlan(target, result.plan)
-                    showToast(string(R.string.chat_delay_reply_paused))
-                }
                 is DelayReplyTimerResult.Reschedule -> installDelayReplyPlan(target, result.plan)
                 is DelayReplyTimerResult.Ready -> fireDelayedReply(target, result.messages)
             }
@@ -2700,7 +2680,6 @@ class ChatViewModel : BaseViewModel() {
     private fun fireDelayedReply(target: ChatSessionState, messages: List<DelayedReplyMessage>) {
         if (messages.isEmpty() || runtime !== target || currentSessionId != target.sessionId) return
         val request = buildDelayReplyRequest(messages) ?: return
-        showToast(string(R.string.chat_delay_reply_started))
         startAiRequest(
             messageContent = request.messageContent,
             attachments = request.attachments,
@@ -3152,7 +3131,6 @@ class ChatViewModel : BaseViewModel() {
         generationStopRequested = true
         if (runtime.delayReply.hasPending()) {
             cancelDelayedReply(removeBubbles = true)
-            showToast(string(R.string.chat_delay_reply_cancelled))
             return
         }
 

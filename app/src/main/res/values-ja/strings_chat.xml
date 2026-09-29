@@ -140,11 +140,6 @@
     <string name="sessions_detail_delay_reply_on">遅延返信：オン</string>
     <string name="sessions_detail_delay_reply_off">遅延返信：オフ</string>
     <string name="sessions_detail_delay_reply_seconds">待ち時間：%1$d 秒</string>
-    <string name="chat_delay_reply_restarted">遅延返信：%1$d 秒で再計時しました</string>
-    <string name="chat_delay_reply_scheduled">遅延返信：%1$d 秒後に返信します。入力中は一時停止します</string>
-    <string name="chat_delay_reply_paused">遅延返信：入力を検知したため一時停止しました</string>
-    <string name="chat_delay_reply_started">遅延返信：返信を開始します</string>
-    <string name="chat_delay_reply_cancelled">遅延返信をキャンセルしました</string>
     <string name="chat_delay_reply_pending_wait">遅延返信の待機中です。現在の返信が始まるまでお待ちください。</string>
     <string name="chat_delay_reply_pending_history">遅延返信の待機中です。先に送信またはキャンセルしてください。</string>
     <string name="chat_delay_reply_plot_blocked">遅延返信の待機中です。返信開始後にストーリーの選択肢を選んでください。</string>

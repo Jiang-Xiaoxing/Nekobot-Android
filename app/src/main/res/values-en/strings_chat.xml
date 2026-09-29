@@ -140,11 +140,6 @@
     <string name="sessions_detail_delay_reply_on">Delayed reply: on</string>
     <string name="sessions_detail_delay_reply_off">Delayed reply: off</string>
     <string name="sessions_detail_delay_reply_seconds">Wait time: %1$d seconds</string>
-    <string name="chat_delay_reply_restarted">Delayed reply: restarted for %1$d seconds</string>
-    <string name="chat_delay_reply_scheduled">Delayed reply: replying in %1$d seconds; pauses while you type</string>
-    <string name="chat_delay_reply_paused">Delayed reply: paused while you type</string>
-    <string name="chat_delay_reply_started">Delayed reply: starting reply</string>
-    <string name="chat_delay_reply_cancelled">Delayed reply cancelled</string>
     <string name="chat_delay_reply_pending_wait">A delayed reply is pending. Wait for this batch to start.</string>
     <string name="chat_delay_reply_pending_history">A delayed reply is pending. Send or cancel it first.</string>
     <string name="chat_delay_reply_plot_blocked">A delayed reply is pending. Choose a plot option after the reply starts.</string>

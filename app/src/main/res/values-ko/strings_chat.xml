@@ -140,11 +140,6 @@
     <string name="sessions_detail_delay_reply_on">지연 답변: 켬</string>
     <string name="sessions_detail_delay_reply_off">지연 답변: 끔</string>
     <string name="sessions_detail_delay_reply_seconds">대기 시간: %1$d초</string>
-    <string name="chat_delay_reply_restarted">지연 답변: %1$d초로 다시 시작했습니다</string>
-    <string name="chat_delay_reply_scheduled">지연 답변: %1$d초 뒤 답변하며 입력 중에는 일시 중지됩니다</string>
-    <string name="chat_delay_reply_paused">지연 답변: 입력을 감지해 일시 중지했습니다</string>
-    <string name="chat_delay_reply_started">지연 답변: 답변을 시작합니다</string>
-    <string name="chat_delay_reply_cancelled">지연 답변을 취소했습니다</string>
     <string name="chat_delay_reply_pending_wait">지연 답변 대기 중입니다. 현재 답변이 시작될 때까지 기다려 주세요.</string>
     <string name="chat_delay_reply_pending_history">지연 답변 대기 중입니다. 먼저 보내거나 취소해 주세요.</string>
     <string name="chat_delay_reply_plot_blocked">지연 답변 대기 중입니다. 답변이 시작된 뒤 스토리 선택지를 골라 주세요.</string>

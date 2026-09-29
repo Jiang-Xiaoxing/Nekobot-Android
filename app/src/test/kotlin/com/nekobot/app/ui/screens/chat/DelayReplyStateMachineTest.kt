@@ -26,50 +26,58 @@ class DelayReplyStateMachineTest {
     }
 
     @Test
-    fun `multiple pauses preserve the actual remaining duration`() {
+    fun `draft text latches the pending batch indefinitely`() {
+        val state = DelayReplyStateMachine()
+        val timer = state.arm(message("A"), nowMs = 0L, delayMs = 10_000L)
+
+        val latched = state.latchForDraftText(nowMs = 7_000L)
+
+        assertNull(latched?.delayMs)
+        assertTrue(state.isPaused())
+        assertEquals(3_000L, state.remainingMs(100_000L))
+        assertNull(state.currentPlan(100_000L)?.delayMs)
+        assertEquals(DelayReplyTimerResult.Stale, state.onTimerFired(timer.generation, 10_000L))
+        assertEquals(DelayReplyTimerResult.Stale, state.onTimerFired(latched!!.generation, 100_000L))
+    }
+
+    @Test
+    fun `sending another message releases the latch and restarts the full delay`() {
         val state = DelayReplyStateMachine()
         state.arm(message("A"), nowMs = 0L, delayMs = 10_000L)
+        val latched = state.latchForDraftText(nowMs = 1_000L)!!
 
-        val firstPause = state.setInputActive(true, nowMs = 7_000L)
-        assertNull(firstPause?.delayMs)
-        assertEquals(3_000L, state.remainingMs(7_000L))
+        val restarted = state.arm(message("B"), nowMs = 50_000L, delayMs = 10_000L)
 
-        val firstResume = state.setInputActive(false, nowMs = 20_000L)
-        assertEquals(3_000L, firstResume?.delayMs)
-
-        state.setInputActive(true, nowMs = 21_000L)
-        assertEquals(2_000L, state.remainingMs(21_000L))
-
-        val secondResume = state.setInputActive(false, nowMs = 30_000L)
-        assertEquals(2_000L, secondResume?.delayMs)
-        val ready = state.onTimerFired(secondResume!!.generation, 32_000L)
-        assertTrue(ready is DelayReplyTimerResult.Ready)
+        assertEquals(10_000L, restarted.delayMs)
+        assertFalse(state.isPaused())
+        assertEquals(DelayReplyTimerResult.Stale, state.onTimerFired(latched.generation, 50_000L))
+        val ready = state.onTimerFired(restarted.generation, 60_000L) as DelayReplyTimerResult.Ready
+        assertEquals(listOf("A", "B"), ready.messages.map { it.content })
     }
 
     @Test
-    fun `arming while input is already active starts paused`() {
+    fun `draft text without a pending batch does not affect the next batch`() {
         val state = DelayReplyStateMachine()
-        state.setInputActive(true, nowMs = 0L)
 
+        assertNull(state.latchForDraftText(nowMs = 0L))
         val plan = state.arm(message("A"), nowMs = 100L, delayMs = 10_000L)
 
-        assertNull(plan.delayMs)
-        assertTrue(state.isPaused())
-        assertEquals(10_000L, state.remainingMs(8_000L))
+        assertEquals(10_000L, plan.delayMs)
+        assertFalse(state.isPaused())
     }
 
     @Test
-    fun `cancel invalidates old jobs and keeps current input state`() {
+    fun `cancel clears the latch and the next batch counts normally`() {
         val state = DelayReplyStateMachine()
-        state.setInputActive(true, nowMs = 0L)
         val old = state.arm(message("A"), nowMs = 0L, delayMs = 10_000L)
+        state.latchForDraftText(nowMs = 1_000L)
 
         assertEquals(listOf("A"), state.cancel().map { it.content })
         assertEquals(DelayReplyTimerResult.Stale, state.onTimerFired(old.generation, 10_000L))
 
         val next = state.arm(message("B"), nowMs = 20_000L, delayMs = 10_000L)
-        assertNull(next.delayMs)
-        assertTrue(state.isPaused())
+        assertEquals(10_000L, next.delayMs)
+        assertFalse(state.isPaused())
     }
 
     @Test
