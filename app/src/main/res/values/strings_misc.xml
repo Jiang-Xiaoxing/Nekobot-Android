@@ -90,6 +90,7 @@
     <string name="tokens_source_memory">记忆抽取</string>
     <string name="tokens_source_skill">技能沉淀</string>
     <string name="tokens_source_web">联网搜索</string>
+    <string name="tokens_source_image_prompt">生图提示词优化</string>
     <string name="tokens_source_vision">视觉识别</string>
     <string name="tokens_source_stt">语音识别</string>
     <string name="tokens_source_rule">规则审查</string>

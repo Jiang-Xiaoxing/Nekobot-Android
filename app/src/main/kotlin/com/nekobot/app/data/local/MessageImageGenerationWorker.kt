@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.ai.ImageGenerationReference
+import com.nekobot.app.data.local.db.LocalMessageImageEntity
 import com.nekobot.app.data.repository.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,7 +37,7 @@ class MessageImageGenerationWorker(
             val referenceImage = readReferenceImage(task.referenceImagePath, task.referenceImageMimeType)
             when (
                 val result = ServiceContainer.unified.generateImages(
-                    prompt = task.prompt,
+                    prompt = resolvePrompt(task),
                     size = DEFAULT_IMAGE_SIZE,
                     n = 1,
                     referenceImage = referenceImage
@@ -60,6 +61,16 @@ class MessageImageGenerationWorker(
             local.failMessageImage(taskId, error.message ?: "图片生成失败")
             Result.failure()
         }
+    }
+
+    /**
+     * 生图提示词预处理：开启优化时先用聊天模型把拼接提示词改写为纯画面描述，
+     * 未开启 / 未配置模型 / 调用失败时回退到原始拼接提示词。
+     */
+    private suspend fun resolvePrompt(task: LocalMessageImageEntity): String {
+        if (!ServiceContainer.prefs.messageImagePromptOptimizeEnabled) return task.prompt
+        val rewritten = ServiceContainer.unified.rewriteMessageImagePrompt(task.prompt, task.sessionId)
+        return rewritten?.takeIf { it.isNotBlank() } ?: task.prompt
     }
 
     /** 参考立绘可能来自 file/content URI 或远程 URL；读取失败时退化为纯文本生图。 */

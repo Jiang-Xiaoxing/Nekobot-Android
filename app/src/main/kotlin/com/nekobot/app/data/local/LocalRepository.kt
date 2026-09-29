@@ -11,6 +11,8 @@ import com.google.gson.reflect.TypeToken
 import com.nekobot.app.data.local.ai.AiOutputLanguage
 import com.nekobot.app.data.local.ai.AgentNoticeBus
 import com.nekobot.app.data.local.ai.buildAgentWakeUpMessage
+import com.nekobot.app.data.local.ai.buildImagePromptRewriteMessages
+import com.nekobot.app.data.local.ai.cleanRewrittenImagePrompt
 import com.nekobot.app.data.local.ai.CustomToolSetModeRecord
 import com.nekobot.app.data.local.ai.ToolSetMode
 import com.nekobot.app.data.local.ai.ToolSetModeCatalog
@@ -9612,6 +9614,57 @@ ${AiOutputLanguage.directive()}
         }.map { (id, name) ->
             TtsVoice(id = id, name = name, provider = provider)
         }
+    }
+
+    /**
+     * 消息生图前的可选预处理：用 purpose=chat 的故障转移队列把拼接好的生图提示词
+     * 改写为纯画面描述，避免角色卡字段、系统设定等说明性文字被文生图模型画进图片。
+     *
+     * 未配置聊天模型、队列全部失败或输出为空时返回 null，由调用方回退到原始提示词。
+     *
+     * @param rawPrompt 已拼接的生图提示词（含角色卡上下文与消息内容）
+     * @param sessionId 任务所属会话，用于 token 记账与路由记录归属
+     */
+    suspend fun rewriteImageGenerationPrompt(
+        rawPrompt: String,
+        sessionId: String? = null
+    ): String? = withContext(Dispatchers.IO) {
+        val messages = buildImagePromptRewriteMessages(rawPrompt)
+        val execution = try {
+            executeChatOnceViaQueue(
+                messages = messages,
+                requestTag = sessionId?.takeIf { it.isNotBlank() } ?: "image_prompt",
+                failoverPurpose = "utility"
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LocalLogger.w(TAG, "生图提示词改写失败，回退到原始提示词: ${e.message}")
+            return@withContext null
+        }
+        recordRewrittenImagePromptUsage(execution, sessionId)
+        cleanRewrittenImagePrompt(execution.value.content)
+    }
+
+    /** 生图提示词改写属于辅助调用：token 记到对应会话的 utility 用途下。 */
+    private fun recordRewrittenImagePromptUsage(
+        execution: FailoverExecution<LocalAiResult>,
+        sessionId: String?
+    ) {
+        val usage = execution.value.usage
+        val input = usage["prompt_tokens"] ?: usage["input_tokens"] ?: usage["prompt"] ?: 0
+        val output = usage["completion_tokens"] ?: usage["output_tokens"] ?: usage["completion"] ?: 0
+        if (input <= 0 && output <= 0) return
+        appendTokenUsageRecord(
+            sessionId = sessionId?.takeIf { it.isNotBlank() } ?: currentSessionId,
+            model = execution.model.name,
+            actualModel = execution.model.model,
+            inputTokens = input,
+            outputTokens = output,
+            timestamp = nowIsoTimestamp(),
+            source = "image_prompt",
+            purpose = TokenStatsManager.PURPOSE_UTILITY
+        )
     }
 
     /**

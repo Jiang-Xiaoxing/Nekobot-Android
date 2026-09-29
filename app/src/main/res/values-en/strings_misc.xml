@@ -90,6 +90,7 @@
     <string name="tokens_source_memory">Memory extraction</string>
     <string name="tokens_source_skill">Skill distillation</string>
     <string name="tokens_source_web">Web search</string>
+    <string name="tokens_source_image_prompt">Image prompt optimization</string>
     <string name="tokens_source_vision">Visual recognition</string>
     <string name="tokens_source_stt">Speech-to-text</string>
     <string name="tokens_source_rule">Rule review</string>

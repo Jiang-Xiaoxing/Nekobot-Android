@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudSync
@@ -367,6 +368,9 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
     val appLockState = remember { mutableStateOf(ServiceContainer.prefs.appLockEnabled) }
     var appLockEnabled by appLockState
     val pendingAppLockState = remember { mutableStateOf<Boolean?>(null) }
+    var imagePromptOptimizeEnabled by remember {
+        mutableStateOf(ServiceContainer.prefs.messageImagePromptOptimizeEnabled)
+    }
     val activity = remember(context) { context.findFragmentActivity() }
     val appLockPrompt = remember(activity) {
         activity?.let { host ->
@@ -721,6 +725,17 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                             checked = openLatestSessionOnLaunch,
                             onCheckedChange = { enabled ->
                                 ServiceContainer.prefs.openLatestSessionOnLaunch = enabled
+                            }
+                        )
+                        SettingSwitchRow(
+                            icon = Icons.Filled.AutoAwesome,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            title = stringResource(R.string.settings_message_image_prompt_optimize),
+                            subtitle = stringResource(R.string.settings_message_image_prompt_optimize_desc),
+                            checked = imagePromptOptimizeEnabled,
+                            onCheckedChange = { enabled ->
+                                imagePromptOptimizeEnabled = enabled
+                                ServiceContainer.prefs.messageImagePromptOptimizeEnabled = enabled
                             }
                         )
                         SettingNavRow(

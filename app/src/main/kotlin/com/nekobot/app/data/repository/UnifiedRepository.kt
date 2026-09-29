@@ -2378,6 +2378,26 @@ class UnifiedRepository(
     // ==================== 图片生成（本地 + 远程）====================
 
     /**
+     * 消息生图前的可选预处理：用聊天模型把拼接好的生图提示词改写为纯画面描述。
+     *
+     * 仅本地模式可用（远程模式的聊天模型由后端托管，没有可直连的通用单次对话接口）；
+     * 未配置模型、调用失败或输出异常时返回 null，由调用方回退到原始提示词。
+     */
+    suspend fun rewriteMessageImagePrompt(
+        rawPrompt: String,
+        sessionId: String? = null
+    ): String? {
+        if (!isLocal) return null
+        return try {
+            local.rewriteImageGenerationPrompt(rawPrompt, sessionId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * 统一图片生成接口：
      * - 本地模式：走故障转移队列生成并返回缓存 URI 列表。
      * - 远程模式：从远程 AI 模型列表中筛选 purpose=image_generation 的模型，

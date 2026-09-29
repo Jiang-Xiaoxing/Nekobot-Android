@@ -212,6 +212,18 @@ class PrefsManager(context: Context) {
             prefs.edit().putBoolean(KEY_OPEN_LATEST_SESSION_ON_LAUNCH, value).apply()
         }
 
+    /**
+     * 消息生图前是否先用聊天模型把提示词改写为纯画面描述（默认开启）。
+     *
+     * 开启后可显著减少角色卡字段等说明文字被文生图模型画进图片的情况；
+     * 未配置聊天模型或改写失败时自动回退到原始拼接提示词。
+     */
+    var messageImagePromptOptimizeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_MESSAGE_IMAGE_PROMPT_OPTIMIZE, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_MESSAGE_IMAGE_PROMPT_OPTIMIZE, value).apply()
+        }
+
     /** 根据费用、延迟、上下文和任务复杂度动态调整本地聊天模型顺序。 */
     var smartRoutingEnabled: Boolean
         get() = prefs.getBoolean(KEY_SMART_ROUTING_ENABLED, true)
@@ -1273,6 +1285,7 @@ class PrefsManager(context: Context) {
         private const val KEY_LIVE_PIPELINE_MODE = "live_pipeline_mode"
         private const val KEY_RECENT_SESSIONS_INCLUDE_ARCHIVED = "recent_sessions_include_archived"
         private const val KEY_OPEN_LATEST_SESSION_ON_LAUNCH = "open_latest_session_on_launch"
+        private const val KEY_MESSAGE_IMAGE_PROMPT_OPTIMIZE = "message_image_prompt_optimize_enabled"
         private const val KEY_SMART_ROUTING_ENABLED = "smart_routing_enabled"
         private const val KEY_REASONING_EFFORT_LEGACY = "reasoning_effort"
         private const val KEY_AGENT_REASONING_EFFORT = "reasoning_effort_agent"

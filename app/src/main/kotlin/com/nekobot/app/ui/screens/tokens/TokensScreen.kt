@@ -1716,6 +1716,7 @@ private fun sourceLabelFor(normalized: String, raw: String): String = when (norm
     "memory" -> ServiceContainer.getString(R.string.tokens_source_memory)
     "skill" -> ServiceContainer.getString(R.string.tokens_source_skill)
     "web" -> ServiceContainer.getString(R.string.tokens_source_web)
+    "image_prompt" -> ServiceContainer.getString(R.string.tokens_source_image_prompt)
     "vision" -> ServiceContainer.getString(R.string.tokens_source_vision)
     "stt" -> ServiceContainer.getString(R.string.tokens_source_stt)
     "tts" -> ServiceContainer.getString(R.string.tokens_source_tts)
