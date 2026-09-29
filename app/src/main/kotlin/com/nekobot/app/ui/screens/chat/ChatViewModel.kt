@@ -698,6 +698,10 @@ class ChatViewModel : BaseViewModel() {
         if (sessionId == currentSessionId && _session.value != null) return
         // 切换会话时释放旧 runtime 引用
         if (currentSessionId.isNotBlank() && currentSessionId != sessionId) {
+            // 同一 VM 切到其它会话时，不能让旧计时器在后台先消费批次、再因会话不匹配而丢弃。
+            // 只取消计时任务，保留 delayReply 中的消息；重新进入旧会话后由 currentPlan() 恢复。
+            runtime.delayReplyJob?.cancel()
+            runtime.delayReplyJob = null
             ChatSessionManager.release(currentSessionId)
         }
         currentSessionId = sessionId
@@ -2668,6 +2672,8 @@ class ChatViewModel : BaseViewModel() {
         scheduledJob = ServiceContainer.applicationScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
             kotlinx.coroutines.delay(duration)
             if (target.delayReplyJob === scheduledJob) target.delayReplyJob = null
+            // 会话已在同一 VM 中切换时保留旧批次，等待重新进入后恢复计时；不要先消费再丢弃。
+            if (runtime !== target || currentSessionId != target.sessionId) return@launch
             when (val result = target.delayReply.onTimerFired(plan.generation, elapsedRealtimeMs())) {
                 DelayReplyTimerResult.Stale -> Unit
                 is DelayReplyTimerResult.Reschedule -> installDelayReplyPlan(target, result.plan)

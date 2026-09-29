@@ -96,6 +96,22 @@ class DelayReplyStateMachineTest {
     }
 
     @Test
+    fun `pending batch can be rearmed after a session switch cancels its timer`() {
+        val state = DelayReplyStateMachine()
+        val initial = state.arm(message("A"), nowMs = 0L, delayMs = 10_000L)
+
+        // 切换会话只取消外层 Job，不调用 onTimerFired，批次必须继续保留。
+        val resumed = state.currentPlan(nowMs = 12_000L)!!
+
+        assertTrue(state.hasPending())
+        assertEquals(initial.generation, resumed.generation)
+        assertEquals(1L, resumed.delayMs)
+        val ready = state.onTimerFired(resumed.generation, nowMs = 12_001L)
+            as DelayReplyTimerResult.Ready
+        assertEquals(listOf("A"), ready.messages.map { it.content })
+    }
+
+    @Test
     fun `request keeps message order and combines all attachments`() {
         val first = message("A").copy(
             attachments = listOf(mapOf("name" to "a.png"))
