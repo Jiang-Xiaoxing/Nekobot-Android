@@ -90,7 +90,11 @@ data class LocalSessionEntity(
     /** Agent 会话长期记忆增强开关，旧会话默认关闭。 */
     @ColumnInfo(name = "long_conversation_enabled", defaultValue = "0") val longConversationEnabled: Boolean = false,
     /** 压缩后近期原话的截止消息 ID；供上下文构建跳过已完成回合的工具轨迹。 */
-    @ColumnInfo(name = "long_conversation_tail_until_id") val longConversationTailUntilId: String? = null
+    @ColumnInfo(name = "long_conversation_tail_until_id") val longConversationTailUntilId: String? = null,
+    /** 发送后等待一段时间再触发回复；仅本地普通角色和继承角色能力的 Agent 会话使用。 */
+    @ColumnInfo(name = "delay_reply_enabled", defaultValue = "0") val delayReplyEnabled: Boolean = false,
+    /** 延迟回复等待秒数。 */
+    @ColumnInfo(name = "delay_reply_delay_seconds", defaultValue = "2") val delayReplyDelaySeconds: Int = 2
 )
 
 /**

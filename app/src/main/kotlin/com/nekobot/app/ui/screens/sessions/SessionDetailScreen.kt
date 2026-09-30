@@ -54,6 +54,7 @@ import com.nekobot.app.ui.components.BorderlessOutlinedButton as OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -88,6 +89,12 @@ import com.nekobot.app.data.model.PublicShareRequest
 import com.nekobot.app.data.model.Session
 import com.nekobot.app.data.model.UpdateSessionRequest
 import com.nekobot.app.ui.BaseViewModel
+import com.nekobot.app.ui.screens.chat.DEFAULT_DELAY_REPLY_SECONDS
+import com.nekobot.app.ui.screens.chat.MAX_DELAY_REPLY_SECONDS
+import com.nekobot.app.ui.screens.chat.MIN_DELAY_REPLY_SECONDS
+import com.nekobot.app.ui.screens.chat.ChatSessionManager
+import com.nekobot.app.ui.screens.chat.normalizeDelayReplySeconds
+import kotlin.math.roundToInt
 import com.nekobot.app.ui.components.ErrorBanner
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
@@ -140,6 +147,9 @@ class SessionDetailViewModel : BaseViewModel() {
     val inheritCharacterGreeting = MutableStateFlow(false)
     /** 可选：长期同一条 Agent 会话的原话、经历档案与回查。 */
     val longConversationEnabled = MutableStateFlow(false)
+    /** 本地普通角色和继承角色能力的 Agent 会话可选延迟回复。 */
+    val delayReplyEnabled = MutableStateFlow(false)
+    val delayReplyDelaySeconds = MutableStateFlow(DEFAULT_DELAY_REPLY_SECONDS)
     // TTS / 主动聊天 / 公开分享
     val ttsEnabled = MutableStateFlow(false)
     val ttsModelId = MutableStateFlow("")
@@ -314,6 +324,8 @@ class SessionDetailViewModel : BaseViewModel() {
                 inheritCharacter.value = s.inheritCharacter == true
                 inheritCharacterGreeting.value = s.inheritCharacterGreeting == true
                 longConversationEnabled.value = s.longConversationEnabled == true
+                delayReplyEnabled.value = s.delayReplyEnabled == true
+                delayReplyDelaySeconds.value = normalizeDelayReplySeconds(s.delayReplyDelaySeconds)
                 // 解析 TTS / 主动聊天 / 公开分享
                 android.util.Log.d("SessionDetail", "load: s.isPublic=${s.isPublic}, s.ttsConfig=${s.ttsConfig}, s.shareConfig=${s.shareConfig}")
                 isPublic.value = false
@@ -476,6 +488,19 @@ class SessionDetailViewModel : BaseViewModel() {
             addProperty("model_id", ttsModelId.value)
             addProperty("voice", ttsVoice.value.ifBlank { "" })
         }
+        val isLocalMode = com.nekobot.app.ServiceContainer.prefs.isLocalMode
+        val delayReplyEligible = isLocalMode && (
+            s.sessionMode.equals("character", ignoreCase = true) ||
+                (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter.value)
+            )
+        val savedDelayReplyEnabled = delayReplyEligible && delayReplyEnabled.value
+        // 先暂停计时再保存：操作进行中批次不会被发往 AI；保存成功才提交撤回，
+        // 失败时批次与气泡保留，重进聊天页后由 currentPlan() 重建计时。
+        val delayWasPending = if (!savedDelayReplyEnabled) {
+            ChatSessionManager.pauseDelayedReplyTimer(s.id.orEmpty())
+        } else {
+            false
+        }
         launchResult(
             block = {
                 unified.updateSession(
@@ -499,11 +524,20 @@ class SessionDetailViewModel : BaseViewModel() {
                         inheritCharacter = inheritCharacter.value,
                         // 继承开关关闭时同时关闭开场白，避免留下无意义的残留状态。
                         inheritCharacterGreeting = inheritCharacter.value && inheritCharacterGreeting.value,
-                        longConversationEnabled = inheritCharacter.value && longConversationEnabled.value
+                        longConversationEnabled = inheritCharacter.value && longConversationEnabled.value,
+                        delayReplyEnabled = if (isLocalMode) {
+                            savedDelayReplyEnabled
+                        } else null,
+                        delayReplyDelaySeconds = if (isLocalMode) {
+                            normalizeDelayReplySeconds(delayReplyDelaySeconds.value)
+                        } else null
                     )
                 )
             },
             onSuccess = {
+                if (delayWasPending) {
+                    ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
+                }
                 android.util.Log.d("SessionDetail", "save onSuccess: starting reload")
                 showToast(string(R.string.sessions_detail_saved_toast))
                 load(s.id.orEmpty())
@@ -586,9 +620,12 @@ class SessionDetailViewModel : BaseViewModel() {
 
     fun delete(onSuccess: () -> Unit) {
         val s = _session.value ?: return
+        // 先暂停计时再删除：删除失败时批次与气泡保留（重进聊天页恢复计时），成功才提交撤回。
+        ChatSessionManager.pauseDelayedReplyTimer(s.id.orEmpty())
         launchResult(
             block = { unified.deleteSession(s.id.orEmpty()) },
             onSuccess = {
+                ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
                 showToast(string(R.string.sessions_detail_deleted_toast))
                 onSuccess()
             }
@@ -748,6 +785,7 @@ data class PromptStackItem(
 fun SessionDetailScreen(
     sessionId: String,
     onBack: () -> Unit,
+    onDeleted: () -> Unit = onBack,
     onOpenExperienceArchive: (String) -> Unit = {}
 ) {
     val vm: SessionDetailViewModel = viewModel(key = "session_detail_$sessionId")
@@ -767,6 +805,8 @@ fun SessionDetailScreen(
     val inheritCharacter by vm.inheritCharacter.collectAsStateWithLifecycle()
     val inheritCharacterGreeting by vm.inheritCharacterGreeting.collectAsStateWithLifecycle()
     val longConversationEnabled by vm.longConversationEnabled.collectAsStateWithLifecycle()
+    val delayReplyEnabled by vm.delayReplyEnabled.collectAsStateWithLifecycle()
+    val delayReplyDelaySeconds by vm.delayReplyDelaySeconds.collectAsStateWithLifecycle()
     val ttsEnabled by vm.ttsEnabled.collectAsStateWithLifecycle()
     val ttsModelId by vm.ttsModelId.collectAsStateWithLifecycle()
     val ttsVoice by vm.ttsVoice.collectAsStateWithLifecycle()
@@ -876,6 +916,10 @@ fun SessionDetailScreen(
     val longConversationDesc = stringResource(R.string.sessions_detail_long_conversation_desc)
     val longConversationOn = stringResource(R.string.sessions_detail_long_conversation_on)
     val longConversationOff = stringResource(R.string.sessions_detail_long_conversation_off)
+    val delayReplyTitle = stringResource(R.string.sessions_detail_delay_reply)
+    val delayReplyDesc = stringResource(R.string.sessions_detail_delay_reply_desc)
+    val delayReplyOn = stringResource(R.string.sessions_detail_delay_reply_on)
+    val delayReplyOff = stringResource(R.string.sessions_detail_delay_reply_off)
     val runtimeStateTitle = stringResource(R.string.sessions_detail_runtime_state)
     val moodLabel = stringResource(R.string.sessions_detail_mood)
     val intensityLabel = stringResource(R.string.sessions_detail_intensity)
@@ -1262,7 +1306,11 @@ fun SessionDetailScreen(
                                 ToggleChipRow(
                                     label = if (inheritCharacter) inheritCharacterOn else inheritCharacterOff,
                                     selected = inheritCharacter,
-                                    onClick = { vm.inheritCharacter.value = !inheritCharacter },
+                                    onClick = {
+                                        val next = !inheritCharacter
+                                        vm.inheritCharacter.value = next
+                                        if (!next) vm.delayReplyEnabled.value = false
+                                    },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 if (inheritCharacter) {
@@ -1304,6 +1352,54 @@ fun SessionDetailScreen(
                                             Text(stringResource(R.string.sessions_detail_experience_archives))
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // === 4.3 延迟回复 ===
+                        // 只在本地普通角色会话，以及继承完整角色能力的本地 Agent 会话中提供。
+                        if (
+                            com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
+                            (
+                                s.sessionMode.equals("character", ignoreCase = true) ||
+                                    (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter)
+                                )
+                        ) {
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = delayReplyTitle)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    delayReplyDesc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                ToggleChipRow(
+                                    label = if (delayReplyEnabled) delayReplyOn else delayReplyOff,
+                                    selected = delayReplyEnabled,
+                                    onClick = { vm.delayReplyEnabled.value = !delayReplyEnabled },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (delayReplyEnabled) {
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        stringResource(
+                                            R.string.sessions_detail_delay_reply_seconds,
+                                            delayReplyDelaySeconds
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Slider(
+                                        value = delayReplyDelaySeconds.toFloat(),
+                                        onValueChange = {
+                                            vm.delayReplyDelaySeconds.value = it.roundToInt()
+                                        },
+                                        valueRange = MIN_DELAY_REPLY_SECONDS.toFloat()..
+                                            MAX_DELAY_REPLY_SECONDS.toFloat(),
+                                        steps = MAX_DELAY_REPLY_SECONDS - MIN_DELAY_REPLY_SECONDS - 1,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
                             }
                         }
@@ -1743,7 +1839,7 @@ fun SessionDetailScreen(
             confirmText = deleteDesc,
             onConfirm = {
                 showDeleteDialog = false
-                vm.delete(onBack)
+                vm.delete(onDeleted)
             }
         )
     }

@@ -135,6 +135,17 @@
     <string name="sessions_detail_long_conversation_desc">直近の原文を残し、記憶・経験の要約・過去の発言を必要に応じて検索します。有効化だけで過去の履歴を有料で整理しません。過去の整理には別途費用確認が必要です。</string>
     <string name="sessions_detail_long_conversation_on">長期会話メモリー：オン</string>
     <string name="sessions_detail_long_conversation_off">長期会話メモリー：オフ</string>
+    <string name="sessions_detail_delay_reply">遅延返信</string>
+    <string name="sessions_detail_delay_reply_desc">メッセージ送信後、少し待ってから返信します。入力中はタイマーを一時停止し、待機中に送信した複数のメッセージをまとめて AI に渡します。</string>
+    <string name="sessions_detail_delay_reply_on">遅延返信：オン</string>
+    <string name="sessions_detail_delay_reply_off">遅延返信：オフ</string>
+    <string name="sessions_detail_delay_reply_seconds">待ち時間：%1$d 秒</string>
+    <string name="chat_delay_reply_pending_wait">遅延返信の待機中です。現在の返信が始まるまでお待ちください。</string>
+    <string name="chat_delay_reply_pending_history">遅延返信の待機中です。先に送信またはキャンセルしてください。</string>
+    <string name="chat_delay_reply_plot_blocked">遅延返信の待機中です。返信開始後にストーリーの選択肢を選んでください。</string>
+    <string name="chat_delay_reply_countdown">%1$d 秒後に返信</string>
+    <string name="chat_delay_reply_paused_draft">一時停止 · 下書きあり</string>
+    <string name="chat_delay_reply_withdraw_batch">まとめて取り消す</string>
     <string name="sessions_detail_experience_archives">経験アーカイブを見る</string>
     <string name="sessions_detail_inherit_greeting_on">キャラクターの挨拶を使用：オン</string>
     <string name="sessions_detail_inherit_greeting_off">キャラクターの挨拶を使用：オフ</string>

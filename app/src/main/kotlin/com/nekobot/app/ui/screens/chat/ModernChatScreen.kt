@@ -196,6 +196,8 @@ fun ModernChatScreen(
     val sending by viewModel.sending.collectAsStateWithLifecycle()
     // 会话级"AI 正在运行"（含后台收尾/唤醒运行）：主操作按钮据此保留停止入口
     val sessionGenerating by viewModel.sessionGenerating.collectAsStateWithLifecycle()
+    val delayReplyPending by viewModel.delayReplyPending.collectAsStateWithLifecycle()
+    val replyBusy = sending || delayReplyPending
     val compressing by viewModel.agentContextCompressionInProgress.collectAsStateWithLifecycle()
     val plotChoices by viewModel.plotChoices.collectAsStateWithLifecycle()
     val plotChoicesLoading by viewModel.plotChoicesLoading.collectAsStateWithLifecycle()
@@ -242,7 +244,7 @@ fun ModernChatScreen(
         Column(
             modifier = Modifier.padding(bottom = embeddedBottomBarClearance)
         ) {
-            if (agentRecovery != null && !sending) {
+            if (agentRecovery != null && !replyBusy) {
                 AgentRecoveryBar(
                     state = agentRecovery!!,
                     onResume = viewModel::resumeAgentRun,
@@ -259,6 +261,7 @@ fun ModernChatScreen(
             session = session,
             messages = messages,
             sending = sending,
+            delayReplyPending = delayReplyPending,
             sessionGenerating = sessionGenerating,
             compressing = compressing,
             plotChoices = plotChoices,
@@ -291,6 +294,8 @@ fun ModernChatScreen(
                     viewModel.sendMessage(text, plotChoiceId, attachments, reasoningEffort)
                 }
             },
+            onDelayInputContentChanged = viewModel::onChatInputContentChanged,
+            shouldKeepComposerOpen = viewModel::shouldUseDelayReplyForInput,
             onStop = viewModel::stop,
             onCompress = viewModel::compressContext,
             onOpenContextAnalysis = { onOpenContextAnalysis(sessionId) },
@@ -679,6 +684,7 @@ private fun ModernChatComposer(
     session: Session?,
     messages: List<Message>,
     sending: Boolean,
+    delayReplyPending: Boolean,
     /** 会话级"AI 正在运行"（前台发送 ∨ 全局生成登记）：后台收尾/唤醒运行阶段也显示停止按钮。 */
     sessionGenerating: Boolean,
     /** 上下文压缩进行中：压缩按钮切换为进行中样式。 */
@@ -699,6 +705,8 @@ private fun ModernChatComposer(
     onOpenStickers: () -> Unit = {},
     onToggleYolo: () -> Unit,
     onSend: (String, String?, List<Map<String, Any>>, ReasoningEffort) -> Unit,
+    onDelayInputContentChanged: (Boolean) -> Unit,
+    shouldKeepComposerOpen: (String, Boolean) -> Boolean,
     onStop: () -> Unit,
     onCompress: () -> Unit,
     onOpenContextAnalysis: () -> Unit,
@@ -731,6 +739,9 @@ private fun ModernChatComposer(
     // 输入框草稿持久化：退出会话后保留
     LaunchedEffect(input, sessionId) {
         ServiceContainer.prefs.setChatInputDraft(sessionId, input)
+    }
+    LaunchedEffect(input.isNotBlank()) {
+        onDelayInputContentChanged(input.isNotBlank())
     }
     var panelExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 表情包选择面板开关
@@ -1035,6 +1046,7 @@ private fun ModernChatComposer(
     }
 
     val closePanel = { panelExpanded = false }
+    val replyBusy = sending || delayReplyPending
     // 快捷工具栏动作分发：复用 + 面板与现有回调的同一批行为
     val handleQuickAction: (String) -> Unit = { id ->
         when (id) {
@@ -1062,7 +1074,7 @@ private fun ModernChatComposer(
             ChatQuickAction.CONTEXT -> onOpenContextAnalysis()
             ChatQuickAction.COMPRESS -> {
                 // AI 持续 loop 期间禁用（按钮已置灰，这里兜底防御）
-                if (!compressing && !sending) onCompress()
+                if (!compressing && !replyBusy) onCompress()
             }
             ChatQuickAction.CLEAR -> showClearConfirm = true
             ChatQuickAction.LATEST -> onJumpToLatest()
@@ -1188,11 +1200,11 @@ private fun ModernChatComposer(
                     loading = plotChoicesLoading,
                     choices = plotChoices,
                     selectedId = pendingPlotChoiceId,
-                    enabled = !sending,
+                    enabled = !replyBusy,
                     layoutMode = chatInputLayout,
                     inputVisible = inputVisible,
                     panelExpanded = panelExpanded,
-                    sending = sending,
+                    sending = replyBusy,
                     onSelect = { choice ->
                         pendingPlotChoiceId = choice.id
                         updateInput(choice.title)
@@ -1214,7 +1226,7 @@ private fun ModernChatComposer(
                 // Agent 排队消息条：生成期间发送的消息在此排队，队顶可“立即发送”注入
                 QueuedMessagesBar(
                     items = queuedMessages,
-                    sending = sending,
+                    sending = replyBusy,
                     onSendNow = onSendQueuedNow,
                     onRemove = onRemoveQueued
                 )
@@ -1234,6 +1246,7 @@ private fun ModernChatComposer(
                     agentLiveContext = agentLiveContext,
                     contextBreakdown = contextBreakdown,
                     sending = sending,
+                    delayPending = delayReplyPending,
                     compressing = compressing,
                     fileBusy = fileBusy,
                     plotMode = plotMode,
@@ -1399,7 +1412,7 @@ private fun ModernChatComposer(
                                         }
                                     },
                                     // Agent 会话生成中仍可输入，发送的消息会进入排队队列
-                                    enabled = !sending || isAgentSession,
+                                    enabled = delayReplyPending || !sending || isAgentSession,
                                     maxLines = 5,
                                     visualTransformation = commandCapsuleTransformation,
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1456,6 +1469,8 @@ private fun ModernChatComposer(
                             // 后台生成（标题总结/剧情选项/记忆沉淀/唤醒运行等）进行中：无草稿时也提供停止入口
                             val hasDraft = input.isNotBlank() || pendingImageAttachments.isNotEmpty()
                             val action = when {
+                                delayReplyPending && hasDraft -> ModernComposerAction.SEND
+                                delayReplyPending -> ModernComposerAction.STOP
                                 sending && isAgentSession && hasDraft -> ModernComposerAction.SEND
                                 sending -> ModernComposerAction.STOP
                                 hasDraft -> ModernComposerAction.SEND
@@ -1489,12 +1504,16 @@ private fun ModernChatComposer(
                                             val text = input
                                             val choiceId = pendingPlotChoiceId
                                             val attachments = pendingImageAttachments
+                                            val keepComposerOpen = shouldKeepComposerOpen(
+                                                text,
+                                                choiceId == null
+                                            )
                                             updateInput("")
-                                            inputExpanded = false
+                                            inputExpanded = keepComposerOpen
                                             pendingPlotChoiceId = null
                                             pendingImageAttachments = emptyList()
                                             closePanel()
-                                            keyboard?.hide()
+                                            if (!keepComposerOpen) keyboard?.hide()
                                             onSend(text, choiceId, attachments, reasoningEffort)
                                         }
                                         ModernComposerAction.VOICE -> requestMicPermission.launch(
@@ -1554,10 +1573,10 @@ private fun ModernChatComposer(
                                 ServiceContainer.prefs.chatQuickActionsCollapsed = true
                             },
                             onEdit = { showQuickActionEditor = true },
-                            // AI 执行中禁用「压缩上下文」：压缩会重写历史边界，
-                            // 正在运行的任务会丢失工作记忆；达到阈值的自动压缩不受影响。
+                            // AI 执行中或延迟回复等待期间禁用「压缩上下文」：压缩会重写历史边界，
+                            // 正在运行的任务/待发批次会丢失工作记忆；达到阈值的自动压缩不受影响。
                             isActionEnabled = { id ->
-                                id != ChatQuickAction.COMPRESS || (!sending && !compressing)
+                                id != ChatQuickAction.COMPRESS || (!replyBusy && !compressing)
                             },
                             onAction = handleQuickAction
                         )
@@ -2213,6 +2232,7 @@ private fun ModernChatActionPanel(
     usedTokens: Long,
     maxTokens: Int?,
     sending: Boolean,
+    delayPending: Boolean,
     compressing: Boolean,
     agentLiveContext: AgentLiveContextUsage?,
     contextBreakdown: ContextUsageBreakdown?,
@@ -2262,6 +2282,7 @@ private fun ModernChatActionPanel(
                     usedTokens = usedTokens,
                     maxTokens = maxTokens,
                     sending = sending,
+                    delayPending = delayPending,
                     compressing = compressing,
                     agentLiveContext = agentLiveContext,
                     contextBreakdown = contextBreakdown,
@@ -2547,6 +2568,7 @@ private fun ModernContextCard(
     usedTokens: Long,
     maxTokens: Int?,
     sending: Boolean,
+    delayPending: Boolean,
     compressing: Boolean,
     agentLiveContext: AgentLiveContextUsage?,
     contextBreakdown: ContextUsageBreakdown?,
@@ -2613,7 +2635,11 @@ private fun ModernContextCard(
                         )
                     }
                 }
-                TextButton(onClick = onCompress, enabled = !sending && messageCount > 0 && !compressing) {
+                TextButton(
+                    onClick = onCompress,
+                    // 延迟回复等待期间同样禁止压缩：压缩会重写历史边界，待发批次会因此错乱
+                    enabled = !sending && !delayPending && messageCount > 0 && !compressing
+                ) {
                     if (compressing) {
                         // 进行中：图标换成进度圈，标签切换为“压缩中”。
                         CircularProgressIndicator(

@@ -603,7 +603,9 @@ object NbotConfigImporter {
                     groupActiveSpeaker = obj.str("group_active_speaker"),
                     groupTurnCount = obj.int("group_turn_count", 0),
                     inheritCharacter = obj.bool("inherit_character"),
-                    inheritCharacterGreeting = obj.bool("inherit_character_greeting")
+                    inheritCharacterGreeting = obj.bool("inherit_character_greeting"),
+                    delayReplyEnabled = obj.bool("delay_reply_enabled"),
+                    delayReplyDelaySeconds = obj.int("delay_reply_delay_seconds", 2)
                 )
             )
             count++

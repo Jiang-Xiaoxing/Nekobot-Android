@@ -29,6 +29,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border as visibleBorder
 import com.nekobot.app.ui.components.withoutBorder as border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -186,6 +187,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -288,6 +290,7 @@ fun ChatScreen(
 ) {
     val viewModel: ChatViewModel = viewModel()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val delayReplyBubbleStatus by viewModel.delayReplyBubbleStatus.collectAsStateWithLifecycle()
     // 历史分页：是否还有更早消息 / 是否正在加载更早的一页
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsStateWithLifecycle()
     val loadingOlderMessages by viewModel.loadingOlderMessages.collectAsStateWithLifecycle()
@@ -1299,6 +1302,8 @@ fun ChatScreen(
                                     }
                                     MessageBubble(
                                         message = target,
+                                        delayReplyStatus = delayReplyBubbleStatus?.takeIf { it.bubbleId == target.id },
+                                        onWithdrawDelay = viewModel::withdrawDelayedReplyBatch,
                                         generatedImages = messageImagesByMessage[target.id].orEmpty(),
                                         onGeneratedImageClick = { previewGeneratedImage = it },
                                         onFailedGeneratedImageLongClick = { viewModel.deleteMessageImage(it.id) },
@@ -2559,6 +2564,8 @@ private fun tokenSpeedColor(level: TokenSpeedLevel?): Color = when (level) {
 @Composable
 private fun MessageBubble(
     message: Message,
+    delayReplyStatus: DelayReplyBubbleStatus? = null,
+    onWithdrawDelay: (() -> Unit)? = null,
     generatedImages: List<LocalMessageImageEntity> = emptyList(),
     onGeneratedImageClick: (LocalMessageImageEntity) -> Unit = {},
     onFailedGeneratedImageLongClick: (LocalMessageImageEntity) -> Unit = {},
@@ -3099,8 +3106,20 @@ private fun MessageBubble(
                     if (compactTs != null) {
                         Text(compactTs, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    message.tokens?.let { tokens ->
+                    delayReplyStatus?.let { status ->
                         if (compactTs != null) Spacer(Modifier.width(META_ITEM_GAP))
+                        Text(
+                            text = if (status.paused) {
+                                stringResource(R.string.chat_delay_reply_paused_draft)
+                            } else {
+                                stringResource(R.string.chat_delay_reply_countdown, status.remainingSeconds)
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                    message.tokens?.let { tokens ->
+                        if (compactTs != null || delayReplyStatus != null) Spacer(Modifier.width(META_ITEM_GAP))
                         Text("${formatTokenCount(tokens)} tok", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // 生成速度：本地生成的消息才有耗时数据；快=绿、慢=红，与 token 数之间留出间距避免挤在一起
@@ -3115,7 +3134,23 @@ private fun MessageBubble(
                 }
                 // 用户气泡：复制按钮放最右边；AI 气泡：三个操作按钮放最右边
                 if (!selectionMode) {
-                    if (isUser) {
+                    if (delayReplyStatus != null && onWithdrawDelay != null) {
+                        val withdrawShape = RoundedCornerShape(16.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(withdrawShape)
+                                .visibleBorder(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), withdrawShape)
+                                .clickable(onClick = onWithdrawDelay)
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.chat_delay_reply_withdraw_batch),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else if (isUser) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconActionButton(
                                 icon = Icons.Filled.ContentCopy,

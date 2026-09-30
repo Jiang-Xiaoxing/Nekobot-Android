@@ -60,6 +60,7 @@ import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import com.nekobot.app.ui.components.GlassDropdownMenu as DropdownMenu
+import com.nekobot.app.ui.screens.chat.ChatSessionManager
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -2613,9 +2614,12 @@ class SessionsViewModel : BaseViewModel() {
 
     /** 删除会话，成功后刷新并回调 [onSuccess]。 */
     fun deleteSession(id: String, onSuccess: () -> Unit = {}) {
+        // 先暂停计时再删除：删除失败时批次与气泡保留（重进聊天页恢复计时），成功才提交撤回。
+        ChatSessionManager.pauseDelayedReplyTimer(id)
         launchResult(
             block = { unified.deleteSession(id) },
             onSuccess = {
+                ChatSessionManager.cancelDelayedReply(id, removeBubbles = true)
                 showToast(string(R.string.sessions_deleted_toast))
                 loadSessions()
                 onSuccess()
