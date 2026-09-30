@@ -5,7 +5,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -126,21 +124,16 @@ fun AboutScreen(
                 // ===== 顶部居中的 App logo =====
                 // 使用 Coil AsyncImage 加载 neko.png 位图，避免 painterResource 在某些设备上
                 // 因 mipmap 解析路径不同导致的崩溃；Coil 会安全地降级处理。
+                // 图标本身是圆角矩形，直接按圆角矩形裁切展示，不额外加白色底框与描边。
                 Spacer(Modifier.height(16.dp))
-                Box(
+                AsyncImage(
+                    model = R.mipmap.neko,
+                    contentDescription = stringResource(R.string.app_name),
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(140.dp)
-                        .clip(CircleShape)
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = R.mipmap.neko,
-                        contentDescription = stringResource(R.string.app_name),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(124.dp)
-                    )
-                }
+                        .clip(RoundedCornerShape(28.dp))
+                )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = stringResource(R.string.app_name),

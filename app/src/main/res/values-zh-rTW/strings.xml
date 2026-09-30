@@ -181,7 +181,7 @@
     <string name="about_privacy_statement">隱私聲明</string>
     <string name="about_privacy_statement_subtitle">查看資料如何被處理</string>
     <string name="about_official_website">官方網站</string>
-    <string name="about_footer">© 2024-2026 Asukaneko · GPL-3.0</string>
+    <string name="about_footer">© 2025-2026 Asukaneko · GPL-3.0</string>
     <string name="about_privacy_content">Nekobot for Android 隱私聲明\n\n1. 資料收集\n本應用不收集任何個人資訊，不包含任何統計、廣告或追蹤 SDK。\n\n2. 本地資料\n在「本地模式」下，你的會話、訊息、角色卡、世界書、記憶、Token 用量記錄等資料全部儲存在你的設備本地（應用私有目錄與 SharedPreferences 中），不會上傳到任何伺服器。\n\n3. 遠程資料\n在「遠程模式」下，你的資料將上傳到你自行配置的後端伺服器（預設為你自己部署的 Nekobot 服務端）。應用本身不與任何第三方服務通信，僅與你配置的服務端通信。\n\n4. 第三方 API\n你配置的 AI 模型 API（如 OpenAI、Gemini 等）會按照其各自的隱私政策處理請求內容。請參閱對應服務商的隱私政策。\n\n5. 應用權限\n- 網路權限：用於與你配置的後端伺服器及 AI API 通信\n- 儲存權限：用於匯出/匯入會話、角色卡等資料\n- 通知權限：用於 AI 主動訊息通知（可選）\n\n6. 資料安全\n建議為敏感會話設定密碼保護。匯出的資料檔案請妥善保管，避免未授權存取。\n\n7. 開源\n本項目基於 GPL-3.0 協議開源，源代碼地址：https://github.com/asukaneko/Nekobot-Android\n\n如有疑問，請在 GitHub 上提 issue。</string>
     <string name="update_release_notes">發佈說明</string>
     <string name="update_expand_release_notes">展開發布說明</string>
