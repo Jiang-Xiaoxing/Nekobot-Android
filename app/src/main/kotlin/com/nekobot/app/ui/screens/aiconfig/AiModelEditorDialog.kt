@@ -24,6 +24,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -283,6 +284,8 @@ fun AiModelEditorDialog(
     val purposeNameTemplate = stringResource(R.string.aimodel_editor_default_name_purpose)
     var state by remember(initial) { mutableStateOf(initial.ensureProtocol(protocolOptions)) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    // 已保存 Key 下拉框当前选中的 Key id（仅用于回显选择，实际密钥仍存 state.apiKey）
+    var selectedSavedKeyId by remember { mutableStateOf<String?>(null) }
     var allowAutomaticPricing by remember(initial, isEditing) {
         mutableStateOf(!isEditing || initial.inputPrice.isBlank() || initial.outputPrice.isBlank())
     }
@@ -402,14 +405,19 @@ fun AiModelEditorDialog(
                 value = state.apiKey,
                 password = true,
                 placeholder = stringResource(R.string.aimodel_editor_field_api_key_placeholder)
-            ) { state = state.copy(apiKey = it) }
+            ) {
+                // 手动改动密钥后，已保存 Key 下拉框不再对应任何选中项
+                selectedSavedKeyId = null
+                state = state.copy(apiKey = it)
+            }
             if (savedApiKeys.isNotEmpty()) {
                 EditorDropdownField(
                     label = stringResource(R.string.aimodel_editor_field_saved_key),
-                    value = "",
+                    value = selectedSavedKeyId ?: "",
                     options = savedApiKeys.mapNotNull { it.id },
                     labelFor = { id -> savedApiKeys.firstOrNull { it.id == id }?.displayName ?: id },
                     onSelect = { id ->
+                        selectedSavedKeyId = id
                         onResolveApiKey(id) { key -> state = state.copy(apiKey = key) }
                     }
                 )
@@ -584,7 +592,7 @@ fun AiModelEditorDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                TextButton(
+                FilledTonalButton(
                     onClick = {
                         allowAutomaticPricing = false
                         state = state.applyPricing(matchedPricing, overwrite = true)
