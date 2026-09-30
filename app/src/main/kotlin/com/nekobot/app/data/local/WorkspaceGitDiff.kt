@@ -565,11 +565,13 @@ internal fun String.isHexString(): Boolean =
 internal class GitRepository(private val gitRoot: File) {
 
     private val gitDir: File? = resolveGitDir()
-    private val objectCache = object : LinkedHashMap<String, ByteArray>(32, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?): Boolean = size > 96
+    private val objectCache = object : LinkedHashMap<String, ObjectData>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ObjectData>?): Boolean = size > 96
     }
     private val packIndexes = ConcurrentHashMap<String, Map<String, Long>>()
-    private val treeCache = ConcurrentHashMap<String, Map<String, String>?>()
+    /** ConcurrentHashMap 不允许 null value；tree 展开失败用共享哨兵占位，避免反复解压缺失对象。 */
+    private val negativeTree: Map<String, String> = emptyMap()
+    private val treeCache = ConcurrentHashMap<String, Map<String, String>>()
     private var cachedHeadSha: String? = null
     private var cachedBranch: String? = null
 
@@ -662,19 +664,19 @@ internal class GitRepository(private val gitRoot: File) {
      * 仅包含普通 blob（跳过 gitlink 子模块）；超限时返回 null（调用方做安全降级）。
      */
     fun treeFiles(commitSha: String): Map<String, String>? {
-        treeCache[commitSha]?.let { return it }
-        val commit = readObject(commitSha) ?: return null.also { treeCache[commitSha] = null }
-        if (commit.type != "commit") return null.also { treeCache[commitSha] = null }
+        treeCache[commitSha]?.let { return if (it === negativeTree) null else it }
+        val commit = readObject(commitSha) ?: return null.also { treeCache[commitSha] = negativeTree }
+        if (commit.type != "commit") return null.also { treeCache[commitSha] = negativeTree }
         // commit 正文为 ASCII 文本；其 header 已在读出时剥离，这里直接找 "tree <sha>" 行
         val treeLine = String(commit.content, Charsets.US_ASCII).split("\n")
         val treeSha = treeLine.firstOrNull { it.startsWith("tree ") }?.removePrefix("tree ")?.trim()
-        if (treeSha.isNullOrBlank()) return null.also { treeCache[commitSha] = null }
+        if (treeSha.isNullOrBlank()) return null.also { treeCache[commitSha] = negativeTree }
 
         val out = LinkedHashMap<String, String>()
         var entries = 0
         var trees = 0
         val complete = walkTree(treeSha, "", out, 0) { entries++; trees++; entries > WorkspaceGitDiff.MAX_TREE_ENTRIES || trees > WorkspaceGitDiff.MAX_TREES }
-        if (!complete) return null.also { treeCache[commitSha] = null }
+        if (!complete) return null.also { treeCache[commitSha] = negativeTree }
         treeCache[commitSha] = out
         return out
     }
@@ -729,24 +731,22 @@ internal class GitRepository(private val gitRoot: File) {
 
     private fun readObject(sha: String): ObjectData? {
         if (sha.length != 40) return null
-        objectCache[sha]?.let { raw ->
-            val header = decodeHeaderContent(raw)
-            return ObjectData(header.second, header.first)
-        }
+        objectCache[sha]?.let { return it }
         val dir = gitDir ?: return null
-        // 1) loose object
+        // 1) loose object：zlib（带包装头）+ "<type> <size>\0" 头
         val loose = File(dir, "objects/${sha.substring(0, 2)}/${sha.substring(2)}")
         if (loose.isFile) {
             val raw = runCatching { inflateAll(loose.readBytes()) }.getOrNull() ?: return null
             if (raw.size > WorkspaceGitDiff.MAX_OBJECT_BYTES.toInt()) return null
-            val header = decodeHeaderContent(raw)
-            if (header.second == "blob" || header.second == "commit" || header.second == "tree" || header.second == "tag") {
-                objectCache[sha] = raw
-                return ObjectData(header.second, header.first)
+            val (content, type) = decodeHeaderContent(raw)
+            if (type == "blob" || type == "commit" || type == "tree" || type == "tag") {
+                val data = ObjectData(type, content)
+                objectCache[sha] = data
+                return data
             }
             return null
         }
-        // 2) packfile
+        // 2) packfile：entry 的 varint 即内容大小；payload 为 zlib 包装的纯内容（无 loose 的 "<type> <size>\0" 头）
         val packDir = File(dir, "objects/pack")
         if (!packDir.isDirectory) return null
         val packFiles = packDir.listFiles { f -> f.isFile && f.extension == "pack" }?.sortedBy { it.name }.orEmpty()
@@ -755,10 +755,9 @@ internal class GitRepository(private val gitRoot: File) {
             val index = packIndex(pack) ?: continue
             val offset = index[sha] ?: continue
             val resolved = resolvePackObjectAt(pack, offset, 0) ?: return null
-            if (resolved.size > WorkspaceGitDiff.MAX_OBJECT_BYTES.toInt()) return null
+            if (resolved.content.size > WorkspaceGitDiff.MAX_OBJECT_BYTES) return null
             objectCache[sha] = resolved
-            val header = decodeHeaderContent(resolved)
-            return ObjectData(header.second, header.first)
+            return resolved
         }
         return null
     }
@@ -835,15 +834,17 @@ internal class GitRepository(private val gitRoot: File) {
     }
 
     /**
-     * 读取并解析 pack 对象（含 delta 链）。返回最终内容字节。
+     * 读取并解析 pack 对象（含 delta 链）。
+     * 返回 [ObjectData]：类型取自 entry varint（delta 继承基底类型），内容为纯对象字节。
+     * delta 基底一律是「剥掉头的纯内容」，与 git 的 delta 语义一致。
      */
-    private fun resolvePackObjectAt(pack: File, offset: Long, depth: Int): ByteArray? {
+    private fun resolvePackObjectAt(pack: File, offset: Long, depth: Int): ObjectData? {
         if (depth > 64) return null
         return try {
             RandomAccessFile(pack, "r").use { raf ->
                 raf.seek(offset)
                 val first = raf.readUnsignedByte()
-                var type = (first ushr 4) and 0x7
+                val type = (first ushr 4) and 0x7
                 var size = first and 0x0f
                 var shift = 4
                 var b = first
@@ -866,22 +867,36 @@ internal class GitRepository(private val gitRoot: File) {
                         val baseOffset = offset - neg
                         val delta = inflateFrom(raf, size) ?: return null
                         val base = resolvePackObjectAt(pack, baseOffset, depth + 1) ?: return null
-                        applyDelta(base, delta)
+                        val content = applyDelta(base.content, delta) ?: return null
+                        ObjectData(base.type, content)
                     }
                     WorkspaceGitDiff.OBJ_REF_DELTA -> {
                         val baseShaBytes = ByteArray(20)
                         raf.readFully(baseShaBytes)
                         val baseSha = baseShaBytes.toHex()
                         val delta = inflateFrom(raf, size) ?: return null
-                        val base = readObject(baseSha)?.content ?: return null
-                        applyDelta(base, delta)
+                        val base = readObject(baseSha) ?: return null
+                        val content = applyDelta(base.content, delta) ?: return null
+                        ObjectData(base.type, content)
                     }
-                    else -> inflateFrom(raf, size)
+                    WorkspaceGitDiff.OBJ_COMMIT,
+                    WorkspaceGitDiff.OBJ_TREE,
+                    WorkspaceGitDiff.OBJ_BLOB,
+                    WorkspaceGitDiff.OBJ_TAG ->
+                        ObjectData(typeName(type), inflateFrom(raf, size) ?: return null)
+                    else -> null
                 }
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun typeName(type: Int): String = when (type) {
+        WorkspaceGitDiff.OBJ_COMMIT -> "commit"
+        WorkspaceGitDiff.OBJ_TREE -> "tree"
+        WorkspaceGitDiff.OBJ_BLOB -> "blob"
+        else -> "tag"
     }
 
     /** 应用 git delta 指令流。 */
@@ -936,27 +951,33 @@ internal class GitRepository(private val gitRoot: File) {
         }
     }
 
-    /** 从 RAF 当前位置以 zlib 流方式 inflate 出 [expected] 字节。 */
+    /**
+     * 从 RAF 当前位置以 zlib 流（git pack entry 与 loose 同为带包装的 zlib）解压出 [expected] 字节。
+     *
+     * 输入与输出必须用不同缓冲：[Inflater.setInput] 持有数组引用，
+     * 若输出写进同一数组会在解压中途自我覆盖（历史 bug：pack 对象因此全部读取失败）。
+     */
     private fun inflateFrom(raf: RandomAccessFile, expected: Int): ByteArray? {
         if (expected > WorkspaceGitDiff.MAX_OBJECT_BYTES.toInt()) return null
         return try {
             val inflater = Inflater()
+            val input = ByteArray(64 * 1024)
+            val chunk = ByteArray(64 * 1024)
             val out = ByteArrayOutputStream(minOf(expected.coerceAtLeast(256), 1 shl 20))
-            val buf = ByteArray(64 * 1024)
             var inflated = 0
             while (inflated < expected) {
                 if (inflater.needsInput()) {
-                    val n = raf.read(buf)
+                    val n = raf.read(input)
                     if (n < 0) { inflater.end(); return null }
-                    inflater.setInput(buf, 0, n)
+                    inflater.setInput(input, 0, n)
                 }
-                val n = inflater.inflate(buf)
+                val n = inflater.inflate(chunk)
                 if (n == 0) {
                     if (inflater.finished()) break
                     // needsInput 时继续读；否则为数据异常
                     if (!inflater.needsInput()) { inflater.end(); return null }
                 } else {
-                    out.write(buf, 0, n)
+                    out.write(chunk, 0, n)
                     inflated += n
                 }
             }
