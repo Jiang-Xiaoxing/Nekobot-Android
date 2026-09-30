@@ -65,6 +65,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.ui.adaptive.WindowWidthClass
+import com.nekobot.app.ui.adaptive.rememberShouldUseNavRail
 import com.nekobot.app.ui.adaptive.rememberWindowWidthClass
 import com.nekobot.app.ui.components.GlassBackdrop
 import com.nekobot.app.ui.components.GlassPane
@@ -158,13 +159,15 @@ internal fun bottomBarLayoutFor(widthClass: WindowWidthClass): BottomBarLayout =
 internal fun bottomBarLayout(): BottomBarLayout = bottomBarLayoutFor(rememberWindowWidthClass())
 
 /**
- * 当前窗口宽度下悬浮底栏（含上下边距）占据的总高度。
+ * 当前形态下悬浮底部导航栏（含上下边距）占据的总高度。
  *
- * 平板下底栏更高，嵌入双栏的聊天输入区必须按这个值避让，否则会被胶囊遮住；
- * 请优先使用本方法而不是固定常量 [LiquidGlassBottomBarClearance]。
+ * 平板形态改用侧边导航栏（见 `LiquidGlassNavRail`），底栏不再显示，因此这里返回 0：
+ * 嵌入双栏的聊天输入区不必再为底栏抬升，可以直接铺到屏幕底部。
+ * 手机（含手机横屏）仍返回底栏高度，嵌入内容必须按这个值避让，否则会被胶囊遮住。
  */
 @Composable
-fun rememberLiquidGlassBottomBarClearance(): Dp = bottomBarLayout().clearance
+fun rememberLiquidGlassBottomBarClearance(): Dp =
+    if (rememberShouldUseNavRail()) 0.dp else bottomBarLayout().clearance
 
 /** 紧凑（手机）布局下的避让高度基线：64 + 10 * 2 = 84dp，供非 Composable 场景兜底。 */
 val LiquidGlassBottomBarClearance: Dp = CompactBottomBarLayout.clearance
@@ -223,7 +226,7 @@ fun LiquidGlassBottomBar(
         // 平板下胶囊被限宽，居中悬浮，两侧留白不再被拉伸的标签槽位吃掉。
         contentAlignment = Alignment.Center
     ) {
-        GlassPill(
+        NavGlassSurface(
             dark = dark,
             backdrop = backdrop,
             corner = layout.pillCorner,
@@ -391,17 +394,23 @@ fun LiquidGlassBottomBar(
 }
 
 /**
- * 外层玻璃胶囊：真玻璃模式下采样下层页面内容（模糊 + 折射 + 极淡中性染色 + 高光），
- * 玻璃本身不混主题色，保持透明玻璃的观感；
+ * 外层玻璃面板：真玻璃模式下采样下层页面内容（模糊 + 折射 + 淡染色 + 高光），
  * 回退模式下则是高浓度半透明底色 + 柔和投影 + 顶部高光描边。
+ *
+ * 底栏胶囊与侧边导航栏面板共用（仅圆角、尺寸与 [tint] 不同）。
+ *
+ * @param tint 玻璃底色。默认是极淡的中性染色（底栏不混主题色，保持透明玻璃观感）；
+ *   侧栏下方始终是纯背景色（主界面内容已向右避让，采样无从发挥），
+ *   因此侧栏传入主题 surface 的淡染色，让大面积面板在纯色背景上仍有明确层次。
  */
 @Composable
-private fun GlassPill(
+internal fun NavGlassSurface(
     dark: Boolean,
     backdrop: GlassBackdrop?,
     corner: Dp,
     liquidProgress: () -> Float,
     modifier: Modifier = Modifier,
+    tint: Color = if (dark) Color(0x33101012) else Color(0x1FFFFFFF),
     content: @Composable () -> Unit,
 ) {
     val shape = RoundedCornerShape(corner)
@@ -443,8 +452,7 @@ private fun GlassPill(
                 refraction = 12.dp,
                 // 色散会在边缘产生彩色描边，这里关闭，保持干净的透明玻璃。
                 dispersion = 0f,
-                // 极淡的中性染色：只为图标可读性，不引入主题色。
-                tint = if (dark) Color(0x33101012) else Color(0x1FFFFFFF),
+                tint = tint,
                 rimColors = if (dark) {
                     // 深色模式下白边要非常克制，否则整条胶囊像被镶了银边。
                     listOf(Color(0x24FFFFFF), Color(0x08FFFFFF))

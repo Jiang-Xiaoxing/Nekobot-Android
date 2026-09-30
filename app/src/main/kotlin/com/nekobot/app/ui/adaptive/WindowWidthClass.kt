@@ -27,3 +27,25 @@ fun rememberWindowWidthClass(): WindowWidthClass {
 @Composable
 fun rememberShouldUseTwoPane(): Boolean =
     rememberWindowWidthClass() != WindowWidthClass.Compact
+
+/** 侧边导航栏所需的最小窗口高度：竖直排下 5 个标签还要留出上下留白。 */
+const val NavRailMinHeightDp = 520
+
+/**
+ * 可测试的纯函数：是否使用侧边导航栏（平板形态）。
+ *
+ * 需要「够宽 + 够高」同时成立：宽度达到平板断点（≥600dp），且高度不低于 [NavRailMinHeightDp]。
+ * 手机横屏虽然够宽，但高度通常不足 520dp，竖直排列 5 个标签会非常拥挤，
+ * 因此仍沿用底部悬浮导航栏。
+ */
+fun shouldUseNavRail(widthDp: Int, heightDp: Int): Boolean =
+    computeWindowWidthClass(widthDp) != WindowWidthClass.Compact && heightDp >= NavRailMinHeightDp
+
+/** 当前窗口是否应使用侧边导航栏。 */
+@Composable
+fun rememberShouldUseNavRail(): Boolean {
+    val configuration = LocalConfiguration.current
+    return remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+        shouldUseNavRail(configuration.screenWidthDp, configuration.screenHeightDp)
+    }
+}

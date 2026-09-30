@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -42,6 +44,7 @@ import androidx.navigation.navArgument
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.repository.Resource
+import com.nekobot.app.ui.adaptive.rememberShouldUseNavRail
 import com.nekobot.app.ui.components.glassBackdropSource
 import com.nekobot.app.ui.components.rememberGlassBackdrop
 import com.nekobot.app.ui.components.rememberLiquidGlassAvailable
@@ -184,20 +187,61 @@ fun NekobotNavGraph() {
     val selectedMainRoute = bottomRoutes.getOrElse(mainPagerState.currentPage) {
         Routes.SESSIONS
     }
+    // 底部导航栏与侧边导航栏共用：点击导航项切换到对应主 Tab。
+    val onNavItemSelected: (BottomItem) -> Unit = { item ->
+        val targetPage = bottomRoutes.indexOf(item.route)
+        if (targetPage != -1) {
+            if (currentRoute == Routes.SESSIONS) {
+                if (targetPage != mainPagerState.currentPage) {
+                    // 点击切换：拉起纱幕盖住旧页 → 纱幕全遮时无动画瞬切 →
+                    // 纱幕带阻尼长尾褪去显出新页。瞬切引发的多页组合开销
+                    // 藏在纱幕之后，不卡顿、不闪屏；
+                    // 手势左右滑动仍走横向滚动，两种切换方式互不干扰。
+                    tabClickJob?.cancel()
+                    tabClickJob = mainPagerScope.launch {
+                        tabSwitchVeil.animateTo(
+                            1f,
+                            tween(TAB_CLICK_VEIL_ON_MS, easing = DampedEasing)
+                        )
+                        mainPagerState.scrollToPage(targetPage)
+                        tabSwitchVeil.animateTo(
+                            0f,
+                            tween(TAB_CLICK_VEIL_OFF_MS, easing = DampedEasing)
+                        )
+                    }
+                }
+            } else {
+                // 从详情页等内容回到主 Tab：先滚到目标页再回到会话宿主页。
+                mainPagerScope.launch {
+                    mainPagerState.scrollToPage(targetPage)
+                }
+                navController.navigate(Routes.SESSIONS) {
+                    popUpTo(Routes.SESSIONS) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+    // 平板形态（够宽 + 够高）：底部导航栏改为左侧悬浮侧边导航栏，
+    // 主界面 5 个 Tab 整体向右避让；手机（含手机横屏）仍用底部悬浮导航栏。
+    val useNavRail = rememberShouldUseNavRail()
+    val navRailClearance = rememberNavRailClearance()
     // 平板双栏：聊天全屏（会话列表收起）时隐藏底部导航栏，把整屏让给聊天。
     // 仅当确实停留在会话页时才生效，避免滑动到其他 Tab 后底栏仍然消失。
+    // 侧栏形态不受此影响：侧栏贴在屏幕左侧、不占用聊天高度，始终可见以便随时切换 Tab。
     var twoPaneChatMaximized by remember { mutableStateOf(false) }
-    val showBottomBar = currentRoute in mainRoutes && !(
+    val showNavRail = useNavRail && currentRoute in mainRoutes
+    val showBottomBar = !useNavRail && currentRoute in mainRoutes && !(
         twoPaneChatMaximized &&
             currentRoute == Routes.SESSIONS &&
             selectedMainRoute == Routes.SESSIONS
         )
 
-    // 液态玻璃底栏：API 31+ 且非低内存设备时，把下层页面录进离屏层，供底栏真实采样
-    // （模糊 + 边缘折射），取代原来的伪毛玻璃渐变；否则退回静态半透明样式。
+    // 液态玻璃导航（底栏 / 侧栏）：API 31+ 且非低内存设备时，把下层页面录进离屏层，
+    // 供导航玻璃真实采样（模糊 + 边缘折射），取代原来的伪毛玻璃渐变；否则退回静态半透明样式。
     val liquidGlassAvailable = rememberLiquidGlassAvailable()
     val glassBackdrop = rememberGlassBackdrop()
-    val useLiquidGlass = liquidGlassAvailable && showBottomBar
+    val useLiquidGlass = liquidGlassAvailable && (showBottomBar || showNavRail)
     // 底栏占据的总高度随窗口宽度变化（平板更高），渐变遮罩按它推算。
     val bottomBarClearance = rememberLiquidGlassBottomBarClearance()
 
@@ -367,7 +411,8 @@ fun NekobotNavGraph() {
                 Box(modifier = Modifier.fillMaxSize()) {
                 HorizontalPager(
                     state = mainPagerState,
-                    modifier = Modifier.fillMaxSize(),
+                    // 侧栏形态下 5 个 Tab 整体向右避让，避免被悬浮侧栏压住。
+                    modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance),
                     key = { page -> bottomRoutes[page] },
                     beyondViewportPageCount = 1
                 ) { page ->
@@ -503,16 +548,19 @@ fun NekobotNavGraph() {
                 )
             }
             composable(Routes.CHARACTERS) {
-                CharactersScreen(
-                    onOpenCharacter = { id ->
-                        // 列表点击 → 只读详情视图；新建仍走编辑页
-                        if (id == "new") navController.navigate(Routes.characterDetail(id))
-                        else navController.navigate(Routes.characterView(id))
-                    },
-                    onOpenEdit = { id ->
-                        navController.navigate(Routes.characterDetail(id))
-                    }
-                )
+                // 主界面 Tab 的独立入口（如全局搜索直达）：侧栏形态下同样向右避让
+                Box(modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance)) {
+                    CharactersScreen(
+                        onOpenCharacter = { id ->
+                            // 列表点击 → 只读详情视图；新建仍走编辑页
+                            if (id == "new") navController.navigate(Routes.characterDetail(id))
+                            else navController.navigate(Routes.characterView(id))
+                        },
+                        onOpenEdit = { id ->
+                            navController.navigate(Routes.characterDetail(id))
+                        }
+                    )
+                }
             }
             composable(
                 route = Routes.CHARACTER_VIEW,
@@ -535,14 +583,16 @@ fun NekobotNavGraph() {
                 )
             }
             composable(Routes.WORLD_BOOKS) {
-                WorldBooksScreen(
-                    onOpenBook = { id ->
-                        navController.navigate(Routes.worldBookDetail(id))
-                    },
-                    onOpenMatchDebug = {
-                        navController.navigate(Routes.WORLD_BOOK_MATCH_DEBUG)
-                    }
-                )
+                Box(modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance)) {
+                    WorldBooksScreen(
+                        onOpenBook = { id ->
+                            navController.navigate(Routes.worldBookDetail(id))
+                        },
+                        onOpenMatchDebug = {
+                            navController.navigate(Routes.WORLD_BOOK_MATCH_DEBUG)
+                        }
+                    )
+                }
             }
             composable(Routes.WORLD_BOOK_MATCH_DEBUG) {
                 WorldBookMatchDebugScreen(onBack = { navController.popBackStack() })
@@ -557,20 +607,24 @@ fun NekobotNavGraph() {
                 )
             }
             composable(Routes.TOKENS) {
-                TokensScreen(
-                    onNavigate = { route -> navController.navigate(route) }
-                )
+                Box(modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance)) {
+                    TokensScreen(
+                        onNavigate = { route -> navController.navigate(route) }
+                    )
+                }
             }
             composable(Routes.MORE) {
-                MoreScreen(
-                    onNavigate = { route -> navController.navigate(route) },
-                    onLogout = {
-                        // 清除本地 token 并断开 socket，广播登录态变化（LaunchedEffect 会自动导航）
-                        ServiceContainer.socket.disconnect()
-                        ServiceContainer.repository.logoutLocal()
-                        ServiceContainer.notifyLoginState(false)
-                    }
-                )
+                Box(modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance)) {
+                    MoreScreen(
+                        onNavigate = { route -> navController.navigate(route) },
+                        onLogout = {
+                            // 清除本地 token 并断开 socket，广播登录态变化（LaunchedEffect 会自动导航）
+                            ServiceContainer.socket.disconnect()
+                            ServiceContainer.repository.logoutLocal()
+                            ServiceContainer.notifyLoginState(false)
+                        }
+                    )
+                }
             }
             composable(Routes.GLOBAL_SEARCH) {
                 GlobalSearchScreen(
@@ -875,7 +929,7 @@ fun NekobotNavGraph() {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        // 底栏越高（平板），渐变遮罩越高，保证内容在胶囊附近自然淡出。
+                        // 底栏越高（宽窗口），渐变遮罩越高，保证内容在胶囊附近自然淡出。
                         .height(bottomBarClearance + 36.dp)
                         .background(
                             Brush.verticalGradient(
@@ -895,45 +949,33 @@ fun NekobotNavGraph() {
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),
                 backdrop = if (useLiquidGlass) glassBackdrop else null,
-                onItemSelected = { item ->
-                    val targetPage = bottomRoutes.indexOf(item.route)
-                    if (targetPage == -1) return@LiquidGlassBottomBar
+                onItemSelected = onNavItemSelected,
+            )
+        }
 
-                    if (currentRoute == Routes.SESSIONS) {
-                        if (targetPage != mainPagerState.currentPage) {
-                            // 点击切换：拉起纱幕盖住旧页 → 纱幕全遮时无动画瞬切 →
-                            // 纱幕带阻尼长尾褪去显出新页。瞬切引发的多页组合开销
-                            // 藏在纱幕之后，不卡顿、不闪屏；
-                            // 手势左右滑动仍走横向滚动，两种切换方式互不干扰。
-                            tabClickJob?.cancel()
-                            tabClickJob = mainPagerScope.launch {
-                                tabSwitchVeil.animateTo(
-                                    1f,
-                                    tween(TAB_CLICK_VEIL_ON_MS, easing = DampedEasing)
-                                )
-                                mainPagerState.scrollToPage(targetPage)
-                                tabSwitchVeil.animateTo(
-                                    0f,
-                                    tween(TAB_CLICK_VEIL_OFF_MS, easing = DampedEasing)
-                                )
-                            }
-                        }
-                    } else {
-                        mainPagerScope.launch {
-                            mainPagerState.scrollToPage(targetPage)
-                        }
-                        navController.navigate(Routes.SESSIONS) {
-                            popUpTo(Routes.SESSIONS) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
+        // 平板形态：同样的导航项改为左侧悬浮侧边导航栏。
+        // 侧栏与底栏互斥（由 useNavRail 决定），两者共用同一套切换逻辑。
+        if (showNavRail) {
+            LiquidGlassNavRail(
+                items = bottomItems(),
+                selectedRoute = if (currentRoute == Routes.SESSIONS) {
+                    selectedMainRoute
+                } else {
+                    currentRoute
                 },
+                modifier = Modifier.align(Alignment.CenterStart),
+                backdrop = if (useLiquidGlass) glassBackdrop else null,
+                onItemSelected = onNavItemSelected,
             )
         }
         AchievementUnlockHost()
         StartupUpdateHost()
     }
 }
+
+/** 主界面 Tab 页在侧栏形态下整体向右避让；详情页不避让，保持全屏。 */
+private fun Modifier.mainTabInset(clearance: Dp): Modifier =
+    if (clearance > 0.dp) this.padding(start = clearance) else this
 
 /** 应用启动后静默检查更新，仅在发现未忽略的新版本时显示提示。 */
 @Composable
