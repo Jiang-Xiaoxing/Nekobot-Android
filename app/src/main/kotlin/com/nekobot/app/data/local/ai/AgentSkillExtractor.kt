@@ -85,10 +85,10 @@ internal object AgentSkillExtractor {
      * 正文校验只统计 `## ` 数量，不依赖具体标题文字，所以任意语言都能通过。
      */
     internal fun skillSectionTitles(): List<String> = listOf(
-        AiOutputLanguage.promptText("功能描述", "What this skill does", "機能概要", "기능 설명"),
-        AiOutputLanguage.promptText("适用场景", "When to use it", "利用シーン", "사용 상황"),
-        AiOutputLanguage.promptText("操作步骤", "Steps", "手順", "절차"),
-        AiOutputLanguage.promptText("注意事项", "Cautions", "注意事項", "주의 사항")
+        AiOutputLanguage.promptText("功能描述", "What this skill does", "機能概要", "기능 설명", "功能描述"),
+        AiOutputLanguage.promptText("适用场景", "When to use it", "利用シーン", "사용 상황", "適用場景"),
+        AiOutputLanguage.promptText("操作步骤", "Steps", "手順", "절차", "操作步驟"),
+        AiOutputLanguage.promptText("注意事项", "Cautions", "注意事項", "주의 사항", "注意事項")
     )
 
     /**

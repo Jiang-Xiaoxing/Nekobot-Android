@@ -841,6 +841,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                             Text(
                                 when (ServiceContainer.prefs.language) {
                                     PrefsManager.LANGUAGE_ZH -> stringResource(R.string.language_chinese)
+                                    PrefsManager.LANGUAGE_ZH_TW -> stringResource(R.string.language_chinese_traditional)
                                     PrefsManager.LANGUAGE_EN -> stringResource(R.string.language_english)
                                     PrefsManager.LANGUAGE_JA -> stringResource(R.string.language_japanese)
                                     PrefsManager.LANGUAGE_KO -> stringResource(R.string.language_korean)
@@ -978,7 +979,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
     }
 }
 
-/** 语言选择弹窗：跟随系统 / 简体中文 / English / 日本語 / 한국어。 */
+/** 语言选择弹窗：跟随系统 / 简体中文 / 繁體中文 / English / 日本語 / 한국어。 */
 @Composable
 private fun LanguagePickerDialog(
     currentLanguage: String,
@@ -988,6 +989,7 @@ private fun LanguagePickerDialog(
     val options = listOf(
         PrefsManager.LANGUAGE_SYSTEM to stringResource(R.string.language_system),
         PrefsManager.LANGUAGE_ZH to stringResource(R.string.language_chinese),
+        PrefsManager.LANGUAGE_ZH_TW to stringResource(R.string.language_chinese_traditional),
         PrefsManager.LANGUAGE_EN to stringResource(R.string.language_english),
         PrefsManager.LANGUAGE_JA to stringResource(R.string.language_japanese),
         PrefsManager.LANGUAGE_KO to stringResource(R.string.language_korean)

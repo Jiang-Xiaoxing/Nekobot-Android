@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="experience_archive_title">經歷檔案</string>
+    <string name="experience_archive_empty">暫無經歷檔案</string>
+    <string name="experience_archive_empty_hint">聊天進入舊區後會逐段整理。已有大量歷史訊息時，需要手動啟動歷史整理。</string>
+    <string name="experience_archive_entries">此會話的經歷</string>
+    <string name="experience_archive_related_memories">同標籤的角色記憶</string>
+    <string name="experience_archive_load_more">載入更多經歷</string>
+    <string name="experience_archive_status">狀態：%1$s</string>
+    <string name="experience_archive_ready">可回憶</string>
+    <string name="experience_archive_stale">原話已改動，待重建</string>
+    <string name="experience_archive_processing">整理中</string>
+    <string name="experience_archive_failed">整理失敗</string>
+    <string name="experience_archive_source_range">源訊息：%1$s → %2$s</string>
+    <string name="experience_archive_edit">編輯這份經歷</string>
+    <string name="experience_archive_summary">經歷摘要</string>
+    <string name="experience_archive_tags">話題標籤</string>
+    <string name="experience_archive_saved">經歷已儲存</string>
+    <string name="experience_archive_missing">這份經歷已不存在，請刷新</string>
+</resources>

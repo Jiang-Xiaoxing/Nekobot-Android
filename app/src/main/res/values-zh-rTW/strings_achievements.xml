@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="extensions_achievements">成就收藏</string>
+    <string name="extensions_achievements_desc">查看進度、徽章與解鎖記錄</string>
+
+    <string name="achievements_title">成就</string>
+    <string name="achievements_refresh">刷新成就進度</string>
+    <string name="achievements_view_grid">切換為雙列卡片</string>
+    <string name="achievements_view_standard">切換為標準卡片</string>
+    <string name="achievements_overview_title">成就收藏</string>
+    <string name="achievements_overview_subtitle">記錄每一次相遇、對話與靈感</string>
+    <string name="achievements_completion">總完成度 %1$d%%</string>
+    <string name="achievements_filter_all">全部</string>
+    <string name="achievements_filter_unlocked">已解鎖</string>
+    <string name="achievements_filter_in_progress">進行中</string>
+    <string name="achievements_category_all">全部類別</string>
+    <string name="achievements_filter_empty">當前篩選下還沒有成就</string>
+    <string name="achievements_unlocked">已解鎖</string>
+    <string name="achievements_unlocked_at">%1$s 解鎖</string>
+    <string name="achievements_unknown">未知成就</string>
+    <string name="achievements_dashboard_summary">已解鎖 %1$d / %2$d</string>
+    <string name="achievements_dashboard_more">在擴展功能中查看全部成就</string>
+
+    <string name="achievement_category_tokens">Token</string>
+    <string name="achievement_category_messages">訊息</string>
+    <string name="achievement_category_sessions">會話</string>
+    <string name="achievement_category_affection">羈絆</string>
+    <string name="achievement_category_characters">角色收集</string>
+    <string name="achievement_category_world_books">世界書</string>
+    <string name="achievement_category_favorite_sessions">珍藏</string>
+
+    <string name="achievement_tier_bronze">青銅</string>
+    <string name="achievement_tier_silver">白銀</string>
+    <string name="achievement_tier_gold">黃金</string>
+    <string name="achievement_tier_platinum">鉑金</string>
+    <string name="achievement_tier_diamond">鑽石</string>
+
+    <string name="achievement_requirement_tokens">累計使用 %1$s Token</string>
+    <string name="achievement_requirement_messages">累計發送 %1$s 條訊息</string>
+    <string name="achievement_requirement_sessions">累計建立 %1$s 個會話</string>
+    <string name="achievement_requirement_high_affection_characters">擁有 %1$s 個好感度達到 90 以上的角色</string>
+    <string name="achievement_requirement_characters">擁有 %1$s 個角色</string>
+    <string name="achievement_requirement_world_books">建立 %1$s 本世界書</string>
+    <string name="achievement_requirement_favorite_sessions">珍藏 %1$s 個會話</string>
+
+    <string name="achievement_token_1000000">星海推演</string>
+    <string name="achievement_token_10000000">無盡心智</string>
+    <string name="achievement_messages_10">初次傾訴</string>
+    <string name="achievement_messages_5000">長夜知己</string>
+    <string name="achievement_messages_10000">萬語成詩</string>
+    <string name="achievement_sessions_1">故事開場</string>
+    <string name="achievement_sessions_100">百幕人生</string>
+    <string name="achievement_sessions_500">萬象劇場</string>
+    <string name="achievement_high_affection_characters_3">三重心聲</string>
+    <string name="achievement_high_affection_characters_5">心之花園</string>
+    <string name="achievement_high_affection_characters_10">羈絆星群</string>
+    <string name="achievement_high_affection_characters_20">眾心相連</string>
+    <string name="achievement_characters_1">初見新友</string>
+    <string name="achievement_characters_3">小小同伴團</string>
+    <string name="achievement_characters_10">貓爪茶會</string>
+    <string name="achievement_characters_30">百態相逢</string>
+    <string name="achievement_characters_100">星光名冊</string>
+    <string name="achievement_world_books_1">世界第一頁</string>
+    <string name="achievement_world_books_3">靈感書架</string>
+    <string name="achievement_world_books_10">設定收藏家</string>
+    <string name="achievement_world_books_30">萬象圖書館</string>
+    <string name="achievement_world_books_100">世界編織者</string>
+    <string name="achievement_favorite_sessions_1">珍藏初語</string>
+    <string name="achievement_favorite_sessions_5">口袋回憶</string>
+    <string name="achievement_favorite_sessions_20">心選片段</string>
+    <string name="achievement_favorite_sessions_50">回憶滿匣</string>
+    <string name="achievement_favorite_sessions_100">時光典藏</string>
+
+    <string name="achievement_unlocked_title">成就已解鎖</string>
+    <string name="achievement_unlocked_continue">收下徽章</string>
+</resources>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tool_name_agent_recall_search">查找角色記憶和經歷</string>
+    <string name="tool_name_agent_history_search">搜尋會話原話</string>
+    <string name="tool_name_agent_history_read">讀取會話原話</string>
+    <string name="tool_desc_agent_recall_search">同時查詢當前角色記憶與此會話的經歷檔案，只返回少量相關線索。</string>
+    <string name="tool_desc_agent_history_search">按關鍵詞搜尋此會話可見的聊天原話。</string>
+    <string name="tool_desc_agent_history_read">按訊息 ID 讀取原話及鄰近訊息，超長內容可分段續讀。</string>
+    <string name="experience_backfill_title">舊聊天經歷補建</string>
+    <string name="experience_backfill_hint">已有聊天不會自動付費整理；原話現在就可按需搜尋。需要分段摘要時，請先確認費用再主動補建。</string>
+    <string name="experience_backfill_progress">%1$s · %2$d/%3$d 條訊息 · 新建 %4$d 份</string>
+    <string name="experience_backfill_pause">暫停整理</string>
+    <string name="experience_backfill_resume">繼續整理</string>
+    <string name="experience_backfill_start">補建舊檔案</string>
+    <string name="experience_backfill_confirm_title">確認可能產生的模型費用</string>
+    <string name="experience_backfill_confirm">我已瞭解，開始補建</string>
+    <string name="experience_backfill_unknown">未知</string>
+    <string name="experience_backfill_cost_notice">當前會話約 %1$d 條可見訊息。參考模型：%2$s。參考單價：輸入 %3$s 美元/百萬 token，輸出 %4$s 美元/百萬 token。補建會呼叫模型並可能產生費用；總費用無法準確預估，智慧路由或故障轉移也可能更換模型和單價。只有確認後才開始，可隨時暫停。</string>
+    <string name="experience_history_copy_title">原話工作區副本</string>
+    <string name="experience_history_copy_hint">手動把當前會話原話匯出為有界分塊，方便查看；資料庫仍是唯一原件。原話改變後舊副本會失效，需重新建立。不呼叫模型。</string>
+    <string name="experience_history_copy_progress">已讀取 %1$d 條</string>
+    <string name="experience_history_copy_rebuild">重建原話副本</string>
+    <string name="experience_history_copy_done">原話副本已重建，共 %1$d 條</string>
+    <string name="experience_history_copy_failed">原話副本重建失敗</string>
+    <string name="sessions_long_conversation_cost_title">開啟長期單會話前確認費用</string>
+    <string name="sessions_long_conversation_cost_notice">開啟後，未來的新聊天達到上下文壓縮閾值時，會額外呼叫模型生成分段經歷檔案（一次最多 4 段，必要時再壓縮一次摘要），消耗 token 並可能收費。現有舊聊天不會自動付費補建。當前參考模型：%1$s；參考單價：輸入 %2$s、輸出 %3$s 美元/百萬 token。總費用無法預估，智慧路由或故障轉移可能改變模型與單價。確認後還需儲存本頁設定。</string>
+    <string name="sessions_long_conversation_cost_confirm">瞭解費用，開啟</string>
+</resources>

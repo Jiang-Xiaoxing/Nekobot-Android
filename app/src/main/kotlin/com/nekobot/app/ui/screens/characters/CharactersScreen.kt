@@ -555,10 +555,9 @@ private fun AiGenerateCharacterDialog(
     val context = LocalContext.current
     val defaultLanguage = remember(context) {
         val effectiveLanguage = LocaleHelper
-            .getEffectiveLocale(context, ServiceContainer.prefs.language)
-            .language
+            .getEffectiveLanguageTag(context, ServiceContainer.prefs.language)
         when (effectiveLanguage) {
-            "zh", "en", "ja", "ko" -> effectiveLanguage
+            "zh", "zh-TW", "en", "ja", "ko" -> effectiveLanguage
             else -> "en"
         }
     }
@@ -566,6 +565,7 @@ private fun AiGenerateCharacterDialog(
     var languageMenuExpanded by remember { mutableStateOf(false) }
     val languages = listOf(
         "zh" to stringResource(R.string.language_chinese),
+        "zh-TW" to stringResource(R.string.language_chinese_traditional),
         "en" to stringResource(R.string.language_english),
         "ja" to stringResource(R.string.language_japanese),
         "ko" to stringResource(R.string.language_korean)

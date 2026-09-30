@@ -1,5 +1,6 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.data.local.LocaleHelper
 import java.util.Locale
 
 /**
@@ -11,13 +12,17 @@ internal object AndroidUsageGuide {
     /**
      * 返回操作指南文本。
      *
-     * @param language 应用语言（zh/en/ja/ko，自动归一化）
+     * @param language 应用语言（zh/zh-TW/en/ja/ko，自动归一化）
      * @param topic 章节名（permissions/flow/selectors/index/gestures/input/scroll/observe/troubleshooting/safety）；
      *              为空或 all 时返回完整指南
      */
     fun build(language: String, topic: String?): String {
-        val lang = language.lowercase(Locale.ROOT).substringBefore('-').substringBefore('_')
-        val chapters = when (lang) {
+        val lower = language.lowercase(Locale.ROOT).replace('_', '-')
+        val lang = lower.substringBefore('-')
+        // 繁体中文（zh-TW / zh-HK / zh-Hant）使用繁体指南
+        val langKey = if (lang == "zh" && LocaleHelper.isTraditionalChinese(lower)) "zh-Hant" else lang
+        val chapters = when (langKey) {
+            "zh-Hant" -> zhHantChapters()
             "ja" -> jaChapters()
             "ko" -> koChapters()
             "en" -> enChapters()
@@ -37,6 +42,9 @@ internal object AndroidUsageGuide {
         val matched = chapters.filter { it.first == requested || it.first.contains(requested) }
         if (matched.isEmpty()) {
             val available = chapters.joinToString("、") { it.first }
+            if (langKey == "zh-Hant") {
+                return "未知主題「$requested」。可用主題：$available。省略 topic 可查看完整指南。"
+            }
             return "未知主题「$requested」。可用主题：$available。省略 topic 可查看完整指南。"
         }
         return matched.joinToString("\n\n") { it.second }
@@ -122,6 +130,89 @@ internal object AndroidUsageGuide {
 - 不读取/回显密码字段（系统已脱敏）。
 - 不将剪贴板、通知、账号等敏感信息泄露到最终回复中。
 - 操作敏感应用（银行、支付、邮件）时保持最小必要操作范围。
+        """.trimIndent()
+    )
+
+    // ------------------------------------------------------------------
+    // 繁体中文（zh-TW / zh-HK / zh-Hant）
+    // ------------------------------------------------------------------
+
+    private fun zhHantChapters(): List<Pair<String, String>> = listOf(
+        "permissions" to """
+### 權限（permissions）
+- 操作前先呼叫 android_accessibility_status 確認「輔助功能」已開啟並連接；未開啟時用 android_open_settings(target=accessibility) 引導用戶開啟。
+- 讀取/操作通知需開啟「通知使用權」（android_open_settings target=notification_listener）。
+- 截圖需要 Android 11+ 且輔助功能已連接；截圖失敗時改用 android_ui_tree 觀察。
+        """.trimIndent(),
+        "flow" to """
+### 標準操作流程（flow）
+1. 開啟目標應用：android_open_app（按名稱/包名），或 android_open_url / android_global_action(home/recents) 切換。
+2. 觀察介面：android_ui_tree（interactive_only=true 只看可交互元素），或 android_step（動作+自動截圖+視覺描述）。
+3. 定位目標元素：優先用 interactive 編號（index），其次用文字/內容描述（selector+field）。
+4. 執行操作：android_ui_click / android_ui_tap / android_ui_set_text / android_ui_scroll / android_ui_swipe / android_ui_ime_action。
+5. 等待結果：android_wait_for_idle 等待載入/動畫結束。
+6. 確認結果：android_screenshot + understand_image（或直接 android_step），比對是否達到預期。
+7. 未達預期：分析錯誤與介面狀態，調整定位方式或捲動後重試，不要盲目重複相同操作。
+        """.trimIndent(),
+        "selectors" to """
+### 元素定位（selectors）
+- android_ui_click / android_ui_set_text / android_ui_scroll 支援按文字查找：selector 為要匹配的文字、內容描述或資源 ID。
+- field 限定匹配範圍：auto（預設，同時匹配 text/description/view_id）/ text / description / view_id / class。
+- exact=true 要求完整匹配（不區分大小寫）；預設模糊包含匹配。
+- 同一文字可能匹配多個元素：先看 android_ui_tree 的 interactive 列表，改用 index 精確指定。
+- 密碼欄位文字始終脫敏顯示為 <redacted>，不要嘗試讀取密碼。
+        """.trimIndent(),
+        "index" to """
+### 編號定位（index）
+- android_ui_tree 返回的 interactive 列表為當前可點擊/可輸入/可捲動元素分配了從 0 開始的編號，每項含 role/text/view_id/bounds。
+- 點擊/輸入/捲動時傳 index 即可精確定位，避免文字重複歧義：如 android_ui_click(index=3)。
+- 編號只在本次 ui_tree 結果內有效；介面變化後編號可能失效，操作前應重新讀取。
+- 列表類介面（商品、搜尋結果）幾乎一定有重複文字，優先使用 index。
+        """.trimIndent(),
+        "gestures" to """
+### 座標手勢（gestures）
+- android_ui_tap 按座標點擊：傳 x/y（螢幕像素座標），或傳 selector/index 自動取其 bounds 中心。
+- android_ui_swipe 按座標或方向滑動：傳 x1,y1,x2,y2 精確滑動，或 direction+index/selector 在元素區域內滑動。
+- 遊戲、自繪 View（SurfaceView/GLSurfaceView/TextureView）、部分 Flutter/RN 應用不暴露可點擊節點或對 ACTION_CLICK 無回應，此時用座標手勢代替語義點擊。
+- 長按：android_ui_tap 傳 duration_ms=600 以上。
+- 座標以螢幕像素為單位；可與截圖（android_screenshot）及交互元素 bounds 交叉定位。
+        """.trimIndent(),
+        "input" to """
+### 文字輸入（input）
+- 常規輸入：android_ui_set_text（selector 或 index 定位輸入框，text 為內容）。
+- 輸入後觸發搜尋/確認：android_ui_ime_action 執行輸入法回車（IME Enter）。
+- 輸入框不接受 ACTION_SET_TEXT 時：先 android_clipboard_write 寫入文字，再 android_ui_paste 貼上。
+- 剪貼簿讀寫需要用戶授權，只在必要時使用。
+        """.trimIndent(),
+        "scroll" to """
+### 捲動與載入（scroll）
+- android_ui_scroll：direction 支援 up/down/left/right（forward/backward/next/previous 同義）；可傳 selector/index 指定捲動區域，省略時捲動首個可捲動區域。
+- 列表（RecyclerView）是虛擬化的：螢幕外的項不在介面樹中，必須捲動後重新 ui_tree 才能看到更多內容。
+- 載入中的介面先 android_wait_for_idle（timeout_ms 預設 2000）再讀取，避免讀到中間狀態。
+        """.trimIndent(),
+        "observe" to """
+### 觀察與診斷（observe）
+- android_screenshot 儲存當前螢幕到會話工作區（返回 path）；android_ui_tree 返回結構化元素。
+- 圖片類內容（商品圖、海報、遊戲畫面）用 understand_image 分析截圖（image_url 填截圖 path）。
+- android_step 一步完成「執行動作 → 等待穩定 → 自動截圖 → 視覺描述」，推薦在需要觀察結果的動作後使用。
+- 操作失敗時先截圖/讀樹定位原因，再調整參數重試。
+        """.trimIndent(),
+        "troubleshooting" to """
+### 常見陷阱（troubleshooting）
+- 相同文字多個元素 → 用 index 而非 selector。
+- 元素找不到 → 可能未載入完成（先 wait_for_idle）或不在螢幕內（先捲動）。
+- ACTION_CLICK 無回應 → 改用 android_ui_tap（座標/編號 bounds 中心手勢點擊）。
+- 截圖失敗 → 檢查輔助功能是否連接、系統是否為 Android 11+。
+- 輔助功能未連接 → 所有 ui_* 工具都會失敗，先 android_accessibility_status 檢查並用 android_open_settings 引導開啟。
+- 無障礙樹為空 → 自繪應用/遊戲，改用截圖 + 座標手勢。
+        """.trimIndent(),
+        "safety" to """
+### 安全規則（safety）
+- 每個介面操作都會請求用戶授權；用戶拒絕後立即停止該操作並說明影響。
+- 涉及支付、下單、轉帳、刪除、發送等不可逆或高影響操作，即使技術上可行，也必須先向用戶明確說明並等待確認，不要替用戶做出購買或資金決策。
+- 不讀取/回顯密碼欄位（系統已脫敏）。
+- 不將剪貼簿、通知、帳號等敏感資訊洩露到最終回覆中。
+- 操作敏感應用（銀行、支付、郵件）時保持最小必要操作範圍。
         """.trimIndent()
     )
 

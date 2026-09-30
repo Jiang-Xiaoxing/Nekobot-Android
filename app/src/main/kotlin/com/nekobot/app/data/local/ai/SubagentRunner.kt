@@ -1,5 +1,6 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.data.local.LocaleHelper
 import com.google.gson.Gson
 import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.model.ThinkingStep
@@ -203,8 +204,18 @@ internal object SubagentRunner {
      */
     internal fun buildSubagentSystemPrompt(language: String = "zh"): String {
         val base = buildLocalAgentBasePrompt(language)
-        val normalized = language.lowercase().substringBefore('-').substringBefore('_')
-        val guard = when (normalized) {
+        val lower = language.lowercase().replace('_', '-')
+        val normalized = lower.substringBefore('-')
+        // 繁体中文（zh-TW / zh-HK / zh-Hant）使用繁体提示词
+        val key = if (normalized == "zh" && LocaleHelper.isTraditionalChinese(lower)) "zh-Hant" else normalized
+        val guard = when (key) {
+            "zh-Hant" -> """
+                ## 你是子代理（Subagent）
+                - 你是被父 Agent 委派執行一個獨立任務的子代理。你的職責是專注於完成下面給出的這個明確任務，並輸出清晰的結論。
+                - 你只擁有本任務提供的上下文，看不到父會話的完整歷史、角色或世界書；因此請在需要時通過工具自行讀取/檢索所需資訊。
+                - 完成任務後，僅返回任務結論給父 Agent，不要輸出工具呼叫記錄以外的中間過程。
+            """.trimIndent()
+
             "zh" -> """
                 ## 你是子代理（Subagent）
                 - 你是被父 Agent 委派执行一个独立任务的子代理。你的职责是专注于完成下面给出的这个明确任务，并输出清晰的结论。

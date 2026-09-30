@@ -9357,6 +9357,7 @@ class LocalRepository(
         "en" -> "English"
         "ja" -> "日本語"
         "ko" -> "한국어"
+        "zh-tw", "zh-hant", "zh-hk", "zh-mo" -> "繁體中文"
         else -> "中文"
     }
 

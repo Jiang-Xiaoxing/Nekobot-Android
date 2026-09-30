@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ==================== AI 配置中心 ==================== -->
+    <string name="aiconfig_center_title">AI 配置中心</string>
+    <string name="aiconfig_section_local_ai">本地 AI</string>
+    <string name="aiconfig_section_models_config">模型與配置</string>
+    <string name="aiconfig_section_security_advanced">安全與進階</string>
+    <string name="aiconfig_title">生成參數</string>
+    <string name="aiconfig_local_ai_models">本地模型</string>
+    <string name="aiconfig_local_ai_models_subtitle">管理已安裝的推理模型</string>
+    <string name="aiconfig_sync_active_params_subtitle">溫度、上下文和輸出長度</string>
+    <string name="aiconfig_configure_params_subtitle">溫度、上下文和輸出長度</string>
+    <string name="aiconfig_api_key_management">API 金鑰</string>
+    <string name="aiconfig_manage_local_keys_subtitle">管理本機儲存的存取金鑰</string>
+    <string name="aiconfig_manage_keys_subtitle">管理本機儲存的存取金鑰</string>
+    <string name="aiconfig_account_title">模型帳戶</string>
+    <string name="aiconfig_account_subtitle">連接模型服務供應商</string>
+    <string name="model_proxy_title">模型代理</string>
+    <string name="model_proxy_subtitle">讓指定的本地模型通過代理連接</string>
+    <string name="model_proxy_status_count">%1$d 個</string>
+    <string name="model_proxy_description">開啟後，該模型的聊天、視覺、語音、模型列表與圖片生成請求都會通過指定代理；未開啟的模型保持直連。</string>
+    <string name="model_proxy_empty">暫無本地模型，請先新增模型</string>
+    <string name="model_proxy_enable">使用代理</string>
+    <string name="model_proxy_url">代理連結</string>
+    <string name="model_proxy_url_hint">http://127.0.0.1:7890 或 socks5://127.0.0.1:1080</string>
+    <string name="model_proxy_direct">直連</string>
+    <string name="model_proxy_enabled">已代理</string>
+    <string name="model_proxy_save">儲存代理設定</string>
+    <string name="model_proxy_saved">代理設定已儲存</string>
+    <string name="model_proxy_url_required">請填寫“%1$s”的代理連結</string>
+    <!-- 入口右侧的状态文案 -->
+    <string name="aiconfig_status_count_models">%1$d 個</string>
+    <string name="aiconfig_status_count_keys">%1$d 個</string>
+    <string name="aiconfig_status_count_priority">%1$d 項</string>
+    <string name="aiconfig_status_connected">已連接 %1$d 個</string>
+    <string name="aiconfig_status_not_connected">未連接</string>
+    <string name="aiconfig_status_default">預設</string>
+
+    <!-- ==================== AI 配置页 ==================== -->
+    <string name="aiconfig_saved">儲存成功</string>
+    <string name="aiconfig_test">測試</string>
+    <string name="aiconfig_test_success">成功</string>
+    <string name="aiconfig_test_fail">失敗</string>
+    <string name="aiconfig_test_result">狀態: %1$s\n訊息: %2$s</string>
+    <string name="aiconfig_test_result_title">測試結果</string>
+    <string name="aiconfig_model_params">模型參數</string>
+    <string name="aiconfig_model_name">模型名稱</string>
+    <string name="aiconfig_temperature">溫度 (temperature)</string>
+    <string name="aiconfig_max_tokens">最大 Token (max_tokens)</string>
+    <string name="aiconfig_frequency_penalty">頻率懲罰 (frequency_penalty)</string>
+    <string name="aiconfig_presence_penalty">Presence 懲罰 (presence_penalty)</string>
+    <string name="aiconfig_system_prompt">系統提示詞</string>
+    <string name="aiconfig_save_config">儲存配置</string>
+
+    <!-- ==================== AI 模型管理 ==================== -->
+    <string name="aimodels_management_title">AI 模型管理</string>
+    <string name="aimodels_title">AI 模型</string>
+    <string name="aimodels_manage_list_subtitle">管理可用的 AI 模型列表</string>
+    <string name="aimodels_new_model">新建模型</string>
+    <string name="aimodels_edit_model">編輯模型</string>
+    <string name="aimodels_empty_title">暫無模型</string>
+    <string name="aimodels_empty_hint">點擊右上角建立第一個模型</string>
+    <string name="aimodels_confirm_delete">確認刪除</string>
+    <string name="aimodels_delete_message">確定刪除模型「%1$s」嗎？</string>
+    <string name="aimodels_active_badge">已激活</string>
+    <string name="aimodels_action">操作</string>
+    <string name="aimodels_clone">克隆</string>
+    <string name="aimodels_applied">已應用</string>
+    <string name="aimodels_cloned">已克隆</string>
+    <string name="aimodels_fetch_failed">獲取模型列表失敗</string>
+    <string name="aimodels_protocol">協議: %1$s</string>
+    <string name="aimodels_base_url">地址: %1$s</string>
+    <string name="aimodels_purpose">用途: %1$s</string>
+    <string name="aimodels_model">模型: %1$s</string>
+    <string name="aimodels_enabled">啟用</string>
+    <string name="aimodels_unnamed">未命名模型</string>
+    <string name="aimodels_name">名稱</string>
+    <string name="aimodels_protocol_label">協議 (protocol)</string>
+    <string name="aimodels_provider">供應商 (provider)</string>
+    <string name="aimodels_model_label">模型 (model)</string>
+    <string name="aimodels_purpose_label">用途 (purpose)</string>
+    <string name="aimodels_fetch_available">拉取可用模型</string>
+    <string name="aimodels_no_options">暫無選項</string>
+
+    <!-- ==================== 故障转移队列 ==================== -->
+    <string name="failover_queue_title">模型優先級</string>
+    <string name="smart_routing_title">智慧模型路由</string>
+    <string name="smart_routing_subtitle">根據費用、速度、上下文、成功率和任務類型動態選擇首選模型</string>
+    <string name="smart_routing_daily_budget">每日預算（美元）</string>
+    <string name="smart_routing_daily_budget_hint">填 0 表示不限</string>
+    <string name="smart_routing_saved">智慧路由設定已儲存</string>
+    <string name="smart_routing_budget_channel">模型預算提醒</string>
+    <string name="smart_routing_budget_title">今日模型預算</string>
+    <string name="smart_routing_budget_near">今日已使用 $%1$.2f，接近 $%2$.2f 的預算</string>
+    <string name="smart_routing_budget_exceeded">今日已使用 $%1$.2f，超過 $%2$.2f 的預算</string>
+    <string name="failover_local_priority_subtitle">設定自動切換順序</string>
+    <string name="failover_health_subtitle">設定自動切換順序</string>
+    <string name="failover_refresh">刷新</string>
+    <string name="failover_reset_all_health">重設全部健康狀態</string>
+    <string name="failover_empty_title">該用途暫無可用模型</string>
+    <string name="failover_empty_hint">請先在 AI 模型中啟用並設定對應用途</string>
+    <string name="failover_loading_queue">正在載入佇列…</string>
+    <string name="failover_available">可用</string>
+    <string name="failover_cooling">冷卻中</string>
+    <string name="failover_today_failures">今日失敗 %1$d 次</string>
+    <string name="failover_consecutive_failures">連續 %1$d 次</string>
+    <string name="failover_remaining_seconds">剩餘 %1$d 秒</string>
+    <string name="failover_daily_usage">日用量 %1$d/%2$d (%3$d%%)</string>
+    <string name="failover_weekly_usage">周用量 %1$d/%2$d (%3$d%%)</string>
+    <string name="failover_daily_limit">日限額 %1$d</string>
+    <string name="failover_weekly_limit">周限額 %1$d</string>
+    <string name="failover_timeout">超時 %1$ds</string>
+    <string name="failover_move_up">上移</string>
+    <string name="failover_move_down">下移</string>
+    <string name="failover_reset_status">重設狀態</string>
+    <string name="failover_status_label">狀態：%1$s</string>
+    <string name="failover_remaining_seconds_short">剩餘 %1$ds</string>
+    <string name="failover_consecutive_failures_detail">連續失敗 %1$d</string>
+    <string name="failover_daily_token_limit">日 token 限額（0=不限）</string>
+    <string name="failover_weekly_token_limit">周 token 限額（0=不限）</string>
+    <string name="failover_timeout_seconds">超時秒數（0=預設）</string>
+    <string name="failover_saving">儲存中…</string>
+    <string name="failover_reset_health">重設健康</string>
+    <string name="failover_order_saved">佇列順序已儲存</string>
+    <string name="failover_reset_all">已重設全部健康狀態</string>
+    <string name="failover_reset_model">已重設模型健康狀態</string>
+    <string name="failover_load_detail_failed">載入詳情失敗</string>
+    <string name="failover_invalid_limit">限額與超時必須為非負數</string>
+    <string name="failover_policy_saved">策略已儲存</string>
+    <string name="failover_save_policy_failed">儲存策略失敗</string>
+    <string name="failover_purpose_chat">對話</string>
+    <string name="failover_purpose_vision">圖片理解</string>
+    <string name="failover_purpose_video">影片理解</string>
+    <string name="failover_purpose_tts">語音合成</string>
+    <string name="failover_purpose_stt">語音識別</string>
+    <string name="failover_purpose_embedding">向量嵌入</string>
+    <string name="failover_purpose_image_generation">圖片生成</string>
+
+    <!-- ==================== 本地 AI 模型 ==================== -->
+    <string name="localai_saved">已儲存</string>
+    <string name="localai_copy_suffix">副本</string>
+    <string name="localai_duplicated">已複製模型：%1$s</string>
+    <string name="localai_deleted">已刪除</string>
+    <string name="localai_set_active">已設為當前模型</string>
+    <string name="localai_test_failed">失敗: %1$s</string>
+    <string name="localai_test_success">成功: %1$s</string>
+    <string name="localai_test_exception">異常: %1$s</string>
+    <string name="localai_local_logs">本地日誌</string>
+    <string name="localai_empty_hint">暫無 AI 模型，點擊右上角 + 新增</string>
+    <string name="localai_delete_title">刪除模型</string>
+    <string name="localai_delete_message">確定刪除「%1$s」嗎？</string>
+    <string name="localai_test_title">測試 %1$s</string>
+    <string name="localai_testing">正在測試…</string>
+    <string name="localai_logs_title">本地日誌 (%1$d)</string>
+    <string name="localai_no_logs">暫無日誌</string>
+    <string name="localai_more">更多</string>
+    <string name="localai_current_model">當前模型</string>
+    <string name="localai_set_current">設為當前</string>
+    <string name="localai_enable">啟用</string>
+    <string name="localai_disable">停用</string>
+    <string name="localai_enabled_toast">已啟用「%1$s」</string>
+    <string name="localai_disabled_toast">已停用「%1$s」</string>
+    <string name="localai_disabled_badge">已停用</string>
+    <string name="localai_new_model">新建 AI 模型</string>
+    <string name="localai_edit_model">編輯 AI 模型</string>
+    <string name="localai_protocol">協議</string>
+    <string name="localai_provider">Provider</string>
+    <string name="localai_provider_placeholder">留空 / openai / openai_compatible / xiaomi / mimo</string>
+    <string name="localai_model_name">模型名</string>
+    <string name="localai_append_path">自動拼接路徑</string>
+    <string name="localai_priority">優先級</string>
+    <string name="localai_temperature">溫度</string>
+    <string name="localai_max_tokens">最大 token</string>
+    <string name="localai_purpose_chat">💬 對話</string>
+    <string name="localai_purpose_live">📞 Live 實時語音</string>
+    <string name="localai_purpose_vision">🖼️ 圖片理解</string>
+    <string name="localai_purpose_video">🎬 影片理解</string>
+    <string name="localai_purpose_tts">🔊 語音合成</string>
+    <string name="localai_purpose_stt">🎤 語音識別</string>
+    <string name="localai_purpose_embedding">📊 向量嵌入</string>
+    <string name="localai_purpose_image_generation">🎨 圖片生成</string>
+    <string name="localai_purpose_chat_model">💬 對話模型</string>
+    <string name="localai_purpose_hint_live">用於 Live 的原生語音鏈路。支援 OpenAI gpt-realtime、阿里雲 DashScope Qwen Realtime、火山引擎 Ark SeedRealtime 與智譜 GLM-Realtime；配置 Base URL、音色和輸入轉寫模型後，可同時串流播放音訊並顯示字幕。</string>
+    <string name="localai_purpose_hint_vision">用於圖片訊息理解，將作為圖片描述的回退模型</string>
+    <string name="localai_purpose_hint_video">用於影片訊息理解（暫未在本地模式自動呼叫）</string>
+    <string name="localai_purpose_hint_tts">用於文字轉語音，可在聊天介面手動觸發</string>
+    <string name="localai_purpose_hint_stt">用於語音轉文字，可在錄音後自動呼叫。Provider 留空或填 openai/openai_compatible 走 OpenAI 兼容 /audio/transcriptions；填 xiaomi 或 mimo 走小米 MiMo /v1/chat/completions（錄音 m4a 會自動轉碼為 16kHz 單聲道 WAV，≤10MB）</string>
+    <string name="localai_purpose_hint_embedding">用於本地知識庫的語義檢索；未配置時自動使用離線詞法檢索</string>
+    <string name="localai_purpose_hint_image_generation">用於 AI 生圖（本地模式暫未接入）</string>
+
+    <!-- ==================== LocalAiModelsScreen 模型列表补充 ==================== -->
+    <string name="localai_no_available_models">未獲取到可用模型</string>
+    <string name="localai_fetch_models_failed">獲取模型列表失敗</string>
+    <string name="localai_proxy_badge">代理</string>
+
+    <!-- ==================== AI 模型编辑器（AiModelEditorDialog） ==================== -->
+    <string name="aimodel_editor_dialog_title_new">新建 AI 模型</string>
+    <string name="aimodel_editor_dialog_title_edit">編輯 AI 模型</string>
+    <string name="aimodel_editor_remove_audio">移除</string>
+    <string name="aimodel_editor_default_name_chat">新對話模型配置</string>
+    <string name="aimodel_editor_default_name_purpose">新%1$s配置</string>
+    <string name="aimodel_editor_preset_config_name">%1$s 配置</string>
+    <string name="aimodel_editor_preset_qwen_image_3">Qwen Image 3.0</string>
+
+    <!-- 用途标签（编辑器内下拉显示） -->
+    <string name="aimodel_editor_purpose_chat">對話模型</string>
+    <string name="aimodel_editor_purpose_live">Live 實時語音</string>
+    <string name="aimodel_editor_purpose_vision">圖片理解</string>
+    <string name="aimodel_editor_purpose_video">影片理解</string>
+    <string name="aimodel_editor_purpose_tts">TTS 語音合成</string>
+    <string name="aimodel_editor_purpose_stt">STT 語音識別</string>
+    <string name="aimodel_editor_purpose_embedding">向量嵌入</string>
+    <string name="aimodel_editor_purpose_image_generation">圖片生成</string>
+
+    <!-- 服务商标签 -->
+    <string name="aimodel_editor_provider_openai">OpenAI</string>
+    <string name="aimodel_editor_provider_anthropic">Anthropic / Claude</string>
+    <string name="aimodel_editor_provider_google">Google / Gemini</string>
+    <string name="aimodel_editor_provider_deepseek">DeepSeek</string>
+    <string name="aimodel_editor_provider_zhipu">智譜 GLM</string>
+    <string name="aimodel_editor_provider_minimax">MiniMax</string>
+    <string name="aimodel_editor_provider_grok">Grok (xAI)</string>
+    <string name="aimodel_editor_provider_qwen">通義千問</string>
+    <string name="aimodel_editor_provider_xiaomi">小米 MiMo</string>
+    <string name="aimodel_editor_provider_doubao">豆包 Seed</string>
+    <string name="aimodel_editor_provider_azure">Azure OpenAI</string>
+    <string name="aimodel_editor_provider_siliconflow">SiliconFlow</string>
+    <string name="aimodel_editor_provider_custom">自訂</string>
+
+    <!-- 协议回退标签 -->
+    <string name="aimodel_editor_protocol_openai_compatible">OpenAI 兼容</string>
+    <string name="aimodel_editor_protocol_gemini_native">Gemini 原生（generateContent）</string>
+
+    <!-- 音频参考文件相关错误 -->
+    <string name="aimodel_editor_audio_read_error">無法讀取音訊檔案</string>
+    <string name="aimodel_editor_audio_too_large">參考音訊不能超過 7.5 MB</string>
+    <string name="aimodel_editor_audio_load_failed">參考音訊讀取失敗</string>
+
+    <!-- 校验错误 -->
+    <string name="aimodel_editor_validation_name">請填寫配置名稱</string>
+    <string name="aimodel_editor_validation_base_url">請填寫 Base URL</string>
+    <string name="aimodel_editor_validation_model">請填寫模型名稱</string>
+    <string name="aimodel_editor_validation_api_key">請填寫或選擇 API Key</string>
+
+    <!-- 字段标签 -->
+    <string name="aimodel_editor_section_quick_preset">快速預設</string>
+    <string name="aimodel_editor_field_config_name">配置名稱</string>
+    <string name="aimodel_editor_field_purpose">用途</string>
+    <string name="aimodel_editor_field_provider">服務商</string>
+    <string name="aimodel_editor_field_api_key">API Key</string>
+    <string name="aimodel_editor_field_api_key_placeholder">輸入 API Key</string>
+    <string name="aimodel_editor_field_saved_key">選擇已儲存的 Key</string>
+    <string name="aimodel_editor_field_proxy_url">代理連結（可選）</string>
+    <string name="aimodel_editor_field_proxy_hint">留空時該模型直連；支援 HTTP 和 SOCKS5 代理</string>
+    <string name="aimodel_editor_field_provider_type">Provider 類型</string>
+    <string name="aimodel_editor_field_base_url">API Base URL</string>
+    <string name="aimodel_editor_field_full_url">完整 API URL</string>
+    <string name="aimodel_editor_field_append_base_url">自動補全 Base URL 後綴</string>
+    <string name="aimodel_editor_field_model">模型</string>
+    <string name="aimodel_editor_field_model_placeholder">例如：gpt-4</string>
+    <string name="aimodel_editor_field_fetch_models">獲取模型</string>
+    <string name="aimodel_editor_field_select_from_fetched">從已獲取列表選擇（%1$d）</string>
+
+    <!-- 生成参数 -->
+    <string name="aimodel_editor_section_generation_params">生成參數</string>
+    <string name="aimodel_editor_field_temperature">溫度</string>
+    <string name="aimodel_editor_field_max_tokens">最大輸出 Token</string>
+    <string name="aimodel_editor_field_max_context">最大上下文長度</string>
+    <string name="aimodel_editor_field_top_p">Top P（可選）</string>
+
+    <!-- 价格目录 -->
+    <string name="aimodel_editor_section_pricing">價格目錄</string>
+    <string name="aimodel_editor_pricing_catalog_count">當前目錄 %1$d 個模型</string>
+    <string name="aimodel_editor_pricing_online_data">線上資料 · %1$s</string>
+    <string name="aimodel_editor_pricing_offline_data">內建離線資料 · 可線上更新</string>
+    <string name="aimodel_editor_pricing_updating">更新中</string>
+    <string name="aimodel_editor_pricing_update_now">一鍵更新</string>
+    <string name="aimodel_editor_pricing_apply">應用目錄價格和上下文</string>
+    <string name="aimodel_editor_pricing_no_match">目錄中未匹配到“%1$s”，可保留手動價格或線上更新後重試</string>
+    <string name="aimodel_editor_pricing_note">目錄價格為 OpenRouter 美元參考價；手動填寫的服務商價格優先。</string>
+    <string name="aimodel_editor_pricing_input">輸入價格 / 百萬 Token（美元）</string>
+    <string name="aimodel_editor_pricing_output">輸出價格 / 百萬 Token（美元）</string>
+    <string name="aimodel_editor_pricing_priority">優先級</string>
+    <string name="aimodel_editor_pricing_matched">已匹配 %1$s</string>
+    <string name="aimodel_editor_pricing_input_short">輸入 $%1$s</string>
+    <string name="aimodel_editor_pricing_output_short">輸出 $%1$s</string>
+    <string name="aimodel_editor_pricing_per_million">/ 百萬 Token</string>
+    <string name="aimodel_editor_pricing_context">上下文 %1$s</string>
+    <string name="aimodel_editor_pricing_cache_read">快取命中價格 / 百萬 Token（美元）</string>
+    <string name="aimodel_editor_pricing_cache_write">快取寫入價格 / 百萬 Token（美元）</string>
+    <string name="aimodel_editor_pricing_cache_read_short">快取 $%1$s</string>
+    <string name="aimodel_editor_pricing_cache_note">快取價留空時按價格目錄或輸入價比例折算；命中快取的部分按快取價計費，其餘按輸入價。</string>
+
+    <!-- 能力开关 -->
+    <string name="aimodel_editor_section_capability">能力</string>
+    <string name="aimodel_editor_capability_enable">啟用模型</string>
+    <string name="aimodel_editor_capability_tools">支援工具呼叫</string>
+    <string name="aimodel_editor_capability_reasoning">支援推理 / 思考欄位</string>
+    <string name="aimodel_editor_capability_stream">支援串流回應</string>
+    <string name="aimodel_editor_capability_vision">支援視覺</string>
+
+    <!-- TTS 配置 -->
+    <string name="aimodel_editor_section_tts">TTS 語音合成</string>
+    <string name="aimodel_editor_section_live">Realtime 實時語音</string>
+    <string name="aimodel_editor_live_hint">音訊輸出模式會同時返回串流音訊和轉寫字幕；輸入語音由 Realtime 模型原生理解，轉寫模型僅用於儲存用戶字幕。</string>
+    <string name="aimodel_editor_live_voice">Realtime 音色（可自訂）</string>
+    <string name="aimodel_editor_live_voice_preset">常用音色</string>
+    <string name="aimodel_editor_live_transcription_model">輸入轉寫模型</string>
+    <string name="aimodel_editor_live_qwen_hint">檢測到 Qwen Realtime：預設音色 Tina（Qwen3.5-Omni 不再支援 Cherry 等舊音色，會自動糾正），轉寫模型預設 paraformer-realtime-v2。請將 Base URL 配為 https://dashscope.aliyuncs.com/api-ws/v1 並啟用「自動拼接路徑」。</string>
+    <string name="aimodel_editor_live_seed_hint">檢測到 SeedRealtime：預設模型 doubao-seed-1.6-flash-realtime，預設音色 zh_female_shuangkuaisisi_moon_bigtts，轉寫模型預設 doubao-1.5-asr-pro。請將 Base URL 配為 https://ark.cn-beijing.volces.com/api/v3 並啟用「自動拼接路徑」。</string>
+    <string name="aimodel_editor_live_glm_hint">檢測到 GLM-Realtime：預設模型 glm-realtime，預設音色 tongtong，轉寫模型預設 glm-asr。請將 Base URL 配為 https://open.bigmodel.cn/api/paas/v4 並啟用「自動拼接路徑」。</string>
+    <string name="aimodel_editor_tts_provider">TTS 供應商</string>
+    <string name="aimodel_editor_tts_provider_openai">OpenAI 兼容</string>
+    <string name="aimodel_editor_tts_provider_xiaomi">小米 MiMo</string>
+    <string name="aimodel_editor_tts_provider_doubao">豆包（火山引擎）</string>
+    <string name="aimodel_editor_tts_provider_gemini">Gemini 原生 TTS</string>
+    <string name="aimodel_editor_tts_provider_glm">智譜 GLM-TTS</string>
+    <string name="aimodel_editor_tts_provider_minimax">MiniMax TTS</string>
+    <string name="aimodel_editor_tts_provider_qwen">通義千問 TTS</string>
+    <string name="aimodel_editor_tts_resource_default">seed-tts-2.0（預設）</string>
+    <string name="aimodel_editor_tts_model">TTS 模型名</string>
+    <string name="aimodel_editor_tts_model_placeholder">留空則使用上方模型</string>
+    <string name="aimodel_editor_tts_voice">音色</string>
+    <string name="aimodel_editor_tts_speed">語速</string>
+    <string name="aimodel_editor_tts_pitch">音調</string>
+    <string name="aimodel_editor_tts_volume">音量</string>
+    <string name="aimodel_editor_tts_format">輸出格式</string>
+    <string name="aimodel_editor_tts_style">風格控制指令（可選）</string>
+    <string name="aimodel_editor_tts_style_placeholder">例如：請用歡快的語氣說話</string>
+    <string name="aimodel_editor_tts_ref_audio_not_loaded">尚未載入參考音訊</string>
+    <string name="aimodel_editor_tts_ref_audio_loaded">已載入參考音訊</string>
+    <string name="aimodel_editor_tts_select_audio">選擇音訊</string>
+    <string name="aimodel_editor_tts_change_audio">更換</string>
+
+    <!-- STT 配置 -->
+    <string name="aimodel_editor_section_stt">STT 語音識別</string>
+    <string name="aimodel_editor_stt_provider">STT 供應商</string>
+    <string name="aimodel_editor_stt_provider_follow">跟隨 Provider 類型</string>
+    <string name="aimodel_editor_stt_provider_openai">OpenAI 兼容</string>
+    <string name="aimodel_editor_stt_provider_gemini">Gemini 原生識別</string>
+    <string name="aimodel_editor_stt_provider_glm">智譜 GLM-ASR</string>
+    <string name="aimodel_editor_stt_provider_qwen">通義千問 ASR</string>
+    <string name="aimodel_editor_stt_provider_xiaomi">小米 MiMo</string>
+    <string name="aimodel_editor_stt_provider_local">本地 faster-whisper</string>
+    <string name="aimodel_editor_stt_model">STT 模型名</string>
+    <string name="aimodel_editor_stt_language">識別語言</string>
+    <string name="aimodel_editor_stt_language_zh">中文</string>
+    <string name="aimodel_editor_stt_language_en">英文</string>
+    <string name="aimodel_editor_stt_language_auto">自動檢測</string>
+
+    <!-- Embedding 配置 -->
+    <string name="aimodel_editor_section_embedding">Embedding 配置</string>
+    <string name="aimodel_editor_embedding_dimensions">向量維度</string>
+
+    <!-- 图片生成配置 -->
+    <string name="aimodel_editor_section_image_gen">圖片生成</string>
+    <string name="aimodel_editor_image_size">圖片尺寸</string>
+    <string name="aimodel_editor_image_prompt_template">附加提示詞（可選）</string>
+    <string name="aimodel_editor_image_additional_prompt_hint">例如：日系動漫風格，細膩光影，高細節</string>
+
+    <!-- ==================== OAuth 账号界面 ==================== -->
+    <string name="oauth_login_start_failed">OAuth 登入啟動失敗</string>
+    <string name="oauth_load_models_failed">讀取模型列表失敗</string>
+    <string name="oauth_models_synced">已同步 %1$d 個模型到本地 AI 模型</string>
+    <string name="oauth_save_models_failed">儲存模型失敗</string>
+    <string name="oauth_account_deleted">已刪除 AI 帳號及其模型</string>
+    <string name="oauth_delete_failed">刪除帳號失敗</string>
+    <string name="oauth_connected_select_models">帳號已連接，請選擇要使用的模型</string>
+    <string name="oauth_read_file_failed">無法讀取所選檔案</string>
+    <string name="oauth_read_qwen_failed">讀取 Qwen 憑據失敗</string>
+    <string name="oauth_section_login_providers">登入供應商</string>
+    <string name="oauth_login_providers_desc">通過 OAuth 或 API Key 連接帳號，隨後選擇要自動加入“本地 AI 模型”的模型，之後可隨時修改。</string>
+    <string name="oauth_section_connected_accounts">已登入帳號</string>
+    <string name="oauth_device_code_copied">設備碼已複製</string>
+    <string name="oauth_operation_failed">操作失敗</string>
+    <string name="oauth_delete_account_title">刪除 AI 帳號？</string>
+    <string name="oauth_delete_account_message">將同時刪除由“%1$s”新增的本地 AI 模型。</string>
+    <string name="oauth_action_import">匯入</string>
+    <string name="oauth_action_input_key">輸入 Key</string>
+    <string name="oauth_action_login">登入</string>
+    <string name="oauth_status_connected">已連接</string>
+    <string name="oauth_status_needs_relogin">需要重新登入</string>
+    <string name="oauth_edit_models">修改模型</string>
+    <string name="oauth_delete_account">刪除帳號</string>
+    <string name="oauth_connect_provider">連接 %1$s</string>
+    <string name="oauth_api_key_dialog_desc">在 OpenCode 控制台建立對應方案的 API Key，然後貼上到下方。Key 會加密儲存在本機。</string>
+    <string name="oauth_api_key_label">%1$s API Key</string>
+    <string name="oauth_open_console">開啟 OpenCode Zen</string>
+    <string name="oauth_connect_and_read">連接並讀取模型</string>
+    <string name="oauth_complete_anthropic">完成 Anthropic 授權</string>
+    <string name="oauth_browser_login">在瀏覽器中完成登入</string>
+    <string name="oauth_anthropic_code_hint">瀏覽器授權後，將頁面顯示的授權碼貼上到下方。</string>
+    <string name="oauth_authorization_code">授權碼</string>
+    <string name="oauth_device_code_hint">請在已開啟的瀏覽器頁面輸入設備碼，應用會自動等待登入結果。</string>
+    <string name="oauth_waiting">等待授權…</string>
+    <string name="oauth_reopen_browser">重新開啟瀏覽器</string>
+    <string name="oauth_submit">提交</string>
+    <string name="oauth_select_models">選擇要新增的模型</string>
+    <string name="oauth_refresh_models">刷新模型列表</string>
+    <string name="oauth_save_count">儲存（%1$d）</string>
+    <string name="oauth_later">稍後設定</string>
+    <string name="localai_filter_all">全部</string>
+    <string name="localai_filter_empty">當前功能下暫無模型</string>
+    <string name="localai_filter_show_all">查看全部模型</string>
+</resources>

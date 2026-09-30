@@ -74,7 +74,16 @@ class AndroidUsageGuideTest {
     fun languageNormalizationStripsRegionAndCase() {
         val zhTw = AndroidUsageGuide.build("zh-TW", null)
         val zhCn = AndroidUsageGuide.build("ZH_CN", null)
-        assertTrue(zhTw.contains("标准操作流程"))
         assertTrue(zhCn.contains("标准操作流程"))
+        assertTrue(zhTw.contains("標準操作流程"))
+    }
+
+    @Test
+    fun zhHantGuideIsTraditionalChinese() {
+        val guide = AndroidUsageGuide.build("zh-TW", null)
+        assertTrue(guide.contains("權限"))
+        assertTrue(guide.contains("元素定位"))
+        assertTrue(guide.contains("安全規則"))
+        assertFalse(guide.contains("安全规则"))
     }
 }

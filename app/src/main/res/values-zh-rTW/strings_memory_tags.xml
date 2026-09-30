@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_tag_all">全部標籤</string>
+    <string name="memory_entries_and_tags">記憶條目與標籤</string>
+    <string name="memory_edit_tags">編輯標籤</string>
+    <string name="memory_tags_separator_hint">用逗號或換行分隔標籤。修改只作用於當前記憶。</string>
+    <string name="memory_tags_saved">標籤已儲存</string>
+    <string name="memory_tags_missing">這條記憶已不存在，請刷新</string>
+</resources>

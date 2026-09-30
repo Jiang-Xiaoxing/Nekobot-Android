@@ -516,11 +516,11 @@ ${AiOutputLanguage.directive()}
 
     /** 记忆条目中指代玩家的词（跟随输出语言，避免中文「玩家」写进其他语言的记忆）。 */
     private fun playerTerm(): String =
-        AiOutputLanguage.promptText("玩家", "the player", "プレイヤー", "플레이어")
+        AiOutputLanguage.promptText("玩家", "the player", "プレイヤー", "플레이어", "玩家")
 
     /** 需要禁止使用的泛称（中文语境下的「用户」等）。 */
     private fun genericUserTerm(): String =
-        AiOutputLanguage.promptText("用户", "the user", "ユーザー", "사용자")
+        AiOutputLanguage.promptText("用户", "the user", "ユーザー", "사용자", "用戶")
 
     /** 构建记忆抽取 user prompt（附当前已有记忆供 LLM 取舍） */
     private fun buildMemoryUserPrompt(
@@ -544,13 +544,16 @@ ${AiOutputLanguage.directive()}
             val existingText = existingMemories.joinToString("\n\n") { view ->
                 val label = when (view.category) {
                     "user_persona" -> AiOutputLanguage.promptText(
-                        "玩家人格（当前）", "Player persona (current)", "プレイヤー人格（現在）", "플레이어 인격 (현재)"
+                        "玩家人格（当前）", "Player persona (current)", "プレイヤー人格（現在）", "플레이어 인격 (현재)",
+                        "玩家人格（當前）"
                     )
                     "character_persona" -> AiOutputLanguage.promptText(
-                        "角色人格（当前）", "Character persona (current)", "キャラクター人格（現在）", "캐릭터 인격 (현재)"
+                        "角色人格（当前）", "Character persona (current)", "キャラクター人格（現在）", "캐릭터 인격 (현재)",
+                        "角色人格（當前）"
                     )
                     "recent_digest" -> AiOutputLanguage.promptText(
-                        "近期摘要（当前）", "Recent digest (current)", "最近の要約（現在）", "최근 요약 (현재)"
+                        "近期摘要（当前）", "Recent digest (current)", "最近の要約（現在）", "최근 요약 (현재)",
+                        "近期摘要（當前）"
                     )
                     else -> view.category
                 }

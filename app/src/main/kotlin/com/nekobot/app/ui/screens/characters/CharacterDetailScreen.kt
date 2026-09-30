@@ -646,6 +646,7 @@ fun CharacterDetailScreen(
     if (showTranslateDialog) {
         val languages = listOf(
             "zh" to stringResource(R.string.character_translate_language_zh),
+            "zh-TW" to stringResource(R.string.character_translate_language_zh_tw),
             "en" to stringResource(R.string.character_translate_language_en),
             "ja" to stringResource(R.string.character_translate_language_ja),
             "ko" to stringResource(R.string.character_translate_language_ko)

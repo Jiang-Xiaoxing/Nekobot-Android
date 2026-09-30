@@ -77,14 +77,16 @@ internal object AgentMemoryExtractor {
         private val zh: String,
         private val en: String,
         private val ja: String,
-        private val ko: String
+        private val ko: String,
+        private val zhTw: String = zh
     ) {
-        PREFERENCE("preference", "用户偏好", "User preferences", "ユーザーの好み", "사용자 선호"),
-        ENVIRONMENT("environment", "环境与工具", "Environment & tools", "環境とツール", "환경과 도구"),
-        CONVENTION("convention", "长期约定", "Long-term conventions", "長期の約束", "장기 규칙");
+        PREFERENCE("preference", "用户偏好", "User preferences", "ユーザーの好み", "사용자 선호", "用戶偏好"),
+        ENVIRONMENT("environment", "环境与工具", "Environment & tools", "環境とツール", "환경과 도구", "環境與工具"),
+        CONVENTION("convention", "长期约定", "Long-term conventions", "長期の約束", "장기 규칙", "長期約定");
 
         /** 当前 AI 输出语言下的分类标题（不含 `#`）。 */
         fun heading(): String = when (AiOutputLanguage.languageTag()) {
+            "zh-TW" -> zhTw
             "en" -> en
             "ja" -> ja
             "ko" -> ko
@@ -100,6 +102,7 @@ internal object AgentMemoryExtractor {
         register(
             Category.PREFERENCE,
             "用户偏好", "偏好", "用户习惯", "习惯", "用户喜好", "回答偏好", "语言偏好",
+            "用戶偏好", "用戶習慣", "用戶喜好", "語言偏好",
             "user preference", "user preferences", "preference", "preferences", "habits", "style",
             "ユーザーの好み", "好み", "習慣", "回答スタイル",
             "사용자 선호", "선호", "습관", "응답 스타일"
@@ -107,6 +110,7 @@ internal object AgentMemoryExtractor {
         register(
             Category.ENVIRONMENT,
             "环境与工具", "环境", "工作环境", "项目环境", "工具", "常用命令", "技术栈",
+            "環境與工具", "工作環境", "項目環境", "常用命令", "技術棧",
             "environment", "environment and tools", "environment & tools", "tools", "toolchain",
             "setup", "stack", "commands",
             "環境", "環境とツール", "ツール", "よく使うコマンド",
@@ -115,6 +119,7 @@ internal object AgentMemoryExtractor {
         register(
             Category.CONVENTION,
             "长期约定", "约定", "长期规则", "规则", "工作约定", "流程约定",
+            "長期約定", "約定", "長期規則", "規則", "工作約定", "流程約定",
             "convention", "conventions", "long-term conventions", "long term conventions",
             "rules", "agreement",
             "長期の約束", "約束", "ルール", "取り決め",

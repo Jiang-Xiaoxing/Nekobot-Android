@@ -18,27 +18,29 @@ object AiOutputLanguage {
     /** 支持的语言代码集合（与 LocaleHelper 保持一致）。 */
     private val SUPPORTED_TAGS = setOf(
         PrefsManager.LANGUAGE_ZH,
+        PrefsManager.LANGUAGE_ZH_TW,
         PrefsManager.LANGUAGE_EN,
         PrefsManager.LANGUAGE_JA,
         PrefsManager.LANGUAGE_KO
     )
 
-    /** 当前生效的语言代码（zh/en/ja/ko），供需要语言代码的生成接口使用。 */
+    /** 当前生效的语言代码（zh/zh-TW/en/ja/ko），供需要语言代码的生成接口使用。 */
     fun languageTag(): String {
         val tag = runCatching {
             val pref = ServiceContainer.prefs.language
             val context = ServiceContainer.appContext
             if (context != null) {
-                LocaleHelper.getEffectiveLocale(context, pref).language
+                LocaleHelper.getEffectiveLanguageTag(context, pref)
             } else {
-                Locale.getDefault().language
+                Locale.getDefault().toLanguageTag()
             }
-        }.getOrDefault(Locale.getDefault().language)
+        }.getOrDefault(Locale.getDefault().toLanguageTag())
         return normalizeTag(tag)
     }
 
     /** 语言代码对应的语言名称（直接写进提示词，要求模型用该语言输出）。 */
     fun languageName(): String = when (languageTag()) {
+        PrefsManager.LANGUAGE_ZH_TW -> "繁體中文"
         PrefsManager.LANGUAGE_EN -> "English"
         PrefsManager.LANGUAGE_JA -> "日本語"
         PrefsManager.LANGUAGE_KO -> "한국어"
@@ -57,10 +59,18 @@ object AiOutputLanguage {
      * 提示词模板里的多语言文案：按当前设置的语言挑一条。
      *
      * 用于模板中会被模型"照抄"进产物的词（如小节标题、指代玩家的称谓），
-     * 避免英文/日文/韩文输出里混入固化的中文词。日文与韩文缺省回退到英文。
+     * 避免英文/日文/韩文输出里混入固化的中文词。日文与韩文缺省回退到英文，
+     * 繁体中文缺省回退到简体文案。
      */
-    fun promptText(zh: String, en: String, ja: String = en, ko: String = en): String =
+    fun promptText(
+        zh: String,
+        en: String,
+        ja: String = en,
+        ko: String = en,
+        zhTw: String = zh
+    ): String =
         when (languageTag()) {
+            PrefsManager.LANGUAGE_ZH_TW -> zhTw
             PrefsManager.LANGUAGE_EN -> en
             PrefsManager.LANGUAGE_JA -> ja
             PrefsManager.LANGUAGE_KO -> ko
@@ -69,7 +79,11 @@ object AiOutputLanguage {
 
     /** 归一化语言代码：仅保留受支持的语言，未知语言回落到英语（与 LocaleHelper 一致）。 */
     private fun normalizeTag(tag: String): String {
-        val lower = tag.lowercase(Locale.ROOT).substringBefore('-').substringBefore('_')
-        return if (lower in SUPPORTED_TAGS) lower else PrefsManager.LANGUAGE_EN
+        val lower = tag.lowercase(Locale.ROOT).replace('_', '-')
+        if (lower.startsWith("zh")) {
+            return if (LocaleHelper.isTraditionalChinese(lower)) PrefsManager.LANGUAGE_ZH_TW else PrefsManager.LANGUAGE_ZH
+        }
+        val base = lower.substringBefore('-')
+        return if (base in SUPPORTED_TAGS) base else PrefsManager.LANGUAGE_EN
     }
 }

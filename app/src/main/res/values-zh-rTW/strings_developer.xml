@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="developer_options_title">開發者選項</string>
+    <string name="developer_options_subtitle">診斷應用運行狀態與性能</string>
+    <string name="performance_monitor_title">性能檢測</string>
+    <string name="performance_monitor_subtitle">實時查看幀率、記憶體、CPU 和網路</string>
+    <string name="performance_monitor_live">實時採樣</string>
+    <string name="performance_monitor_live_desc">每秒刷新一次，幀時間在主執行緒持續採樣</string>
+    <string name="performance_monitor_pause">暫停採樣</string>
+    <string name="performance_monitor_resume">繼續採樣</string>
+    <string name="performance_monitor_reset">重設幀統計</string>
+    <string name="performance_monitor_rendering">介面渲染</string>
+    <string name="performance_monitor_memory">記憶體</string>
+    <string name="performance_monitor_process">行程</string>
+    <string name="performance_monitor_network">網路</string>
+    <string name="performance_monitor_fps">實時幀率</string>
+    <string name="performance_monitor_frame_average">平均幀耗時</string>
+    <string name="performance_monitor_frame_p95">P95 幀耗時</string>
+    <string name="performance_monitor_jank">卡頓幀比例</string>
+    <string name="performance_monitor_frames_sampled">已採樣幀數</string>
+    <string name="performance_monitor_java_heap">Java 堆使用</string>
+    <string name="performance_monitor_native_heap">Native 堆</string>
+    <string name="performance_monitor_pss">行程 PSS</string>
+    <string name="performance_monitor_heap_pressure">堆壓力</string>
+    <string name="performance_monitor_cpu">行程 CPU</string>
+    <string name="performance_monitor_threads">活動執行緒</string>
+    <string name="performance_monitor_cores">CPU 核心</string>
+    <string name="performance_monitor_uptime">行程運行時間</string>
+    <string name="performance_monitor_download_total">累計接收</string>
+    <string name="performance_monitor_upload_total">累計發送</string>
+    <string name="performance_monitor_download_rate">當前下行</string>
+    <string name="performance_monitor_upload_rate">當前上行</string>
+    <string name="performance_monitor_status_good">正常</string>
+    <string name="performance_monitor_status_attention">需要關注</string>
+    <string name="performance_monitor_status_poor">性能較差</string>
+    <string name="performance_monitor_no_frames">等待介面幀資料…</string>
+    <string name="performance_monitor_note">檢測資料僅反映當前應用行程。切換頁面、捲動列表或生成訊息時更容易觀察真實性能變化。</string>
+    <string name="developer_update_preview_title">模擬啟動更新提示</string>
+    <string name="developer_update_preview_subtitle">下次啟動時顯示測試更新彈出視窗</string>
+    <string name="developer_update_preview_scheduled">已安排在下次啟動時顯示測試更新提示</string>
+    <string name="developer_update_preview_reset_title">重設更新提示測試</string>
+    <string name="developer_update_preview_reset_subtitle">清除模擬提示與忽略狀態</string>
+    <string name="developer_update_preview_reset_done">已重設更新提示測試狀態</string>
+    <string name="developer_update_preview_release_notes">## 模擬更新說明\n\n- 此發佈僅用於測試啟動更新提示。\n- 內含一個不可安裝的模擬 APK，用於驗證下載與錯誤處理。\n- 更新檢查與下載均使用 GitHub 官方服務。\n- 在瀏覽器中開啟會始終前往 GitHub 官方 Releases 頁面。\n- 勾選“不再提醒此版本”後，可通過開發者選項重設測試狀態。\n- 本說明刻意較長，用於驗證發佈說明的摺疊與展開效果。</string>
+</resources>

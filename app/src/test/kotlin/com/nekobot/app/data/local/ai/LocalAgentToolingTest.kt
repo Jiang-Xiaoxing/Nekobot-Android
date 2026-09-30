@@ -54,6 +54,9 @@ class LocalAgentToolingTest {
         assertTrue(buildLocalAgentBasePrompt("ja").startsWith("あなたは Nekobot"))
         assertTrue(buildLocalAgentBasePrompt("ko").startsWith("당신은 Nekobot"))
         assertTrue(buildLocalAgentBasePrompt("zh-CN").startsWith("你是 Nekobot"))
+        assertTrue(buildLocalAgentBasePrompt("zh-TW").startsWith("你是 Nekobot"))
+        assertTrue(buildLocalAgentBasePrompt("zh-TW").contains("工作原則"))
+        assertTrue(buildLocalAgentBasePrompt("zh-HK").contains("工作原則"))
     }
 
     @Test

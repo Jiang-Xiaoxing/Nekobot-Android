@@ -1544,16 +1544,17 @@ class PrefsManager(context: Context) {
             }
         }
 
-        // 语言偏好：system（跟随系统）/ zh / en / ja / ko
+        // 语言偏好：system（跟随系统）/ zh / zh-TW / en / ja / ko
         const val KEY_LANGUAGE = "language"
         const val LANGUAGE_SYSTEM = "system"
         const val LANGUAGE_ZH = "zh"
+        const val LANGUAGE_ZH_TW = "zh-TW"
         const val LANGUAGE_EN = "en"
         const val LANGUAGE_JA = "ja"
         const val LANGUAGE_KO = "ko"
     }
 
-    /** 当前语言偏好：system / zh / en / ja / ko */
+    /** 当前语言偏好：system / zh / zh-TW / en / ja / ko */
     var language: String
         get() = prefs.getString(KEY_LANGUAGE, LANGUAGE_SYSTEM) ?: LANGUAGE_SYSTEM
         set(value) {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dbprofile_zip_db_missing">ZIP 中未找到 .db 檔案</string>
+    <string name="dbprofile_unknown_file_format">無法識別的檔案格式：請選擇 .zip 或 .db 檔案</string>
+    <string name="dbprofile_read_selected_file_failed">無法讀取所選檔案</string>
+    <string name="dbprofile_invalid_database">備份包中的資料庫格式無效</string>
+    <string name="dbprofile_backup_password_required">此備份包含加密憑據，請輸入匯出時設定的備份密碼</string>
+    <string name="dbprofile_database_open_failed">資料庫無法開啟（可能檔案損壞或版本不兼容）：%1$s</string>
+    <string name="dbprofile_database_too_large">資料庫檔案過大</string>
+    <string name="dbprofile_rollback_dir_failed">無法建立資料庫回滾目錄</string>
+    <string name="dbprofile_replace_old_database_failed">無法替換舊資料庫檔案：%1$s</string>
+    <string name="dbprofile_cleanup_failed_import">無法清理匯入失敗的資料庫：%1$s</string>
+    <string name="dbprofile_restore_portrait_dir_failed">無法恢復原立繪目錄</string>
+    <string name="dbprofile_create_portrait_dir_failed">無法建立立繪恢復目錄</string>
+    <string name="dbprofile_replace_portrait_dir_failed">無法替換舊立繪目錄</string>
+    <string name="dbprofile_save_portrait_failed">無法儲存恢復的立繪</string>
+    <string name="dbprofile_export_location_required">當前系統需要選擇匯出位置</string>
+    <string name="dbprofile_open_download_failed">無法開啟下載檔案</string>
+    <string name="dbprofile_open_export_failed">無法開啟匯出檔案</string>
+</resources>

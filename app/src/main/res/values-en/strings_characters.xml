@@ -91,6 +91,7 @@
     <string name="character_translate">Translate character card</string>
     <string name="character_translate_target_language">Choose target language</string>
     <string name="character_translate_language_zh">Chinese</string>
+    <string name="character_translate_language_zh_tw">Chinese (Traditional)</string>
     <string name="character_translate_language_en">English</string>
     <string name="character_translate_language_ja">Japanese</string>
     <string name="character_translate_language_ko">Korean</string>
