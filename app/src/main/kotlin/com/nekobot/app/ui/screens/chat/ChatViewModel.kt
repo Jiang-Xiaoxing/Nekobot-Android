@@ -2715,9 +2715,20 @@ class ChatViewModel : BaseViewModel() {
             // 会话已在同一 VM 中切换时保留旧批次，等待重新进入后恢复计时；不要先消费再丢弃。
             if (runtime !== target || currentSessionId != target.sessionId) return@launch
             // 到期前重新读取会话：删除会话、关闭延迟回复或关闭 Agent 角色继承后必须静默撤回。
-            val latestSession = when (val result = unified.getSession(target.sessionId)) {
-                is Resource.Success -> result.data
-                is Resource.Error, is Resource.Loading -> null
+            var latestSession: Session? = null
+            var readFailures = 0
+            while (true) {
+                val readResult = unified.getSession(target.sessionId)
+                if (readResult is Resource.Success) {
+                    latestSession = readResult.data
+                    break
+                }
+                // 读取失败可能是瞬时 IO 错误：保留批次退避重试，而不是误判为“资格已失”撤回。
+                // 连续失败达到上限后按不合规处理（此时会话多半已不存在，删除路径本身也会撤回）。
+                if (readFailures >= DELAY_REPLY_READ_RETRY_LIMIT) break
+                readFailures++
+                kotlinx.coroutines.delay(DELAY_REPLY_READ_RETRY_MS)
+                if (runtime !== target || currentSessionId != target.sessionId) return@launch
             }
             val stillEligible = shouldUseDelayReply(
                 sessionEnabled = latestSession?.delayReplyEnabled == true,

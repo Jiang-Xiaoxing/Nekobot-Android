@@ -1246,6 +1246,7 @@ private fun ModernChatComposer(
                     agentLiveContext = agentLiveContext,
                     contextBreakdown = contextBreakdown,
                     sending = sending,
+                    delayPending = delayReplyPending,
                     compressing = compressing,
                     fileBusy = fileBusy,
                     plotMode = plotMode,
@@ -1572,10 +1573,10 @@ private fun ModernChatComposer(
                                 ServiceContainer.prefs.chatQuickActionsCollapsed = true
                             },
                             onEdit = { showQuickActionEditor = true },
-                            // AI 执行中禁用「压缩上下文」：压缩会重写历史边界，
-                            // 正在运行的任务会丢失工作记忆；达到阈值的自动压缩不受影响。
+                            // AI 执行中或延迟回复等待期间禁用「压缩上下文」：压缩会重写历史边界，
+                            // 正在运行的任务/待发批次会丢失工作记忆；达到阈值的自动压缩不受影响。
                             isActionEnabled = { id ->
-                                id != ChatQuickAction.COMPRESS || (!sending && !compressing)
+                                id != ChatQuickAction.COMPRESS || (!replyBusy && !compressing)
                             },
                             onAction = handleQuickAction
                         )
@@ -2231,6 +2232,7 @@ private fun ModernChatActionPanel(
     usedTokens: Long,
     maxTokens: Int?,
     sending: Boolean,
+    delayPending: Boolean,
     compressing: Boolean,
     agentLiveContext: AgentLiveContextUsage?,
     contextBreakdown: ContextUsageBreakdown?,
@@ -2280,6 +2282,7 @@ private fun ModernChatActionPanel(
                     usedTokens = usedTokens,
                     maxTokens = maxTokens,
                     sending = sending,
+                    delayPending = delayPending,
                     compressing = compressing,
                     agentLiveContext = agentLiveContext,
                     contextBreakdown = contextBreakdown,
@@ -2565,6 +2568,7 @@ private fun ModernContextCard(
     usedTokens: Long,
     maxTokens: Int?,
     sending: Boolean,
+    delayPending: Boolean,
     compressing: Boolean,
     agentLiveContext: AgentLiveContextUsage?,
     contextBreakdown: ContextUsageBreakdown?,
@@ -2631,7 +2635,11 @@ private fun ModernContextCard(
                         )
                     }
                 }
-                TextButton(onClick = onCompress, enabled = !sending && messageCount > 0 && !compressing) {
+                TextButton(
+                    onClick = onCompress,
+                    // 延迟回复等待期间同样禁止压缩：压缩会重写历史边界，待发批次会因此错乱
+                    enabled = !sending && !delayPending && messageCount > 0 && !compressing
+                ) {
                     if (compressing) {
                         // 进行中：图标换成进度圈，标签切换为“压缩中”。
                         CircularProgressIndicator(

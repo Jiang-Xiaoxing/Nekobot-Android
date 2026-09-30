@@ -9,6 +9,10 @@ internal const val DEFAULT_DELAY_REPLY_SECONDS = 2
 internal const val MIN_DELAY_REPLY_SECONDS = 1
 internal const val MAX_DELAY_REPLY_SECONDS = 30
 
+/** 计时到期后读取会话资格失败时的重试：按瞬时错误退避重试，连续失败达到上限才按原语义撤回。 */
+internal const val DELAY_REPLY_READ_RETRY_MS = 2_000L
+internal const val DELAY_REPLY_READ_RETRY_LIMIT = 5
+
 internal fun normalizeDelayReplySeconds(value: Int?): Int =
     (value ?: DEFAULT_DELAY_REPLY_SECONDS).coerceIn(
         MIN_DELAY_REPLY_SECONDS,

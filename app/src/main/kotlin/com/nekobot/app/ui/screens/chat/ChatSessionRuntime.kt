@@ -666,6 +666,19 @@ object ChatSessionManager {
         return cancelled.isNotEmpty()
     }
 
+    /**
+     * 暂停指定会话的延迟回复计时，但保留批次与气泡，返回是否存在待发批次。
+     *
+     * 供设置保存、删除会话等“操作成败未定”的入口在发起前调用：计时任务取消后，
+     * 批次不可能在操作进行中被发往 AI。操作成功后调用 [cancelDelayedReply] 提交撤回；
+     * 失败则无需处理，批次保留，重进聊天页时由 currentPlan() 重建计时。
+     */
+    fun pauseDelayedReplyTimer(sessionId: String): Boolean {
+        val state = sessions[sessionId] ?: return false
+        state.installDelayReplyJob(null)
+        return state.delayReply.hasPending()
+    }
+
     /** 应用退出时清理所有会话状态（取消所有后台 Job）。 */
     fun releaseAll() {
         sessions.values.forEach { state ->

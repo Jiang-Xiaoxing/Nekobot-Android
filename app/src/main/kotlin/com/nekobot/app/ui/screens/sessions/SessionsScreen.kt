@@ -2614,10 +2614,12 @@ class SessionsViewModel : BaseViewModel() {
 
     /** 删除会话，成功后刷新并回调 [onSuccess]。 */
     fun deleteSession(id: String, onSuccess: () -> Unit = {}) {
-        ChatSessionManager.cancelDelayedReply(id, removeBubbles = true)
+        // 先暂停计时再删除：删除失败时批次与气泡保留（重进聊天页恢复计时），成功才提交撤回。
+        ChatSessionManager.pauseDelayedReplyTimer(id)
         launchResult(
             block = { unified.deleteSession(id) },
             onSuccess = {
+                ChatSessionManager.cancelDelayedReply(id, removeBubbles = true)
                 showToast(string(R.string.sessions_deleted_toast))
                 loadSessions()
                 onSuccess()

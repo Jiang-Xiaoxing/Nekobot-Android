@@ -494,8 +494,12 @@ class SessionDetailViewModel : BaseViewModel() {
                 (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter.value)
             )
         val savedDelayReplyEnabled = delayReplyEligible && delayReplyEnabled.value
-        if (!savedDelayReplyEnabled) {
-            ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
+        // 先暂停计时再保存：操作进行中批次不会被发往 AI；保存成功才提交撤回，
+        // 失败时批次与气泡保留，重进聊天页后由 currentPlan() 重建计时。
+        val delayWasPending = if (!savedDelayReplyEnabled) {
+            ChatSessionManager.pauseDelayedReplyTimer(s.id.orEmpty())
+        } else {
+            false
         }
         launchResult(
             block = {
@@ -531,6 +535,9 @@ class SessionDetailViewModel : BaseViewModel() {
                 )
             },
             onSuccess = {
+                if (delayWasPending) {
+                    ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
+                }
                 android.util.Log.d("SessionDetail", "save onSuccess: starting reload")
                 showToast(string(R.string.sessions_detail_saved_toast))
                 load(s.id.orEmpty())
@@ -613,10 +620,12 @@ class SessionDetailViewModel : BaseViewModel() {
 
     fun delete(onSuccess: () -> Unit) {
         val s = _session.value ?: return
-        ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
+        // 先暂停计时再删除：删除失败时批次与气泡保留（重进聊天页恢复计时），成功才提交撤回。
+        ChatSessionManager.pauseDelayedReplyTimer(s.id.orEmpty())
         launchResult(
             block = { unified.deleteSession(s.id.orEmpty()) },
             onSuccess = {
+                ChatSessionManager.cancelDelayedReply(s.id.orEmpty(), removeBubbles = true)
                 showToast(string(R.string.sessions_detail_deleted_toast))
                 onSuccess()
             }

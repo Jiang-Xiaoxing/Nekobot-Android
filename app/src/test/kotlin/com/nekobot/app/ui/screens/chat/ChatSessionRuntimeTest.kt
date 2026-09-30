@@ -149,4 +149,48 @@ class ChatSessionRuntimeTest {
         assertEquals(listOf("stored"), state.messages.value.map { it.id })
         ChatSessionManager.release(sessionId)
     }
+
+    @Test
+    fun pauseDelayedReplyTimerStopsTimerKeepsBatchAndCommitCancelsAfterSuccess() = runBlocking {
+        val sessionId = "delay-pause-${System.nanoTime()}"
+        val state = ChatSessionManager.acquire(sessionId)
+        val pending = DelayedReplyMessage(
+            bubbleId = "pause-bubble",
+            content = "等待期间的消息",
+            timestamp = "1"
+        )
+        state.delayReply.arm(pending, nowMs = 0L, delayMs = 10_000L)
+        state.messages.value = listOf(
+            com.nekobot.app.data.model.Message(id = pending.bubbleId, role = "user", content = pending.content)
+        )
+        val timer = launch { awaitCancellation() }
+        state.installDelayReplyJob(timer)
+
+        // 设置保存/删除会话前先暂停：计时任务取消，操作进行中批次不可能被发往 AI
+        assertTrue(ChatSessionManager.pauseDelayedReplyTimer(sessionId))
+        timer.join()
+        assertTrue(state.delayReply.hasPending())
+
+        // 操作失败路径不做任何处理：批次与气泡保留，重进聊天页由 currentPlan() 重建计时
+        assertEquals(listOf(pending.bubbleId), state.delayReply.pendingMessages().map { it.bubbleId })
+        assertEquals(listOf(pending.bubbleId), state.messages.value.map { it.id })
+
+        // 操作成功后提交撤回：批次与气泡一并清理
+        assertTrue(ChatSessionManager.cancelDelayedReply(sessionId, removeBubbles = true))
+        assertFalse(state.delayReply.hasPending())
+        assertTrue(state.messages.value.isEmpty())
+        ChatSessionManager.release(sessionId)
+    }
+
+    @Test
+    fun pauseDelayedReplyTimerReturnsFalseForMissingSessionOrIdleState() = runBlocking {
+        assertFalse(ChatSessionManager.pauseDelayedReplyTimer("missing-${System.nanoTime()}"))
+
+        // 有会话状态但没有待发批次时，暂停是无害的 no-op
+        val sessionId = "delay-pause-idle-${System.nanoTime()}"
+        val state = ChatSessionManager.acquire(sessionId)
+        assertFalse(ChatSessionManager.pauseDelayedReplyTimer(sessionId))
+        assertFalse(state.delayReply.hasPending())
+        ChatSessionManager.release(sessionId)
+    }
 }
