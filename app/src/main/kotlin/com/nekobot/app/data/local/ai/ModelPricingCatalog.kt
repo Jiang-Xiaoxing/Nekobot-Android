@@ -18,11 +18,28 @@ data class ModelPricingEntry(
     val provider: String,
     val inputPricePerMillion: Double? = null,
     val outputPricePerMillion: Double? = null,
+    /** 缓存命中（读缓存）价，每百万 token；命中部分按此价计费。 */
+    val cacheReadPricePerMillion: Double? = null,
+    /** 缓存写入价，每百万 token；仅 Anthropic 等支持显式缓存写入的服务商有值。 */
+    val cacheWritePricePerMillion: Double? = null,
     val contextLength: Int? = null,
     val supportsTools: Boolean = false,
     val supportsReasoning: Boolean = false,
     val aliases: List<String> = emptyList(),
     val source: String = ModelPricingCatalog.SOURCE_BUNDLED
+)
+
+/**
+ * 一次计费实际使用的价格组（每百万 token，美元）。
+ *
+ * 缓存价与输入价分开保存：命中缓存的输入按 [cacheReadPerMillion] 计费，
+ * 未命中部分才按 [inputPerMillion] 计费。
+ */
+data class ModelPrices(
+    val inputPerMillion: Double? = null,
+    val outputPerMillion: Double? = null,
+    val cacheReadPerMillion: Double? = null,
+    val cacheWritePerMillion: Double? = null
 )
 
 data class ModelPricingSnapshot(
@@ -168,6 +185,103 @@ object ModelPricingCatalog {
             (outputPrice ?: matched?.outputPricePerMillion)
     }
 
+    /**
+     * 解析包含缓存价在内的完整价格组。
+     *
+     * 优先级：用户手填 > 在线/内置目录 > 兜底比例换算。兜底只影响缓存单价，
+     * 不改变输入/输出价；刷新价格目录后会被服务商真实缓存价覆盖。
+     */
+    fun resolveModelPrices(
+        modelName: String,
+        provider: String? = null,
+        inputPrice: Double? = null,
+        outputPrice: Double? = null,
+        cacheReadPrice: Double? = null,
+        cacheWritePrice: Double? = null,
+        catalog: ModelPricingSnapshot = current()
+    ): ModelPrices {
+        val matched = find(modelName, provider, catalog)
+        val input = inputPrice ?: matched?.inputPricePerMillion
+        val output = outputPrice ?: matched?.outputPricePerMillion
+        return ModelPrices(
+            inputPerMillion = input,
+            outputPerMillion = output,
+            cacheReadPerMillion = cacheReadPrice
+                ?: matched?.cacheReadPricePerMillion
+                ?: defaultCacheReadPrice(modelName, input),
+            cacheWritePerMillion = cacheWritePrice
+                ?: matched?.cacheWritePricePerMillion
+                ?: defaultCacheWritePrice(modelName, input)
+        )
+    }
+
+    /**
+     * 按缓存命中价估算一次调用成本（美元）。
+     *
+     * 计费口径：
+     * - 命中缓存的输入 [cachedInputTokens] 按缓存价（缺失时回退输入价）；
+     * - 写入缓存的输入 [cacheWriteTokens] 按缓存写入价（Anthropic，缺失时回退输入价）；
+     * - 其余输入按输入价，输出按输出价；
+     * - Anthropic 的 input_tokens 已在解析层累加缓存读写量，因此这里三者不会重复计数。
+     */
+    fun estimateCostUsd(
+        inputTokens: Long,
+        outputTokens: Long,
+        cachedInputTokens: Long = 0,
+        cacheWriteTokens: Long = 0,
+        prices: ModelPrices
+    ): Double {
+        val input = inputTokens.coerceAtLeast(0)
+        val cached = cachedInputTokens.coerceIn(0, input)
+        val written = cacheWriteTokens.coerceIn(0, input - cached)
+        val uncached = input - cached - written
+        val cacheReadPrice = prices.cacheReadPerMillion ?: prices.inputPerMillion ?: 0.0
+        val cacheWritePrice = prices.cacheWritePerMillion ?: prices.inputPerMillion ?: 0.0
+        return uncached / 1_000_000.0 * (prices.inputPerMillion ?: 0.0) +
+            cached / 1_000_000.0 * cacheReadPrice +
+            written / 1_000_000.0 * cacheWritePrice +
+            outputTokens.coerceAtLeast(0) / 1_000_000.0 * (prices.outputPerMillion ?: 0.0)
+    }
+
+    /**
+     * 缓存命中率的统一口径：命中 token / 完整输入 token。
+     *
+     * 输入为 0 时返回 null（无从计算）。服务商是否上报过缓存字段由调用方判断：
+     * 全部记录都没有缓存字段时应显示「—」，而不是这里的 0%。
+     */
+    fun cacheHitRate(inputTokens: Long, cachedInputTokens: Long): Double? {
+        if (inputTokens <= 0) return null
+        return (cachedInputTokens.coerceIn(0, inputTokens).toDouble() / inputTokens.toDouble())
+            .coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * 目录缺少缓存价时的兜底换算比例。
+     *
+     * 主流服务商的缓存命中价约为输入价的固定倍数：Anthropic/DeepSeek 0.1，
+     * Gemini 0.25，OpenAI GPT-4o 0.5、GPT-4.1/5 0.25。仅用于目录与手填价都缺失时
+     * 的成本估算，比按原价全额计费更接近真实账单。
+     */
+    private fun defaultCacheReadPrice(modelName: String, input: Double?): Double? {
+        if (input == null) return null
+        val id = modelName.lowercase()
+        val ratio = when {
+            id.contains("claude") -> 0.1
+            id.contains("deepseek") -> 0.1
+            id.contains("gemini") -> 0.25
+            id.contains("gpt-4o") -> 0.5
+            id.contains("gpt-4.1") || id.contains("gpt-5") -> 0.25
+            else -> 0.25
+        }
+        return input * ratio
+    }
+
+    /** 缓存写入价兜底：Anthropic 为输入价 1.25 倍，其余服务商按输入价计。 */
+    private fun defaultCacheWritePrice(modelName: String, input: Double?): Double? {
+        if (input == null) return null
+        return if (modelName.lowercase().contains("claude")) input * 1.25 else input
+    }
+
     internal fun parseOpenRouterResponse(
         json: String,
         updatedAt: String
@@ -201,6 +315,9 @@ object ModelPricingCatalog {
         val input = pricing?.pricePerMillion("prompt")
         val output = pricing?.pricePerMillion("completion")
         if (input == null && output == null) return null
+        // OpenRouter 价格字段：input_cache_read / input_cache_write（每 token 美元）。
+        val cacheRead = pricing?.pricePerMillion("input_cache_read")
+        val cacheWrite = pricing?.pricePerMillion("input_cache_write")
         val supported = obj.get("supported_parameters")
             ?.takeIf(JsonElement::isJsonArray)
             ?.asJsonArray
@@ -220,6 +337,8 @@ object ModelPricingCatalog {
             provider = id.substringBefore('/', missingDelimiterValue = ""),
             inputPricePerMillion = input,
             outputPricePerMillion = output,
+            cacheReadPricePerMillion = cacheRead,
+            cacheWritePricePerMillion = cacheWrite,
             contextLength = obj.int("context_length"),
             supportsTools = "tools" in supported || "tool_choice" in supported,
             supportsReasoning = "reasoning" in supported || "include_reasoning" in supported,
@@ -236,7 +355,9 @@ object ModelPricingCatalog {
                     saved.entries.all { entry ->
                         entry.id.isNotBlank() &&
                             entry.inputPricePerMillion.isValidPrice() &&
-                            entry.outputPricePerMillion.isValidPrice()
+                            entry.outputPricePerMillion.isValidPrice() &&
+                            entry.cacheReadPricePerMillion.isValidPrice() &&
+                            entry.cacheWritePricePerMillion.isValidPrice()
                     }
             }
     }.getOrNull()

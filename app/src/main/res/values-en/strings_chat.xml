@@ -551,7 +551,7 @@
     <string name="chat_context_metric_desc">Current chat and input stats</string>
     <string name="chat_compress">Compress</string>
     <string name="chat_messages_metric">Messages</string>
-    <string name="chat_draft_chars">Draft chars</string>
+    <string name="chat_cache_hit_rate">Cache hit rate</string>
     <string name="chat_used_tokens">Chat used tokens</string>
     <string name="chat_status">Status</string>
     <string name="chat_status_generating">Generating</string>
@@ -738,6 +738,9 @@
     <string name="chat_context_analysis_tool_definitions">Tool definitions</string>
     <string name="chat_context_analysis_tool_content">Tool calls</string>
     <string name="chat_context_analysis_other_messages">Other messages</string>
+    <string name="chat_context_analysis_cache_title">Cache hit rate</string>
+    <string name="chat_context_analysis_cache_detail">Cached %1$d / input %2$d tokens</string>
+    <string name="chat_context_analysis_cache_hint">Cached tokens are billed at the cache price, the rest at the input price; shows — when the provider reports no cache info or nothing was cached yet.</string>
 
     <string name="chat_agent_status_preparing">Preparing…</string>
     <string name="chat_agent_status_thinking">Thinking…</string>

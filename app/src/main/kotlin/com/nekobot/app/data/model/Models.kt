@@ -776,6 +776,8 @@ data class AiModel(
     @SerializedName("top_p") val topP: Double? = null,
     @SerializedName("input_price") val inputPrice: Double? = null,
     @SerializedName("output_price") val outputPrice: Double? = null,
+    @SerializedName("cache_read_price") val cacheReadPrice: Double? = null,
+    @SerializedName("cache_write_price") val cacheWritePrice: Double? = null,
     @SerializedName("supports_tools") val supportsTools: Boolean? = null,
     @SerializedName("supports_reasoning") val supportsReasoning: Boolean? = null,
     @SerializedName("supports_stream") val supportsStream: Boolean? = null,
@@ -826,6 +828,8 @@ data class AiModelRequest(
     @SerializedName("top_p") val topP: Double? = null,
     @SerializedName("input_price") val inputPrice: Double? = null,
     @SerializedName("output_price") val outputPrice: Double? = null,
+    @SerializedName("cache_read_price") val cacheReadPrice: Double? = null,
+    @SerializedName("cache_write_price") val cacheWritePrice: Double? = null,
     @SerializedName("supports_tools") val supportsTools: Boolean? = null,
     @SerializedName("supports_reasoning") val supportsReasoning: Boolean? = null,
     @SerializedName("supports_stream") val supportsStream: Boolean? = null,
@@ -906,10 +910,31 @@ data class TokenStats(
     val sessions: JsonElement? = null,
     val models: JsonElement? = null,
     val users: JsonElement? = null,
-    val purposes: JsonElement? = null
+    val purposes: JsonElement? = null,
+    /** 命中缓存的输入 token 合计（当前所选范围）。 */
+    @SerializedName("cached_input_tokens") val cachedInputTokens: Long = 0L,
+    /** 写入缓存的输入 token 合计（Anthropic 等显式缓存写入）。 */
+    @SerializedName("cache_write_tokens") val cacheWriteTokens: Long = 0L,
+    /** 缓存命中率（0..1）；服务商未上报缓存信息时为 null。 */
+    @SerializedName("cache_hit_rate") val cacheHitRate: Double? = null
 ) {
     val totalDisplay: Long get() = total ?: totalTokens ?: 0L
     val todayTotal: Long get() = today ?: ((todayInput ?: 0L) + (todayOutput ?: 0L))
+}
+
+/**
+ * 单个会话的缓存命中统计（聊天页 + 面板与上下文占比分析页共用）。
+ *
+ * [hitRate] 为 null 表示服务商未上报缓存信息或没有输入量，界面应显示「—」。
+ */
+data class SessionCacheStats(
+    val inputTokens: Long = 0L,
+    val cachedInputTokens: Long = 0L,
+    val cacheWriteTokens: Long = 0L,
+    val requestCount: Int = 0,
+    val hitRate: Double? = null
+) {
+    val hasData: Boolean get() = requestCount > 0 && inputTokens > 0
 }
 
 data class TokenRankings(

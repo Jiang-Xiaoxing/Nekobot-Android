@@ -58,6 +58,12 @@
     <string name="tokens_stat_avg_per_msg">平均/条</string>
     <string name="tokens_stat_estimated_cost">估算费用</string>
     <string name="tokens_stat_active_sessions">活跃会话</string>
+    <string name="tokens_stat_cache_hit_rate">平均缓存命中率</string>
+    <string name="tokens_cache_hit_badge">缓存 %1$s</string>
+    <string name="tokens_input_breakdown_title">输入 token 构成</string>
+    <string name="tokens_cache_hit_row">缓存命中</string>
+    <string name="tokens_cache_write_row">缓存写入</string>
+    <string name="tokens_cache_uncached_row">未缓存</string>
     <string name="tokens_stat_avg_price">平均价格</string>
     <string name="tokens_hero_cost">价格：%1$s</string>
     <string name="tokens_price_unit">$%1$s</string>

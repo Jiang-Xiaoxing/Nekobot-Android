@@ -119,6 +119,9 @@ object GeminiNativeProtocol : LocalProtocol {
         return usage?.let { Triple(it["prompt"] ?: 0, it["completion"] ?: 0, it["total"] ?: 0) }
     }
 
+    override fun parseStreamUsageDetail(chunkJson: String): LocalModelUsage? =
+        parseChunk(chunkJson).usage?.let(::usageMapToDetail)
+
     override fun parseStreamError(chunkJson: String): String? = runCatching {
         val error = JsonParser.parseString(chunkJson).asJsonObject.getAsJsonObject("error") ?: return@runCatching null
         error.get("message")?.takeIf { !it.isJsonNull }?.asString
@@ -266,9 +269,7 @@ object GeminiNativeProtocol : LocalProtocol {
 
     private fun parseResponse(data: Map<*, *>): ParsedGeminiResponse {
         val usage = (data["usageMetadata"] as? Map<*, *>)?.let { metadata ->
-            val prompt = metadata.number("promptTokenCount")
-            val completion = metadata.number("candidatesTokenCount")
-            mapOf("prompt" to prompt, "completion" to completion, "total" to metadata.number("totalTokenCount", prompt + completion))
+            geminiStyleUsageFromMap(metadata).toUsageMap()
         }
         val candidate = (data["candidates"] as? List<*>)?.firstOrNull() as? Map<*, *>
             ?: run {

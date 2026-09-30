@@ -551,7 +551,7 @@
     <string name="chat_context_metric_desc">현재 대화와 입력 통계</string>
     <string name="chat_compress">압축</string>
     <string name="chat_messages_metric">메시지</string>
-    <string name="chat_draft_chars">초안 글자 수</string>
+    <string name="chat_cache_hit_rate">캐시 적중률</string>
     <string name="chat_used_tokens">대화 사용 토큰</string>
     <string name="chat_status">상태</string>
     <string name="chat_status_generating">생성 중</string>
@@ -739,6 +739,9 @@
     <string name="chat_context_analysis_tool_definitions">도구 정의</string>
     <string name="chat_context_analysis_tool_content">도구 호출</string>
     <string name="chat_context_analysis_other_messages">기타 메시지</string>
+    <string name="chat_context_analysis_cache_title">캐시 적중률</string>
+    <string name="chat_context_analysis_cache_detail">적중 %1$d / 입력 %2$d tokens</string>
+    <string name="chat_context_analysis_cache_hint">적중분은 캐시 가격, 나머지는 입력 가격으로 청구됩니다. 제공자가 정보를 주지 않거나 아직 적중이 없으면 — 로 표시됩니다.</string>
 
     <string name="chat_agent_status_preparing">준비 중…</string>
     <string name="chat_agent_status_thinking">생각 중…</string>

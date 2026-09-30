@@ -54,6 +54,7 @@ import com.nekobot.app.data.local.ai.ContextUsagePartTokens
 import com.nekobot.app.data.local.isAgentContextSummary
 import com.nekobot.app.data.model.Message
 import com.nekobot.app.data.model.Session
+import com.nekobot.app.data.model.SessionCacheStats
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.components.NekoDialog
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,8 @@ private data class ContextAnalysisData(
     val breakdown: ContextUsageBreakdown,
     val usedTokens: Long,
     val maxTokens: Int?,
+    /** 本会话缓存命中统计：命中率与命中/输入 token 明细。 */
+    val cacheStats: SessionCacheStats = SessionCacheStats(),
     /** 参与占比统计的压缩摘要原文（Agent 会话的压缩窗口内），供点击查看。 */
     val summaries: List<Message> = emptyList()
 )
@@ -126,6 +129,7 @@ fun ContextAnalysisScreen(
                         usedTokens = live?.totalTokens
                             ?: ServiceContainer.unified.sessionContextTokenUsage(sessionId),
                         maxTokens = ServiceContainer.unified.getActiveContextLength(),
+                        cacheStats = ServiceContainer.unified.sessionCacheStats(sessionId),
                         summaries = summaries
                     )
                 )
@@ -206,6 +210,7 @@ fun ContextAnalysisScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     item { ContextCapacityCard(data.usedTokens, data.maxTokens) }
+                    item { ContextCacheHitRateCard(data.cacheStats) }
                     item {
                         Column {
                             Text(
@@ -300,6 +305,64 @@ private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?) {
                         stringResource(R.string.chat_context_analysis_tokens, usedTokens)
                     } else {
                         stringResource(R.string.chat_context_analysis_capacity, usedTokens, maxTokens)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 缓存命中率卡片：命中缓存的输入 token 占完整输入 token 的比例。
+ * 服务商未上报缓存字段时显示「—」，避免误导性的 0%。
+ */
+@Composable
+private fun ContextCacheHitRateCard(stats: SessionCacheStats) {
+    val hitRate = stats.hitRate
+    val progress = (hitRate ?: 0.0).toFloat().coerceIn(0f, 1f)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.size(62.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.tertiary,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                    strokeWidth = 6.dp
+                )
+                Text(
+                    formatCacheHitRate(hitRate),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.chat_context_analysis_cache_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (hitRate == null) {
+                        stringResource(R.string.chat_context_analysis_cache_hint)
+                    } else {
+                        stringResource(
+                            R.string.chat_context_analysis_cache_detail,
+                            stats.cachedInputTokens,
+                            stats.inputTokens
+                        )
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

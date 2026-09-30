@@ -102,6 +102,10 @@ data class AiModelEditorState(
     val stopSequences: String = "",
     val inputPrice: String = "",
     val outputPrice: String = "",
+    /** 缓存命中价（每 1M tokens）；留空时按价格目录或输入价比例折算。 */
+    val cacheReadPrice: String = "",
+    /** 缓存写入价（每 1M tokens）；留空时按价格目录或输入价折算。 */
+    val cacheWritePrice: String = "",
     val supportsTools: Boolean = true,
     val supportsReasoning: Boolean = true,
     val supportsStream: Boolean = true,
@@ -460,7 +464,9 @@ fun AiModelEditorDialog(
                     state = state.copy(
                         model = it,
                         inputPrice = if (allowAutomaticPricing) "" else state.inputPrice,
-                        outputPrice = if (allowAutomaticPricing) "" else state.outputPrice
+                        outputPrice = if (allowAutomaticPricing) "" else state.outputPrice,
+                        cacheReadPrice = if (allowAutomaticPricing) "" else state.cacheReadPrice,
+                        cacheWritePrice = if (allowAutomaticPricing) "" else state.cacheWritePrice
                     )
                 }
                 IconButton(
@@ -491,7 +497,13 @@ fun AiModelEditorDialog(
                     options = availableModels,
                     onSelect = {
                         allowAutomaticPricing = true
-                        state = state.copy(model = it, inputPrice = "", outputPrice = "")
+                        state = state.copy(
+                            model = it,
+                            inputPrice = "",
+                            outputPrice = "",
+                            cacheReadPrice = "",
+                            cacheWritePrice = ""
+                        )
                     }
                 )
             }
@@ -600,6 +612,19 @@ fun AiModelEditorDialog(
                 allowAutomaticPricing = false
                 state = state.copy(outputPrice = it)
             }
+            EditorTextField(stringResource(R.string.aimodel_editor_pricing_cache_read), state.cacheReadPrice) {
+                allowAutomaticPricing = false
+                state = state.copy(cacheReadPrice = it)
+            }
+            EditorTextField(stringResource(R.string.aimodel_editor_pricing_cache_write), state.cacheWritePrice) {
+                allowAutomaticPricing = false
+                state = state.copy(cacheWritePrice = it)
+            }
+            Text(
+                text = stringResource(R.string.aimodel_editor_pricing_cache_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             EditorTextField(stringResource(R.string.aimodel_editor_pricing_priority), state.priority) { state = state.copy(priority = it) }
 
             FormSection(stringResource(R.string.aimodel_editor_section_capability))
@@ -969,6 +994,17 @@ private fun AiModelEditorState.applyPricing(
     } else {
         outputPrice
     },
+    // 缓存价同样可一键套用目录值（用户手填优先，除非主动覆盖）
+    cacheReadPrice = if (overwrite || cacheReadPrice.isBlank()) {
+        entry.cacheReadPricePerMillion?.toCatalogPrice().orEmpty()
+    } else {
+        cacheReadPrice
+    },
+    cacheWritePrice = if (overwrite || cacheWritePrice.isBlank()) {
+        entry.cacheWritePricePerMillion?.toCatalogPrice().orEmpty()
+    } else {
+        cacheWritePrice
+    },
     maxContextLength = if ((overwrite || maxContextLength.isBlank()) && entry.contextLength != null) {
         entry.contextLength.toString()
     } else {
@@ -991,6 +1027,9 @@ private fun buildPricingMatchText(
     append(matchedLabel.format(entry.name))
     entry.inputPricePerMillion?.let { append(" · ").append(inputLabel.format(it.toCatalogPrice())) }
     entry.outputPricePerMillion?.let { append(" · ").append(outputLabel.format(it.toCatalogPrice())) }
+    entry.cacheReadPricePerMillion?.let {
+        append(" · ").append(ServiceContainer.getString(R.string.aimodel_editor_pricing_cache_read_short).format(it.toCatalogPrice()))
+    }
     append(" ").append(perMillionLabel)
     entry.contextLength?.let { append(" · ").append(contextLabel.format(it)) }
 }
@@ -1155,6 +1194,8 @@ fun AiModel?.toEditorState(protocols: List<ProtocolOption>): AiModelEditorState 
         topP = model.topP?.toString().orEmpty(),
         inputPrice = model.inputPrice?.toString().orEmpty(),
         outputPrice = model.outputPrice?.toString().orEmpty(),
+        cacheReadPrice = model.cacheReadPrice?.toString().orEmpty(),
+        cacheWritePrice = model.cacheWritePrice?.toString().orEmpty(),
         supportsTools = model.supportsTools ?: true,
         supportsReasoning = model.supportsReasoning ?: true,
         supportsStream = model.supportsStream ?: true,
@@ -1208,6 +1249,8 @@ fun LocalAiModelEntity?.toEditorState(protocols: List<ProtocolOption>): AiModelE
         stopSequences = model.stopSequences.orEmpty(),
         inputPrice = model.inputPrice?.toString().orEmpty(),
         outputPrice = model.outputPrice?.toString().orEmpty(),
+        cacheReadPrice = model.cacheReadPrice?.toString().orEmpty(),
+        cacheWritePrice = model.cacheWritePrice?.toString().orEmpty(),
         supportsTools = model.supportsTools,
         supportsReasoning = model.supportsReasoning,
         supportsStream = model.supportsStream,
@@ -1254,6 +1297,8 @@ fun AiModelEditorState.toRequest(): AiModelRequest = AiModelRequest(
     topP = topP.toDoubleOrNull(),
     inputPrice = inputPrice.toDoubleOrNull(),
     outputPrice = outputPrice.toDoubleOrNull(),
+    cacheReadPrice = cacheReadPrice.toDoubleOrNull(),
+    cacheWritePrice = cacheWritePrice.toDoubleOrNull(),
     supportsTools = supportsTools,
     supportsReasoning = supportsReasoning,
     supportsStream = supportsStream,
@@ -1336,6 +1381,8 @@ fun AiModelEditorState.toLocalEntity(existing: LocalAiModelEntity?): LocalAiMode
         failoverTimeout = existing?.failoverTimeout ?: 0,
         inputPrice = inputPrice.toDoubleOrNull(),
         outputPrice = outputPrice.toDoubleOrNull(),
+        cacheReadPrice = cacheReadPrice.toDoubleOrNull(),
+        cacheWritePrice = cacheWritePrice.toDoubleOrNull(),
         oauthAccountId = existing?.oauthAccountId
     )
 }

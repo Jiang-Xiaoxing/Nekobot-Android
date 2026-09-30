@@ -435,7 +435,9 @@ object NbotConfigImporter {
                     tokenLimitWeekly = obj.longOrNull("token_limit_weekly") ?: 0L,
                     failoverTimeout = obj.intOrNull("failover_timeout") ?: 0,
                     inputPrice = obj.doubleOrNull("input_price"),
-                    outputPrice = obj.doubleOrNull("output_price")
+                    outputPrice = obj.doubleOrNull("output_price"),
+                    cacheReadPrice = obj.doubleOrNull("cache_read_price"),
+                    cacheWritePrice = obj.doubleOrNull("cache_write_price")
                 )
             )
             count++

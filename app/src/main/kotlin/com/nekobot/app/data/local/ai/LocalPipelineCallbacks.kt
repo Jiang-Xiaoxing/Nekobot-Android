@@ -64,7 +64,7 @@ internal class LocalPipelineCallbacks(
     private val assistantSource: String? = null,
     /** 本地知识库检索入口。 */
     private val knowledgeSearcher: ((query: String) -> String)? = null,
-    private val onTokenRecorded: ((sessionId: String, messageId: String, model: String, actualModel: String, inputTokens: Int, outputTokens: Int, timestamp: String, purpose: String, estimated: Boolean, durationMs: Double?, ttftMs: Double?, provider: String?, inputPricePerMillion: Double?, outputPricePerMillion: Double?) -> Unit)? = null,
+    private val onTokenRecorded: ((sessionId: String, messageId: String, model: String, actualModel: String, inputTokens: Int, outputTokens: Int, timestamp: String, purpose: String, estimated: Boolean, durationMs: Double?, ttftMs: Double?, provider: String?, inputPricePerMillion: Double?, outputPricePerMillion: Double?, cachedInputTokens: Int, cacheWriteTokens: Int, cacheReadPricePerMillion: Double?, cacheWritePricePerMillion: Double?) -> Unit)? = null,
     /** 路由决策完成回调：把实际费用、延迟和失败结果回写到解释性日志。 */
     private val onRoutingCompleted: (suspend (model: LocalAiModelEntity, usage: Map<String, Int>, durationMs: Double?, ttftMs: Double?, success: Boolean, failureReason: String?) -> Unit)? = null,
     /** 进度卡片更新回调；本地模式用于持久化到父用户消息 */
@@ -736,12 +736,16 @@ internal class LocalPipelineCallbacks(
         }
         val inputTokens = resolvedUsage?.inputTokens
         val outputTokens = resolvedUsage?.outputTokens
+        val cachedInputTokens = resolvedUsage?.cachedInputTokens ?: 0
+        val cacheWriteTokens = resolvedUsage?.cacheWriteTokens ?: 0
         if (resolvedUsage != null) {
             ctx.usage = mapOf(
                 "prompt" to resolvedUsage.inputTokens,
                 "completion" to resolvedUsage.outputTokens,
                 "total" to (resolvedUsage.inputTokens + resolvedUsage.outputTokens),
-                "estimated" to resolvedUsage.estimated
+                "estimated" to resolvedUsage.estimated,
+                LocalModelUsage.KEY_CACHED_PROMPT to resolvedUsage.cachedInputTokens,
+                LocalModelUsage.KEY_CACHE_WRITE to resolvedUsage.cacheWriteTokens
             )
         }
         val modelName = (ctx.metadata["model_name"] as? String) ?: activeModel.name
@@ -880,7 +884,11 @@ internal class LocalPipelineCallbacks(
                     ttftMs = ttftMs,
                     provider = priceModel.provider,
                     inputPricePerMillion = priceModel.inputPrice,
-                    outputPricePerMillion = priceModel.outputPrice
+                    outputPricePerMillion = priceModel.outputPrice,
+                    cacheReadPricePerMillion = priceModel.cacheReadPrice,
+                    cacheWritePricePerMillion = priceModel.cacheWritePrice,
+                    cachedPromptTokens = cachedInputTokens,
+                    cacheWriteTokens = cacheWriteTokens
                 )
             } catch (e: Exception) {
                 com.nekobot.app.data.local.LocalLogger.w(TAG, "TokenStats 记录失败: ${e.message}")
@@ -901,7 +909,11 @@ internal class LocalPipelineCallbacks(
                     ttftMs,
                     priceModel.provider,
                     priceModel.inputPrice,
-                    priceModel.outputPrice
+                    priceModel.outputPrice,
+                    cachedInputTokens,
+                    cacheWriteTokens,
+                    priceModel.cacheReadPrice,
+                    priceModel.cacheWritePrice
                 )
             } catch (e: Exception) {
                 com.nekobot.app.data.local.LocalLogger.w(TAG, "持久化 Token 记录失败: ${e.message}")
@@ -915,6 +927,8 @@ internal class LocalPipelineCallbacks(
                     buildMap {
                         inputTokens?.let { put("prompt_tokens", it) }
                         outputTokens?.let { put("completion_tokens", it) }
+                        if (cachedInputTokens > 0) put(LocalModelUsage.KEY_CACHED_PROMPT, cachedInputTokens)
+                        if (cacheWriteTokens > 0) put(LocalModelUsage.KEY_CACHE_WRITE, cacheWriteTokens)
                     },
                     durationMs,
                     ttftMs,
@@ -1115,7 +1129,9 @@ internal class LocalPipelineCallbacks(
                                 usage = mapOf(
                                     "prompt" to event.inputTokens,
                                     "completion" to event.outputTokens,
-                                    "total" to event.inputTokens + event.outputTokens
+                                    "total" to event.inputTokens + event.outputTokens,
+                                    LocalModelUsage.KEY_CACHED_PROMPT to event.cachedInputTokens,
+                                    LocalModelUsage.KEY_CACHE_WRITE to event.cacheWriteTokens
                                 )
                             }
                             is RealtimeEvent.Error -> streamError = event.message
@@ -2329,7 +2345,11 @@ internal class LocalPipelineCallbacks(
                 durationMs = durationMs,
                 provider = priceModel.provider,
                 inputPricePerMillion = priceModel.inputPrice,
-                outputPricePerMillion = priceModel.outputPrice
+                outputPricePerMillion = priceModel.outputPrice,
+                cacheReadPricePerMillion = priceModel.cacheReadPrice,
+                cacheWritePricePerMillion = priceModel.cacheWritePrice,
+                cachedPromptTokens = usage.cachedInputTokens,
+                cacheWriteTokens = usage.cacheWriteTokens
             )
         } catch (e: Exception) {
             com.nekobot.app.data.local.LocalLogger.w(TAG, "子代理 TokenStats 记录失败: ${e.message}")
@@ -2349,7 +2369,11 @@ internal class LocalPipelineCallbacks(
                 null,
                 priceModel.provider,
                 priceModel.inputPrice,
-                priceModel.outputPrice
+                priceModel.outputPrice,
+                usage.cachedInputTokens,
+                usage.cacheWriteTokens,
+                priceModel.cacheReadPrice,
+                priceModel.cacheWritePrice
             )
         } catch (e: Exception) {
             com.nekobot.app.data.local.LocalLogger.w(TAG, "子代理 Token 明细持久化失败: ${e.message}")

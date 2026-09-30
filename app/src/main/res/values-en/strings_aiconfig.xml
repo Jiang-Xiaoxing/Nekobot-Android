@@ -278,6 +278,10 @@
     <string name="aimodel_editor_pricing_output_short">Output $%1$s</string>
     <string name="aimodel_editor_pricing_per_million">/ million tokens</string>
     <string name="aimodel_editor_pricing_context">Context %1$s</string>
+    <string name="aimodel_editor_pricing_cache_read">Cached input price / million tokens (USD)</string>
+    <string name="aimodel_editor_pricing_cache_write">Cache write price / million tokens (USD)</string>
+    <string name="aimodel_editor_pricing_cache_read_short">Cache $%1$s</string>
+    <string name="aimodel_editor_pricing_cache_note">Leave cache prices empty to derive them from the catalog or input price; cached tokens are billed at the cache price, the rest at the input price.</string>
 
     <string name="aimodel_editor_section_capability">Capabilities</string>
     <string name="aimodel_editor_capability_enable">Enable model</string>

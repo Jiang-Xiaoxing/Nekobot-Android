@@ -146,6 +146,15 @@ object OpenAIResponsesProtocol : LocalProtocol {
         Triple(input, output, usage.intOrNull("total_tokens") ?: input + output)
     }.getOrNull()
 
+    override fun parseStreamUsageDetail(chunkJson: String): LocalModelUsage? = runCatching {
+        val event = JsonParser.parseString(chunkJson).asJsonObject
+        val response = event.getAsJsonObject("response") ?: event
+        val usage = response.getAsJsonObject("usage")
+            ?: event.getAsJsonObject("usage")
+            ?: return null
+        openAiStyleUsageFromJson(usage)
+    }.getOrNull()
+
     override fun parseStreamFinalResponse(chunkJson: String): LocalModelResponse? = runCatching {
         val event = JsonParser.parseString(chunkJson).asJsonObject
         val type = event.string("type")
@@ -254,8 +263,7 @@ object OpenAIResponsesProtocol : LocalProtocol {
             )
         }
         val usageMap = response["usage"] as? Map<*, *>
-        val inputTokens = ((usageMap?.get("input_tokens") ?: usageMap?.get("prompt_tokens")) as? Number)?.toInt() ?: 0
-        val outputTokens = ((usageMap?.get("output_tokens") ?: usageMap?.get("completion_tokens")) as? Number)?.toInt() ?: 0
+        val usageDetail = usageMap?.let(::openAiStyleUsageFromMap)
         val responseStatus = (response["status"] as? String).orEmpty()
         val explicitFinishReason = (response["finish_reason"] as? String).orEmpty()
         val incompleteReason = ((response["incomplete_details"] as? Map<*, *>)?.get("reason") as? String).orEmpty()
@@ -269,12 +277,7 @@ object OpenAIResponsesProtocol : LocalProtocol {
         }
         return LocalModelResponse(
             content = content,
-            usage = if (usageMap == null) emptyMap() else mapOf(
-                "prompt" to inputTokens,
-                "completion" to outputTokens,
-                "total" to ((usageMap["total_tokens"] as? Number)?.toInt()
-                    ?: inputTokens + outputTokens)
-            ),
+            usage = usageDetail?.toUsageMap() ?: emptyMap(),
             toolCalls = toolCalls,
             finishReason = finishReason,
             thinkingContent = thinking

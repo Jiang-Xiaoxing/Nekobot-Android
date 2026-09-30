@@ -47,7 +47,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LocalMessageVariantEntity::class,
         LocalStickerEntity::class
     ],
-    version = 47,
+    version = 48,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
@@ -1025,11 +1025,19 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
-        /** v46 → v47：为本地会话增加可配置的延迟回复。 */
+        /** v46 → v47：为本地会话增加可配置的延迟回复（PR#24）。 */
         val MIGRATION_46_47 = object : Migration(46, 47) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE local_sessions ADD COLUMN delay_reply_enabled INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE local_sessions ADD COLUMN delay_reply_delay_seconds INTEGER NOT NULL DEFAULT 2")
+            }
+        }
+
+        /** v47 → v48：模型价格区分缓存命中价与缓存写入价（非缓存部分仍用输入价）。 */
+        val MIGRATION_47_48 = object : Migration(47, 48) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_ai_models ADD COLUMN cache_read_price REAL")
+                db.execSQL("ALTER TABLE local_ai_models ADD COLUMN cache_write_price REAL")
             }
         }
 
@@ -1084,7 +1092,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37,
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
-            MIGRATION_45_46, MIGRATION_46_47
+            MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48
         )
 
         fun get(context: Context): NekobotDatabase =

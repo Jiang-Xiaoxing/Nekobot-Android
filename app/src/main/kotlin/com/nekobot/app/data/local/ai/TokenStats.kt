@@ -71,6 +71,7 @@ class TokenStatsManager {
         var inputTokens: Int = 0,
         var outputTokens: Int = 0,
         var totalTokens: Int = 0,
+        var cachedInputTokens: Int = 0,
         var messageCount: Int = 0,
         var cost: Double = 0.0
     )
@@ -79,6 +80,7 @@ class TokenStatsManager {
         var inputTokens: Int = 0,
         var outputTokens: Int = 0,
         var totalTokens: Int = 0,
+        var cachedInputTokens: Int = 0,
         var type: String = "",
         var messageCount: Int = 0
     )
@@ -87,6 +89,7 @@ class TokenStatsManager {
         var inputTokens: Int = 0,
         var outputTokens: Int = 0,
         var totalTokens: Int = 0,
+        var cachedInputTokens: Int = 0,
         var cost: Double = 0.0
     )
 
@@ -106,6 +109,8 @@ class TokenStatsManager {
         val cost: Double,
         val source: String,
         val purpose: String,
+        val cachedInputTokens: Int = 0,
+        val cacheWriteTokens: Int = 0,
         val durationMs: Double? = null,
         val ttftMs: Double? = null
     )
@@ -116,6 +121,8 @@ class TokenStatsManager {
      * @param model 用户配置的模型名称（LocalAiModelEntity.name），用于 Token 记录展示
      * @param actualModel 实际请求的模型标识（LocalAiModelEntity.model，如 gpt-4o），
      *                    用于模型排行榜按模型聚合（相同模型名、不同提供商可合并）。为空时回退到 [model]。
+     * @param cachedPromptTokens 命中缓存的输入 token（[promptTokens] 的子集），按缓存价计费
+     * @param cacheWriteTokens 写入缓存的输入 token（Anthropic），按缓存写入价计费
      */
     fun recordUsage(
         promptTokens: Int,
@@ -132,20 +139,26 @@ class TokenStatsManager {
         ttftMs: Double? = null,
         provider: String? = null,
         inputPricePerMillion: Double? = null,
-        outputPricePerMillion: Double? = null
+        outputPricePerMillion: Double? = null,
+        cacheReadPricePerMillion: Double? = null,
+        cacheWritePricePerMillion: Double? = null,
+        cachedPromptTokens: Int = 0,
+        cacheWriteTokens: Int = 0
     ) {
         if (promptTokens < 0 || completionTokens < 0) return
         // 排行榜聚合键：优先使用实际模型名，为空时回退到配置名
         val rankingKey = actualModel.ifBlank { model }
-        val resolvedPrices = ModelPricingCatalog.resolvePrices(
+        val prices = ModelPricingCatalog.resolveModelPrices(
             modelName = rankingKey,
             provider = provider,
             inputPrice = inputPricePerMillion,
-            outputPrice = outputPricePerMillion
+            outputPrice = outputPricePerMillion,
+            cacheReadPrice = cacheReadPricePerMillion,
+            cacheWritePrice = cacheWritePricePerMillion
         )
-        val inputPrice = resolvedPrices.first ?: 0.0
-        val outputPrice = resolvedPrices.second ?: 0.0
-        val cost = estimateCost(rankingKey, promptTokens, completionTokens, inputPrice, outputPrice)
+        val cachedInput = cachedPromptTokens.coerceIn(0, promptTokens)
+        val cacheWrite = cacheWriteTokens.coerceIn(0, promptTokens - cachedInput)
+        val cost = estimateCost(promptTokens, completionTokens, cachedInput, cacheWrite, prices)
         val now = LocalDateTime.now()
         val nowDate = now.toLocalDate().toString()
         val nowMonth = now.toLocalDate().format(DateTimeFormatter.ofPattern("yyyy-MM"))
@@ -173,6 +186,7 @@ class TokenStatsManager {
                 todayEntry.inputTokens += promptTokens
                 todayEntry.outputTokens += completionTokens
                 todayEntry.totalTokens += totalTokens
+                todayEntry.cachedInputTokens += cachedInput
                 todayEntry.messageCount += 1
                 todayEntry.cost += cost
             } else {
@@ -181,6 +195,7 @@ class TokenStatsManager {
                     inputTokens = promptTokens,
                     outputTokens = completionTokens,
                     totalTokens = totalTokens,
+                    cachedInputTokens = cachedInput,
                     messageCount = 1,
                     cost = cost
                 ))
@@ -193,6 +208,7 @@ class TokenStatsManager {
             sessStats.inputTokens += promptTokens
             sessStats.outputTokens += completionTokens
             sessStats.totalTokens += totalTokens
+            sessStats.cachedInputTokens += cachedInput
             sessStats.messageCount += 1
 
             // models 维度（按实际模型名聚合，便于相同模型不同提供商合并）
@@ -200,6 +216,7 @@ class TokenStatsManager {
             modelStats.inputTokens += promptTokens
             modelStats.outputTokens += completionTokens
             modelStats.totalTokens += totalTokens
+            modelStats.cachedInputTokens += cachedInput
             modelStats.cost += cost
 
             // users 维度
@@ -221,6 +238,8 @@ class TokenStatsManager {
                 cost = cost,
                 source = source,
                 purpose = purpose,
+                cachedInputTokens = cachedInput,
+                cacheWriteTokens = cacheWrite,
                 durationMs = durationMs,
                 ttftMs = ttftMs
             ))
@@ -229,10 +248,20 @@ class TokenStatsManager {
         }
     }
 
-    /** 费用估算 */
-    private fun estimateCost(model: String, promptTokens: Int, completionTokens: Int, inputPrice: Double, outputPrice: Double): Double {
-        return (promptTokens / 1_000_000.0) * inputPrice + (completionTokens / 1_000_000.0) * outputPrice
-    }
+    /** 费用估算：命中缓存的输入按缓存价、写入缓存的输入按缓存写入价，其余按输入价。 */
+    private fun estimateCost(
+        promptTokens: Int,
+        completionTokens: Int,
+        cachedInputTokens: Int,
+        cacheWriteTokens: Int,
+        prices: ModelPrices
+    ): Double = ModelPricingCatalog.estimateCostUsd(
+        inputTokens = promptTokens.toLong(),
+        outputTokens = completionTokens.toLong(),
+        cachedInputTokens = cachedInputTokens.toLong(),
+        cacheWriteTokens = cacheWriteTokens.toLong(),
+        prices = prices
+    )
 
     /**
      * 获取统计汇总。
@@ -247,6 +276,7 @@ class TokenStatsManager {
             val totalTokens = filteredRecords.sumOf { it.totalTokens }
             val totalInput = filteredRecords.sumOf { it.inputTokens }
             val totalOutput = filteredRecords.sumOf { it.outputTokens }
+            val totalCachedInput = filteredRecords.sumOf { it.cachedInputTokens }
             val messageCount = filteredRecords.size
             val totalCost = filteredRecords.sumOf { it.cost }
             val avgTokensPerMsg = if (messageCount > 0) totalTokens / messageCount else 0
@@ -260,22 +290,33 @@ class TokenStatsManager {
                 PURPOSE_LABELS[key] ?: key
             }
 
-            return mapOf(
-                "total_tokens" to totalTokens,
-                "today_input" to totalInput,
-                "today_output" to totalOutput,
-                "message_count" to messageCount,
-                "avg_tokens_per_msg" to avgTokensPerMsg,
-                "estimated_cost" to totalCost,
-                "active_sessions" to filteredRecords.map { it.sessionId }.distinct().size,
-                "history" to filteredHistory,
-                "recent_records" to filteredRecords.takeLast(100).reversed(),
-                "records" to filteredRecords,
-                "sessions" to sessions.filterKeys { sid -> filteredRecords.any { it.sessionId == sid } },
-                "models" to models.filterKeys { m -> filteredRecords.any { (it.actualModel.ifBlank { it.model }) == m } },
-                "users" to users.filterKeys { uid -> filteredRecords.any { it.userId == uid } },
-                "purposes" to purposesLabeled
+            val cacheHitRate = ModelPricingCatalog.cacheHitRate(
+                inputTokens = totalInput.toLong(),
+                cachedInputTokens = totalCachedInput.toLong()
             )
+
+            return buildMap<String, Any> {
+                put("total_tokens", totalTokens)
+                put("today_input", totalInput)
+                put("today_output", totalOutput)
+                put("cached_input_tokens", totalCachedInput)
+                // 服务商未上报缓存信息时不写入命中率，调用方按缺失处理（界面显示 —）
+                cacheHitRate?.let { put("cache_hit_rate", it) }
+                put("message_count", messageCount)
+                put("avg_tokens_per_msg", avgTokensPerMsg)
+                put("estimated_cost", totalCost)
+                put("active_sessions", filteredRecords.map { it.sessionId }.distinct().size)
+                put("history", filteredHistory)
+                put("recent_records", filteredRecords.takeLast(100).reversed())
+                put("records", filteredRecords)
+                put("sessions", sessions.filterKeys { sid -> filteredRecords.any { it.sessionId == sid } })
+                put(
+                    "models",
+                    models.filterKeys { m -> filteredRecords.any { (it.actualModel.ifBlank { it.model }) == m } }
+                )
+                put("users", users.filterKeys { uid -> filteredRecords.any { it.userId == uid } })
+                put("purposes", purposesLabeled)
+            }
         }
     }
 

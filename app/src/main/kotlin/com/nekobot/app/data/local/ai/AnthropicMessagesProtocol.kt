@@ -401,6 +401,18 @@ object AnthropicMessagesProtocol : LocalProtocol {
         }
     }
 
+    override fun parseStreamUsageDetail(chunkJson: String): LocalModelUsage? = try {
+        val obj = JsonParser.parseString(chunkJson).asJsonObject
+        val type = obj.get("type")?.asString
+        if (type != "message_delta" && type != "message_start") {
+            null
+        } else {
+            obj.getAsJsonObject("usage")?.let { anthropicStyleUsageFromJson(it) }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
     override fun parseNonStreamResponse(data: Map<String, Any>): LocalModelResponse {
         val contentBlocks = data["content"] as? List<*>
         val content = contentBlocks?.mapNotNull { block ->
@@ -418,13 +430,7 @@ object AnthropicMessagesProtocol : LocalProtocol {
         }?.joinToString("") ?: ""
 
         val usage = (data["usage"] as? Map<*, *>)?.let { u ->
-            val input = (u["input_tokens"] as? Number)?.toInt() ?: 0
-            val output = (u["output_tokens"] as? Number)?.toInt() ?: 0
-            mapOf(
-                "prompt" to input,
-                "completion" to output,
-                "total" to (input + output)
-            )
+            anthropicStyleUsageFromMap(u).toUsageMap()
         } ?: emptyMap()
         val toolCalls = contentBlocks?.mapNotNull { block ->
             val item = block as? Map<*, *> ?: return@mapNotNull null

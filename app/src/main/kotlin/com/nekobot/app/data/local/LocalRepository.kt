@@ -143,6 +143,7 @@ import com.nekobot.app.data.model.MessageFavoriteRequest
 import com.nekobot.app.data.model.RELATIONSHIP_STATE_SOURCE_INHERIT
 import com.nekobot.app.data.model.RELATIONSHIP_STATE_SOURCE_INITIAL
 import com.nekobot.app.data.model.Session
+import com.nekobot.app.data.model.SessionCacheStats
 import com.nekobot.app.data.model.Skill
 import com.nekobot.app.data.model.SkillInstallRequest
 import com.nekobot.app.data.model.SkillRequest
@@ -626,14 +627,24 @@ class LocalRepository(
                 } else {
                     val input = record.get("input_tokens")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
                     val output = record.get("output_tokens")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
-                    val prices = ModelPricingCatalog.resolvePrices(
+                    val cached = record.get("cached_input_tokens")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
+                    val cacheWrite = record.get("cache_write_tokens")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
+                    val prices = ModelPricingCatalog.resolveModelPrices(
                         modelName = model.model,
                         provider = model.provider,
                         inputPrice = model.inputPrice,
-                        outputPrice = model.outputPrice
+                        outputPrice = model.outputPrice,
+                        cacheReadPrice = model.cacheReadPrice,
+                        cacheWritePrice = model.cacheWritePrice
                     )
-                    input / 1_000_000.0 * (prices.first ?: 0.0) +
-                        output / 1_000_000.0 * (prices.second ?: 0.0)
+                    // 命中缓存的输入按缓存价计费，预算统计与实际账单口径一致
+                    ModelPricingCatalog.estimateCostUsd(
+                        inputTokens = input,
+                        outputTokens = output,
+                        cachedInputTokens = cached,
+                        cacheWriteTokens = cacheWrite,
+                        prices = prices
+                    )
                 }
             }
         val budget = routingPrefs.smartRoutingDailyBudgetUsd
@@ -790,14 +801,24 @@ class LocalRepository(
     ): Double {
         val input = usage["prompt_tokens"] ?: usage["input_tokens"] ?: usage["prompt"] ?: 0
         val output = usage["completion_tokens"] ?: usage["output_tokens"] ?: usage["completion"] ?: 0
-        val prices = ModelPricingCatalog.resolvePrices(
+        val cached = usage[com.nekobot.app.data.local.ai.LocalModelUsage.KEY_CACHED_PROMPT] ?: 0
+        val cacheWrite = usage[com.nekobot.app.data.local.ai.LocalModelUsage.KEY_CACHE_WRITE] ?: 0
+        val prices = ModelPricingCatalog.resolveModelPrices(
             modelName = model.model,
             provider = model.provider,
             inputPrice = model.inputPrice,
-            outputPrice = model.outputPrice
+            outputPrice = model.outputPrice,
+            cacheReadPrice = model.cacheReadPrice,
+            cacheWritePrice = model.cacheWritePrice
         )
-        return input / 1_000_000.0 * (prices.first ?: 0.0) +
-            output / 1_000_000.0 * (prices.second ?: 0.0)
+        // 命中缓存的输入按缓存价计费，不再按输入价全额计
+        return ModelPricingCatalog.estimateCostUsd(
+            inputTokens = input.toLong(),
+            outputTokens = output.toLong(),
+            cachedInputTokens = cached.toLong(),
+            cacheWriteTokens = cacheWrite.toLong(),
+            prices = prices
+        )
     }
 
     /** 提供给自动状态、记忆、剧情选项等后台辅助任务的同一故障转移执行器。 */
@@ -5415,7 +5436,11 @@ class LocalRepository(
         ttftMs: Double? = null,
         provider: String? = null,
         inputPricePerMillion: Double? = null,
-        outputPricePerMillion: Double? = null
+        outputPricePerMillion: Double? = null,
+        cachedInputTokens: Int = 0,
+        cacheWriteTokens: Int = 0,
+        cacheReadPricePerMillion: Double? = null,
+        cacheWritePricePerMillion: Double? = null
     ) {
         val prefs = tokenUsagePrefs ?: return
         synchronized(tokenUsageLock) {
@@ -5427,6 +5452,8 @@ class LocalRepository(
                     LocalLogger.w("LocalRepo", "Token 用量记录损坏，已备份并重建: ${it.message}")
                     JsonArray()
                 }
+                val cachedInput = cachedInputTokens.coerceIn(0, inputTokens.coerceAtLeast(0))
+                val cacheWrite = cacheWriteTokens.coerceIn(0, inputTokens.coerceAtLeast(0) - cachedInput)
                 val record = JsonObject().apply {
                     addProperty("id", UUID.randomUUID().toString())
                     // 子代理等非消息链路的记录没有关联消息，空值不写入，
@@ -5439,23 +5466,37 @@ class LocalRepository(
                     addProperty("input_tokens", inputTokens)
                     addProperty("output_tokens", outputTokens)
                     addProperty("total_tokens", inputTokens + outputTokens)
+                    // 缓存命中/写入 token：命中率与缓存价计费的原始依据
+                    if (cachedInput > 0) addProperty("cached_input_tokens", cachedInput)
+                    if (cacheWrite > 0) addProperty("cache_write_tokens", cacheWrite)
                     addProperty("timestamp", timestamp)
                     addProperty("source", source)
                     addProperty("purpose", purpose)
                     addProperty("estimated", estimated)
-                    val prices = ModelPricingCatalog.resolvePrices(
+                    val prices = ModelPricingCatalog.resolveModelPrices(
                         modelName = actualModel.ifBlank { model },
                         provider = provider,
                         inputPrice = inputPricePerMillion,
-                        outputPrice = outputPricePerMillion
+                        outputPrice = outputPricePerMillion,
+                        cacheReadPrice = cacheReadPricePerMillion,
+                        cacheWritePrice = cacheWritePricePerMillion
                     )
-                    if (prices.first != null || prices.second != null) {
+                    if (
+                        prices.inputPerMillion != null || prices.outputPerMillion != null ||
+                        prices.cacheReadPerMillion != null || prices.cacheWritePerMillion != null
+                    ) {
                         addProperty(
                             "estimated_cost_usd",
-                            (inputTokens / 1_000_000.0) * (prices.first ?: 0.0) +
-                                (outputTokens / 1_000_000.0) * (prices.second ?: 0.0)
+                            ModelPricingCatalog.estimateCostUsd(
+                                inputTokens = inputTokens.toLong(),
+                                outputTokens = outputTokens.toLong(),
+                                cachedInputTokens = cachedInput.toLong(),
+                                cacheWriteTokens = cacheWrite.toLong(),
+                                prices = prices
+                            )
                         )
                     }
+                    provider?.takeIf { it.isNotBlank() }?.let { addProperty("provider", it) }
                     // 完成耗时（毫秒），主对话路径来自 AIPipeline
                     durationMs?.let { addProperty("duration_ms", it) }
                     // 首字延迟（毫秒），主对话路径来自 AIPipeline
@@ -5862,6 +5903,8 @@ class LocalRepository(
         val fullReasoning = StringBuilder()
         var inputTokens: Int? = null
         var outputTokens: Int? = null
+        var cachedInputTokens: Int? = null
+        var cacheWriteTokens: Int? = null
         var modelName: String? = null
         var modelDisplayName: String? = null
         var streamFailureReason: String? = null
@@ -5888,6 +5931,8 @@ class LocalRepository(
                 is RealtimeEvent.Usage -> {
                     inputTokens = event.inputTokens
                     outputTokens = event.outputTokens
+                    cachedInputTokens = event.cachedInputTokens
+                    cacheWriteTokens = event.cacheWriteTokens
                     modelName = event.model
                     modelDisplayName = event.modelDisplayName
                     emit(event)
@@ -5904,6 +5949,8 @@ class LocalRepository(
                             usage = buildMap {
                                 inputTokens?.let { put("prompt", it) }
                                 outputTokens?.let { put("completion", it) }
+                                cachedInputTokens?.let { put("cached_prompt", it) }
+                                cacheWriteTokens?.let { put("cache_write", it) }
                             },
                             messages = messages,
                             outputText = content
@@ -5935,6 +5982,8 @@ class LocalRepository(
                             buildMap {
                                 inputTokens?.let { put("prompt_tokens", it) }
                                 outputTokens?.let { put("completion_tokens", it) }
+                                cachedInputTokens?.let { put("cached_prompt", it) }
+                                cacheWriteTokens?.let { put("cache_write", it) }
                             }
                         ),
                         actualDurationMs = ((System.nanoTime() - streamStartNano) / 1_000_000L),
@@ -6095,6 +6144,8 @@ class LocalRepository(
         val fullReasoning = StringBuilder()
         var inputTokens: Int? = null
         var outputTokens: Int? = null
+        var cachedInputTokens: Int? = null
+        var cacheWriteTokens: Int? = null
         var modelName: String? = null
         var modelDisplayName: String? = null
         val streamStartNano = System.nanoTime()
@@ -6122,6 +6173,8 @@ class LocalRepository(
                 is RealtimeEvent.Usage -> {
                     inputTokens = event.inputTokens
                     outputTokens = event.outputTokens
+                    cachedInputTokens = event.cachedInputTokens
+                    cacheWriteTokens = event.cacheWriteTokens
                     modelName = event.model
                     modelDisplayName = event.modelDisplayName
                     emit(event)
@@ -6136,6 +6189,8 @@ class LocalRepository(
                             usage = buildMap {
                                 inputTokens?.let { put("prompt", it) }
                                 outputTokens?.let { put("completion", it) }
+                                cachedInputTokens?.let { put("cached_prompt", it) }
+                                cacheWriteTokens?.let { put("cache_write", it) }
                             },
                             messages = promptMessages,
                             outputText = content
@@ -6166,7 +6221,14 @@ class LocalRepository(
                                 timestamp = now,
                                 estimated = usage.estimated,
                                 durationMs = durationMs,
-                                ttftMs = ttftMs ?: durationMs
+                                ttftMs = ttftMs ?: durationMs,
+                                provider = activeModel.provider,
+                                inputPricePerMillion = activeModel.inputPrice,
+                                outputPricePerMillion = activeModel.outputPrice,
+                                cachedInputTokens = usage.cachedInputTokens,
+                                cacheWriteTokens = usage.cacheWriteTokens,
+                                cacheReadPricePerMillion = activeModel.cacheReadPrice,
+                                cacheWritePricePerMillion = activeModel.cacheWritePrice
                             )
                         }
                     }
@@ -7110,7 +7172,7 @@ class LocalRepository(
                     )
                 }
             },
-            onTokenRecorded = { sid, messageId, model, actualModel, input, output, ts, purpose, estimated, durationMs, ttftMs, provider, inputPrice, outputPrice ->
+            onTokenRecorded = { sid, messageId, model, actualModel, input, output, ts, purpose, estimated, durationMs, ttftMs, provider, inputPrice, outputPrice, cachedInput, cacheWrite, cacheReadPrice, cacheWritePrice ->
                 appendTokenUsageRecord(
                     sid, model, actualModel, input, output, ts,
                     purpose = purpose,
@@ -7120,7 +7182,11 @@ class LocalRepository(
                     ttftMs = ttftMs,
                     provider = provider,
                     inputPricePerMillion = inputPrice,
-                    outputPricePerMillion = outputPrice
+                    outputPricePerMillion = outputPrice,
+                    cachedInputTokens = cachedInput,
+                    cacheWriteTokens = cacheWrite,
+                    cacheReadPricePerMillion = cacheReadPrice,
+                    cacheWritePricePerMillion = cacheWritePrice
                 )
             },
             onRoutingCompleted = { model, usage, durationMs, ttftMs, success, failureReason ->
@@ -7732,7 +7798,7 @@ class LocalRepository(
                         )
                     }
                 },
-                onTokenRecorded = { sid, messageId, model, actualModel, input, output, ts, purpose, estimated, durationMs, ttftMs, provider, inputPrice, outputPrice ->
+                onTokenRecorded = { sid, messageId, model, actualModel, input, output, ts, purpose, estimated, durationMs, ttftMs, provider, inputPrice, outputPrice, cachedInput, cacheWrite, cacheReadPrice, cacheWritePrice ->
                     appendTokenUsageRecord(
                         sid, model, actualModel, input, output, ts,
                         purpose = purpose,
@@ -7742,7 +7808,11 @@ class LocalRepository(
                         ttftMs = ttftMs,
                         provider = provider,
                         inputPricePerMillion = inputPrice,
-                        outputPricePerMillion = outputPrice
+                        outputPricePerMillion = outputPrice,
+                        cachedInputTokens = cachedInput,
+                        cacheWriteTokens = cacheWrite,
+                        cacheReadPricePerMillion = cacheReadPrice,
+                        cacheWritePricePerMillion = cacheWritePrice
                     )
                 },
                 workspaceRoot = appContext?.filesDir
@@ -9959,6 +10029,9 @@ ${AiOutputLanguage.directive()}
         var rangeInput = 0L
         var rangeOutput = 0L
         var rangeTotal = 0L
+        var rangeCached = 0L
+        var rangeCacheWrite = 0L
+        var hasCacheInfo = false
         var msgCount = 0L
         var rangeCost = 0.0
         val activeSessionIds = linkedSetOf<String>()
@@ -9971,6 +10044,12 @@ ${AiOutputLanguage.directive()}
             rangeOutput += output
             rangeTotal += total
             msgCount++
+            // 缓存命中量：旧记录没有该字段，按未命中处理（不计入命中率分母之外的部分）
+            val cached = rec.get("cached_input_tokens")?.asLong ?: 0L
+            val cacheWrite = rec.get("cache_write_tokens")?.asLong ?: 0L
+            if (cached > 0 || cacheWrite > 0) hasCacheInfo = true
+            rangeCached += cached.coerceIn(0L, input.coerceAtLeast(0L))
+            rangeCacheWrite += cacheWrite.coerceIn(0L, input.coerceAtLeast(0L))
             rec.get("session_id")?.asString?.trim()?.takeIf { it.isNotBlank() }?.let(activeSessionIds::add)
             rangeCost += rec.get("cost")?.asDouble
                 ?: rec.get("estimated_cost_usd")?.asDouble
@@ -10017,8 +10096,54 @@ ${AiOutputLanguage.directive()}
             avgPrice = if (msgCount > 0 && rangeCost > 0.0) {
                 String.format(Locale.US, "%.8f", rangeCost / msgCount)
             } else "—",
+            cachedInputTokens = rangeCached,
+            cacheWriteTokens = rangeCacheWrite,
+            cacheHitRate = if (hasCacheInfo) {
+                com.nekobot.app.data.local.ai.ModelPricingCatalog.cacheHitRate(rangeInput, rangeCached)
+            } else {
+                null
+            },
             recentRecords = details.take(50),
             records = details
+        )
+    }
+
+    /**
+     * 指定会话的缓存命中统计。
+     *
+     * 命中率 = 命中缓存的输入 token / 完整输入 token；服务商未上报缓存信息或没有输入时返回 null
+     * （界面显示「—」，而不是误导性的 0%）。
+     */
+    suspend fun sessionCacheStats(sessionId: String): SessionCacheStats = withContext(Dispatchers.IO) {
+        // fork 继承记录不代表发生了新的模型调用，命中率只统计真实调用
+        val records = readTokenUsageRecordsReconciled().filterNot { it.isInheritedTokenUsage() }
+        var input = 0L
+        var cached = 0L
+        var cacheWrite = 0L
+        var hasCacheInfo = false
+        var requestCount = 0
+        for (rec in records) {
+            val sid = rec.get("session_id")?.asString ?: continue
+            if (sid != sessionId) continue
+            val recordInput = rec.get("input_tokens")?.asLong ?: 0L
+            val recordCached = rec.get("cached_input_tokens")?.asLong ?: 0L
+            val recordWrite = rec.get("cache_write_tokens")?.asLong ?: 0L
+            input += recordInput
+            cached += recordCached.coerceIn(0L, recordInput.coerceAtLeast(0L))
+            cacheWrite += recordWrite.coerceIn(0L, recordInput.coerceAtLeast(0L))
+            if (recordCached > 0 || recordWrite > 0) hasCacheInfo = true
+            requestCount++
+        }
+        SessionCacheStats(
+            inputTokens = input,
+            cachedInputTokens = cached,
+            cacheWriteTokens = cacheWrite,
+            requestCount = requestCount,
+            hitRate = if (hasCacheInfo) {
+                com.nekobot.app.data.local.ai.ModelPricingCatalog.cacheHitRate(input, cached)
+            } else {
+                null
+            }
         )
     }
 

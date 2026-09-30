@@ -14,6 +14,11 @@ import com.nekobot.app.data.local.ai.buildContextUsageBreakdown
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.model.Message
 import com.nekobot.app.data.model.Session
+import kotlin.math.roundToInt
+
+/** 缓存命中率展示口径：百分比整数；服务商未上报缓存信息时为「—」。 */
+internal fun formatCacheHitRate(hitRate: Double?): String =
+    hitRate?.let { "${(it.coerceIn(0.0, 1.0) * 100).roundToInt()}%" } ?: "—"
 
 /**
  * 服务端模式的回退口径：只有消息与提示词可估算，没有本地工具定义与工具轨迹。

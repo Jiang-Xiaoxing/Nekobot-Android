@@ -497,7 +497,9 @@ internal fun buildLocalDbToolDefinitions(): List<Map<String, Any>> {
                     "token_limit_daily" to int("每日 token 限额"),
                     "token_limit_weekly" to int("每周 token 限额"),
                     "input_price" to num("输入价格（每 1M tokens）"),
-                    "output_price" to num("输出价格（每 1M tokens）")
+                    "output_price" to num("输出价格（每 1M tokens）"),
+                    "cache_read_price" to num("缓存命中价格（每 1M tokens），缺省按输入价比例折算"),
+                    "cache_write_price" to num("缓存写入价格（每 1M tokens），缺省按输入价折算")
                 ),
                 listOf("name", "api_key", "base_url", "model")
             )
@@ -527,7 +529,9 @@ internal fun buildLocalDbToolDefinitions(): List<Map<String, Any>> {
                     "token_limit_daily" to int("每日限额"),
                     "token_limit_weekly" to int("每周限额"),
                     "input_price" to num("输入价格"),
-                    "output_price" to num("输出价格")
+                    "output_price" to num("输出价格"),
+                    "cache_read_price" to num("缓存命中价格"),
+                    "cache_write_price" to num("缓存写入价格")
                 ),
                 listOf("model_id")
             )
@@ -1457,7 +1461,9 @@ internal class LocalDbToolExecutor(
             tokenLimitDaily = args.long("token_limit_daily", 0L),
             tokenLimitWeekly = args.long("token_limit_weekly", 0L),
             inputPrice = args.doubleOrNull("input_price"),
-            outputPrice = args.doubleOrNull("output_price")
+            outputPrice = args.doubleOrNull("output_price"),
+            cacheReadPrice = args.doubleOrNull("cache_read_price"),
+            cacheWritePrice = args.doubleOrNull("cache_write_price")
         )
         db.aiModelDao().upsert(entity)
         if (entity.active) db.aiModelDao().setActiveForPurpose(entity.id, entity.purpose)
@@ -1493,7 +1499,9 @@ internal class LocalDbToolExecutor(
             tokenLimitDaily = args.optLong("token_limit_daily", existing.tokenLimitDaily),
             tokenLimitWeekly = args.optLong("token_limit_weekly", existing.tokenLimitWeekly),
             inputPrice = args.optDoubleOrNull("input_price", existing.inputPrice),
-            outputPrice = args.optDoubleOrNull("output_price", existing.outputPrice)
+            outputPrice = args.optDoubleOrNull("output_price", existing.outputPrice),
+            cacheReadPrice = args.optDoubleOrNull("cache_read_price", existing.cacheReadPrice),
+            cacheWritePrice = args.optDoubleOrNull("cache_write_price", existing.cacheWritePrice)
         )
         db.aiModelDao().upsert(updated)
         return success("model_id" to updated.id, "model" to updated.toSummary())
@@ -1937,6 +1945,8 @@ internal class LocalDbToolExecutor(
         "failover_timeout" to failoverTimeout,
         "input_price" to (inputPrice ?: 0.0),
         "output_price" to (outputPrice ?: 0.0),
+        "cache_read_price" to (cacheReadPrice ?: 0.0),
+        "cache_write_price" to (cacheWritePrice ?: 0.0),
         "created_at" to createdAt
     )
 }

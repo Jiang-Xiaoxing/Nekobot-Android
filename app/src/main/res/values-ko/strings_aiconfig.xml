@@ -277,6 +277,10 @@
     <string name="aimodel_editor_pricing_output_short">출력 $%1$s</string>
     <string name="aimodel_editor_pricing_per_million">/ 백만 토큰</string>
     <string name="aimodel_editor_pricing_context">컨텍스트 %1$s</string>
+    <string name="aimodel_editor_pricing_cache_read">캐시 적중 가격 / 백만 토큰 (USD)</string>
+    <string name="aimodel_editor_pricing_cache_write">캐시 쓰기 가격 / 백만 토큰 (USD)</string>
+    <string name="aimodel_editor_pricing_cache_read_short">캐시 $%1$s</string>
+    <string name="aimodel_editor_pricing_cache_note">캐시 가격이 비어 있으면 카탈로그 또는 입력 가격 비율로 자동 환산합니다. 적중분은 캐시 가격, 나머지는 입력 가격으로 청구됩니다.</string>
 
     <string name="aimodel_editor_section_capability">기능</string>
     <string name="aimodel_editor_capability_enable">모델 활성화</string>

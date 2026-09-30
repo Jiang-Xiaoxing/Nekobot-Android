@@ -277,6 +277,10 @@
     <string name="aimodel_editor_pricing_output_short">出力 $%1$s</string>
     <string name="aimodel_editor_pricing_per_million">/ 百万トークン</string>
     <string name="aimodel_editor_pricing_context">コンテキスト %1$s</string>
+    <string name="aimodel_editor_pricing_cache_read">キャッシュ命中価格 / 百万トークン (USD)</string>
+    <string name="aimodel_editor_pricing_cache_write">キャッシュ書き込み価格 / 百万トークン (USD)</string>
+    <string name="aimodel_editor_pricing_cache_read_short">キャッシュ $%1$s</string>
+    <string name="aimodel_editor_pricing_cache_note">キャッシュ価格が空欄の場合はカタログまたは入力価格から自動換算します。命中分はキャッシュ価格、残りは入力価格で課金されます。</string>
 
     <string name="aimodel_editor_section_capability">機能</string>
     <string name="aimodel_editor_capability_enable">モデルを有効化</string>

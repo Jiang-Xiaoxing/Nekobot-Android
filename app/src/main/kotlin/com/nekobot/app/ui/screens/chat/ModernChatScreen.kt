@@ -144,6 +144,7 @@ import com.nekobot.app.data.model.Message
 import com.nekobot.app.data.model.MessageFavoriteRequest
 import com.nekobot.app.data.model.ReasoningEffort
 import com.nekobot.app.data.model.Session
+import com.nekobot.app.data.model.SessionCacheStats
 import com.nekobot.app.data.model.Skill
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.components.AgentToolSetPickerDialog
@@ -1082,8 +1083,6 @@ private fun ModernChatComposer(
     }
     // 分页后 messages 只含已加载窗口；消息总数优先取会话计数（由写入路径维护），保证面板展示完整总数
     val messageCount = maxOf(messages.count { !it.isThinkingCard }, session?.messageCount ?: 0)
-    val charCount = input.length
-    val tokenEstimate = estimateModernChatDraftTokens(input)
     // 压缩不会改变可见消息数量，只会更新隐藏摘要的边界 source。
     // 将该边界纳入 key，压缩完成后立即重新计算 + 面板中的上下文用量与比例。
     val contextRevision = messages.asReversed()
@@ -1099,6 +1098,8 @@ private fun ModernChatComposer(
     var agentLiveContext by remember { mutableStateOf<AgentLiveContextUsage?>(null) }
     // + 面板内的上下文构成分析（类型占比）；Agent 会话始终与圆环同源
     var contextBreakdown by remember { mutableStateOf<ContextUsageBreakdown?>(null) }
+    // 会话缓存命中统计：命中率 = 命中缓存的输入 token / 完整输入 token
+    var cacheStats by remember { mutableStateOf<SessionCacheStats?>(null) }
     // 轮询时始终读取最新消息/会话，避免 LaunchedEffect 闭包捕获过期列表
     val latestMessages by rememberUpdatedState(messages)
     val latestSession by rememberUpdatedState(session)
@@ -1136,6 +1137,8 @@ private fun ModernChatComposer(
                     agentLiveContext = null
                     contextBreakdown = fallbackContextUsageBreakdown(latestSession, latestMessages)
                 }
+                // 缓存命中率与上方用量同源刷新：本地模式读本地用量记录，服务商未上报时为 null
+                cacheStats = ServiceContainer.unified.sessionCacheStats(sessionId)
             }
             if (!keepPolling) break
             delay(liveContextRefreshIntervalMs)
@@ -1239,8 +1242,7 @@ private fun ModernChatComposer(
             ) {
                 ModernChatActionPanel(
                     messageCount = messageCount,
-                    charCount = charCount,
-                    tokenEstimate = tokenEstimate,
+                    cacheHitRate = cacheStats?.hitRate,
                     usedTokens = usedTokens,
                     maxTokens = maxTokens,
                     agentLiveContext = agentLiveContext,
@@ -2227,8 +2229,7 @@ private fun ReasoningEffortSelector(
 @Composable
 private fun ModernChatActionPanel(
     messageCount: Int,
-    charCount: Int,
-    tokenEstimate: Int,
+    cacheHitRate: Double?,
     usedTokens: Long,
     maxTokens: Int?,
     sending: Boolean,
@@ -2277,8 +2278,7 @@ private fun ModernChatActionPanel(
             item {
                 ModernContextCard(
                     messageCount = messageCount,
-                    charCount = charCount,
-                    tokenEstimate = tokenEstimate,
+                    cacheHitRate = cacheHitRate,
                     usedTokens = usedTokens,
                     maxTokens = maxTokens,
                     sending = sending,
@@ -2563,8 +2563,7 @@ private fun AgentToolSetDialog(
 @Composable
 private fun ModernContextCard(
     messageCount: Int,
-    charCount: Int,
-    tokenEstimate: Int,
+    cacheHitRate: Double?,
     usedTokens: Long,
     maxTokens: Int?,
     sending: Boolean,
@@ -2660,7 +2659,12 @@ private fun ModernContextCard(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModernMetric(stringResource(R.string.chat_messages_metric), messageCount.toString(), Modifier.weight(1f))
-                ModernMetric(stringResource(R.string.chat_draft_chars), charCount.toString(), Modifier.weight(1f))
+                // 缓存命中率：命中缓存的输入 token / 完整输入 token；服务商未上报时显示 —
+                ModernMetric(
+                    label = stringResource(R.string.chat_cache_hit_rate),
+                    value = formatCacheHitRate(cacheHitRate),
+                    modifier = Modifier.weight(1f)
+                )
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

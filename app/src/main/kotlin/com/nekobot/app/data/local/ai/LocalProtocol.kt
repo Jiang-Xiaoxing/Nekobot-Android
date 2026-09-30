@@ -1,5 +1,7 @@
 package com.nekobot.app.data.local.ai
 
+import com.google.gson.JsonObject
+
 /**
  * 本地 AI 协议适配层接口。
  *
@@ -33,6 +35,176 @@ data class LocalToolCallDelta(
     val nameChunk: String = "",
     val argumentsChunk: String = "",
     val initialArgumentsJson: String = ""
+)
+
+/**
+ * 单次模型调用的用量明细，含缓存命中/写入 token。
+ *
+ * 语义约定（缓存命中率的统一口径）：
+ * - [promptTokens] 是本次计入计费的完整输入量。Anthropic 的 `input_tokens` 不含缓存读写，
+ *   解析层已把 cache_read/cache_creation 累加回来，因此 [cachedPromptTokens] 始终是它的子集；
+ * - [cachedPromptTokens] 命中缓存的输入量（OpenAI `prompt_tokens_details.cached_tokens`、
+ *   DeepSeek `prompt_cache_hit_tokens`、Anthropic `cache_read_input_tokens`、
+ *   Gemini `cachedContentTokenCount`）；
+ * - [cacheWriteTokens] 写入缓存的输入量（Anthropic `cache_creation_input_tokens`），
+ *   其余服务商为 0。
+ */
+data class LocalModelUsage(
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val totalTokens: Int = promptTokens + completionTokens,
+    val cachedPromptTokens: Int = 0,
+    val cacheWriteTokens: Int = 0
+) {
+    /** 合并成管线内部通用的 usage 字典（键名与协议解析结果一致）。 */
+    fun toUsageMap(): Map<String, Int> = buildMap {
+        put("prompt", promptTokens)
+        put("completion", completionTokens)
+        put("total", totalTokens)
+        if (cachedPromptTokens > 0) put(KEY_CACHED_PROMPT, cachedPromptTokens)
+        if (cacheWriteTokens > 0) put(KEY_CACHE_WRITE, cacheWriteTokens)
+    }
+
+    companion object {
+        /** 缓存命中 token 在 usage 字典中的键名。 */
+        const val KEY_CACHED_PROMPT = "cached_prompt"
+
+        /** 缓存写入 token 在 usage 字典中的键名。 */
+        const val KEY_CACHE_WRITE = "cache_write"
+    }
+}
+
+/** usage 字典（protocol 解析产物）→ 带缓存明细的用量；缺失缓存字段按 0 处理。 */
+internal fun usageMapToDetail(usage: Map<String, Int>): LocalModelUsage = LocalModelUsage(
+    promptTokens = usage["prompt"] ?: 0,
+    completionTokens = usage["completion"] ?: 0,
+    totalTokens = usage["total"] ?: ((usage["prompt"] ?: 0) + (usage["completion"] ?: 0)),
+    cachedPromptTokens = usage[LocalModelUsage.KEY_CACHED_PROMPT] ?: 0,
+    cacheWriteTokens = usage[LocalModelUsage.KEY_CACHE_WRITE] ?: 0
+)
+
+/**
+ * OpenAI 兼容（含 DeepSeek）usage 解析：命中量是 prompt 的子集。
+ *
+ * OpenAI 走 `prompt_tokens_details.cached_tokens`，DeepSeek 走 `prompt_cache_hit_tokens`，
+ * 部分代理直接给 `cached_tokens`。
+ */
+internal fun openAiStyleUsage(
+    promptTokens: Int,
+    completionTokens: Int,
+    totalTokens: Int?,
+    cachedPromptTokens: Int
+): LocalModelUsage {
+    val prompt = promptTokens.coerceAtLeast(0)
+    val cached = cachedPromptTokens.coerceIn(0, prompt)
+    val total = totalTokens?.takeIf { it > 0 } ?: (prompt + completionTokens.coerceAtLeast(0))
+    return LocalModelUsage(
+        promptTokens = prompt,
+        completionTokens = completionTokens.coerceAtLeast(0),
+        totalTokens = total,
+        cachedPromptTokens = cached
+    )
+}
+
+/**
+ * Anthropic usage 解析：`input_tokens` 不含缓存读写，需累加为完整输入量。
+ */
+internal fun anthropicStyleUsage(
+    inputTokens: Int,
+    outputTokens: Int,
+    cacheReadTokens: Int,
+    cacheWriteTokens: Int
+): LocalModelUsage {
+    val input = inputTokens.coerceAtLeast(0)
+    val read = cacheReadTokens.coerceAtLeast(0)
+    val write = cacheWriteTokens.coerceAtLeast(0)
+    val prompt = input + read + write
+    return LocalModelUsage(
+        promptTokens = prompt,
+        completionTokens = outputTokens.coerceAtLeast(0),
+        totalTokens = prompt + outputTokens.coerceAtLeast(0),
+        cachedPromptTokens = read.coerceIn(0, prompt),
+        cacheWriteTokens = write.coerceIn(0, prompt - read.coerceAtMost(prompt))
+    )
+}
+
+/**
+ * 读取 JSON 数值字段；非数值（字符串数字也算）与缺失都返回 [fallback]。
+ */
+internal fun JsonObject.usageInt(name: String, fallback: Int = 0): Int {
+    val element = get(name) ?: return fallback
+    if (element.isJsonNull) return fallback
+    return runCatching {
+        if (element.isJsonPrimitive) {
+            val primitive = element.asJsonPrimitive
+            when {
+                primitive.isNumber -> primitive.asInt
+                primitive.isString -> primitive.asString.toDoubleOrNull()?.toInt() ?: fallback
+                else -> fallback
+            }
+        } else {
+            fallback
+        }
+    }.getOrDefault(fallback)
+}
+
+/** 读取嵌套对象字段；不是对象时返回 null。 */
+internal fun JsonObject.usageObject(name: String): JsonObject? =
+    get(name)?.takeIf { it.isJsonObject }?.asJsonObject
+
+/** 读取 Map 形式的数值字段（非流式响应由 Gson 反序列化成 Map）。 */
+internal fun Map<*, *>.usageInt(key: String): Int = when (val value = this[key]) {
+    is Number -> value.toInt()
+    is String -> value.toDoubleOrNull()?.toInt() ?: 0
+    else -> 0
+}
+
+/** OpenAI 兼容 JSON usage → 用量明细（含 `prompt_tokens_details.cached_tokens`）。 */
+internal fun openAiStyleUsageFromJson(usage: JsonObject): LocalModelUsage {
+    val prompt = usage.usageInt("prompt_tokens")
+    val completion = usage.usageInt("completion_tokens")
+    val total = usage.usageInt("total_tokens")
+    val cached = usage.usageObject("prompt_tokens_details")?.usageInt("cached_tokens")
+        ?.takeIf { it > 0 }
+        ?: usage.usageInt("cached_tokens").takeIf { it > 0 }
+        ?: usage.usageInt("prompt_cache_hit_tokens")
+    return openAiStyleUsage(prompt, completion, total, cached)
+}
+
+/** OpenAI 兼容 Map usage → 用量明细。 */
+internal fun openAiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage {
+    val prompt = usage.usageInt("prompt_tokens")
+    val completion = usage.usageInt("completion_tokens")
+    val total = usage.usageInt("total_tokens")
+    val details = usage["prompt_tokens_details"] as? Map<*, *>
+    val cached = details?.usageInt("cached_tokens")?.takeIf { it > 0 }
+        ?: usage.usageInt("cached_tokens").takeIf { it > 0 }
+        ?: usage.usageInt("prompt_cache_hit_tokens")
+    return openAiStyleUsage(prompt, completion, total, cached)
+}
+
+/** Anthropic JSON usage → 用量明细（input_tokens 不含缓存读写）。 */
+internal fun anthropicStyleUsageFromJson(usage: JsonObject): LocalModelUsage = anthropicStyleUsage(
+    inputTokens = usage.usageInt("input_tokens"),
+    outputTokens = usage.usageInt("output_tokens"),
+    cacheReadTokens = usage.usageInt("cache_read_input_tokens"),
+    cacheWriteTokens = usage.usageInt("cache_creation_input_tokens")
+)
+
+/** Anthropic Map usage → 用量明细。 */
+internal fun anthropicStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage = anthropicStyleUsage(
+    inputTokens = usage.usageInt("input_tokens"),
+    outputTokens = usage.usageInt("output_tokens"),
+    cacheReadTokens = usage.usageInt("cache_read_input_tokens"),
+    cacheWriteTokens = usage.usageInt("cache_creation_input_tokens")
+)
+
+/** Gemini usageMetadata → 用量明细（promptTokenCount 已含命中量，命中量是子集）。 */
+internal fun geminiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage = openAiStyleUsage(
+    promptTokens = usage.usageInt("promptTokenCount"),
+    completionTokens = usage.usageInt("candidatesTokenCount"),
+    totalTokens = usage.usageInt("totalTokenCount").takeIf { it > 0 },
+    cachedPromptTokens = usage.usageInt("cachedContentTokenCount")
 )
 
 interface LocalProtocol {
@@ -93,6 +265,16 @@ interface LocalProtocol {
      * @return Triple(prompt, completion, total)，无 usage 返回 null
      */
     fun parseStreamUsage(chunkJson: String): Triple<Int, Int, Int>?
+
+    /**
+     * 解析流式 usage 的完整明细（含缓存命中/写入 token）。
+     *
+     * 默认实现只返回基础三项，支持缓存的服务商覆写本方法上报命中量。
+     */
+    fun parseStreamUsageDetail(chunkJson: String): LocalModelUsage? =
+        parseStreamUsage(chunkJson)?.let { (prompt, completion, total) ->
+            LocalModelUsage(prompt, completion, total)
+        }
 
     fun parseStreamFinalResponse(chunkJson: String): LocalModelResponse? = null
 

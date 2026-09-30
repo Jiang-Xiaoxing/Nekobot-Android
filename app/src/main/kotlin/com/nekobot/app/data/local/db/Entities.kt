@@ -469,6 +469,10 @@ data class LocalAiModelEntity(
     @ColumnInfo(name = "failover_timeout") val failoverTimeout: Int = 0,
     @ColumnInfo(name = "input_price") val inputPrice: Double? = null,
     @ColumnInfo(name = "output_price") val outputPrice: Double? = null,
+    /** 缓存命中价（每百万 token）；为空时按价格目录或兜底比例换算。 */
+    @ColumnInfo(name = "cache_read_price") val cacheReadPrice: Double? = null,
+    /** 缓存写入价（每百万 token，Anthropic 等显式缓存写入）；为空时按兜底比例换算。 */
+    @ColumnInfo(name = "cache_write_price") val cacheWritePrice: Double? = null,
     /** OAuth 模型只保存账号引用；真实 access/refresh token 由 Keystore 加密账号仓库管理。 */
     @ColumnInfo(name = "oauth_account_id") val oauthAccountId: String? = null,
     /**

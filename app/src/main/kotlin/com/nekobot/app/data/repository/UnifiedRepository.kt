@@ -25,6 +25,7 @@ import com.nekobot.app.data.local.db.LocalAgentRunEntity
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.data.local.db.LocalMessageImageEntity
 import com.nekobot.app.data.local.ai.ImageGenerationReference
+import com.nekobot.app.data.local.ai.ModelPricingCatalog
 import com.nekobot.app.data.local.db.LocalSessionEntity
 import com.nekobot.app.data.local.StickerImport
 import com.nekobot.app.data.local.db.LocalStickerEntity
@@ -69,6 +70,7 @@ import com.nekobot.app.data.model.PlotSelectRequest
 import com.nekobot.app.data.model.PlotSwitchRequest
 import com.nekobot.app.data.model.PlotToggleRequest
 import com.nekobot.app.data.model.Session
+import com.nekobot.app.data.model.SessionCacheStats
 import com.nekobot.app.data.model.Skill
 import com.nekobot.app.data.model.SkillInstallRequest
 import com.nekobot.app.data.model.SkillRequest
@@ -1263,6 +1265,57 @@ class UnifiedRepository(
     /** 当前仍会发送给模型的上下文 Token；本地模式避免重复累计每轮完整 prompt。 */
     suspend fun sessionContextTokenUsage(sessionId: String): Long =
         if (isLocal) local.sessionContextTokenUsage(sessionId) else sessionTokenUsage(sessionId)
+
+    /**
+     * 指定会话的缓存命中统计（命中率 = 命中缓存的输入 token / 完整输入 token）。
+     *
+     * - 本地模式：直接读本地 token 用量记录；
+     * - 远程模式：从 GET /api/tokens 的 records 里按 session_id 过滤聚合；
+     * - 服务商未上报缓存字段时 hitRate 为 null，界面显示「—」。
+     */
+    suspend fun sessionCacheStats(sessionId: String): SessionCacheStats {
+        if (isLocal) return local.sessionCacheStats(sessionId)
+        return when (val res = remote.tokenStats(dateRange = "all")) {
+            is Resource.Success -> {
+                val records = res.data?.records ?: res.data?.recentRecords ?: emptyList()
+                var input = 0L
+                var cached = 0L
+                var cacheWrite = 0L
+                var hasCacheInfo = false
+                var requestCount = 0
+                for (rec in records) {
+                    if (!rec.isJsonObject) continue
+                    val obj = rec.asJsonObject
+                    val sid = obj.get("session_id")?.takeIf { !it.isJsonNull }?.asString ?: continue
+                    if (sid != sessionId) continue
+                    val recordInput = obj.get("input_tokens")?.takeIf { !it.isJsonNull }?.asLong
+                        ?: obj.get("input")?.takeIf { !it.isJsonNull }?.asLong
+                        ?: 0L
+                    val recordCached = obj.get("cached_input_tokens")?.takeIf { !it.isJsonNull }?.asLong
+                        ?: obj.get("cached_tokens")?.takeIf { !it.isJsonNull }?.asLong
+                        ?: 0L
+                    val recordWrite = obj.get("cache_write_tokens")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
+                    input += recordInput
+                    cached += recordCached.coerceIn(0L, recordInput.coerceAtLeast(0L))
+                    cacheWrite += recordWrite.coerceIn(0L, recordInput.coerceAtLeast(0L))
+                    if (recordCached > 0 || recordWrite > 0) hasCacheInfo = true
+                    requestCount++
+                }
+                SessionCacheStats(
+                    inputTokens = input,
+                    cachedInputTokens = cached,
+                    cacheWriteTokens = cacheWrite,
+                    requestCount = requestCount,
+                    hitRate = if (hasCacheInfo) {
+                        ModelPricingCatalog.cacheHitRate(input, cached)
+                    } else {
+                        null
+                    }
+                )
+            }
+            else -> SessionCacheStats()
+        }
+    }
 
     /**
      * 会话上下文实时快照。本地模式返回完整口径（系统提示词 + 工具定义 + 消息 +

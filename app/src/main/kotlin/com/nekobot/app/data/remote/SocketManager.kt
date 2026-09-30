@@ -228,6 +228,8 @@ sealed class RealtimeEvent {
     ) : RealtimeEvent()
     /**
      * 本地模式 AI 流式结束时的 token 用量（input/output/total）
+     * @param cachedInputTokens 命中缓存的输入 token（缓存命中率分子）
+     * @param cacheWriteTokens 写入缓存的输入 token（Anthropic cache_creation）
      * @param model 实际请求的模型标识（LocalAiModelEntity.model，如 gpt-4o）
      * @param modelDisplayName 用户配置的模型名称（LocalAiModelEntity.name），用于 Token 记录展示
      */
@@ -235,7 +237,9 @@ sealed class RealtimeEvent {
         val inputTokens: Int,
         val outputTokens: Int,
         val model: String? = null,
-        val modelDisplayName: String? = null
+        val modelDisplayName: String? = null,
+        val cachedInputTokens: Int = 0,
+        val cacheWriteTokens: Int = 0
     ) : RealtimeEvent()
     /** AI 请求执行非白名单命令，等待用户授权。 */
     data class ExecConfirmationRequired(val request: ExecConfirmationRequest) : RealtimeEvent()

@@ -551,7 +551,7 @@
     <string name="chat_context_metric_desc">現在のチャットと入力の統計</string>
     <string name="chat_compress">圧縮</string>
     <string name="chat_messages_metric">メッセージ</string>
-    <string name="chat_draft_chars">下書き文字数</string>
+    <string name="chat_cache_hit_rate">キャッシュ命中率</string>
     <string name="chat_used_tokens">チャット使用トークン</string>
     <string name="chat_status">ステータス</string>
     <string name="chat_status_generating">生成中</string>
@@ -739,6 +739,9 @@
     <string name="chat_context_analysis_tool_definitions">ツール定義</string>
     <string name="chat_context_analysis_tool_content">ツール呼び出し</string>
     <string name="chat_context_analysis_other_messages">その他のメッセージ</string>
+    <string name="chat_context_analysis_cache_title">キャッシュ命中率</string>
+    <string name="chat_context_analysis_cache_detail">命中 %1$d / 入力 %2$d tokens</string>
+    <string name="chat_context_analysis_cache_hint">命中分はキャッシュ価格、残りは入力価格で課金されます。プロバイダが情報を返さない場合やまだ命中がない場合は — と表示します。</string>
 
     <string name="chat_agent_status_preparing">準備中…</string>
     <string name="chat_agent_status_thinking">考え中…</string>

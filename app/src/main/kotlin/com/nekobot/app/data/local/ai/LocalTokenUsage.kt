@@ -10,11 +10,19 @@ import kotlin.math.ceil
 internal data class ResolvedLocalTokenUsage(
     val inputTokens: Int,
     val outputTokens: Int,
-    val estimated: Boolean
+    val estimated: Boolean,
+    /** 命中缓存的输入 token（缓存命中率分子）；接口未上报时为 0。 */
+    val cachedInputTokens: Int = 0,
+    /** 写入缓存的输入 token（Anthropic cache_creation）；其余服务商为 0。 */
+    val cacheWriteTokens: Int = 0
 )
 
 /**
  * 统一不同兼容接口的 usage 字段；接口未返回用量时才按实际请求与回复文本估算。
+ *
+ * 缓存字段同时兼容各家命名：OpenAI `prompt_tokens_details.cached_tokens`、
+ * DeepSeek `prompt_cache_hit_tokens`、Anthropic `cache_read_input_tokens`、
+ * Gemini `cachedContentTokenCount`。
  */
 internal fun resolveLocalTokenUsage(
     usage: Map<String, *>,
@@ -24,6 +32,18 @@ internal fun resolveLocalTokenUsage(
     val reportedInput = usage.tokenNumber("prompt_tokens", "input_tokens", "prompt", "input")
     val reportedOutput = usage.tokenNumber("completion_tokens", "output_tokens", "completion", "output")
     val reportedTotal = usage.tokenNumber("total_tokens", "total")
+    // 缓存命中量：既支持管线内部统一键，也支持各协议原始键（部分辅助任务直接透传原始 usage）。
+    val cached = usage.tokenNumber(
+        LocalModelUsage.KEY_CACHED_PROMPT,
+        "cached_tokens",
+        "prompt_cache_hit_tokens",
+        "cache_read_input_tokens",
+        "cachedContentTokenCount"
+    ) ?: 0
+    val cacheWrite = usage.tokenNumber(
+        LocalModelUsage.KEY_CACHE_WRITE,
+        "cache_creation_input_tokens"
+    ) ?: 0
 
     if (reportedInput != null || reportedOutput != null || reportedTotal != null) {
         val input = reportedInput
@@ -33,10 +53,17 @@ internal fun resolveLocalTokenUsage(
             ?: reportedTotal?.minus(input)?.coerceAtLeast(0)
             ?: 0
         if (input > 0 || output > 0) {
-            return ResolvedLocalTokenUsage(input, output, estimated = false)
+            return ResolvedLocalTokenUsage(
+                inputTokens = input,
+                outputTokens = output,
+                estimated = false,
+                cachedInputTokens = cached.coerceIn(0, input),
+                cacheWriteTokens = cacheWrite.coerceIn(0, input)
+            )
         }
     }
 
+    // 估算路径没有缓存信息：按未命中计费，避免虚高命中率。
     return ResolvedLocalTokenUsage(
         inputTokens = estimateLocalMessagesTokens(messages),
         outputTokens = estimateLocalTextTokens(outputText),

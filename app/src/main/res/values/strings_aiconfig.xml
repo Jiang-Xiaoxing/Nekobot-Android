@@ -286,6 +286,10 @@
     <string name="aimodel_editor_pricing_output_short">输出 $%1$s</string>
     <string name="aimodel_editor_pricing_per_million">/ 百万 Token</string>
     <string name="aimodel_editor_pricing_context">上下文 %1$s</string>
+    <string name="aimodel_editor_pricing_cache_read">缓存命中价格 / 百万 Token（美元）</string>
+    <string name="aimodel_editor_pricing_cache_write">缓存写入价格 / 百万 Token（美元）</string>
+    <string name="aimodel_editor_pricing_cache_read_short">缓存 $%1$s</string>
+    <string name="aimodel_editor_pricing_cache_note">缓存价留空时按价格目录或输入价比例折算；命中缓存的部分按缓存价计费，其余按输入价。</string>
 
     <!-- 能力开关 -->
     <string name="aimodel_editor_section_capability">能力</string>

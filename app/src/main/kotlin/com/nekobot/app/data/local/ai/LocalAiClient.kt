@@ -267,13 +267,16 @@ class LocalAiClient(
                     fullContent.append(it)
                     emit(RealtimeEvent.StreamChunk(it))
                 }
-                parsed.usage.takeIf(Map<*, *>::isNotEmpty)?.let { usage ->
+                parsed.usage.takeIf { it.isNotEmpty() }?.let { usage ->
+                    val detail = usageMapToDetail(usage)
                     emit(
                         RealtimeEvent.Usage(
-                            usage["prompt"] ?: 0,
-                            usage["completion"] ?: 0,
-                            runtimeModel.model,
-                            runtimeModel.name
+                            inputTokens = detail.promptTokens,
+                            outputTokens = detail.completionTokens,
+                            model = runtimeModel.model,
+                            modelDisplayName = runtimeModel.name,
+                            cachedInputTokens = detail.cachedPromptTokens,
+                            cacheWriteTokens = detail.cacheWriteTokens
                         )
                     )
                 }
@@ -296,8 +299,17 @@ class LocalAiClient(
                 readSseEvents(reader) { data ->
                     if (data == "[DONE]") return@readSseEvents false
                     // 尝试解析 usage（OpenAI 在最后 chunk、Anthropic 在 message_delta）
-                    protocol.parseStreamUsage(data)?.let { (input, output, _) ->
-                        emit(RealtimeEvent.Usage(input, output, runtimeModel.model, runtimeModel.name))
+                    protocol.parseStreamUsageDetail(data)?.let { detail ->
+                        emit(
+                            RealtimeEvent.Usage(
+                                inputTokens = detail.promptTokens,
+                                outputTokens = detail.completionTokens,
+                                model = runtimeModel.model,
+                                modelDisplayName = runtimeModel.name,
+                                cachedInputTokens = detail.cachedPromptTokens,
+                                cacheWriteTokens = detail.cacheWriteTokens
+                            )
+                        )
                     }
                     protocol.parseStreamError(data)?.let { message ->
                         streamErrorMessage = message
@@ -547,12 +559,8 @@ class LocalAiClient(
             BufferedReader(InputStreamReader(source, Charsets.UTF_8)).use { reader ->
                 readSseEvents(reader) { data ->
                     if (data == "[DONE]") return@readSseEvents true
-                    protocol.parseStreamUsage(data)?.let { (input, output, total) ->
-                        usage = mapOf(
-                            "prompt" to input,
-                            "completion" to output,
-                            "total" to total
-                        )
+                    protocol.parseStreamUsageDetail(data)?.let { detail ->
+                        usage = detail.toUsageMap()
                     }
                     protocol.parseStreamError(data)?.let {
                         throw IllegalStateException(it)
@@ -1090,6 +1098,8 @@ class LocalAiClient(
             var terminal: LocalModelResponse? = null
             var inputTokens: Int? = null
             var outputTokens: Int? = null
+            var cachedInputTokens: Int? = null
+            var cacheWriteTokens: Int? = null
             var failed = false
             var httpCode = 0
             var contentReleased = false
@@ -1161,13 +1171,16 @@ class LocalAiClient(
                         emit(RealtimeEvent.StreamChunk(it))
                     }
                     failover.recordSuccess(model.id)
-                    buffered.usage.takeIf(Map<*, *>::isNotEmpty)?.let { usage ->
+                    buffered.usage.takeIf { it.isNotEmpty() }?.let { usage ->
+                        val detail = usageMapToDetail(usage)
                         emit(
                             RealtimeEvent.Usage(
-                                usage["prompt"] ?: 0,
-                                usage["completion"] ?: 0,
-                                runtimeModel.model,
-                                runtimeModel.name
+                                inputTokens = detail.promptTokens,
+                                outputTokens = detail.completionTokens,
+                                model = runtimeModel.model,
+                                modelDisplayName = runtimeModel.name,
+                                cachedInputTokens = detail.cachedPromptTokens,
+                                cacheWriteTokens = detail.cacheWriteTokens
                             )
                         )
                     }
@@ -1185,9 +1198,11 @@ class LocalAiClient(
                 BufferedReader(InputStreamReader(src, Charsets.UTF_8)).use { reader ->
                     readSseEvents(reader) { data ->
                         if (data == "[DONE]") return@readSseEvents false
-                        protocol.parseStreamUsage(data)?.let { (input, output, _) ->
-                            inputTokens = input
-                            outputTokens = output
+                        protocol.parseStreamUsageDetail(data)?.let { detail ->
+                            inputTokens = detail.promptTokens
+                            outputTokens = detail.completionTokens
+                            cachedInputTokens = detail.cachedPromptTokens
+                            cacheWriteTokens = detail.cacheWriteTokens
                         }
                         protocol.parseStreamError(data)?.let { message ->
                             streamErrorMessage = message
@@ -1268,10 +1283,12 @@ class LocalAiClient(
                 if (inputTokens != null || outputTokens != null) {
                     emit(
                         RealtimeEvent.Usage(
-                            inputTokens ?: 0,
-                            outputTokens ?: 0,
-                            runtimeModel.model,
-                            runtimeModel.name
+                            inputTokens = inputTokens ?: 0,
+                            outputTokens = outputTokens ?: 0,
+                            model = runtimeModel.model,
+                            modelDisplayName = runtimeModel.name,
+                            cachedInputTokens = cachedInputTokens ?: 0,
+                            cacheWriteTokens = cacheWriteTokens ?: 0
                         )
                     )
                 }

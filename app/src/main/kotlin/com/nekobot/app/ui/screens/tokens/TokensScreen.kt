@@ -16,6 +16,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import com.nekobot.app.ui.components.withoutBorder as border
+import com.nekobot.app.ui.screens.chat.formatCacheHitRate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -41,13 +43,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Route
@@ -112,6 +114,7 @@ import com.nekobot.app.ui.components.ErrorBanner
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.GlassDropdownMenu
 import com.nekobot.app.ui.components.LoadingOverlay
+import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.SectionHeader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -153,6 +156,10 @@ internal data class TokenRecordUi(
     val input: Long,
     val output: Long,
     val total: Long,
+    /** 命中缓存的输入 token（缓存命中率分子，按缓存价计费）。 */
+    val cachedInput: Long,
+    /** 写入缓存的输入 token（Anthropic，按缓存写入价计费）。 */
+    val cacheWrite: Long,
     val cost: String?,
     val estimatedCostUsd: Double?,
     val durationMs: Double?,
@@ -1114,12 +1121,7 @@ private fun TokenKeyMetrics(stats: TokenStats, records: List<TokenRecordUi>) {
         screenWidthDp >= 720 -> 4
         else -> 2
     }
-    val activeSessionCount = stats.activeSessions?.takeIf { it > 0 }
-        ?: records.asSequence()
-            .map { it.sessionId.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .count()
+    // 平均缓存命中率：服务商未上报缓存信息时显示「—」（口径与聊天上下文分析页一致）
     val averagePrice = records.asSequence()
         .mapNotNull { record -> record.cost?.toDoubleOrNull() ?: record.estimatedCostUsd }
         .toList()
@@ -1150,9 +1152,9 @@ private fun TokenKeyMetrics(stats: TokenStats, records: List<TokenRecordUi>) {
             tint = MaterialTheme.colorScheme.secondary
         ),
         TokenStatItem(
-            label = stringResource(R.string.tokens_stat_active_sessions),
-            value = "$activeSessionCount",
-            icon = Icons.Filled.Forum,
+            label = stringResource(R.string.tokens_stat_cache_hit_rate),
+            value = formatCacheHitRate(stats.cacheHitRate),
+            icon = Icons.Filled.Cached,
             tint = MaterialTheme.colorScheme.tertiary
         ),
         TokenStatItem(
@@ -1381,6 +1383,14 @@ private fun TokenRecordCard(
     val recordActionLabel = stringResource(
         if (expanded) R.string.tokens_collapse_record else R.string.tokens_expand_record
     )
+    // 缓存命中：服务商上报过缓存 token 才有值；命中率只按命中量 / 输入量计
+    val hasCacheData = record.cachedInput > 0 || record.cacheWrite > 0
+    val recordHitRate = if (record.input > 0 && record.cachedInput > 0) {
+        record.cachedInput.toDouble() / record.input
+    } else {
+        null
+    }
+    var showInputBreakdown by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1432,6 +1442,23 @@ private fun TokenRecordCard(
                             fontWeight = FontWeight.Medium,
                             maxLines = 1
                         )
+                    }
+                    if (recordHitRate != null) {
+                        Spacer(Modifier.width(7.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f))
+                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.tokens_cache_hit_badge, formatCacheHitRate(recordHitRate)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        }
                     }
                     if (sourceDisplay.isNotBlank()) {
                         Spacer(Modifier.width(7.dp))
@@ -1501,7 +1528,12 @@ private fun TokenRecordCard(
                 TokenMetric(
                     label = stringResource(R.string.tokens_input),
                     value = record.input,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    onClick = if (hasCacheData) {
+                        { showInputBreakdown = true }
+                    } else {
+                        null
+                    }
                 )
                 TokenMetric(
                     label = stringResource(R.string.tokens_output),
@@ -1541,6 +1573,140 @@ private fun TokenRecordCard(
             }
         }
     }
+
+    if (showInputBreakdown) {
+        NekoDialog(
+            onDismiss = { showInputBreakdown = false },
+            title = stringResource(R.string.tokens_input_breakdown_title),
+            confirmText = stringResource(R.string.common_close),
+            onCancel = null,
+            cancelText = null
+        ) {
+            InputTokenBreakdownContent(record)
+        }
+    }
+}
+
+/** 输入 token 构成弹窗内容：总输入、命中/未命中比例条与逐项数值。 */
+@Composable
+private fun InputTokenBreakdownContent(record: TokenRecordUi) {
+    val input = record.input.coerceAtLeast(0)
+    val cached = record.cachedInput.coerceIn(0, input)
+    val cacheWrite = record.cacheWrite.coerceIn(0, (input - cached).coerceAtLeast(0))
+    val uncached = (input - cached).coerceAtLeast(0)
+    val hitFraction = if (input > 0) cached.toDouble() / input else 0.0
+    val missFraction = 1.0 - hitFraction
+    val writeFraction = if (input > 0) cacheWrite.toDouble() / input else 0.0
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Text(
+                stringResource(R.string.tokens_input),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                formatTokenCount(input),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        // 命中/未命中比例条：命中为主色，未缓存为中性色
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+        ) {
+            if (cached > 0) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .weight(hitFraction.toFloat().coerceIn(0.04f, 1f))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+            }
+            if (uncached > 0) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .weight(missFraction.toFloat().coerceIn(0.04f, 1f))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        InputBreakdownRow(
+            label = stringResource(R.string.tokens_cache_hit_row),
+            tokens = cached,
+            fraction = hitFraction,
+            color = MaterialTheme.colorScheme.primary
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        if (cacheWrite > 0) {
+            InputBreakdownRow(
+                label = stringResource(R.string.tokens_cache_write_row),
+                tokens = cacheWrite,
+                fraction = writeFraction,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        }
+        InputBreakdownRow(
+            label = stringResource(R.string.tokens_cache_uncached_row),
+            tokens = uncached,
+            fraction = missFraction,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+        )
+    }
+}
+
+@Composable
+private fun InputBreakdownRow(
+    label: String,
+    tokens: Long,
+    fraction: Double,
+    color: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            formatCacheHitRate(fraction),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            formatTokenCount(tokens),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }
 
 @Composable
@@ -1557,7 +1723,9 @@ private fun TokenMetric(
     label: String,
     value: Long,
     modifier: Modifier = Modifier,
-    emphasized: Boolean = false
+    emphasized: Boolean = false,
+    /** 非 null 时整块可点击（如输入 token 的缓存构成明细）。 */
+    onClick: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -1566,6 +1734,13 @@ private fun TokenMetric(
                 if (emphasized) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
             )
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
             .padding(horizontal = 8.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -1573,7 +1748,7 @@ private fun TokenMetric(
         Text(
             formatTokenCount(value),
             style = MaterialTheme.typography.bodyMedium,
-            color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            color = if (emphasized || onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold
         )
     }
@@ -1606,12 +1781,19 @@ private fun parseTokenRecord(index: Int, elem: JsonElement): TokenRecordUi? {
     val model = string("model", "model_name")
     val actualModel = string("actual_model", "actualModel")
     val provider = string("provider")
+    // 缓存命中/写入 token：命中部分按缓存价计费，缺失字段（旧记录）按未命中处理
+    val cachedInput = (long("cached_input_tokens", "cached_tokens") ?: 0L)
+        .coerceIn(0L, input.coerceAtLeast(0L))
+    val cacheWrite = (long("cache_write_tokens") ?: 0L)
+        .coerceIn(0L, (input - cachedInput).coerceAtLeast(0L))
     val recordedEstimatedCost = double("estimated_cost_usd")
     val estimatedCostUsd = recordedEstimatedCost ?: estimateTokenRecordCost(
         modelName = actualModel.ifBlank { model },
         provider = provider,
         inputTokens = input,
-        outputTokens = output
+        outputTokens = output,
+        cachedInputTokens = cachedInput,
+        cacheWriteTokens = cacheWrite
     )
     return TokenRecordUi(
         id = string("id")
@@ -1629,6 +1811,8 @@ private fun parseTokenRecord(index: Int, elem: JsonElement): TokenRecordUi? {
         input = input,
         output = output,
         total = long("total", "total_tokens", "tokens") ?: (input + output),
+        cachedInput = cachedInput,
+        cacheWrite = cacheWrite,
         cost = string("cost").takeIf { it.isNotBlank() },
         estimatedCostUsd = estimatedCostUsd,
         durationMs = double("duration_ms"),
@@ -1641,13 +1825,26 @@ private fun estimateTokenRecordCost(
     modelName: String,
     provider: String,
     inputTokens: Long,
-    outputTokens: Long
+    outputTokens: Long,
+    cachedInputTokens: Long = 0L,
+    cacheWriteTokens: Long = 0L
 ): Double? {
     if (modelName.isBlank()) return null
-    val prices = ModelPricingCatalog.resolvePrices(modelName = modelName, provider = provider)
-    if (prices.first == null && prices.second == null) return null
-    return (inputTokens / 1_000_000.0) * (prices.first ?: 0.0) +
-        (outputTokens / 1_000_000.0) * (prices.second ?: 0.0)
+    val prices = ModelPricingCatalog.resolveModelPrices(modelName = modelName, provider = provider)
+    if (
+        prices.inputPerMillion == null && prices.outputPerMillion == null &&
+        prices.cacheReadPerMillion == null && prices.cacheWritePerMillion == null
+    ) {
+        return null
+    }
+    // 命中缓存的输入按缓存价、写入缓存的输入按缓存写入价，其余按输入价
+    return ModelPricingCatalog.estimateCostUsd(
+        inputTokens = inputTokens,
+        outputTokens = outputTokens,
+        cachedInputTokens = cachedInputTokens,
+        cacheWriteTokens = cacheWriteTokens,
+        prices = prices
+    )
 }
 
 private fun purposeLabel(purpose: String): String = when (purpose.lowercase()) {
@@ -1913,13 +2110,13 @@ private fun tokenCsvFileName(range: String, startDate: String?, endDate: String?
  * 生成当前范围明细的 CSV 文本（与服务器 /api/tokens/export 的表头风格一致），
  * 前置 BOM 以便 Excel 正确识别 UTF-8 中文。
  */
-private fun buildTokenCsv(records: List<TokenRecordUi>): String {
+internal fun buildTokenCsv(records: List<TokenRecordUi>): String {
     val builder = StringBuilder()
     builder.append('\ufeff')
     builder.append(
         listOf(
             "时间", "日期", "用途", "来源", "模型", "实际模型",
-            "会话ID", "会话名称", "输入Token", "输出Token", "总计",
+            "会话ID", "会话名称", "输入Token", "缓存命中Token", "缓存写入Token", "输出Token", "总计",
             "费用", "估算费用USD", "耗时ms", "首字耗时ms", "记录ID"
         ).joinToString(",", transform = ::csvField)
     )
@@ -1936,6 +2133,8 @@ private fun buildTokenCsv(records: List<TokenRecordUi>): String {
                 record.sessionId,
                 record.sessionName,
                 record.input.toString(),
+                record.cachedInput.toString(),
+                record.cacheWrite.toString(),
                 record.output.toString(),
                 record.total.toString(),
                 record.cost.orEmpty(),

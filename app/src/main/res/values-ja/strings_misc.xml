@@ -58,6 +58,12 @@
     <string name="tokens_stat_avg_per_msg">平均/メッセージ</string>
     <string name="tokens_stat_estimated_cost">推定コスト</string>
     <string name="tokens_stat_active_sessions">アクティブセッション</string>
+    <string name="tokens_stat_cache_hit_rate">平均キャッシュ命中率</string>
+    <string name="tokens_cache_hit_badge">キャッシュ %1$s</string>
+    <string name="tokens_input_breakdown_title">入力トークン内訳</string>
+    <string name="tokens_cache_hit_row">キャッシュヒット</string>
+    <string name="tokens_cache_write_row">キャッシュ書き込み</string>
+    <string name="tokens_cache_uncached_row">非キャッシュ</string>
     <string name="tokens_stat_avg_price">平均価格</string>
     <string name="tokens_hero_cost">価格：%1$s</string>
     <string name="tokens_price_unit">$%1$s</string>

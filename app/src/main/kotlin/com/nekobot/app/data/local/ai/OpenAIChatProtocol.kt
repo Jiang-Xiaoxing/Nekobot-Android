@@ -171,6 +171,14 @@ object OpenAIChatProtocol : LocalProtocol {
         }
     }
 
+    override fun parseStreamUsageDetail(chunkJson: String): LocalModelUsage? = try {
+        val obj = JsonParser.parseString(chunkJson).asJsonObject
+        val usage = obj.getAsJsonObject("usage")
+        usage?.let { openAiStyleUsageFromJson(it) }
+    } catch (_: Exception) {
+        null
+    }
+
     override fun parseNonStreamResponse(data: Map<String, Any>): LocalModelResponse {
         val choices = data["choices"] as? List<*>
         val choice = choices?.firstOrNull() as? Map<*, *>
@@ -215,14 +223,7 @@ object OpenAIChatProtocol : LocalProtocol {
             }
             .orEmpty()
         val usage = (data["usage"] as? Map<*, *>)?.let { u ->
-            val prompt = (u["prompt_tokens"] as? Number)?.toInt() ?: 0
-            val completion = (u["completion_tokens"] as? Number)?.toInt() ?: 0
-            val total = (u["total_tokens"] as? Number)?.toInt() ?: (prompt + completion)
-            mapOf(
-                "prompt" to prompt,
-                "completion" to completion,
-                "total" to total
-            )
+            openAiStyleUsageFromMap(u).toUsageMap()
         } ?: emptyMap()
         return LocalModelResponse(
             content = content,
