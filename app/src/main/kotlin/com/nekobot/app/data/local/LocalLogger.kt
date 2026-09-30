@@ -23,7 +23,7 @@ object LocalLogger {
 
     private const val PREF_NAME = "local_logs"
     private const val KEY_RECORDS = "records"
-    private const val MAX_RECORDS = 500
+    private const val MAX_RECORDS = 5_000
     private const val MAX_MESSAGE_CHARS = 1_000
     private const val PERSIST_DELAY_MS = 750L
 

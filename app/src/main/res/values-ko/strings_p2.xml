@@ -113,6 +113,11 @@
     <string name="diagnostic_log_level_error">오류</string>
     <string name="diagnostic_log_level_warning">경고</string>
     <string name="diagnostic_log_level_info">정보</string>
+    <string name="diagnostic_log_level_debug">디버그</string>
+    <string name="logs_search_hint">로그 검색</string>
+    <string name="logs_count">%1$d개</string>
+    <string name="logs_no_match">일치하는 로그가 없습니다</string>
+    <string name="logs_clear_confirm">로컬 로그를 모두 지울까요?</string>
     <string name="diagnostic_copy_log">로그 복사</string>
     <string name="diagnostic_copied">클립보드에 복사했습니다</string>
     <string name="webdav_incremental_title">증분 동기화</string>

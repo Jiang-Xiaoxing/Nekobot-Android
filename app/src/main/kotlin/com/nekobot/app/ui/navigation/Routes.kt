@@ -83,6 +83,8 @@ object Routes {
     const val ROUTING_HISTORY = "routing_history"
     /** A/B 测试配置 */
     const val AB_TEST_SETTINGS = "ab_test_settings"
+    /** 日志查看（等级筛选 + 关键词搜索） */
+    const val LOGS = "logs"
     /** 关于页面 */
     const val ABOUT = "about"
     const val DEVELOPER_OPTIONS = "developer_options"

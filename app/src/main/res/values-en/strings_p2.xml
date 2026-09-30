@@ -85,6 +85,11 @@
     <string name="diagnostic_log_level_error">Error</string>
     <string name="diagnostic_log_level_warning">Warning</string>
     <string name="diagnostic_log_level_info">Info</string>
+    <string name="diagnostic_log_level_debug">Debug</string>
+    <string name="logs_search_hint">Search logs</string>
+    <string name="logs_count">%1$d entries</string>
+    <string name="logs_no_match">No matching logs</string>
+    <string name="logs_clear_confirm">Clear all local logs?</string>
     <string name="diagnostic_copy_log">Copy log</string>
     <string name="diagnostic_copied">Copied to clipboard</string>
     <string name="webdav_incremental_title">Incremental sync</string>

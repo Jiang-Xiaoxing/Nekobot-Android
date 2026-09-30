@@ -77,6 +77,7 @@ import com.nekobot.app.ui.screens.settings.DataPortabilityScreen
 import com.nekobot.app.ui.screens.settings.DbProfileScreen
 import com.nekobot.app.ui.screens.settings.DiagnosticCenterScreen
 import com.nekobot.app.ui.screens.settings.FeatureSwitchesScreen
+import com.nekobot.app.ui.screens.settings.LogViewerScreen
 import com.nekobot.app.ui.screens.stickers.StickerStoreScreen
 import com.nekobot.app.ui.screens.settings.AbTestSettingsScreen
 import com.nekobot.app.ui.screens.settings.AgentSettingsScreen
@@ -905,6 +906,10 @@ fun NekobotNavGraph() {
             }
             composable(Routes.DIAGNOSTIC_CENTER) {
                 DiagnosticCenterScreen(onBack = { navController.popBackStack() })
+            }
+            // 日志查看（等级筛选 + 关键词搜索）
+            composable(Routes.LOGS) {
+                LogViewerScreen(onBack = { navController.popBackStack() })
             }
             // 路由决策历史
             composable(Routes.ROUTING_HISTORY) {

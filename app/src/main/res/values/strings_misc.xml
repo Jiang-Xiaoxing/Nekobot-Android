@@ -269,6 +269,11 @@
     <string name="diagnostic_log_level_error">错误</string>
     <string name="diagnostic_log_level_warning">警告</string>
     <string name="diagnostic_log_level_info">信息</string>
+    <string name="diagnostic_log_level_debug">调试</string>
+    <string name="logs_search_hint">搜索日志</string>
+    <string name="logs_count">共 %1$d 条</string>
+    <string name="logs_no_match">没有匹配的日志</string>
+    <string name="logs_clear_confirm">确定清空全部本地日志？</string>
     <string name="diagnostic_copy_log">复制日志</string>
     <string name="diagnostic_copied">已复制到剪贴板</string>
     <string name="quick_setup_skip">跳过</string>

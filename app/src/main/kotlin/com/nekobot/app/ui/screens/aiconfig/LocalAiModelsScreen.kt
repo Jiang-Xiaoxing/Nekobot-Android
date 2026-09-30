@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -550,7 +551,8 @@ fun LocalAiModelsScreen(onBack: () -> Unit) {
                         .heightIn(max = 450.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(logRecords, key = { "${it.time}_${it.tag}_${it.message.hashCode()}" }) { record ->
+                    // 日志上限提升后同毫秒同内容的重复行会变多，key 里带上序号保证唯一
+                    itemsIndexed(logRecords, key = { index, _ -> index }) { _, record ->
                         LocalLogCard(record)
                     }
                 }

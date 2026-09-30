@@ -10,7 +10,6 @@ import android.net.Uri
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.biometric.BiometricPrompt
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,12 +19,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +32,6 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
@@ -90,12 +85,10 @@ import androidx.biometric.BiometricManager
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
-import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.PrefsManager
 import com.nekobot.app.update.UpdateChecker
 import com.nekobot.app.ui.BaseViewModel
@@ -112,8 +105,6 @@ import com.nekobot.app.ui.theme.OnPrimary
 import com.nekobot.app.ui.theme.OnSurface
 import com.nekobot.app.ui.theme.OnSurfaceVariant
 import com.nekobot.app.ui.theme.Primary
-import com.nekobot.app.ui.theme.accentSecondary
-import com.nekobot.app.ui.theme.accentWarning
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -122,13 +113,6 @@ import kotlinx.coroutines.launch
 /** 用于格式化 JSON 输出 */
 private val prettyGson = GsonBuilder().setPrettyPrinting().setLenient().disableHtmlEscaping().create()
 
-/** 系统日志条目。 */
-data class LogEntry(
-    val time: String,
-    val level: String,
-    val message: String
-)
-
 /**
  * 系统设置页 ViewModel
  */
@@ -136,12 +120,6 @@ class SettingsViewModel : BaseViewModel() {
 
     private val _settingsJson = MutableStateFlow("")
     val settingsJson: StateFlow<String> = _settingsJson.asStateFlow()
-
-    private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
-    val logs: StateFlow<List<LogEntry>> = _logs.asStateFlow()
-
-    private val _showLogs = MutableStateFlow(false)
-    val showLogs: StateFlow<Boolean> = _showLogs.asStateFlow()
 
     private val _loggedOut = MutableStateFlow(false)
     val loggedOut: StateFlow<Boolean> = _loggedOut.asStateFlow()
@@ -193,56 +171,6 @@ class SettingsViewModel : BaseViewModel() {
             block = { repo.reloadConfig() },
             onSuccess = { showToast(string(R.string.settings_config_reloaded)) }
         )
-    }
-
-    fun loadLogs() {
-        launchResult(
-            block = { repo.listLogs() },
-            onSuccess = { json ->
-                _logs.value = parseLogs(json)
-                _showLogs.value = true
-            }
-        )
-    }
-
-    /** 解析日志 JSON 数组为 LogEntry 列表（按时间降序）。 */
-    private fun parseLogs(json: JsonElement?): List<LogEntry> {
-        if (json == null) return emptyList()
-        val arr = if (json.isJsonArray) json.asJsonArray else return emptyList()
-        return arr.mapNotNull { el ->
-            if (!el.isJsonObject) return@mapNotNull null
-            val obj = el.asJsonObject
-            LogEntry(
-                time = obj.get("time")?.asString ?: "",
-                level = obj.get("level")?.asString ?: "info",
-                message = obj.get("message")?.asString ?: ""
-            )
-        }.sortedByDescending { it.time }
-    }
-
-    fun dismissLogs() {
-        _showLogs.value = false
-    }
-
-    /** 加载本地模式运行日志（来自 LocalLogger 持久化存储）。 */
-    fun loadLocalLogs() {
-        val records = LocalLogger.listLogs()
-        _logs.value = records.map { rec ->
-            LogEntry(
-                time = "${rec.date} ${rec.time}",
-                level = rec.level,
-                message = if (rec.tag.isNotBlank()) "[${rec.tag}] ${rec.message}" else rec.message
-            )
-        }
-        _showLogs.value = true
-    }
-
-    /** 清空本地日志。 */
-    fun clearLocalLogs() {
-        LocalLogger.clear()
-        _logs.value = emptyList()
-        _showLogs.value = false
-        showToast(string(R.string.settings_local_logs_cleared))
     }
 
     fun logout() {
@@ -347,8 +275,6 @@ sealed class DownloadUiState {
 fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: () -> Unit = onLogout) {
     val vm: SettingsViewModel = viewModel()
     val settingsJson by vm.settingsJson.collectAsStateWithLifecycle()
-    val logs by vm.logs.collectAsStateWithLifecycle()
-    val showLogs by vm.showLogs.collectAsStateWithLifecycle()
     val loggedOut by vm.loggedOut.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
     val appMode by vm.appMode.collectAsStateWithLifecycle()
@@ -771,40 +697,22 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                     ) { onNavigate("agent_settings") }
                 }
 
-                // 5. 日志查看（服务器模式看服务端日志，本地模式看 LocalLogger）
+                // 5. 日志与诊断（日志查看为独立页面：等级筛选 + 搜索 + 复制/清空）
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(title = if (appMode == AppMode.LOCAL) stringResource(R.string.settings_local_logs) else stringResource(R.string.settings_logs_view))
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = {
-                            if (appMode == AppMode.LOCAL) vm.loadLocalLogs() else vm.loadLogs()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (appMode == AppMode.LOCAL) stringResource(R.string.settings_view_local_logs) else stringResource(R.string.settings_view_recent_logs))
-                    }
-                    if (appMode == AppMode.LOCAL) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = { vm.clearLocalLogs() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.settings_clear_local_logs), color = MaterialTheme.colorScheme.error)
-                        }
-                    }
+                    SectionHeader(title = stringResource(R.string.settings_logs_diagnostics))
                     Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = { onNavigate("diagnostic_center") },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.diagnostic_center_title))
-                    }
+                    SettingNavRow(
+                        icon = Icons.Filled.Description,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = if (appMode == AppMode.LOCAL) stringResource(R.string.settings_local_logs) else stringResource(R.string.settings_logs_view),
+                        subtitle = stringResource(R.string.settings_logs_desc)
+                    ) { onNavigate("logs") }
+                    SettingNavRow(
+                        icon = Icons.Filled.BugReport,
+                        iconColor = MaterialTheme.colorScheme.tertiary,
+                        title = stringResource(R.string.diagnostic_center_title),
+                        subtitle = stringResource(R.string.diagnostic_center_desc)
+                    ) { onNavigate("diagnostic_center") }
                 }
 
                 // 6. 账号（仅服务器模式，本地模式无需登录）
@@ -946,37 +854,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
         )
     }
 
-    // 日志弹窗：卡片列表展示
-    if (showLogs) {
-        NekoDialog(
-            onDismiss = { vm.dismissLogs() },
-            title = stringResource(R.string.settings_system_logs, logs.size),
-            confirmText = stringResource(R.string.common_close),
-            onConfirm = { vm.dismissLogs() },
-            cancelText = null,
-            onCancel = null
-        ) {
-            if (logs.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.settings_no_logs),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 450.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(logs) { log ->
-                        LogCard(log)
-                    }
-                }
-            }
-        }
-    }
+    // 日志查看已迁移到独立页面（Routes.LOGS），此处不再弹出日志对话框
 }
 
 /** 语言选择弹窗：跟随系统 / 简体中文 / 繁體中文 / English / 日本語 / 한국어。 */
@@ -1026,64 +904,6 @@ private fun LanguagePickerDialog(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-/** 单条日志卡片：左侧等级色条 + 时间 + 消息内容。 */
-@Composable
-private fun LogCard(log: LogEntry) {
-    val levelColor = when (log.level.lowercase()) {
-        "error" -> MaterialTheme.colorScheme.error
-        "warning", "warn" -> accentWarning()
-        "debug" -> accentSecondary()
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val levelLabel = when (log.level.lowercase()) {
-        "warning" -> "WARN"
-        "warn" -> "WARN"
-        else -> log.level.uppercase()
-    }
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 10,
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            // 左侧等级色条
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(42.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(levelColor)
-            )
-            Spacer(Modifier.width(8.dp))
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = levelLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = levelColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = log.time,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = log.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
             }
         }
     }

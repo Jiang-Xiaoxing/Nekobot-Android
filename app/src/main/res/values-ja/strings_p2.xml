@@ -113,6 +113,11 @@
     <string name="diagnostic_log_level_error">エラー</string>
     <string name="diagnostic_log_level_warning">警告</string>
     <string name="diagnostic_log_level_info">情報</string>
+    <string name="diagnostic_log_level_debug">デバッグ</string>
+    <string name="logs_search_hint">ログを検索</string>
+    <string name="logs_count">%1$d 件</string>
+    <string name="logs_no_match">一致するログがありません</string>
+    <string name="logs_clear_confirm">ローカルログをすべて削除しますか？</string>
     <string name="diagnostic_copy_log">ログをコピー</string>
     <string name="diagnostic_copied">クリップボードにコピーしました</string>
     <string name="webdav_incremental_title">差分同期</string>

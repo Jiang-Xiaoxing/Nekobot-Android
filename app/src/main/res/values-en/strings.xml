@@ -140,6 +140,8 @@
     <string name="settings_webdav_backup_desc">Configure remote backup and scheduled sync</string>
     <string name="settings_local_logs">Local logs</string>
     <string name="settings_logs_view">Logs</string>
+    <string name="settings_logs_diagnostics">Logs &amp; diagnostics</string>
+    <string name="settings_logs_desc">View, filter, and search logs</string>
     <string name="settings_view_local_logs">View local runtime logs</string>
     <string name="settings_view_recent_logs">View recent logs</string>
     <string name="settings_clear_local_logs">Clear local logs</string>

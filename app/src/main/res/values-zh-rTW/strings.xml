@@ -152,6 +152,8 @@
     <string name="settings_webdav_backup_desc">配置遠程備份並定時同步</string>
     <string name="settings_local_logs">本地日誌</string>
     <string name="settings_logs_view">日誌查看</string>
+    <string name="settings_logs_diagnostics">日誌與診斷</string>
+    <string name="settings_logs_desc">檢視、篩選與搜尋日誌</string>
     <string name="settings_view_local_logs">查看本地運行日誌</string>
     <string name="settings_view_recent_logs">查看最近日誌</string>
     <string name="settings_clear_local_logs">清空本地日誌</string>

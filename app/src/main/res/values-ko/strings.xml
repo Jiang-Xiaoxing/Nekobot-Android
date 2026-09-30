@@ -140,6 +140,8 @@
     <string name="settings_webdav_backup_desc">원격 백업 및 예약 동기화 설정</string>
     <string name="settings_local_logs">로컬 로그</string>
     <string name="settings_logs_view">로그</string>
+    <string name="settings_logs_diagnostics">로그 및 진단</string>
+    <string name="settings_logs_desc">로그 조회, 필터, 검색</string>
     <string name="settings_view_local_logs">로컬 런타임 로그 조회</string>
     <string name="settings_view_recent_logs">최근 로그 조회</string>
     <string name="settings_clear_local_logs">로컬 로그 지우기</string>

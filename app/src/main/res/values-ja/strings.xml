@@ -140,6 +140,8 @@
     <string name="settings_webdav_backup_desc">リモートバックアップと定期同期の設定</string>
     <string name="settings_local_logs">ローカルログ</string>
     <string name="settings_logs_view">ログ</string>
+    <string name="settings_logs_diagnostics">ログと診断</string>
+    <string name="settings_logs_desc">ログの表示・絞り込み・検索</string>
     <string name="settings_view_local_logs">ローカル実行ログを表示</string>
     <string name="settings_view_recent_logs">最近のログを表示</string>
     <string name="settings_clear_local_logs">ローカルログをクリア</string>
