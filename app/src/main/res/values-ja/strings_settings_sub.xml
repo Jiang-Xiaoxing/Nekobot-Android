@@ -144,6 +144,10 @@
     <string name="workspace_manager_delete_file_msg">「%1$s」を削除します。元に戻せません。続行しますか？</string>
     <string name="workspace_manager_deleted">削除しました</string>
     <string name="workspace_manager_delete_failed">削除に失敗しました</string>
+    <string name="workspace_manager_delete_orphans">削除済みセッションの作業スペースを一括削除</string>
+    <string name="workspace_manager_delete_orphans_msg">削除済みセッション %1$d 件の作業スペース（合計 %2$s）を完全に削除します。元に戻せません。続行しますか？</string>
+    <string name="workspace_manager_delete_orphans_done">残存作業スペースを %1$d 件削除しました</string>
+    <string name="workspace_manager_delete_orphans_failed">%1$d 件の削除に失敗しました</string>
     <string name="workspace_manager_truncated">ファイルが多いため、先頭 %1$d 件のみ表示</string>
 
     <!-- ==================== 設定転送 ==================== -->

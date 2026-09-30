@@ -2,6 +2,7 @@ package com.nekobot.app.ui.screens.settings
 
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,12 +16,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Refresh
@@ -154,6 +158,40 @@ internal class WorkspaceManagerViewModel : BaseViewModel() {
         }
     }
 
+    /**
+     * 一键删除全部「会话已删除」的残留工作区目录。
+     *
+     * 只处理 [SessionWorkspaceEntry.sessionExists] 为 false 的条目，会话仍存在的工作区不受影响；
+     * 单个目录删除失败不会中断整体流程，结束后按成功/失败数量分别提示。
+     */
+    fun deleteOrphanWorkspaces(context: Context, entries: List<SessionWorkspaceEntry>) {
+        val orphans = entries.filterNot { it.sessionExists }
+        if (orphans.isEmpty()) return
+        viewModelScope.launch {
+            setLoading(true)
+            var deleted = 0
+            var failed = 0
+            try {
+                val fs = maintenance(context)
+                for (entry in orphans) {
+                    val ok = try {
+                        fs.deleteWorkspace(entry)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        false
+                    }
+                    if (ok) deleted++ else failed++
+                }
+            } finally {
+                setLoading(false)
+            }
+            if (deleted > 0) showToast(string(R.string.workspace_manager_delete_orphans_done, deleted))
+            if (failed > 0) showError(string(R.string.workspace_manager_delete_orphans_failed, failed))
+            refresh(context)
+        }
+    }
+
     /** 删除工作区内的单个文件或文件夹。 */
     fun deleteItem(context: Context, entry: SessionWorkspaceEntry, relativePath: String) {
         viewModelScope.launch {
@@ -193,8 +231,21 @@ fun WorkspaceManagerScreen(onBack: () -> Unit) {
     var currentDir by remember { mutableStateOf("") }
     var pendingWorkspace by remember { mutableStateOf<SessionWorkspaceEntry?>(null) }
     var pendingItem by remember { mutableStateOf<WorkspaceItemEntry?>(null) }
+    var pendingOrphans by remember { mutableStateOf(false) }
+    // 提到页面层持有，进入文件界面再返回时列表滚动位置不丢失
+    val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) { vm.refresh(context) }
+
+    // 从文件界面退回工作区列表（列表滚动位置由 listState 保持）
+    val backToList = {
+        browsing = null
+        currentDir = ""
+        vm.clearItems()
+    }
+
+    // 文件界面侧滑返回：先回到工作区列表（保持原进入位置），而不是直接退出整个页面
+    BackHandler(enabled = browsing != null) { backToList() }
 
     LaunchedEffect(toast) {
         if (toast != null) {
@@ -215,13 +266,7 @@ fun WorkspaceManagerScreen(onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (browsing != null) {
-                            browsing = null
-                            currentDir = ""
-                            vm.clearItems()
-                        } else {
-                            onBack()
-                        }
+                        if (browsing != null) backToList() else onBack()
                     }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -265,11 +310,13 @@ fun WorkspaceManagerScreen(onBack: () -> Unit) {
                 if (target == null) {
                     WorkspaceListPane(
                         entries = entries,
+                        listState = listState,
                         onBrowse = { entry ->
                             browsing = entry
                             currentDir = ""
                             vm.loadItems(context, entry)
                         },
+                        onDeleteOrphans = { pendingOrphans = true },
                         onDeleteWorkspace = { entry -> pendingWorkspace = entry }
                     )
                 } else {
@@ -286,6 +333,27 @@ fun WorkspaceManagerScreen(onBack: () -> Unit) {
             }
             LoadingOverlay(visible = loading)
         }
+    }
+
+    // 一键删除全部「会话已删除」的残留工作区
+    if (pendingOrphans) {
+        val orphans = entries.filterNot { it.sessionExists }
+        NekoDialog(
+            onDismiss = { pendingOrphans = false },
+            title = stringResource(R.string.workspace_manager_delete_orphans),
+            message = stringResource(
+                R.string.workspace_manager_delete_orphans_msg,
+                orphans.size,
+                formatWorkspaceSize(orphans.sumOf { it.sizeBytes })
+            ),
+            confirmText = stringResource(R.string.common_delete),
+            onConfirm = {
+                pendingOrphans = false
+                vm.deleteOrphanWorkspaces(context, entries)
+            },
+            cancelText = stringResource(R.string.common_cancel),
+            onCancel = { pendingOrphans = false }
+        )
     }
 
     // 删除整个工作区
@@ -330,7 +398,9 @@ fun WorkspaceManagerScreen(onBack: () -> Unit) {
 @Composable
 private fun WorkspaceListPane(
     entries: List<SessionWorkspaceEntry>,
+    listState: LazyListState,
     onBrowse: (SessionWorkspaceEntry) -> Unit,
+    onDeleteOrphans: () -> Unit,
     onDeleteWorkspace: (SessionWorkspaceEntry) -> Unit
 ) {
     if (entries.isEmpty()) {
@@ -343,6 +413,7 @@ private fun WorkspaceListPane(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
@@ -365,20 +436,36 @@ private fun WorkspaceListPane(
         }
         if (orphans.isNotEmpty()) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.workspace_manager_group_orphan),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.workspace_manager_group_orphan),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    // 一键删除全部残留工作区
+                    OutlinedButton(onClick = onDeleteOrphans, modifier = Modifier.fillMaxWidth()) {
+                        Icon(
+                            Icons.Filled.DeleteSweep,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.workspace_manager_delete_orphans),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
             items(orphans, key = { "orphan:${it.sessionId}:${it.legacy}" }) { entry ->

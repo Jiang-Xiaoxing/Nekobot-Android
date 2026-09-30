@@ -144,6 +144,10 @@
     <string name="workspace_manager_delete_file_msg">将删除「%1$s」，且不可恢复。确定继续吗？</string>
     <string name="workspace_manager_deleted">已删除</string>
     <string name="workspace_manager_delete_failed">删除失败</string>
+    <string name="workspace_manager_delete_orphans">一键删除已删除会话工作区</string>
+    <string name="workspace_manager_delete_orphans_msg">将永久删除 %1$d 个已删除会话的工作区（共 %2$s），且不可恢复。确定继续吗？</string>
+    <string name="workspace_manager_delete_orphans_done">已删除 %1$d 个残留工作区</string>
+    <string name="workspace_manager_delete_orphans_failed">%1$d 个删除失败</string>
     <string name="workspace_manager_truncated">文件过多，仅显示前 %1$d 项</string>
 
     <!-- ==================== 配置迁移 ==================== -->

@@ -144,6 +144,10 @@
     <string name="workspace_manager_delete_file_msg">Delete "%1$s"? This cannot be undone.</string>
     <string name="workspace_manager_deleted">Deleted</string>
     <string name="workspace_manager_delete_failed">Delete failed</string>
+    <string name="workspace_manager_delete_orphans">Delete all deleted-chat workspaces</string>
+    <string name="workspace_manager_delete_orphans_msg">This permanently deletes the workspaces of %1$d deleted chats (%2$s in total). Continue?</string>
+    <string name="workspace_manager_delete_orphans_done">Deleted %1$d leftover workspaces</string>
+    <string name="workspace_manager_delete_orphans_failed">%1$d could not be deleted</string>
     <string name="workspace_manager_truncated">Too many files; showing the first %1$d</string>
 
     <!-- ==================== Config transfer ==================== -->

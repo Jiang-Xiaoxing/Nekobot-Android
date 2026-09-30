@@ -144,6 +144,10 @@
     <string name="workspace_manager_delete_file_msg">"%1$s"을(를) 삭제하며 되돌릴 수 없어요. 계속할까요?</string>
     <string name="workspace_manager_deleted">삭제했어요</string>
     <string name="workspace_manager_delete_failed">삭제 실패</string>
+    <string name="workspace_manager_delete_orphans">삭제된 세션 작업 공간 일괄 삭제</string>
+    <string name="workspace_manager_delete_orphans_msg">삭제된 세션 %1$d개의 작업 공간(총 %2$s)을 영구 삭제하며 되돌릴 수 없어요. 계속할까요?</string>
+    <string name="workspace_manager_delete_orphans_done">잔여 작업 공간 %1$d개를 삭제했어요</string>
+    <string name="workspace_manager_delete_orphans_failed">%1$d개 삭제 실패</string>
     <string name="workspace_manager_truncated">파일이 많아 처음 %1$d개만 표시해요</string>
 
     <!-- ==================== 설정 전송 ==================== -->
