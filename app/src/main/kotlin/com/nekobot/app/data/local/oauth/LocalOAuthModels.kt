@@ -175,22 +175,32 @@ object LocalOAuthProviders {
             protocol = "openai_chat",
             baseUrl = "https://opencode.ai/zen/go/v1",
             models = listOf(
-                "grok-4.5",
+                "grok-4.7",
+                "grok-4.6",
+                "gpt-6-luna",
+                "gpt-5.6-luna",
+                "glm-5.3",
                 "glm-5.2",
-                "glm-5.1",
+                "glm-5.3-flash",
                 "kimi-k3",
                 "kimi-k2.7-code",
-                "kimi-k2.6",
                 "deepseek-v4-pro",
+                "deepseek-v4.1-flash",
+                "deepseek-flash",
                 "deepseek-v4-flash",
+                "mimo-v2.6-pro",
+                "mimo-v2.6-flash",
                 "mimo-v2.5-pro",
                 "mimo-v2.5",
                 "minimax-m3",
                 "minimax-m2.7",
-                "minimax-m2.5",
-                "qwen3.7-max",
+                "qwen3.8-max",
+                "qwen3.8-flash",
                 "qwen3.7-plus",
-                "qwen3.6-plus"
+                "longcat-2.5-preview-free",
+                "space-bunny-free",
+                "hy3",
+                "hy4-preview"
             ),
             defaultContextLength = 200_000,
             defaultMaxTokens = 65_536
@@ -233,20 +243,30 @@ object LocalOAuthProviders {
 
         val normalized = modelId.lowercase()
         if (provider == OPENCODE_GO) {
-            return if (normalized.startsWith("minimax-") || normalized.startsWith("qwen")) {
-                LocalOAuthModelTarget(
-                    protocol = "anthropic_messages",
-                    baseUrl = "https://opencode.ai/zen/go",
-                    maxContextLength = 200_000,
-                    maxTokens = 128_000
-                )
-            } else {
-                LocalOAuthModelTarget(
-                    protocol = "openai_chat",
-                    baseUrl = "https://opencode.ai/zen/go/v1",
-                    maxContextLength = 200_000,
-                    maxTokens = 65_536
-                )
+            return when {
+                normalized.startsWith("minimax-") || normalized.startsWith("qwen") ->
+                    LocalOAuthModelTarget(
+                        protocol = "anthropic_messages",
+                        baseUrl = "https://opencode.ai/zen/go",
+                        maxContextLength = 200_000,
+                        maxTokens = 128_000
+                    )
+                normalized.startsWith("gpt-") || normalized.startsWith("grok-") ->
+                    // Grok / GPT Luna 在 Go 网关只提供 Responses API，
+                    // chat/completions 会被拒（ModelProtocolUnsupported）
+                    LocalOAuthModelTarget(
+                        protocol = "openai_responses",
+                        baseUrl = "https://opencode.ai/zen/go/v1",
+                        maxContextLength = 272_000,
+                        maxTokens = 128_000
+                    )
+                else ->
+                    LocalOAuthModelTarget(
+                        protocol = "openai_chat",
+                        baseUrl = "https://opencode.ai/zen/go/v1",
+                        maxContextLength = 200_000,
+                        maxTokens = 65_536
+                    )
             }
         }
 

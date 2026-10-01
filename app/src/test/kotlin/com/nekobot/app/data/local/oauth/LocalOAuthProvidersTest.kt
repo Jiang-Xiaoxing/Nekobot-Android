@@ -93,12 +93,24 @@ class LocalOAuthProvidersTest {
             LocalOAuthProviders.OPENCODE_GO,
             "kimi-k3"
         )
+        val grok = LocalOAuthProviders.resolveModelTarget(
+            LocalOAuthProviders.OPENCODE_GO,
+            "grok-4.7"
+        )
+        val luna = LocalOAuthProviders.resolveModelTarget(
+            LocalOAuthProviders.OPENCODE_GO,
+            "gpt-6-luna"
+        )
 
         assertEquals("anthropic_messages", qwen.protocol)
         assertEquals("https://opencode.ai/zen/go", qwen.baseUrl)
         assertEquals("anthropic_messages", miniMax.protocol)
         assertEquals("openai_chat", kimi.protocol)
         assertEquals("https://opencode.ai/zen/go/v1", kimi.baseUrl)
+        // Grok / GPT Luna 在 Go 网关只提供 Responses API，chat/completions 会被 400 拒绝
+        assertEquals("openai_responses", grok.protocol)
+        assertEquals("https://opencode.ai/zen/go/v1", grok.baseUrl)
+        assertEquals("openai_responses", luna.protocol)
     }
 
     @Test

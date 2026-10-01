@@ -35,6 +35,46 @@ class LocalTokenUsageCacheTest {
     }
 
     @Test
+    fun `responses api input tokens details cached tokens are recognized`() {
+        // OpenCode Go 网关 grok-4.7 (Responses API) 实测返回的 usage 形状
+        val usage = JsonParser.parseString(
+            """
+            {"input_tokens":1326,"output_tokens":48,"total_tokens":1374,
+             "input_tokens_details":{"cached_tokens":1152},
+             "output_tokens_details":{"reasoning_tokens":46}}
+            """.trimIndent()
+        ).asJsonObject
+
+        val detail = openAiStyleUsageFromJson(usage)
+
+        assertEquals(1326, detail.promptTokens)
+        assertEquals(48, detail.completionTokens)
+        assertEquals(1374, detail.totalTokens)
+        assertEquals(1152, detail.cachedPromptTokens)
+    }
+
+    @Test
+    fun `responses api cache write tokens are recognized`() {
+        // OpenCode Go 网关 gpt-5.6-luna (Responses API) 实测返回的 usage 形状
+        val usage = mapOf<String, Any>(
+            "input_tokens" to 90,
+            "output_tokens" to 6,
+            "total_tokens" to 96,
+            "input_tokens_details" to mapOf(
+                "cached_tokens" to 0,
+                "cache_write_tokens" to 40
+            )
+        )
+
+        val detail = openAiStyleUsageFromMap(usage)
+
+        assertEquals(90, detail.promptTokens)
+        assertEquals(6, detail.completionTokens)
+        assertEquals(0, detail.cachedPromptTokens)
+        assertEquals(40, detail.cacheWriteTokens)
+    }
+
+    @Test
     fun `anthropic input excludes cache read and creation so they are added back`() {
         val usage = JsonParser.parseString(
             """

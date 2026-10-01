@@ -43,7 +43,8 @@ data class LocalToolCallDelta(
  * 语义约定（缓存命中率的统一口径）：
  * - [promptTokens] 是本次计入计费的完整输入量。Anthropic 的 `input_tokens` 不含缓存读写，
  *   解析层已把 cache_read/cache_creation 累加回来，因此 [cachedPromptTokens] 始终是它的子集；
- * - [cachedPromptTokens] 命中缓存的输入量（OpenAI `prompt_tokens_details.cached_tokens`、
+ * - [cachedPromptTokens] 命中缓存的输入量（OpenAI Chat `prompt_tokens_details.cached_tokens`、
+ *   OpenAI Responses `input_tokens_details.cached_tokens`、
  *   DeepSeek `prompt_cache_hit_tokens`、Anthropic `cache_read_input_tokens`、
  *   Gemini `cachedContentTokenCount`）；
  * - [cacheWriteTokens] 写入缓存的输入量（Anthropic `cache_creation_input_tokens`），
@@ -159,29 +160,61 @@ internal fun Map<*, *>.usageInt(key: String): Int = when (val value = this[key])
     else -> 0
 }
 
-/** OpenAI 兼容 JSON usage → 用量明细（含 `prompt_tokens_details.cached_tokens`）。 */
+/**
+ * OpenAI 兼容 JSON usage → 用量明细。
+ *
+ * 同时兼容 Chat Completions（`prompt_tokens` + `prompt_tokens_details.cached_tokens`）与
+ * Responses API（`input_tokens` + `input_tokens_details.cached_tokens`）两种形状，
+ * 以及 DeepSeek `prompt_cache_hit_tokens`、Moonshot 顶层 `cached_tokens`；
+ * 写入量取 Responses `input_tokens_details.cache_write_tokens` 或顶层 `cache_creation_input_tokens`。
+ */
 internal fun openAiStyleUsageFromJson(usage: JsonObject): LocalModelUsage {
-    val prompt = usage.usageInt("prompt_tokens")
-    val completion = usage.usageInt("completion_tokens")
+    val prompt = usage.usageInt("prompt_tokens").takeIf { it > 0 }
+        ?: usage.usageInt("input_tokens")
+    val completion = usage.usageInt("completion_tokens").takeIf { it > 0 }
+        ?: usage.usageInt("output_tokens")
     val total = usage.usageInt("total_tokens")
     val cached = usage.usageObject("prompt_tokens_details")?.usageInt("cached_tokens")
         ?.takeIf { it > 0 }
+        ?: usage.usageObject("input_tokens_details")?.usageInt("cached_tokens")
+            ?.takeIf { it > 0 }
         ?: usage.usageInt("cached_tokens").takeIf { it > 0 }
         ?: usage.usageInt("prompt_cache_hit_tokens")
-    return openAiStyleUsage(prompt, completion, total, cached)
+    val cacheWrite = usage.usageObject("input_tokens_details")?.usageInt("cache_write_tokens")
+        ?.takeIf { it > 0 }
+        ?: usage.usageInt("cache_creation_input_tokens").takeIf { it > 0 }
+        ?: 0
+    return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite)
 }
 
-/** OpenAI 兼容 Map usage → 用量明细。 */
+/** OpenAI 兼容 Map usage → 用量明细（字段口径同 [openAiStyleUsageFromJson]）。 */
 internal fun openAiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage {
-    val prompt = usage.usageInt("prompt_tokens")
-    val completion = usage.usageInt("completion_tokens")
+    val prompt = usage.usageInt("prompt_tokens").takeIf { it > 0 }
+        ?: usage.usageInt("input_tokens")
+    val completion = usage.usageInt("completion_tokens").takeIf { it > 0 }
+        ?: usage.usageInt("output_tokens")
     val total = usage.usageInt("total_tokens")
     val details = usage["prompt_tokens_details"] as? Map<*, *>
+    val inputDetails = usage["input_tokens_details"] as? Map<*, *>
     val cached = details?.usageInt("cached_tokens")?.takeIf { it > 0 }
+        ?: inputDetails?.usageInt("cached_tokens")?.takeIf { it > 0 }
         ?: usage.usageInt("cached_tokens").takeIf { it > 0 }
         ?: usage.usageInt("prompt_cache_hit_tokens")
-    return openAiStyleUsage(prompt, completion, total, cached)
+    val cacheWrite = inputDetails?.usageInt("cache_write_tokens")?.takeIf { it > 0 }
+        ?: usage.usageInt("cache_creation_input_tokens").takeIf { it > 0 }
+        ?: 0
+    return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite)
 }
+
+/** 写入量是输入的子集（扣除命中部分）；0 保持原值不动。 */
+private fun withCacheWrite(usage: LocalModelUsage, cacheWrite: Int): LocalModelUsage =
+    if (cacheWrite > 0) {
+        usage.copy(
+            cacheWriteTokens = cacheWrite.coerceIn(0, usage.promptTokens - usage.cachedPromptTokens)
+        )
+    } else {
+        usage
+    }
 
 /** Anthropic JSON usage → 用量明细（input_tokens 不含缓存读写）。 */
 internal fun anthropicStyleUsageFromJson(usage: JsonObject): LocalModelUsage = anthropicStyleUsage(
