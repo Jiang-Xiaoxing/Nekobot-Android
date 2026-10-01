@@ -16,6 +16,7 @@ import com.nekobot.app.data.model.KnowledgeDocumentRequest
 import com.nekobot.app.data.model.KnowledgeSearchResult
 import com.nekobot.app.data.model.KnowledgeStats
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * 本地知识库：Room 文档/切片持久化、OpenAI 兼容 Embedding 和离线词法回退。
@@ -114,7 +115,7 @@ class LocalKnowledgeManager(
     suspend fun rebuild() {
         dao.listDocuments().forEach { document ->
             runCatching { index(document.id) }
-                .onFailure { LocalLogger.w(TAG, "知识库索引失败 ${document.title}: ${it.message}") }
+                .onFailure { LocalLogger.w(TAG, R.string.log_kbase_index_failed, document.title, it.message) }
         }
     }
 
@@ -265,7 +266,7 @@ class LocalKnowledgeManager(
             for (batch in texts.chunked(16)) {
                 val result = runCatching { aiClient.createEmbeddings(model, batch) }
                     .onFailure {
-                        LocalLogger.w(TAG, "Embedding 模型 ${model.name} 失败，尝试后备模型: ${it.message}")
+                        LocalLogger.w(TAG, R.string.log_kbase_embedding_fallback, model.name, it.message)
                     }
                     .getOrNull()
                 if (result == null || result.vectors.size != batch.size) {

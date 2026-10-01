@@ -9,6 +9,7 @@ import com.nekobot.app.data.local.db.LocalCharacterMemoryEntity
 import com.nekobot.app.data.local.db.MemoryDao
 import java.time.Instant
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * 完整版自动记忆抽取，对应原仓库 nbot/core/auto_memory.py。
@@ -108,7 +109,7 @@ class AutoMemory(
     ): Int {
         if (userMessage.length < 2 || assistantMessage.length < 2) return 0
         if (characterId.isEmpty() || targetId.isEmpty()) {
-            LocalLogger.w(TAG, "记忆抽取跳过：characterId 或 targetId 为空 (characterId=$characterId targetId=$targetId)")
+            LocalLogger.w(TAG, R.string.log_amem_skip_empty_ids, characterId, targetId)
             return 0
         }
 
@@ -122,11 +123,11 @@ class AutoMemory(
         buffer.add(mapOf("user" to userMessage, "assistant" to assistantMessage))
 
         if (count < MEMORY_TURN_INTERVAL) {
-            LocalLogger.i(TAG, "记忆抽取累积中 $count/$MEMORY_TURN_INTERVAL (key=$counterKey)")
+            LocalLogger.i(TAG, R.string.log_amem_accumulating, count, MEMORY_TURN_INTERVAL, counterKey)
             return 0
         }
 
-        LocalLogger.i(TAG, "记忆抽取触发：$count 轮已达间隔 (key=$counterKey)")
+        LocalLogger.i(TAG, R.string.log_amem_triggered, count, counterKey)
 
         // 取出缓冲区
         val turns = buffer.toList()
@@ -137,7 +138,7 @@ class AutoMemory(
         val memories = try {
             callMemoryModel(turns, characterName, targetId, userPersona, characterId, sessionId)
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "记忆抽取失败", e)
+            LocalLogger.w(TAG, R.string.log_amem_extract_failed, throwable = e)
             // 失败回滚：放回缓冲区，计数器重置为间隔值（下一轮重试）
             turnBuffers[counterKey] = turns.toMutableList()
             turnCounters[counterKey] = MEMORY_TURN_INTERVAL
@@ -145,7 +146,7 @@ class AutoMemory(
         }
 
         if (memories.isEmpty()) {
-            LocalLogger.w(TAG, "记忆抽取无产出（LLM 未返回有效记忆或解析失败）(key=$counterKey)")
+            LocalLogger.w(TAG, R.string.log_amem_no_output, counterKey)
             turnCounters[counterKey] = 0
             buffer.clear()
             return 0
@@ -157,10 +158,10 @@ class AutoMemory(
         // 保存结构化记忆（按 category 分发到不同 path，区分 append/replace，同步派生 timeline）
         try {
             val savedCount = saveMemoriesByCategory(memories, characterId, targetId, sessionId)
-            LocalLogger.i(TAG, "抽取并保存 $savedCount 条记忆 (key=$counterKey)")
+            LocalLogger.i(TAG, R.string.log_amem_saved, savedCount, counterKey)
             return savedCount
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "记忆落盘失败", e)
+            LocalLogger.w(TAG, R.string.log_amem_persist_failed, throwable = e)
             // 落盘失败：放回缓冲区下一轮重试
             turnBuffers[counterKey] = turns.toMutableList()
             turnCounters[counterKey] = MEMORY_TURN_INTERVAL
@@ -243,7 +244,7 @@ class AutoMemory(
             memoryDao.upsertAll(timelineEntries)
             // 截断 timeline：保留最新 80 条（对齐原仓库 _MAX_TIMELINE_STORE）
             memoryDao.trimByCharacterAndCategory(characterId, "timeline", keep = MAX_TIMELINE_STORE)
-            LocalLogger.i(TAG, "timeline 派生 ${timelineEntries.size} 条，已截断至 $MAX_TIMELINE_STORE 条")
+            LocalLogger.i(TAG, R.string.log_amem_timeline_derived, timelineEntries.size, MAX_TIMELINE_STORE)
         }
 
         // 截断 important_event 单会话文件（保留最新 30 条）
@@ -373,7 +374,7 @@ class AutoMemory(
     ): List<Map<String, Any>> {
         val fallbackModel = if (failoverExecutor == null) aiModelProvider?.invoke() else null
         if (failoverExecutor == null && fallbackModel == null) {
-            LocalLogger.w(TAG, "记忆抽取跳过：未配置激活的 AI 模型（aiModelProvider 返回 null）")
+            LocalLogger.w(TAG, R.string.log_amem_no_active_model)
             return emptyList()
         }
 
@@ -388,7 +389,7 @@ class AutoMemory(
             mapOf("role" to "user", "content" to userPrompt)
         )
 
-        LocalLogger.i(TAG, "调用记忆抽取 LLM: turns=${turns.size} existing=${existingMemories.size}")
+        LocalLogger.i(TAG, R.string.log_amem_llm_call, turns.size, existingMemories.size)
 
         // 3 次重试
         repeat(MAX_LLM_RETRIES) { attempt ->
@@ -405,26 +406,26 @@ class AutoMemory(
                     )
                 }
                 if (result.error != null) {
-                    LocalLogger.w(TAG, "记忆抽取 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次失败")
+                    LocalLogger.w(TAG, R.string.log_amem_llm_attempt_failed, attempt + 1, MAX_LLM_RETRIES)
                     return@repeat
                 }
                 if (result.content.isBlank()) {
-                    LocalLogger.w(TAG, "记忆抽取 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次返回空内容")
+                    LocalLogger.w(TAG, R.string.log_amem_llm_attempt_empty, attempt + 1, MAX_LLM_RETRIES)
                     return@repeat
                 }
 
-                LocalLogger.i(TAG, "记忆抽取 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次成功，返回 ${result.content.length} 字符，开始解析")
+                LocalLogger.i(TAG, R.string.log_amem_llm_attempt_success, attempt + 1, MAX_LLM_RETRIES, result.content.length)
                 val parsed = parseMemoryResponse(result.content)
                 if (parsed.isEmpty()) {
-                    LocalLogger.w(TAG, "记忆抽取 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次解析失败，将重试")
+                    LocalLogger.w(TAG, R.string.log_amem_llm_attempt_parse_failed, attempt + 1, MAX_LLM_RETRIES)
                     return@repeat
                 }
                 return parsed
             } catch (e: Exception) {
-                LocalLogger.w(TAG, "记忆抽取 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次异常", e)
+                LocalLogger.w(TAG, R.string.log_amem_llm_attempt_error, attempt + 1, MAX_LLM_RETRIES, throwable = e)
             }
         }
-        LocalLogger.w(TAG, "记忆抽取 LLM $MAX_LLM_RETRIES 次重试均失败")
+        LocalLogger.w(TAG, R.string.log_amem_llm_all_retries_failed, MAX_LLM_RETRIES)
         return emptyList()
     }
 
@@ -452,7 +453,7 @@ class AutoMemory(
                 }
             }
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "读取已有记忆失败（不影响主流程）")
+            LocalLogger.w(TAG, R.string.log_amem_read_existing_failed)
         }
         return result
     }
@@ -570,7 +571,7 @@ ${AiOutputLanguage.directive()}
     fun parseMemoryResponse(text: String): List<Map<String, Any>> {
         val cleaned = cleanResponseContent(text)
         if (cleaned.isEmpty()) {
-            LocalLogger.w(TAG, "记忆抽取解析：cleanResponseContent 后为空（原始长度=${text.length}）")
+            LocalLogger.w(TAG, R.string.log_amem_parse_empty_after_clean, text.length)
             return emptyList()
         }
 
@@ -593,7 +594,7 @@ ${AiOutputLanguage.directive()}
             // 正则提取数组
             val match = Regex("""\[[\s\S]*\]""").find(cleaned)
             if (match == null) {
-                LocalLogger.w(TAG, "记忆抽取解析：无法识别为 JSON 数组或对象（原始长度=${text.length}）")
+                LocalLogger.w(TAG, R.string.log_amem_parse_not_json, text.length)
                 return emptyList()
             }
             match.value
@@ -603,16 +604,16 @@ ${AiOutputLanguage.directive()}
             val type = object : TypeToken<List<Map<String, Any>>>() {}.type
             @Suppress("UNCHECKED_CAST")
             val list = gson.fromJson<List<Map<String, Any>>>(arrayStr, type) ?: run {
-                LocalLogger.w(TAG, "记忆抽取解析：Gson 返回 null（候选 JSON 长度=${arrayStr.length}）")
+                LocalLogger.w(TAG, R.string.log_amem_parse_gson_null, arrayStr.length)
                 return emptyList()
             }
             val normalized = list.mapNotNull { item -> normalizeMemoryItem(item) }
             if (normalized.isEmpty() && list.isNotEmpty()) {
-                LocalLogger.w(TAG, "记忆抽取解析：LLM 返回 ${list.size} 条但归一化后全部被丢弃")
+                LocalLogger.w(TAG, R.string.log_amem_parse_all_dropped, list.size)
             }
             normalized.take(8)
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "记忆抽取解析 JSON 失败（候选 JSON 长度=${arrayStr.length}）", e)
+            LocalLogger.w(TAG, R.string.log_amem_parse_json_error, arrayStr.length, throwable = e)
             emptyList()
         }
     }
@@ -623,7 +624,7 @@ ${AiOutputLanguage.directive()}
             .trim().lowercase().replace("-", "_").replace(" ", "_")
         val aliased = MEMORY_CATEGORY_ALIASES[category] ?: category
         if (aliased !in STRUCTURED_CATEGORIES) {
-            LocalLogger.w(TAG, "记忆条目被丢弃：分类不在允许范围")
+            LocalLogger.w(TAG, R.string.log_amem_entry_dropped_category)
             return null
         }
 
@@ -634,7 +635,7 @@ ${AiOutputLanguage.directive()}
         if (title.isEmpty()) title = summary.take(30)
         if (content.isEmpty()) content = summary
         if (title.isEmpty() || content.isEmpty()) {
-            LocalLogger.w(TAG, "记忆条目被丢弃：标题或内容为空（内容长度=${content.length}）")
+            LocalLogger.w(TAG, R.string.log_amem_entry_dropped_empty, content.length)
             return null
         }
 

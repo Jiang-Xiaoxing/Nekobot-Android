@@ -9,7 +9,10 @@ import androidx.core.graphics.drawable.IconCompat
 import com.nekobot.app.MainActivity
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.repository.Resource
+
+private const val TAG = "NekobotShortcut"
 
 /** 将置顶、收藏和最近会话发布为 Android 桌面动态快捷方式。 */
 object NekobotShortcutManager {
@@ -45,9 +48,13 @@ object NekobotShortcutManager {
                 )
                 .build()
         }
-        ShortcutManagerCompat.removeAllDynamicShortcuts(context)
-        if (shortcuts.isNotEmpty()) {
-            ShortcutManagerCompat.addDynamicShortcuts(context, shortcuts)
+        runCatching {
+            ShortcutManagerCompat.removeAllDynamicShortcuts(context)
+            if (shortcuts.isNotEmpty()) {
+                ShortcutManagerCompat.addDynamicShortcuts(context, shortcuts)
+            }
+        }.onFailure {
+            LocalLogger.w(TAG, R.string.log_shortcut_refresh_failed, it.message)
         }
     }
 }

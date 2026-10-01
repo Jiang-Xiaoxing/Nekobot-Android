@@ -2,6 +2,8 @@ package com.nekobot.app.data.local.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 
 /** 安全值读取后的迁移动作；与 Android 存储解耦，供单元测试覆盖。 */
 internal data class SecureValueResolution(
@@ -28,6 +30,7 @@ internal object SecureValueMigration {
                 .fold(
                     onSuccess = { SecureValueResolution(value = it) },
                     onFailure = {
+                        LocalLogger.w(TAG, R.string.log_secure_decrypt_failed, it.message)
                         SecureValueResolution(
                             value = null,
                             clearUnreadableValue = true
@@ -49,6 +52,8 @@ internal object SecureValueMigration {
  *
  * [getString] 会把旧偏好文件里的明文值原子迁移到安全文件，并删除旧值。
  */
+private const val TAG = "SecurePreferenceStore"
+
 internal class SecurePreferenceStore(
     context: Context,
     private val cipher: SecretCipher = AndroidKeystoreSecretCipher(KEY_ALIAS)

@@ -2,6 +2,7 @@ package com.nekobot.app.data.local.ai
 
 import java.time.Instant
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * 统一 AI 处理管道，对应原仓库 nbot/core/ai_pipeline.py:AIPipeline。
@@ -73,10 +74,7 @@ class AIPipeline {
         // 工具循环的输入 token 预算：调用方传入的 maxContextChars 实际是模型配置的
         // token 上限（见 LocalRepository.chatWithPipeline），供循环内上下文裁剪使用。
         ctx.metadata["max_context_tokens"] = maxContextChars
-        com.nekobot.app.data.local.LocalLogger.i(
-            TAG,
-            "Pipeline 开始 | 会话=${ctx.chatRequest.conversationId} | 用户消息长度=${ctx.chatRequest.content.length}"
-        )
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_start, ctx.chatRequest.conversationId, ctx.chatRequest.content.length)
 
         val progress = progressReporter ?: callbacks.getProgressReporter(ctx)
 
@@ -103,7 +101,7 @@ class AIPipeline {
 
         val modelInfo = resultMeta["model_name"]?.let { " | 模型=$it" } ?: ""
         val usageInfo = result.usage.takeIf { it.isNotEmpty() }?.let { " | usage=$it" } ?: ""
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "Pipeline 完成 | 耗时=${"%.0f".format(durationMs)}ms$modelInfo$usageInfo | 回复长度=${result.finalContent.length}")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_done, "%.0f".format(durationMs), modelInfo, usageInfo, result.finalContent.length)
 
         return result.copy(metadata = resultMeta)
     }
@@ -272,24 +270,18 @@ class AIPipeline {
             val stickerImages = resolveUserStickerImages(userContent, ctx.imageUrls)
             if (stickerImages.isNotEmpty()) {
                 ctx.imageUrls.addAll(stickerImages)
-                com.nekobot.app.data.local.LocalLogger.i(
-                    TAG,
-                    "用户表情包已附加原图 | 数量=${stickerImages.size}"
-                )
+                com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_sticker_original_attached, stickerImages.size)
             }
         }
         val sendImagesDirectly = ctx.imageUrls.isNotEmpty() && directImageInput
         if (sendImagesDirectly) {
             ctx.metadata["direct_image_input"] = true
-            com.nekobot.app.data.local.LocalLogger.i(
-                TAG,
-                "Current chat model supports vision; attaching ${ctx.imageUrls.size} images directly"
-            )
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_vision_direct_attach, ctx.imageUrls.size)
         } else if (ctx.imageUrls.isNotEmpty()) {
             val descriptions = try {
                 callbacks.resolveImages(ctx, ctx.imageUrls.toList())
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "视觉识别异常: ${e.message}", e)
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_vision_error, e.message, throwable = e)
                 emptyList()
             }
             if (descriptions.isNotEmpty()) {
@@ -314,7 +306,7 @@ class AIPipeline {
                         }
                     } else msg
                 }
-                com.nekobot.app.data.local.LocalLogger.i(TAG, "视觉识别完成 | 图片=${ctx.imageUrls.size}张 | 描述总长=${imageBlock.length}字符")
+                com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_vision_done, ctx.imageUrls.size, imageBlock.length)
             }
         }
 
@@ -414,7 +406,7 @@ class AIPipeline {
         }
         ctx.metadata["prompt_stack_debug"] = pipelineDebug.sortedBy { (it["priority"] as? Int) ?: 100 }
 
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "上下文准备完成 | system prompt=${composedSystem.length}字符 | 提示词栈=${pipelineDebug.size}项 | 历史=${historyMessages.size}条")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_context_ready, composedSystem.length, pipelineDebug.size, historyMessages.size)
 
         // P1-2：世界书 at_depth 条目按「距对话末尾第 N 条」插入到 history 中，
         // 而不是像其他位置那样挤在 system 顶部。
@@ -471,10 +463,7 @@ class AIPipeline {
             }
             if (index < history.size) result.add(history[index])
         }
-        com.nekobot.app.data.local.LocalLogger.i(
-            TAG,
-            "世界书按深度注入 | 条目=${injections.size} 处 | 深度=${injections.map { it.depth }.distinct().sorted()}"
-        )
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_worldbook_depth_inject, injections.size, injections.map { it.depth }.distinct().sorted())
         return result
     }
 
@@ -508,9 +497,9 @@ class AIPipeline {
 
             // 角色运行时已在 beforeTurn 内部调用 buildCharacterInjections 注册了 PromptStack 注入项
             // 这里无需重复注册
-            com.nekobot.app.data.local.LocalLogger.i(TAG, "CharacterRuntime before_turn 完成 | 角色=${turn.profile.name} | 心情=${turn.state.mood} | 注入项=${turn.promptStackItems.size}个 | promptText=${turn.promptText.length}字符")
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_before_turn_done, turn.profile.name, turn.state.mood, turn.promptStackItems.size, turn.promptText.length)
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "CharacterRuntime before_turn 异常: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_before_turn_error, e.message, throwable = e)
         }
     }
 
@@ -590,20 +579,14 @@ class AIPipeline {
                             priority = PromptStack.Priority.REACTION_PLAN + 1,
                             scope = "turn"
                         )
-                        com.nekobot.app.data.local.LocalLogger.i(
-                            TAG,
-                            "离线剧情推进注入 | level=$timeLevel | elapsed=$elapsedLabel | promptLen=${offlineUpdate.promptText.length}"
-                        )
+                        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_offline_plot_inject, timeLevel, elapsedLabel, offlineUpdate.promptText.length)
                     }
                 }
             }
 
-            com.nekobot.app.data.local.LocalLogger.i(
-                TAG,
-                "现实时间注入完成 | level=${realTimeContext["continuity_level"]} | elapsed=${realTimeContext["elapsed_label"]} | circadian=${circadianState["phase"]}"
-            )
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_realtime_inject_done, realTimeContext["continuity_level"], realTimeContext["elapsed_label"], circadianState["phase"])
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "现实时间注入异常: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_realtime_inject_error, e.message, throwable = e)
         }
     }
 
@@ -652,10 +635,7 @@ class AIPipeline {
                 scope = agentItem.scope
             )
         }
-        com.nekobot.app.data.local.LocalLogger.i(
-            TAG,
-            "继承角色能力：已去除 $removed 行与角色记忆重复的 Agent 长期记忆"
-        )
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_inherit_memory_dedup, removed)
     }
 
     /** 记忆行归一化：去掉列表符号与空白，只保留可比对的内容骨架；过短的行不参与比对。 */
@@ -740,13 +720,13 @@ class AIPipeline {
                 ?: ""
             @Suppress("UNCHECKED_CAST")
             ctx.usage = (response["usage"] as? Map<String, Any>) ?: emptyMap()
-            com.nekobot.app.data.local.LocalLogger.i(TAG, "模型调用完成(simple) | 回复=${ctx.finalContent.length}字符")
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_simple_call_done, ctx.finalContent.length)
         } catch (e: Exception) {
             if (ctx.shouldStop()) {
                 markStopped(ctx)
                 return
             }
-            com.nekobot.app.data.local.LocalLogger.e(TAG, "Simple model call failed: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.e(TAG, R.string.log_pipe_simple_call_failed, e.message, throwable = e)
             ctx.error = e.message ?: "AI 调用失败"
             ctx.finalContent = "AI 调用失败: ${e.message}"
         }
@@ -900,11 +880,11 @@ class AIPipeline {
             ctx.finalContent = resolveLoopFinalContent(loopResult)
         } catch (e: ToolLoopModelError) {
             val errorStr = e.message ?: "工具循环执行失败"
-            com.nekobot.app.data.local.LocalLogger.e(TAG, "Tool loop failed: $errorStr", e)
+            com.nekobot.app.data.local.LocalLogger.e(TAG, R.string.log_pipe_tool_loop_failed, errorStr, throwable = e)
 
             // 首次模型调用失败（iteration==0）时回退到无工具对话
             if (e.iteration <= 0 && "400" in errorStr) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "首次模型调用返回400错误，回退到无工具对话")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_first_call_400_fallback)
                 progress.onThinkingStart(ctx)
                 runSimple(ctx, callbacks)
                 return
@@ -913,7 +893,7 @@ class AIPipeline {
             ctx.finalContent = "工具循环执行失败: $errorStr"
         } catch (e: Exception) {
             val errorStr = e.message ?: "工具循环执行失败"
-            com.nekobot.app.data.local.LocalLogger.e(TAG, "Tool loop failed: $errorStr", e)
+            com.nekobot.app.data.local.LocalLogger.e(TAG, R.string.log_pipe_tool_loop_failed, errorStr, throwable = e)
             ctx.error = errorStr
             ctx.finalContent = "工具循环执行失败: $errorStr"
         }
@@ -971,7 +951,7 @@ class AIPipeline {
                 }
             }
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.e(TAG, "Streaming failed: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.e(TAG, R.string.log_pipe_streaming_failed, e.message, throwable = e)
             ctx.error = e.message ?: "流式输出失败"
             if (fullContent.isEmpty()) {
                 fullContent.append("流式输出失败: ${e.message}")
@@ -986,7 +966,7 @@ class AIPipeline {
         val durationMs = (System.nanoTime() - streamStart) / 1_000_000.0
         ctx.metadata["duration_ms"] = durationMs
         ctx.metadata["ttft_ms"] = ttftMs ?: durationMs
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "流式输出完成 | TTFT=${ttftMs?.let { "%.0f".format(it) } ?: "?"}ms | 总耗时=${"%.0f".format(durationMs)}ms | 内容=${fullContent.length}字符")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_stream_done, ttftMs?.let { "%.0f".format(it) } ?: "?", "%.0f".format(durationMs), fullContent.length)
 
         // 流式在首块到达前就失败（如 400），需要创建消息
         if (ctx.finalContent.isNotEmpty() && ctx.streamedMessage == null) {
@@ -1186,11 +1166,11 @@ class AIPipeline {
                             "jealousy" to d.jealousy
                         )
                     )
-                    if (applied) com.nekobot.app.data.local.LocalLogger.i(TAG, "审查关系增量已回写: $d")
+                    if (applied) com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pipe_review_delta_written, d)
                 }
             }
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "ReviewPipeline 审查异常: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_review_error, e.message, throwable = e)
         }
     }
 
@@ -1210,7 +1190,7 @@ class AIPipeline {
         try {
             runtime.afterTurn(ctx.chatRequest, result.finalContent, turn)
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "CharacterRuntime after_turn 异常: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_after_turn_error, e.message, throwable = e)
         }
     }
 

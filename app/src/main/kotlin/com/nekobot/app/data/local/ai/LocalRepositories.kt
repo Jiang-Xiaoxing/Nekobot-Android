@@ -18,6 +18,7 @@ import com.nekobot.app.data.local.db.CharacterDao
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * Room 实现的角色运行时仓库，对应原仓库 nbot/character/repository.py。
@@ -272,11 +273,10 @@ class LocalMemoryService(
         turnContext: CharacterTurnContext
     ) {
         val engine = autoMemory ?: run {
-            LocalLogger.w(TAG, "记忆抽取跳过：AI 客户端未配置")
+            LocalLogger.w(TAG, R.string.log_lrepo_ai_client_missing)
             return
         }
-        LocalLogger.i(TAG, "extractIfNeeded 入口: characterId=${turnContext.profile.id} sessionId=${chatRequest.conversationId} " +
-            "userId=${chatRequest.userId} userMsgLen=${chatRequest.content.length} aiMsgLen=${response.finalContent.length}")
+        LocalLogger.i(TAG, R.string.log_lrepo_extract_entry, turnContext.profile.id, chatRequest.conversationId, chatRequest.userId, chatRequest.content.length, response.finalContent.length)
         // 委托给完整版 AutoMemory，统一触发/缓冲/归一化行为。
         // scope 与 AutoState 一致：characterId:sessionId:targetId。
         // userPersona 来自会话配置（SessionDetailScreen 中编辑），传给 AutoMemory 作为玩家身份描述，

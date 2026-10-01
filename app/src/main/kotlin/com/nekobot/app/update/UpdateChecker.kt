@@ -11,6 +11,7 @@ import android.util.Base64
 import androidx.core.content.FileProvider
 import com.google.gson.JsonParser
 import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -30,6 +31,8 @@ import java.util.zip.ZipFile
  * 否则等于把「谁能投递更新」交给了第三方。下载完成后会强制校验包名与签名，
  * 见 [isValidApk]。
  */
+private const val TAG = "UpdateChecker"
+
 object UpdateChecker {
 
     private const val OWNER = "asukaneko"
@@ -117,6 +120,7 @@ object UpdateChecker {
         }
         if (responseResult.isFailure) {
             val error = responseResult.exceptionOrNull()
+            LocalLogger.w(TAG, R.string.log_update_check_failed, error?.message ?: "-")
             return@withContext CheckResult.Error(error?.message ?: "连接失败")
         }
 
@@ -324,7 +328,10 @@ object UpdateChecker {
                 }
             }
         }.getOrElse { error -> error.message ?: "下载失败" }
-        if (failure != null) target.delete()
+        if (failure != null) {
+            LocalLogger.w(TAG, R.string.log_update_download_failed, failure)
+            target.delete()
+        }
         return failure
     }
 

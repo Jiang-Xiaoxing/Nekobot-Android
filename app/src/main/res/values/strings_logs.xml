@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 本地日志文案（LocalLogger 资源化消息）。由 logtools/gen_logs.py 生成，请勿手工编辑。 -->
+<resources>
+    <string name="log_a11y_connected">无障碍服务已连接</string>
+    <string name="log_a11y_disconnected">无障碍服务已断开</string>
+    <string name="log_a11y_screenshot_failed">屏幕截图失败: code=%1$s</string>
+    <string name="log_amem_accumulating">记忆抽取累积中 %1$s/%2$s (key=%3$s)</string>
+    <string name="log_amem_entry_dropped_category">记忆条目被丢弃：分类不在允许范围</string>
+    <string name="log_amem_entry_dropped_empty">记忆条目被丢弃：标题或内容为空（内容长度=%1$s）</string>
+    <string name="log_amem_extract_failed">记忆抽取失败</string>
+    <string name="log_amem_llm_all_retries_failed">记忆抽取 LLM %1$s 次重试均失败</string>
+    <string name="log_amem_llm_attempt_empty">记忆抽取 LLM 第 %1$s/%2$s 次返回空内容</string>
+    <string name="log_amem_llm_attempt_error">记忆抽取 LLM 第 %1$s/%2$s 次异常</string>
+    <string name="log_amem_llm_attempt_failed">记忆抽取 LLM 第 %1$s/%2$s 次失败</string>
+    <string name="log_amem_llm_attempt_parse_failed">记忆抽取 LLM 第 %1$s/%2$s 次解析失败，将重试</string>
+    <string name="log_amem_llm_attempt_success">记忆抽取 LLM 第 %1$s/%2$s 次成功，返回 %3$s 字符，开始解析</string>
+    <string name="log_amem_llm_call">调用记忆抽取 LLM: turns=%1$s existing=%2$s</string>
+    <string name="log_amem_no_active_model">记忆抽取跳过：未配置激活的 AI 模型（aiModelProvider 返回 null）</string>
+    <string name="log_amem_no_output">记忆抽取无产出（LLM 未返回有效记忆或解析失败）(key=%1$s)</string>
+    <string name="log_amem_parse_all_dropped">记忆抽取解析：LLM 返回 %1$s 条但归一化后全部被丢弃</string>
+    <string name="log_amem_parse_empty_after_clean">记忆抽取解析：cleanResponseContent 后为空（原始长度=%1$s）</string>
+    <string name="log_amem_parse_gson_null">记忆抽取解析：Gson 返回 null（候选 JSON 长度=%1$s）</string>
+    <string name="log_amem_parse_json_error">记忆抽取解析 JSON 失败（候选 JSON 长度=%1$s）</string>
+    <string name="log_amem_parse_not_json">记忆抽取解析：无法识别为 JSON 数组或对象（原始长度=%1$s）</string>
+    <string name="log_amem_persist_failed">记忆落盘失败</string>
+    <string name="log_amem_read_existing_failed">读取已有记忆失败（不影响主流程）</string>
+    <string name="log_amem_saved">抽取并保存 %1$s 条记忆 (key=%2$s)</string>
+    <string name="log_amem_skip_empty_ids">记忆抽取跳过：characterId 或 targetId 为空 (characterId=%1$s targetId=%2$s)</string>
+    <string name="log_amem_timeline_derived">timeline 派生 %1$s 条，已截断至 %2$s 条</string>
+    <string name="log_amem_triggered">记忆抽取触发：%1$s 轮已达间隔 (key=%2$s)</string>
+    <string name="log_app_global_memory_migrate_failed">旧全局记忆迁移失败: %1$s</string>
+    <string name="log_app_memory_migration_prompt_failed">解析记忆迁移询问失败: %1$s</string>
+    <string name="log_app_plot_story_migrate_failed">数据库 %1$s 的旧故事地图迁移失败: %2$s</string>
+    <string name="log_app_secrets_migrate_failed">本地敏感凭据迁移失败: %1$s</string>
+    <string name="log_astate_counting">AutoState 计数 %1$s/%2$s，未达触发间隔 (key=%3$s)</string>
+    <string name="log_astate_eval_error">状态评估异常: %1$s</string>
+    <string name="log_astate_llm_done">callStateModel: 完成 LLM 状态评估 | 模型=%1$s(%2$s) | 轮次=%3$s</string>
+    <string name="log_astate_llm_empty">callStateModel: LLM 返回空内容</string>
+    <string name="log_astate_llm_error">callStateModel: LLM 调用返回错误: %1$s</string>
+    <string name="log_astate_llm_length">callStateModel: LLM 返回内容长度=%1$s</string>
+    <string name="log_astate_no_active_model">callStateModel: 无可用激活模型（aiModelProvider 返回 null）</string>
+    <string name="log_astate_parse_failed">callStateModel: JSON 解析失败，返回空 Map</string>
+    <string name="log_astate_parse_success">callStateModel: 解析成功，字段=%1$s</string>
+    <string name="log_astate_skip_empty_ids">跳过 AutoState: characterId=%1$s targetId=%2$s 为空</string>
+    <string name="log_astate_skip_flag">跳过 AutoState: skip_auto_state=true</string>
+    <string name="log_astate_skip_heartbeat">跳过 AutoState: heartbeat</string>
+    <string name="log_astate_skip_interval">跳过 AutoState: sessionInterval=%1$s &lt;= 0</string>
+    <string name="log_astate_skip_result_error">跳过 AutoState: resultError=%1$s</string>
+    <string name="log_astate_skip_too_short">跳过 AutoState: 消息过短 (user=%1$s, assistant=%2$s)</string>
+    <string name="log_astate_triggered">AutoState 达到触发条件: count=%1$s interval=%2$s (key=%3$s)</string>
+    <string name="log_auto_enqueue_failed">自动化任务入队失败: %1$s: %2$s</string>
+    <string name="log_auto_execute_failed">自动化执行失败: %1$s/%2$s: %3$s</string>
+    <string name="log_auto_wrong_profile">忽略非当前本地 Profile 的自动化: %1$s/%2$s/%3$s</string>
+    <string name="log_crun_afterturn_saved">afterTurn 状态已保存: mood=%1$s energy=%2$s affection=%3$s trust=%4$s</string>
+    <string name="log_crun_astate_applied">AutoState 已应用 LLM 评估: mood=%1$s moodIntensity=%2$s energy=%3$s</string>
+    <string name="log_crun_astate_failed">AutoState 状态评估失败（不影响主流程）: %1$s</string>
+    <string name="log_crun_astate_not_updated">AutoState 本轮未更新（未达触发间隔或无变化）</string>
+    <string name="log_crun_memory_extract_cancelled">记忆抽取被取消（应用进程退出）: %1$s</string>
+    <string name="log_crun_memory_extract_failed">记忆抽取失败（不影响主流程）: %1$s</string>
+    <string name="log_crun_memoryfs_inject_failed">MemoryFS 提示词注入失败（不影响主流程）: %1$s</string>
+    <string name="log_crun_review_delta_written">审查关系增量已回写: %1$s → affection=%2$s trust=%3$s</string>
+    <string name="log_crun_snapshot_failed">状态快照写入失败（不影响主流程）: %1$s</string>
+    <string name="log_crun_snapshot_written">状态快照已写入 (trigger=%1$s, hasQuality=%2$s)</string>
+    <string name="log_db_profile_close_failed">数据库关闭失败: %1$s</string>
+    <string name="log_db_profile_delete_failed">数据库文件删除失败: %1$s: %2$s</string>
+    <string name="log_fgs_intent_failed">前台服务指令发送失败: %1$s</string>
+    <string name="log_fgs_start_failed">前台服务启动失败: %1$s</string>
+    <string name="log_fgs_stop_generation_failed">停止生成请求失败: %1$s</string>
+    <string name="log_git_diff_failed">git diff 摘要生成失败: %1$s</string>
+    <string name="log_hook_action_error">Hook %1$s action 执行异常: %2$s</string>
+    <string name="log_hook_condition_error">Hook %1$s 条件评估异常: %2$s</string>
+    <string name="log_hook_context_appended">[Hook:%1$s] 追加上下文消息: %2$s</string>
+    <string name="log_hook_load_hooks_failed">加载 hooks 失败: %1$s</string>
+    <string name="log_hook_load_records_failed">加载已触发 hook 记录失败: %1$s</string>
+    <string name="log_hook_loaded_records">加载 %1$s 条已触发 hook 记录</string>
+    <string name="log_hook_log_write_failed">写入 hook 日志失败: %1$s</string>
+    <string name="log_hook_memory_write">[Hook:%1$s] 写入记忆: %2$s [category=%3$s path=%4$s]</string>
+    <string name="log_hook_persist_records_failed">持久化已触发 hook 记录失败: %1$s</string>
+    <string name="log_hook_prompt_inject">[Hook:%1$s] 注入提示词: %2$s</string>
+    <string name="log_hook_records_reset">已重置会话 %1$s 的 %2$s 条 hook 触发记录</string>
+    <string name="log_hook_rel_delta_unknown_field">relationship_delta 忽略未知字段: %1$s</string>
+    <string name="log_hook_rel_updated">[Hook:%1$s] 关系更新: affection=%2$s trust=%3$s</string>
+    <string name="log_hook_state_delta_unknown_field">state_delta 忽略未知字段: %1$s</string>
+    <string name="log_hook_state_updated">[Hook:%1$s] 状态更新: mood=%2$s energy=%3$s</string>
+    <string name="log_hook_test_triggered">Hook 测试触发: %1$s -&gt; %2$s</string>
+    <string name="log_hook_triggered">Hook 触发: %1$s [%2$s] -&gt; %3$s</string>
+    <string name="log_hook_unknown_action">未知 action type: %1$s（hook=%2$s）</string>
+    <string name="log_hook_workflow_unsupported">本地模式不支持 workflow action（hook=%1$s）</string>
+    <string name="log_hook_worldbook_added">[Hook:%1$s] 添加世界书条目: %2$s</string>
+    <string name="log_kbase_embedding_fallback">Embedding 模型 %1$s 失败，尝试后备模型: %2$s</string>
+    <string name="log_kbase_index_failed">知识库索引失败 %1$s: %2$s</string>
+    <string name="log_krerank_fallback_score">重排失败，降级为原 score 排序: %1$s</string>
+    <string name="log_krerank_model_failed">重排模型 %1$s 调用失败: %2$s</string>
+    <string name="log_laic_400_minimal_retry">OpenAI 兼容请求返回 400，使用最小参数重试: %1$s</string>
+    <string name="log_laic_chat_once_failed">单次对话请求失败: %1$s</string>
+    <string name="log_laic_describe_image_failed">图片识别请求失败: %1$s</string>
+    <string name="log_laic_generate_image_failed">图片生成失败: %1$s</string>
+    <string name="log_laic_model_exception_failover">模型 %1$s 调用异常，尝试下一个: %2$s</string>
+    <string name="log_laic_model_http_failover">模型 %1$s 调用失败 (HTTP %2$s)，尝试下一个: %3$s</string>
+    <string name="log_laic_stream_exception_failover">模型 %1$s 流式异常: %2$s，尝试下一个</string>
+    <string name="log_laic_stream_failed">流式请求失败: %1$s</string>
+    <string name="log_laic_stream_http_failover">模型 %1$s 流式失败 (HTTP %2$s)，尝试下一个</string>
+    <string name="log_laic_stt_openai_error">语音转写(openai) 异常: %1$s</string>
+    <string name="log_laic_stt_openai_failed">STT(openai) 失败: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_openai_request">STT(openai) 请求: url=%1$s, model=%2$s, file=%3$s, size=%4$s, mime=%5$s</string>
+    <string name="log_laic_stt_xiaomi_error">语音转写(xiaomi) 异常: %1$s</string>
+    <string name="log_laic_stt_xiaomi_failed">STT(xiaomi) 失败: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_xiaomi_request">STT(xiaomi) 请求: url=%1$s, model=%2$s, origFile=%3$s, effectiveFile=%4$s, size=%5$s, mime=%6$s, lang=%7$s</string>
+    <string name="log_laic_stt_xiaomi_transcode_failed">STT(xiaomi) 转码失败 ext=%1$s，回退原字节直传: %2$s</string>
+    <string name="log_life_generate_empty">life_sim 生成内容为空</string>
+    <string name="log_life_generate_error">life_sim 生成异常: %1$s</string>
+    <string name="log_life_generate_failed">life_sim 生成失败: %1$s</string>
+    <string name="log_life_generate_success">life_sim 生成成功 | char=%1$s | conv=%2$s | activity=%3$s | contentLen=%4$s</string>
+    <string name="log_life_truncate_failed">life_sim 截断失败: %1$s</string>
+    <string name="log_lrepo_ai_client_missing">记忆抽取跳过：AI 客户端未配置</string>
+    <string name="log_lrepo_extract_entry">extractIfNeeded 入口: characterId=%1$s sessionId=%2$s userId=%3$s userMsgLen=%4$s aiMsgLen=%5$s</string>
+    <string name="log_mcp_connected">MCP 已连接: %1$s (%2$s), %3$s 个工具</string>
+    <string name="log_mcp_disconnect_failed">断开 MCP 失败: %1$s</string>
+    <string name="log_mcp_http_failed">MCP HTTP 请求失败 [%1$s] %2$s -&gt; %3$s: %4$s%5$s</string>
+    <string name="log_mcp_stdio_sandbox_fallback">MCP stdio 沙盒启动失败，回退直接运行: %1$s</string>
+    <string name="log_mcp_tool_call_failed">MCP 工具调用失败: %1$s</string>
+    <string name="log_memx_delete_no_match">删除操作未命中任何既有条目，已忽略</string>
+    <string name="log_memx_extract_error">记忆抽取异常（不影响主流程）: %1$s</string>
+    <string name="log_memx_extract_failed">记忆抽取失败: %1$s</string>
+    <string name="log_memx_memory_updated">已更新 Agent 长期记忆: 新增 %1$s、改写 %2$s、删除 %3$s</string>
+    <string name="log_memx_no_change_skip">模型给出的操作未改变任何内容，跳过写入</string>
+    <string name="log_memx_no_valid_changes">本轮没有符合标准的长期记忆改动（NONE 或输出不可解析）</string>
+    <string name="log_memx_op_ignored_action">记忆操作被忽略：动作无法识别（%1$s）</string>
+    <string name="log_memx_op_ignored_category">记忆操作被忽略：分类不在标准范围（%1$s）</string>
+    <string name="log_memx_queue_unavailable_fallback">记忆抽取队列不可用，回退激活模型: %1$s</string>
+    <string name="log_mfs_context_failed">构建记忆提示词上下文失败: %1$s</string>
+    <string name="log_namegen_failed">会话自动命名失败: %1$s</string>
+    <string name="log_namegen_queue_fallback">命名故障转移队列不可用，回退到当前激活模型: %1$s</string>
+    <string name="log_notice_wake_callback_failed">唤醒回调失败: %1$s</string>
+    <string name="log_notif_listener_connected">通知监听服务已连接</string>
+    <string name="log_notif_listener_disconnected">通知监听服务已断开（系统可能回收了权限）</string>
+    <string name="log_notif_op_failed">通知操作执行失败: %1$s</string>
+    <string name="log_notifier_notify_failed">通知发送失败: id=%1$s: %2$s</string>
+    <string name="log_oauth_metadata_parse_failed">OAuth 元数据解析失败: %1$s</string>
+    <string name="log_oauth_poll_parse_failed">OAuth 轮询响应解析失败: %1$s</string>
+    <string name="log_overlay_addview_failed">悬浮窗添加失败: %1$s</string>
+    <string name="log_pcb_agent_image_failed">关联 Agent 生成图片失败: %1$s</string>
+    <string name="log_pcb_dequeue_failed">取出排队消息失败: %1$s</string>
+    <string name="log_pcb_file_to_datauri_failed">fileToDataUri 失败: %1$s</string>
+    <string name="log_pcb_git_diff_attach_failed">附加 git 变更摘要失败: %1$s</string>
+    <string name="log_pcb_git_diff_attached">maybeAttachGitDiff: tool=%1$s changed=%2$s summary=%3$s</string>
+    <string name="log_pcb_git_diff_no_changes">maybeAttachGitDiff: changedPaths 为空，跳过 git 摘要</string>
+    <string name="log_pcb_git_diff_no_reporter">maybeAttachGitDiff: activeAgentProgressReporter 为空，跳过 git 摘要</string>
+    <string name="log_pcb_response_complete">响应完成: %1$s 字符, 错误=%2$s</string>
+    <string name="log_pcb_routed_result_writeback_failed">路由失败结果回写失败: %1$s</string>
+    <string name="log_pcb_routed_result_writeback_failed2">路由结果回写失败: %1$s</string>
+    <string name="log_pcb_subagent_token_persist_failed">子代理 Token 明细持久化失败: %1$s</string>
+    <string name="log_pcb_subagent_token_stats_failed">子代理 TokenStats 记录失败: %1$s</string>
+    <string name="log_pcb_swipes_persisted">swipes 新候选已落库 | messageId=%1$s | 共 %2$s 版</string>
+    <string name="log_pcb_task_list_persist_failed">持久化 Agent 任务列表失败: %1$s</string>
+    <string name="log_pcb_token_record_persist_failed">持久化 Token 记录失败: %1$s</string>
+    <string name="log_pcb_token_stats_failed">TokenStats 记录失败: %1$s</string>
+    <string name="log_pcb_vision_describer_missing">resolveImages: visionDescriber 为 null（未注入），跳过视觉识别</string>
+    <string name="log_pcb_vision_item_done">resolveImages: 第%1$s张识别完成 | name=%2$s | 长度=%3$s | 含失败标记=%4$s</string>
+    <string name="log_pcb_vision_item_failed">视觉识别失败 [%1$s]: %2$s</string>
+    <string name="log_pcb_vision_start">resolveImages: 开始识别 %1$s 张图片</string>
+    <string name="log_pipe_after_turn_error">CharacterRuntime after_turn 异常: %1$s</string>
+    <string name="log_pipe_before_turn_done">CharacterRuntime before_turn 完成 | 角色=%1$s | 心情=%2$s | 注入项=%3$s个 | promptText=%4$s字符</string>
+    <string name="log_pipe_before_turn_error">CharacterRuntime before_turn 异常: %1$s</string>
+    <string name="log_pipe_context_ready">上下文准备完成 | system prompt=%1$s字符 | 提示词栈=%2$s项 | 历史=%3$s条</string>
+    <string name="log_pipe_done">Pipeline 完成 | 耗时=%1$sms%2$s%3$s | 回复长度=%4$s</string>
+    <string name="log_pipe_first_call_400_fallback">首次模型调用返回400错误，回退到无工具对话</string>
+    <string name="log_pipe_inherit_memory_dedup">继承角色能力：已去除 %1$s 行与角色记忆重复的 Agent 长期记忆</string>
+    <string name="log_pipe_offline_plot_inject">离线剧情推进注入 | level=%1$s | elapsed=%2$s | promptLen=%3$s</string>
+    <string name="log_pipe_realtime_inject_done">现实时间注入完成 | level=%1$s | elapsed=%2$s | circadian=%3$s</string>
+    <string name="log_pipe_realtime_inject_error">现实时间注入异常: %1$s</string>
+    <string name="log_pipe_review_delta_written">审查关系增量已回写: %1$s</string>
+    <string name="log_pipe_review_error">ReviewPipeline 审查异常: %1$s</string>
+    <string name="log_pipe_simple_call_done">模型调用完成(simple) | 回复=%1$s字符</string>
+    <string name="log_pipe_simple_call_failed">简化模型调用失败: %1$s</string>
+    <string name="log_pipe_start">Pipeline 开始 | 会话=%1$s | 用户消息长度=%2$s</string>
+    <string name="log_pipe_sticker_original_attached">用户表情包已附加原图 | 数量=%1$s</string>
+    <string name="log_pipe_stream_done">流式输出完成 | TTFT=%1$sms | 总耗时=%2$sms | 内容=%3$s字符</string>
+    <string name="log_pipe_streaming_failed">流式输出失败: %1$s</string>
+    <string name="log_pipe_tool_loop_failed">工具循环失败: %1$s</string>
+    <string name="log_pipe_vision_direct_attach">当前聊天模型支持视觉，直接附加 %1$s 张图片</string>
+    <string name="log_pipe_vision_done">视觉识别完成 | 图片=%1$s张 | 描述总长=%2$s字符</string>
+    <string name="log_pipe_vision_error">视觉识别异常: %1$s</string>
+    <string name="log_pipe_worldbook_depth_inject">世界书按深度注入 | 条目=%1$s 处 | 深度=%2$s</string>
+    <string name="log_plot_llm_all_retries_failed">剧情选项 LLM %1$s 次重试均失败: %2$s，使用默认选项</string>
+    <string name="log_plot_llm_attempt_empty">剧情选项 LLM 第 %1$s/%2$s 次返回空内容</string>
+    <string name="log_plot_llm_attempt_error">剧情选项 LLM 第 %1$s/%2$s 次异常: %3$s</string>
+    <string name="log_plot_llm_attempt_failed">剧情选项 LLM 第 %1$s/%2$s 次失败: %3$s</string>
+    <string name="log_plot_llm_attempt_parse_failed">剧情选项 LLM 第 %1$s/%2$s 次解析失败，将重试</string>
+    <string name="log_plot_llm_attempt_success">剧情选项 LLM 第 %1$s/%2$s 次成功，生成 %3$s 个选项</string>
+    <string name="log_reply_send_failed">通知快捷回复发送失败: %1$s</string>
+    <string name="log_repo_agent_memory_extract_failed">Agent 长期记忆抽取失败（不影响主流程）: %1$s</string>
+    <string name="log_repo_agent_memory_save_failed">写入 Agent 长期记忆失败: %1$s</string>
+    <string name="log_repo_close_pause_skip">关闭仓库时跳过暂停 Agent 运行记录: %1$s</string>
+    <string name="log_repo_composed_prompt_failed">保存 composed_system_prompt 失败: %1$s</string>
+    <string name="log_repo_context_compress_failed">Agent 上下文压缩请求失败（不影响本轮对话）: %1$s</string>
+    <string name="log_repo_describe_all_failed">describeImageViaQueue: 所有模型失败 | 尝试=%1$s | 失败原因=%2$s</string>
+    <string name="log_repo_describe_start">describeImageViaQueue: 开始识别 | 队列=%1$s个模型 | 首选=%2$s | url=%3$s</string>
+    <string name="log_repo_describe_success">describeImageViaQueue: 识别成功 | 模型=%1$s | 结果长度=%2$s</string>
+    <string name="log_repo_experience_archive_failed">增量经历归档失败，压缩边界保持不变: %1$s</string>
+    <string name="log_repo_group_autoname_failed">群聊会话自动命名失败（不影响主流程）: %1$s</string>
+    <string name="log_repo_group_composed_prompt_failed">保存群聊 composed_system_prompt 失败: %1$s</string>
+    <string name="log_repo_group_prompt_stack_debug_failed">保存群聊 prompt_stack_debug 失败: %1$s</string>
+    <string name="log_repo_img_prompt_rewrite_failed">生图提示词改写失败，回退到原始提示词: %1$s</string>
+    <string name="log_repo_inherit_greeting">Agent 会话继承角色开场白 | session=%1$s | char=%2$s</string>
+    <string name="log_repo_inherit_rel_init_failed">继承角色能力时初始化关系状态失败: %1$s</string>
+    <string name="log_repo_life_sim_done">life_sim 完成 | source=heartbeat | activity=%1$s</string>
+    <string name="log_repo_life_sim_lazy_error">life_sim 懒触发异常: %1$s</string>
+    <string name="log_repo_life_sim_no_model">life_sim 后台心跳跳过：未配置可用模型</string>
+    <string name="log_repo_mcp_autoconnect_failed">MCP 自动连接失败: %1$s</string>
+    <string name="log_repo_mcp_bg_connect_failed">后台自动连接 MCP 失败，不阻塞 Agent 对话</string>
+    <string name="log_repo_memory_extract_skipped">本轮不触发记忆抽取（第 %1$s 轮，间隔 %2$s 轮）</string>
+    <string name="log_repo_msg_image_save_failed">保存消息图片失败: %1$s</string>
+    <string name="log_repo_msg_image_task_failed">创建消息图片任务失败: %1$s</string>
+    <string name="log_repo_parse_custom_prompt_failed">解析会话自定义提示词失败: %1$s</string>
+    <string name="log_repo_persist_queued_msg_failed">持久化排队注入消息失败: %1$s</string>
+    <string name="log_repo_plot_choice_failed">剧情选项生成失败（不影响主流程）: %1$s</string>
+    <string name="log_repo_progress_card_persist_failed">持久化进度卡片失败: %1$s</string>
+    <string name="log_repo_prompt_stack_debug_failed">保存 prompt_stack_debug 失败: %1$s</string>
+    <string name="log_repo_quality_parse_failed">解析质量评分 JSON 失败: %1$s</string>
+    <string name="log_repo_read_global_memory_failed">读取全局 Agent 记忆失败: %1$s</string>
+    <string name="log_repo_scene_read_failed">读取角色场景状态失败: %1$s</string>
+    <string name="log_repo_session_autoname_failed">普通会话自动命名失败（不影响主流程）: %1$s</string>
+    <string name="log_repo_session_autoname_failed2">会话自动命名失败（不影响主流程）: %1$s</string>
+    <string name="log_repo_session_autonamed">会话自动命名: %1$s -&gt; %2$s</string>
+    <string name="log_repo_skill_extract_failed">Agent 技能沉淀失败（不影响主流程）: %1$s</string>
+    <string name="log_repo_state_cache_write_failed">状态历程缓存写入失败: %1$s</string>
+    <string name="log_repo_task_expired">任务「%1$s」上次执行点已过期，顺延到 %2$s</string>
+    <string name="log_repo_token_usage_corrupt">Token 用量记录损坏，已备份并重建: %1$s</string>
+    <string name="log_repo_token_usage_recovered">已从消息记录补回 %1$s 条 Token 用量</string>
+    <string name="log_repo_token_usage_repair_failed">Token 用量修复写入失败，下次读取将重试</string>
+    <string name="log_repo_token_usage_write_deferred">Token 用量记录写入失败，稍后将从消息记录恢复</string>
+    <string name="log_repo_token_usage_write_failed">Token 用量记录写入失败: %1$s</string>
+    <string name="log_repo_vision_chat_queues_empty">describeImageViaQueue: 视觉和聊天模型队列均为空（没有 purpose=vision/chat 且 enabled=1 的模型）</string>
+    <string name="log_repo_vision_queue_empty">describeImageViaQueue: 视觉模型队列为空，回退到 chat 模型队列</string>
+    <string name="log_repo_wake_failed">唤醒会话 %1$s 失败: %2$s</string>
+    <string name="log_repo_wake_run_error">唤醒运行异常（%1$s）: %2$s</string>
+    <string name="log_repo_wake_run_failed">唤醒运行失败（%1$s）: %2$s</string>
+    <string name="log_repo_workflow_expired">工作流「%1$s」上次执行点已过期，顺延到下一个 cron 时间</string>
+    <string name="log_secure_decrypt_failed">安全存储解密失败，对应值将被清除: %1$s</string>
+    <string name="log_shortcut_refresh_failed">快捷方式刷新失败: %1$s</string>
+    <string name="log_skill_created">已新建 Skill「%1$s」（%2$s）</string>
+    <string name="log_skill_extract_error">技能沉淀异常（不影响主流程）: %1$s</string>
+    <string name="log_skill_no_distill">本轮无需沉淀 Skill（skip 或输出不可解析）</string>
+    <string name="log_skill_queue_unavailable_fallback">技能沉淀队列不可用，回退激活模型: %1$s</string>
+    <string name="log_skill_review_failed">技能沉淀审查失败: %1$s</string>
+    <string name="log_skill_skip_action">技能沉淀跳过：action=%1$s</string>
+    <string name="log_skill_skip_bad_format">技能沉淀跳过：SKILL.md 不符合标准格式（%1$s）</string>
+    <string name="log_skill_skip_json_parse">技能沉淀跳过：JSON 解析失败</string>
+    <string name="log_skill_skip_no_body">技能沉淀跳过：缺少 SKILL.md 正文</string>
+    <string name="log_skill_skip_no_description">技能沉淀跳过：缺少 description（标准 SKILL.md 必填）</string>
+    <string name="log_skill_skip_no_name">技能沉淀跳过：技能名不可用</string>
+    <string name="log_skill_skip_not_json">技能沉淀跳过：模型输出不是 JSON 对象</string>
+    <string name="log_skill_updated">已更新 Skill「%1$s」（%2$s）</string>
+    <string name="log_sse_discard">丢弃%1$s: %2$s</string>
+    <string name="log_sse_reason_incomplete">SSE 事件不完整（流可能被中断）</string>
+    <string name="log_sse_reason_unparseable">无法解析的 SSE 负载</string>
+    <string name="log_sub_execution_error">子代理执行异常: %1$s</string>
+    <string name="log_sub_model_loop_failed">子代理模型循环失败（iteration=%1$s）: %2$s</string>
+    <string name="log_sub_terminated">子代理被终止: %1$s</string>
+    <string name="log_svc_context_trim">循环内上下文裁剪 | iteration=%1$s | 消息=%2$s | %3$s</string>
+    <string name="log_svc_tool_message_persist_failed">工具消息落库失败: %1$s</string>
+    <string name="log_update_check_failed">检查更新失败: %1$s</string>
+    <string name="log_update_download_failed">更新包下载失败: %1$s</string>
+    <string name="log_vm_task_failed">界面任务执行失败: %1$s</string>
+    <string name="log_widget_update_failed">桌面小组件更新失败: %1$s</string>
+</resources>

@@ -1,6 +1,7 @@
 package com.nekobot.app.data.local.ai
 
 import com.google.gson.JsonParser
+import com.nekobot.app.R
 import com.nekobot.app.data.local.LocalLogger
 import java.io.BufferedReader
 
@@ -43,8 +44,12 @@ internal suspend fun readSseEvents(
         if (trimmed == DONE_SENTINEL) return onEvent(trimmed)
         if (!looksLikeCompleteJson(trimmed) || !isValidJson(trimmed)) {
             // 区分“网关返回了非协议内容”和“事件被中途截断”，两者排查方向不同。
-            val reason = if (looksLikeJson(trimmed)) "SSE 事件不完整（流可能被中断）" else "无法解析的 SSE 负载"
-            LocalLogger.w(TAG, "丢弃$reason: ${trimmed.take(MAX_LOGGED_PAYLOAD_CHARS)}")
+            val reason = if (looksLikeJson(trimmed)) {
+                LocalLogger.str(R.string.log_sse_reason_incomplete)
+            } else {
+                LocalLogger.str(R.string.log_sse_reason_unparseable)
+            }
+            LocalLogger.w(TAG, LocalLogger.str(R.string.log_sse_discard, reason, trimmed.take(MAX_LOGGED_PAYLOAD_CHARS)))
             return true
         }
         return onEvent(trimmed)

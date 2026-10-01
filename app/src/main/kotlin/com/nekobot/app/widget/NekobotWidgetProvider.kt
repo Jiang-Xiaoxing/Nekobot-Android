@@ -10,9 +10,12 @@ import android.widget.RemoteViews
 import com.nekobot.app.MainActivity
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.model.Session
 import com.nekobot.app.data.repository.Resource
 import kotlinx.coroutines.launch
+
+private const val TAG = "NekobotWidget"
 
 /** 首页小组件：显示最近会话、今日 Token，并提供直接进入会话的快捷发送入口。 */
 class NekobotWidgetProvider : AppWidgetProvider() {
@@ -25,6 +28,8 @@ class NekobotWidgetProvider : AppWidgetProvider() {
         ServiceContainer.applicationScope.launch {
             try {
                 refresh(context, appWidgetManager, appWidgetIds)
+            } catch (e: Exception) {
+                LocalLogger.e(TAG, R.string.log_widget_update_failed, e.message, throwable = e)
             } finally {
                 pending.finish()
             }

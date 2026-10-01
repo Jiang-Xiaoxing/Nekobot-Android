@@ -6,6 +6,7 @@ import com.nekobot.app.data.local.db.LocalAiModelEntity
 import com.nekobot.app.data.local.validateSkillNameValue
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import com.nekobot.app.R
 
 /**
  * Agent 会话的「自动总结 Skill」（技能沉淀）。
@@ -321,21 +322,21 @@ internal object AgentSkillExtractor {
      */
     internal fun parseReview(raw: String): AgentSkillDraft? {
         val json = extractJsonObject(raw) ?: run {
-            LocalLogger.i(TAG, "技能沉淀跳过：模型输出不是 JSON 对象")
+            LocalLogger.i(TAG, R.string.log_skill_skip_not_json)
             return null
         }
         val obj = runCatching { JsonParser.parseString(json).asJsonObject }.getOrNull() ?: run {
-            LocalLogger.i(TAG, "技能沉淀跳过：JSON 解析失败")
+            LocalLogger.i(TAG, R.string.log_skill_skip_json_parse)
             return null
         }
         val action = obj.get("action")?.asString?.trim()?.lowercase().orEmpty()
         if (action != "create" && action != "update") {
-            LocalLogger.i(TAG, "技能沉淀跳过：action=${action.ifBlank { "空" }}")
+            LocalLogger.i(TAG, R.string.log_skill_skip_action, action.ifBlank { "-" })
             return null
         }
         val name = sanitizeSkillName(obj.get("name")?.asString.orEmpty())
         if (name.isEmpty()) {
-            LocalLogger.i(TAG, "技能沉淀跳过：技能名不可用")
+            LocalLogger.i(TAG, R.string.log_skill_skip_no_name)
             return null
         }
         val description = obj.get("description")?.asString
@@ -344,7 +345,7 @@ internal object AgentSkillExtractor {
             ?.take(MAX_DESCRIPTION_CHARS)
             ?.takeIf { it.isNotBlank() }
         if (description == null) {
-            LocalLogger.i(TAG, "技能沉淀跳过：缺少 description（标准 SKILL.md 必填）")
+            LocalLogger.i(TAG, R.string.log_skill_skip_no_description)
             return null
         }
         val aliases = runCatching {
@@ -355,7 +356,7 @@ internal object AgentSkillExtractor {
         }.getOrDefault(emptyList())
         val skillMdRaw = obj.get("skill_md")?.asString.orEmpty()
         if (skillMdRaw.isBlank()) {
-            LocalLogger.i(TAG, "技能沉淀跳过：缺少 SKILL.md 正文")
+            LocalLogger.i(TAG, R.string.log_skill_skip_no_body)
             return null
         }
         val skillMd = sanitizeSkillMd(skillMdRaw, name, description, aliases)
@@ -438,7 +439,7 @@ internal object AgentSkillExtractor {
         if (body.isEmpty()) return ""
         val issue = validateSkillBody(body)
         if (issue != null) {
-            LocalLogger.i(TAG, "技能沉淀跳过：SKILL.md 不符合标准格式（$issue）")
+            LocalLogger.i(TAG, R.string.log_skill_skip_bad_format, issue)
             return ""
         }
         val frontMatter = buildFrontMatter(name, description, aliases)
@@ -599,14 +600,14 @@ internal class AgentSkillWriter(
             if (failoverExecutor == null && fallbackModel == null) return null
             val execution = failoverExecutor?.let { executor ->
                 runCatching { executor.execute(promptMessages) }
-                    .onFailure { LocalLogger.w(TAG, "技能沉淀队列不可用，回退激活模型: ${it.message}") }
+                    .onFailure { LocalLogger.w(TAG, R.string.log_skill_queue_unavailable_fallback, it.message) }
                     .getOrNull()
             }
             val result = execution?.value
                 ?: fallbackModel?.let { aiClient.chatOnce(it, promptMessages) }
                 ?: return null
             if (result.error != null) {
-                LocalLogger.w(TAG, "技能沉淀审查失败: ${result.error}")
+                LocalLogger.w(TAG, R.string.log_skill_review_failed, result.error)
                 return null
             }
             if (result.usage.isNotEmpty()) {
@@ -623,19 +624,16 @@ internal class AgentSkillWriter(
             }
             val draft = AgentSkillExtractor.parseReview(result.content)
             if (draft == null) {
-                LocalLogger.i(TAG, "本轮无需沉淀 Skill（skip 或输出不可解析）")
+                LocalLogger.i(TAG, R.string.log_skill_no_distill)
                 return null
             }
             val created = applyDraft(draft)
-            LocalLogger.i(
-                TAG,
-                "已${if (created) "新建" else "更新"} Skill「${draft.name}」（${if (draft.createNew) "create" else "update"}）"
-            )
+            LocalLogger.i(TAG, if (created) R.string.log_skill_created else R.string.log_skill_updated, draft.name, if (draft.createNew) "create" else "update")
             AgentSkillNotice(sessionId = sessionId, skillName = draft.name, created = created)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "技能沉淀异常（不影响主流程）: ${e.message}", e)
+            LocalLogger.w(TAG, R.string.log_skill_extract_error, e.message, throwable = e)
             null
         } finally {
             inProgress.remove(sessionId)

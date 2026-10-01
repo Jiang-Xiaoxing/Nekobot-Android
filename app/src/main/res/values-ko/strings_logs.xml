@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 本地日志文案（LocalLogger 资源化消息）。由 logtools/gen_logs.py 生成，请勿手工编辑。 -->
+<resources>
+    <string name="log_a11y_connected">접근성 서비스 연결됨</string>
+    <string name="log_a11y_disconnected">접근성 서비스 연결 해제됨</string>
+    <string name="log_a11y_screenshot_failed">화면 캡처 실패: code=%1$s</string>
+    <string name="log_amem_accumulating">기억 추출 누적 중 %1$s/%2$s(key=%3$s)</string>
+    <string name="log_amem_entry_dropped_category">기억 항목 폐기: 분류가 허용 범위 밖</string>
+    <string name="log_amem_entry_dropped_empty">기억 항목 폐기: 제목 또는 내용 비어 있음(내용 길이=%1$s)</string>
+    <string name="log_amem_extract_failed">기억 추출 실패</string>
+    <string name="log_amem_llm_all_retries_failed">기억 추출 LLM %1$s회 재시도 모두 실패</string>
+    <string name="log_amem_llm_attempt_empty">기억 추출 LLM %1$s/%2$s회차 빈 내용 반환</string>
+    <string name="log_amem_llm_attempt_error">기억 추출 LLM %1$s/%2$s회차 오류</string>
+    <string name="log_amem_llm_attempt_failed">기억 추출 LLM %1$s/%2$s회차 실패</string>
+    <string name="log_amem_llm_attempt_parse_failed">기억 추출 LLM %1$s/%2$s회차 파싱 실패, 재시도</string>
+    <string name="log_amem_llm_attempt_success">기억 추출 LLM %1$s/%2$s회차 성공, %3$s자 반환, 파싱 시작</string>
+    <string name="log_amem_llm_call">기억 추출 LLM 호출: turns=%1$s existing=%2$s</string>
+    <string name="log_amem_no_active_model">기억 추출 건너뜀: 활성 AI 모델 미설정(aiModelProvider가 null 반환)</string>
+    <string name="log_amem_no_output">기억 추출 결과 없음(LLM이 유효한 기억 미반환 또는 파싱 실패)(key=%1$s)</string>
+    <string name="log_amem_parse_all_dropped">기억 추출 파싱: LLM이 %1$s건 반환했으나 정규화 후 모두 폐기</string>
+    <string name="log_amem_parse_empty_after_clean">기억 추출 파싱: cleanResponseContent 후 비어 있음(원본 길이=%1$s)</string>
+    <string name="log_amem_parse_gson_null">기억 추출 파싱: Gson null 반환(후보 JSON 길이=%1$s)</string>
+    <string name="log_amem_parse_json_error">기억 추출 JSON 파싱 실패(후보 JSON 길이=%1$s)</string>
+    <string name="log_amem_parse_not_json">기억 추출 파싱: JSON 배열·객체로 인식 불가(원본 길이=%1$s)</string>
+    <string name="log_amem_persist_failed">기억 저장 실패</string>
+    <string name="log_amem_read_existing_failed">기존 기억 읽기 실패(메인 흐름 영향 없음)</string>
+    <string name="log_amem_saved">기억 %1$s건 추출 및 저장(key=%2$s)</string>
+    <string name="log_amem_skip_empty_ids">기억 추출 건너뜀: characterId 또는 targetId 비어 있음(characterId=%1$s targetId=%2$s)</string>
+    <string name="log_amem_timeline_derived">timeline %1$s건 생성, %2$s건으로 잘림</string>
+    <string name="log_amem_triggered">기억 추출 트리거: %1$s턴 간격 도달(key=%2$s)</string>
+    <string name="log_app_global_memory_migrate_failed">이전 전역 기억 마이그레이션 실패: %1$s</string>
+    <string name="log_app_memory_migration_prompt_failed">기억 마이그레이션 프롬프트 파싱 실패: %1$s</string>
+    <string name="log_app_plot_story_migrate_failed">데이터베이스 %1$s의 이전 스토리 맵 마이그레이션 실패: %2$s</string>
+    <string name="log_app_secrets_migrate_failed">로컬 민감 정보 마이그레이션 실패: %1$s</string>
+    <string name="log_astate_counting">AutoState 카운트 %1$s/%2$s, 트리거 간격 미도달(key=%3$s)</string>
+    <string name="log_astate_eval_error">상태 평가 오류: %1$s</string>
+    <string name="log_astate_llm_done">callStateModel: LLM 상태 평가 완료 | 모델=%1$s(%2$s) | 턴=%3$s</string>
+    <string name="log_astate_llm_empty">callStateModel: LLM이 빈 내용 반환</string>
+    <string name="log_astate_llm_error">callStateModel: LLM 호출 오류 반환: %1$s</string>
+    <string name="log_astate_llm_length">callStateModel: LLM 반환 내용 길이=%1$s</string>
+    <string name="log_astate_no_active_model">callStateModel: 사용 가능한 활성 모델 없음(aiModelProvider가 null 반환)</string>
+    <string name="log_astate_parse_failed">callStateModel: JSON 파싱 실패, 빈 Map 반환</string>
+    <string name="log_astate_parse_success">callStateModel: 파싱 성공, 필드=%1$s</string>
+    <string name="log_astate_skip_empty_ids">AutoState 건너뜀: characterId=%1$s targetId=%2$s 비어 있음</string>
+    <string name="log_astate_skip_flag">AutoState 건너뜀: skip_auto_state=true</string>
+    <string name="log_astate_skip_heartbeat">AutoState 건너뜀: heartbeat</string>
+    <string name="log_astate_skip_interval">AutoState 건너뜀: sessionInterval=%1$s &lt;= 0</string>
+    <string name="log_astate_skip_result_error">AutoState 건너뜀: resultError=%1$s</string>
+    <string name="log_astate_skip_too_short">AutoState 건너뜀: 메시지가 너무 짧음(user=%1$s, assistant=%2$s)</string>
+    <string name="log_astate_triggered">AutoState 트리거 조건 도달: count=%1$s interval=%2$s(key=%3$s)</string>
+    <string name="log_auto_enqueue_failed">자동화 작업 대기열 추가 실패: %1$s: %2$s</string>
+    <string name="log_auto_execute_failed">자동화 실행 실패: %1$s/%2$s: %3$s</string>
+    <string name="log_auto_wrong_profile">현재 로컬 프로필이 아닌 자동화 무시: %1$s/%2$s/%3$s</string>
+    <string name="log_crun_afterturn_saved">afterTurn 상태 저장됨: mood=%1$s energy=%2$s affection=%3$s trust=%4$s</string>
+    <string name="log_crun_astate_applied">AutoState가 LLM 평가 적용: mood=%1$s moodIntensity=%2$s energy=%3$s</string>
+    <string name="log_crun_astate_failed">AutoState 상태 평가 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_crun_astate_not_updated">AutoState 이번 턴 미업데이트(간격 미도달 또는 변화 없음)</string>
+    <string name="log_crun_memory_extract_cancelled">기억 추출 취소됨(앱 프로세스 종료): %1$s</string>
+    <string name="log_crun_memory_extract_failed">기억 추출 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_crun_memoryfs_inject_failed">MemoryFS 프롬프트 주입 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_crun_review_delta_written">검토 관계 증분 기록됨: %1$s → affection=%2$s trust=%3$s</string>
+    <string name="log_crun_snapshot_failed">상태 스냅샷 쓰기 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_crun_snapshot_written">상태 스냅샷 기록됨(trigger=%1$s, hasQuality=%2$s)</string>
+    <string name="log_db_profile_close_failed">데이터베이스 닫기 실패: %1$s</string>
+    <string name="log_db_profile_delete_failed">데이터베이스 파일 삭제 실패: %1$s: %2$s</string>
+    <string name="log_fgs_intent_failed">포그라운드 서비스 인텐트 전송 실패: %1$s</string>
+    <string name="log_fgs_start_failed">포그라운드 서비스 시작 실패: %1$s</string>
+    <string name="log_fgs_stop_generation_failed">생성 중지 요청 실패: %1$s</string>
+    <string name="log_git_diff_failed">git diff 요약 생성 실패: %1$s</string>
+    <string name="log_hook_action_error">Hook %1$s action 실행 오류: %2$s</string>
+    <string name="log_hook_condition_error">Hook %1$s 조건 평가 오류: %2$s</string>
+    <string name="log_hook_context_appended">[Hook:%1$s] 컨텍스트 메시지 추가: %2$s</string>
+    <string name="log_hook_load_hooks_failed">hooks 로드 실패: %1$s</string>
+    <string name="log_hook_load_records_failed">트리거된 hook 기록 로드 실패: %1$s</string>
+    <string name="log_hook_loaded_records">트리거된 hook 기록 %1$s건 로드</string>
+    <string name="log_hook_log_write_failed">hook 로그 쓰기 실패: %1$s</string>
+    <string name="log_hook_memory_write">[Hook:%1$s] 기억 쓰기: %2$s [category=%3$s path=%4$s]</string>
+    <string name="log_hook_persist_records_failed">트리거된 hook 기록 영속화 실패: %1$s</string>
+    <string name="log_hook_prompt_inject">[Hook:%1$s] 프롬프트 주입: %2$s</string>
+    <string name="log_hook_records_reset">세션 %1$s의 hook 트리거 기록 %2$s건 재설정</string>
+    <string name="log_hook_rel_delta_unknown_field">relationship_delta 알 수 없는 필드 무시: %1$s</string>
+    <string name="log_hook_rel_updated">[Hook:%1$s] 관계 업데이트: affection=%2$s trust=%3$s</string>
+    <string name="log_hook_state_delta_unknown_field">state_delta 알 수 없는 필드 무시: %1$s</string>
+    <string name="log_hook_state_updated">[Hook:%1$s] 상태 업데이트: mood=%2$s energy=%3$s</string>
+    <string name="log_hook_test_triggered">Hook 테스트 트리거: %1$s -&gt; %2$s</string>
+    <string name="log_hook_triggered">Hook 트리거: %1$s [%2$s] -&gt; %3$s</string>
+    <string name="log_hook_unknown_action">알 수 없는 action type: %1$s(hook=%2$s)</string>
+    <string name="log_hook_workflow_unsupported">로컬 모드는 workflow action 미지원(hook=%1$s)</string>
+    <string name="log_hook_worldbook_added">[Hook:%1$s] 월드북 항목 추가: %2$s</string>
+    <string name="log_kbase_embedding_fallback">Embedding 모델 %1$s 실패, 대체 모델 시도: %2$s</string>
+    <string name="log_kbase_index_failed">지식 베이스 인덱싱 실패 %1$s: %2$s</string>
+    <string name="log_krerank_fallback_score">재정렬 실패, 원본 score 순서로 대체: %1$s</string>
+    <string name="log_krerank_model_failed">재정렬 모델 %1$s 호출 실패: %2$s</string>
+    <string name="log_laic_400_minimal_retry">OpenAI 호환 요청 400 반환, 최소 파라미터로 재시도: %1$s</string>
+    <string name="log_laic_chat_once_failed">단발성 채팅 요청 실패: %1$s</string>
+    <string name="log_laic_describe_image_failed">이미지 인식 요청 실패: %1$s</string>
+    <string name="log_laic_generate_image_failed">이미지 생성 실패: %1$s</string>
+    <string name="log_laic_model_exception_failover">모델 %1$s 호출 오류, 다음 시도: %2$s</string>
+    <string name="log_laic_model_http_failover">모델 %1$s 호출 실패 (HTTP %2$s), 다음 시도: %3$s</string>
+    <string name="log_laic_stream_exception_failover">모델 %1$s 스트리밍 오류: %2$s, 다음 시도</string>
+    <string name="log_laic_stream_failed">스트리밍 요청 실패: %1$s</string>
+    <string name="log_laic_stream_http_failover">모델 %1$s 스트리밍 실패 (HTTP %2$s), 다음 시도</string>
+    <string name="log_laic_stt_openai_error">음성 전사(openai) 오류: %1$s</string>
+    <string name="log_laic_stt_openai_failed">STT(openai) 실패: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_openai_request">STT(openai) 요청: url=%1$s, model=%2$s, file=%3$s, size=%4$s, mime=%5$s</string>
+    <string name="log_laic_stt_xiaomi_error">음성 전사(xiaomi) 오류: %1$s</string>
+    <string name="log_laic_stt_xiaomi_failed">STT(xiaomi) 실패: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_xiaomi_request">STT(xiaomi) 요청: url=%1$s, model=%2$s, origFile=%3$s, effectiveFile=%4$s, size=%5$s, mime=%6$s, lang=%7$s</string>
+    <string name="log_laic_stt_xiaomi_transcode_failed">STT(xiaomi) 트랜스코딩 실패 ext=%1$s, 원본 바이트 직접 전송으로 대체: %2$s</string>
+    <string name="log_life_generate_empty">life_sim 생성 내용이 비어 있음</string>
+    <string name="log_life_generate_error">life_sim 생성 오류: %1$s</string>
+    <string name="log_life_generate_failed">life_sim 생성 실패: %1$s</string>
+    <string name="log_life_generate_success">life_sim 생성 성공 | char=%1$s | conv=%2$s | activity=%3$s | contentLen=%4$s</string>
+    <string name="log_life_truncate_failed">life_sim 잘라내기 실패: %1$s</string>
+    <string name="log_lrepo_ai_client_missing">기억 추출 건너뜀: AI 클라이언트 미설정</string>
+    <string name="log_lrepo_extract_entry">extractIfNeeded 진입: characterId=%1$s sessionId=%2$s userId=%3$s userMsgLen=%4$s aiMsgLen=%5$s</string>
+    <string name="log_mcp_connected">MCP 연결됨: %1$s (%2$s), 도구 %3$s개</string>
+    <string name="log_mcp_disconnect_failed">MCP 연결 해제 실패: %1$s</string>
+    <string name="log_mcp_http_failed">MCP HTTP 요청 실패 [%1$s] %2$s -&gt; %3$s: %4$s%5$s</string>
+    <string name="log_mcp_stdio_sandbox_fallback">MCP stdio 샌드박스 시작 실패, 직접 실행으로 대체: %1$s</string>
+    <string name="log_mcp_tool_call_failed">MCP 도구 호출 실패: %1$s</string>
+    <string name="log_memx_delete_no_match">삭제 작업이 기존 항목과 일치하지 않아 무시됨</string>
+    <string name="log_memx_extract_error">기억 추출 오류(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_memx_extract_failed">기억 추출 실패: %1$s</string>
+    <string name="log_memx_memory_updated">Agent 장기 기억 업데이트: 추가 %1$s, 대체 %2$s, 삭제 %3$s</string>
+    <string name="log_memx_no_change_skip">모델 작업이 내용을 변경하지 않아 쓰기 건너뜀</string>
+    <string name="log_memx_no_valid_changes">이번 턴은 기준 충족 장기 기억 변경 없음(NONE 또는 파싱 불가)</string>
+    <string name="log_memx_op_ignored_action">기억 작업 무시됨: 인식 불가 작업(%1$s)</string>
+    <string name="log_memx_op_ignored_category">기억 작업 무시됨: 분류가 표준 범위 밖(%1$s)</string>
+    <string name="log_memx_queue_unavailable_fallback">기억 추출 대기열 사용 불가, 활성 모델로 대체: %1$s</string>
+    <string name="log_mfs_context_failed">기억 프롬프트 컨텍스트 구축 실패: %1$s</string>
+    <string name="log_namegen_failed">세션 자동 이름짓기 실패: %1$s</string>
+    <string name="log_namegen_queue_fallback">이름짓기 페일오버 대기열 사용 불가, 활성 모델로 대체: %1$s</string>
+    <string name="log_notice_wake_callback_failed">깨우기 콜백 실패: %1$s</string>
+    <string name="log_notif_listener_connected">알림 리스너 서비스 연결됨</string>
+    <string name="log_notif_listener_disconnected">알림 리스너 서비스 연결 해제(권한 회수 가능성)</string>
+    <string name="log_notif_op_failed">알림 작업 실행 실패: %1$s</string>
+    <string name="log_notifier_notify_failed">알림 게시 실패: id=%1$s: %2$s</string>
+    <string name="log_oauth_metadata_parse_failed">OAuth 메타데이터 파싱 실패: %1$s</string>
+    <string name="log_oauth_poll_parse_failed">OAuth 폴링 응답 파싱 실패: %1$s</string>
+    <string name="log_overlay_addview_failed">오버레이 창 추가 실패: %1$s</string>
+    <string name="log_pcb_agent_image_failed">Agent 이미지 생성 실패: %1$s</string>
+    <string name="log_pcb_dequeue_failed">대기열 메시지 가져오기 실패: %1$s</string>
+    <string name="log_pcb_file_to_datauri_failed">fileToDataUri 실패: %1$s</string>
+    <string name="log_pcb_git_diff_attach_failed">git 변경 요약 첨부 실패: %1$s</string>
+    <string name="log_pcb_git_diff_attached">maybeAttachGitDiff: tool=%1$s changed=%2$s summary=%3$s</string>
+    <string name="log_pcb_git_diff_no_changes">maybeAttachGitDiff: changedPaths가 비어 있음, git 요약 건너뜀</string>
+    <string name="log_pcb_git_diff_no_reporter">maybeAttachGitDiff: activeAgentProgressReporter가 null, git 요약 건너뜀</string>
+    <string name="log_pcb_response_complete">응답 완료: %1$s자, 오류=%2$s</string>
+    <string name="log_pcb_routed_result_writeback_failed">라우팅 실패 결과 기록 실패: %1$s</string>
+    <string name="log_pcb_routed_result_writeback_failed2">라우팅 결과 기록 실패: %1$s</string>
+    <string name="log_pcb_subagent_token_persist_failed">서브에이전트 Token 내역 영속화 실패: %1$s</string>
+    <string name="log_pcb_subagent_token_stats_failed">서브에이전트 TokenStats 기록 실패: %1$s</string>
+    <string name="log_pcb_swipes_persisted">swipes 새 후보 저장됨 | messageId=%1$s | 총 %2$s개</string>
+    <string name="log_pcb_task_list_persist_failed">Agent 작업 목록 영속화 실패: %1$s</string>
+    <string name="log_pcb_token_record_persist_failed">Token 기록 영속화 실패: %1$s</string>
+    <string name="log_pcb_token_stats_failed">TokenStats 기록 실패: %1$s</string>
+    <string name="log_pcb_vision_describer_missing">resolveImages: visionDescriber가 null(미주입), 비전 인식 건너뜀</string>
+    <string name="log_pcb_vision_item_done">resolveImages: %1$s번째 이미지 인식 완료 | name=%2$s | 길이=%3$s | 실패 마커=%4$s</string>
+    <string name="log_pcb_vision_item_failed">비전 인식 실패 [%1$s]: %2$s</string>
+    <string name="log_pcb_vision_start">resolveImages: 이미지 %1$s장 인식 시작</string>
+    <string name="log_pipe_after_turn_error">CharacterRuntime after_turn 오류: %1$s</string>
+    <string name="log_pipe_before_turn_done">CharacterRuntime before_turn 완료 | 캐릭터=%1$s | 기분=%2$s | 주입 항목=%3$s개 | promptText=%4$s자</string>
+    <string name="log_pipe_before_turn_error">CharacterRuntime before_turn 오류: %1$s</string>
+    <string name="log_pipe_context_ready">컨텍스트 준비 완료 | system prompt=%1$s자 | 프롬프트 스택=%2$s개 | 기록=%3$s건</string>
+    <string name="log_pipe_done">Pipeline 완료 | 소요=%1$sms%2$s%3$s | 답변 길이=%4$s</string>
+    <string name="log_pipe_first_call_400_fallback">첫 모델 호출 400 오류, 도구 없는 대화로 대체</string>
+    <string name="log_pipe_inherit_memory_dedup">캐릭터 능력 상속: 캐릭터 기억과 중복되는 Agent 장기 기억 %1$s행 제거</string>
+    <string name="log_pipe_offline_plot_inject">오프라인 스토리 진행 주입 | level=%1$s | elapsed=%2$s | promptLen=%3$s</string>
+    <string name="log_pipe_realtime_inject_done">현실 시간 주입 완료 | level=%1$s | elapsed=%2$s | circadian=%3$s</string>
+    <string name="log_pipe_realtime_inject_error">현실 시간 주입 오류: %1$s</string>
+    <string name="log_pipe_review_delta_written">검토 관계 증분 기록됨: %1$s</string>
+    <string name="log_pipe_review_error">ReviewPipeline 검토 오류: %1$s</string>
+    <string name="log_pipe_simple_call_done">모델 호출 완료(simple) | 답변=%1$s자</string>
+    <string name="log_pipe_simple_call_failed">단순 모델 호출 실패: %1$s</string>
+    <string name="log_pipe_start">Pipeline 시작 | 세션=%1$s | 사용자 메시지 길이=%2$s</string>
+    <string name="log_pipe_sticker_original_attached">사용자 스티커 원본 첨부됨 | 개수=%1$s</string>
+    <string name="log_pipe_stream_done">스트리밍 완료 | TTFT=%1$sms | 총 소요=%2$sms | 내용=%3$s자</string>
+    <string name="log_pipe_streaming_failed">스트리밍 실패: %1$s</string>
+    <string name="log_pipe_tool_loop_failed">도구 루프 실패: %1$s</string>
+    <string name="log_pipe_vision_direct_attach">현재 채팅 모델이 비전 지원, %1$s개 이미지 직접 첨부</string>
+    <string name="log_pipe_vision_done">비전 인식 완료 | 이미지=%1$s장 | 설명 총 길이=%2$s자</string>
+    <string name="log_pipe_vision_error">비전 인식 오류: %1$s</string>
+    <string name="log_pipe_worldbook_depth_inject">월드북 깊이별 주입 | 항목=%1$s곳 | 깊이=%2$s</string>
+    <string name="log_plot_llm_all_retries_failed">스토리 선택지 LLM %1$s회 재시도 모두 실패: %2$s, 기본 선택지 사용</string>
+    <string name="log_plot_llm_attempt_empty">스토리 선택지 LLM %1$s/%2$s회차 빈 내용 반환</string>
+    <string name="log_plot_llm_attempt_error">스토리 선택지 LLM %1$s/%2$s회차 오류: %3$s</string>
+    <string name="log_plot_llm_attempt_failed">스토리 선택지 LLM %1$s/%2$s회차 실패: %3$s</string>
+    <string name="log_plot_llm_attempt_parse_failed">스토리 선택지 LLM %1$s/%2$s회차 파싱 실패, 재시도</string>
+    <string name="log_plot_llm_attempt_success">스토리 선택지 LLM %1$s/%2$s회차 성공, 선택지 %3$s개 생성</string>
+    <string name="log_reply_send_failed">알림 빠른 답장 전송 실패: %1$s</string>
+    <string name="log_repo_agent_memory_extract_failed">Agent 장기 기억 추출 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_repo_agent_memory_save_failed">Agent 장기 기억 쓰기 실패: %1$s</string>
+    <string name="log_repo_close_pause_skip">저장소 닫는 중 Agent 실행 일시정지 건너뜀: %1$s</string>
+    <string name="log_repo_composed_prompt_failed">composed_system_prompt 저장 실패: %1$s</string>
+    <string name="log_repo_context_compress_failed">Agent 컨텍스트 압축 요청 실패(이번 턴 영향 없음): %1$s</string>
+    <string name="log_repo_describe_all_failed">describeImageViaQueue: 모든 모델 실패 | 시도=%1$s | 실패 이유=%2$s</string>
+    <string name="log_repo_describe_start">describeImageViaQueue: 인식 시작 | 대기열=%1$s개 모델 | 첫 번째=%2$s | url=%3$s</string>
+    <string name="log_repo_describe_success">describeImageViaQueue: 인식 성공 | 모델=%1$s | 결과 길이=%2$s</string>
+    <string name="log_repo_experience_archive_failed">증분 경험 아카이브 실패, 압축 경계 유지: %1$s</string>
+    <string name="log_repo_group_autoname_failed">그룹 세션 자동 이름짓기 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_repo_group_composed_prompt_failed">그룹 composed_system_prompt 저장 실패: %1$s</string>
+    <string name="log_repo_group_prompt_stack_debug_failed">그룹 prompt_stack_debug 저장 실패: %1$s</string>
+    <string name="log_repo_img_prompt_rewrite_failed">이미지 프롬프트 재작성 실패, 원본 프롬프트로 대체: %1$s</string>
+    <string name="log_repo_inherit_greeting">Agent 세션이 캐릭터 인사말 상속 | session=%1$s | char=%2$s</string>
+    <string name="log_repo_inherit_rel_init_failed">캐릭터 능력 상속 시 관계 상태 초기화 실패: %1$s</string>
+    <string name="log_repo_life_sim_done">life_sim 완료 | source=heartbeat | activity=%1$s</string>
+    <string name="log_repo_life_sim_lazy_error">life_sim 지연 트리거 오류: %1$s</string>
+    <string name="log_repo_life_sim_no_model">life_sim 백그라운드 하트비트 건너뜀: 사용 가능한 모델 미설정</string>
+    <string name="log_repo_mcp_autoconnect_failed">MCP 자동 연결 실패: %1$s</string>
+    <string name="log_repo_mcp_bg_connect_failed">백그라운드 MCP 자동 연결 실패, Agent 대화는 차단되지 않음</string>
+    <string name="log_repo_memory_extract_skipped">이번 턴은 기억 추출 건너뜀(%1$s번째 턴, 간격 %2$s턴)</string>
+    <string name="log_repo_msg_image_save_failed">메시지 이미지 저장 실패: %1$s</string>
+    <string name="log_repo_msg_image_task_failed">메시지 이미지 작업 생성 실패: %1$s</string>
+    <string name="log_repo_parse_custom_prompt_failed">세션 사용자 지정 프롬프트 파싱 실패: %1$s</string>
+    <string name="log_repo_persist_queued_msg_failed">대기열 주입 메시지 영속화 실패: %1$s</string>
+    <string name="log_repo_plot_choice_failed">스토리 선택지 생성 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_repo_progress_card_persist_failed">진행 카드 영속화 실패: %1$s</string>
+    <string name="log_repo_prompt_stack_debug_failed">prompt_stack_debug 저장 실패: %1$s</string>
+    <string name="log_repo_quality_parse_failed">품질 점수 JSON 파싱 실패: %1$s</string>
+    <string name="log_repo_read_global_memory_failed">전역 Agent 기억 읽기 실패: %1$s</string>
+    <string name="log_repo_scene_read_failed">캐릭터 씬 상태 읽기 실패: %1$s</string>
+    <string name="log_repo_session_autoname_failed">일반 세션 자동 이름짓기 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_repo_session_autoname_failed2">세션 자동 이름짓기 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_repo_session_autonamed">세션 자동 이름짓기: %1$s -&gt; %2$s</string>
+    <string name="log_repo_skill_extract_failed">Agent 스킬 정착 실패(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_repo_state_cache_write_failed">상태 기록 캐시 쓰기 실패: %1$s</string>
+    <string name="log_repo_task_expired">작업 \"%1$s\"의 마지막 실행 지점 만료, %2$s(으)로 연기</string>
+    <string name="log_repo_token_usage_corrupt">Token 사용량 기록 손상, 백업 후 재구성: %1$s</string>
+    <string name="log_repo_token_usage_recovered">메시지 기록에서 %1$s건의 Token 사용량 복구</string>
+    <string name="log_repo_token_usage_repair_failed">Token 사용량 복구 쓰기 실패, 다음 읽기 시 재시도</string>
+    <string name="log_repo_token_usage_write_deferred">Token 사용량 쓰기 실패, 나중에 메시지 기록에서 복구</string>
+    <string name="log_repo_token_usage_write_failed">Token 사용량 쓰기 실패: %1$s</string>
+    <string name="log_repo_vision_chat_queues_empty">describeImageViaQueue: 비전·채팅 모델 대기열 모두 비어 있음(purpose=vision/chat이고 enabled=1인 모델 없음)</string>
+    <string name="log_repo_vision_queue_empty">describeImageViaQueue: 비전 모델 대기열 비어 있음, chat 모델 대기열로 대체</string>
+    <string name="log_repo_wake_failed">세션 %1$s 깨우기 실패: %2$s</string>
+    <string name="log_repo_wake_run_error">깨우기 실행 오류(%1$s): %2$s</string>
+    <string name="log_repo_wake_run_failed">깨우기 실행 실패(%1$s): %2$s</string>
+    <string name="log_repo_workflow_expired">워크플로 \"%1$s\"의 마지막 실행 지점 만료, 다음 cron 시간으로 연기</string>
+    <string name="log_secure_decrypt_failed">보안 저장소 복호화 실패, 값이 지워집니다: %1$s</string>
+    <string name="log_shortcut_refresh_failed">바로가기 새로고침 실패: %1$s</string>
+    <string name="log_skill_created">Skill \"%1$s\" 생성됨(%2$s)</string>
+    <string name="log_skill_extract_error">스킬 정착 오류(메인 흐름 영향 없음): %1$s</string>
+    <string name="log_skill_no_distill">이번 턴은 스킬 정착 불필요(skip 또는 파싱 불가)</string>
+    <string name="log_skill_queue_unavailable_fallback">스킬 정착 대기열 사용 불가, 활성 모델로 대체: %1$s</string>
+    <string name="log_skill_review_failed">스킬 정착 검토 실패: %1$s</string>
+    <string name="log_skill_skip_action">스킬 정착 건너뜀: action=%1$s</string>
+    <string name="log_skill_skip_bad_format">스킬 정착 건너뜀: SKILL.md가 표준 형식 불일치(%1$s)</string>
+    <string name="log_skill_skip_json_parse">스킬 정착 건너뜀: JSON 파싱 실패</string>
+    <string name="log_skill_skip_no_body">스킬 정착 건너뜀: SKILL.md 본문 없음</string>
+    <string name="log_skill_skip_no_description">스킬 정착 건너뜀: description 없음(표준 SKILL.md 필수)</string>
+    <string name="log_skill_skip_no_name">스킬 정착 건너뜀: 스킬 이름 사용 불가</string>
+    <string name="log_skill_skip_not_json">스킬 정착 건너뜀: 모델 출력이 JSON 객체 아님</string>
+    <string name="log_skill_updated">Skill \"%1$s\" 업데이트됨(%2$s)</string>
+    <string name="log_sse_discard">%1$s 폐기: %2$s</string>
+    <string name="log_sse_reason_incomplete">SSE 이벤트 불완전(스트림이 중단되었을 수 있음)</string>
+    <string name="log_sse_reason_unparseable">파싱할 수 없는 SSE 페이로드</string>
+    <string name="log_sub_execution_error">서브에이전트 실행 오류: %1$s</string>
+    <string name="log_sub_model_loop_failed">서브에이전트 모델 루프 실패(iteration=%1$s): %2$s</string>
+    <string name="log_sub_terminated">서브에이전트 종료됨: %1$s</string>
+    <string name="log_svc_context_trim">루프 내 컨텍스트 정리 | iteration=%1$s | 메시지=%2$s | %3$s</string>
+    <string name="log_svc_tool_message_persist_failed">도구 메시지 저장 실패: %1$s</string>
+    <string name="log_update_check_failed">업데이트 확인 실패: %1$s</string>
+    <string name="log_update_download_failed">업데이트 패키지 다운로드 실패: %1$s</string>
+    <string name="log_vm_task_failed">UI 작업 실행 실패: %1$s</string>
+    <string name="log_widget_update_failed">위젯 업데이트 실패: %1$s</string>
+</resources>

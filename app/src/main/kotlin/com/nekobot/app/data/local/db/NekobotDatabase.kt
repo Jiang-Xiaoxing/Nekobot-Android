@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 
 /**
  * 本地模式 Room 数据库。
@@ -90,6 +92,7 @@ abstract class NekobotDatabase : RoomDatabase() {
         private set
 
     companion object {
+        private const val TAG = "NekobotDatabase"
         /**
          * v1 → v2：local_sessions 新增 custom_prompts 列。
          */
@@ -1124,7 +1127,10 @@ abstract class NekobotDatabase : RoomDatabase() {
         fun switchProfile(context: Context, profileName: String) = synchronized(this) {
             val newName = if (profileName.endsWith(".db")) profileName else "$profileName.db"
             // 关闭并移除所有已缓存的实例（避免持有旧 db 连接）
-            INSTANCES.values.forEach { runCatching { it.close() } }
+            INSTANCES.values.forEach {
+                runCatching { it.close() }
+                    .onFailure { e -> LocalLogger.e(TAG, R.string.log_db_profile_close_failed, e.message) }
+            }
             INSTANCES.clear()
             // 预热新 profile
             get(context, profileName)
@@ -1133,7 +1139,10 @@ abstract class NekobotDatabase : RoomDatabase() {
         /** 关闭并清理指定 profile（用于删除 db 文件前）。 */
         fun closeProfile(profileName: String) = synchronized(this) {
             val dbName = if (profileName.endsWith(".db")) profileName else "$profileName.db"
-            INSTANCES.remove(dbName)?.run { runCatching { close() } }
+            INSTANCES.remove(dbName)?.run {
+                runCatching { close() }
+                    .onFailure { e -> LocalLogger.e(TAG, R.string.log_db_profile_close_failed, e.message) }
+            }
         }
 
         /** 删除指定 profile 的 db 文件（需先关闭连接）。 */
@@ -1147,7 +1156,12 @@ abstract class NekobotDatabase : RoomDatabase() {
                 context.getDatabasePath("$dbName-wal"),
                 context.getDatabasePath("$dbName-shm")
             )
-            files.forEach { runCatching { if (it.exists()) it.delete() } }
+            files.forEach { file ->
+                runCatching { if (file.exists()) file.delete() }
+                    .onFailure { e ->
+                        LocalLogger.e(TAG, R.string.log_db_profile_delete_failed, file.absolutePath, e.message)
+                    }
+            }
             true
         }
     }

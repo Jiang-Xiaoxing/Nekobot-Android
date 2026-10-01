@@ -2,6 +2,7 @@ package com.nekobot.app.data.local.ai
 
 import com.nekobot.app.data.local.LocalLogger
 import java.util.Locale
+import com.nekobot.app.R
 
 /**
  * Agent 会话的长期记忆自动抽取。
@@ -289,7 +290,7 @@ internal object AgentMemoryExtractor {
             val verb = parts[0].lowercase(Locale.ROOT)
             val category = categoryOf(parts[1])
             if (category == null) {
-                LocalLogger.i(TAG, "记忆操作被忽略：分类不在标准范围（${parts[1].take(30)}）")
+                LocalLogger.i(TAG, R.string.log_memx_op_ignored_category, parts[1].take(30))
                 return@forEach
             }
             // 内容里可能本来就有 `|`，后面几段要重新拼回去。
@@ -309,7 +310,7 @@ internal object AgentMemoryExtractor {
                     actions.add(MemoryAction.Replace(category, content, target = null))
                 verb.startsWith("delete") || verb.startsWith("remove") || verb.startsWith("删除") ->
                     actions.add(MemoryAction.Delete(category, content))
-                else -> LocalLogger.i(TAG, "记忆操作被忽略：动作无法识别（${parts[0].take(20)}）")
+                else -> LocalLogger.i(TAG, R.string.log_memx_op_ignored_action, parts[0].take(20))
             }
         }
         return actions
@@ -411,7 +412,7 @@ internal object AgentMemoryExtractor {
                             hit
                         }
                     if (!removed) {
-                        LocalLogger.i(TAG, "删除操作未命中任何既有条目，已忽略")
+                        LocalLogger.i(TAG, R.string.log_memx_delete_no_match)
                     }
                 }
             }
@@ -563,14 +564,14 @@ internal class AgentMemoryWriter(
             if (failoverExecutor == null && fallbackModel == null) return 0
             val execution = failoverExecutor?.let { executor ->
                 runCatching { executor.execute(promptMessages) }
-                    .onFailure { LocalLogger.w(TAG, "记忆抽取队列不可用，回退激活模型: ${it.message}") }
+                    .onFailure { LocalLogger.w(TAG, R.string.log_memx_queue_unavailable_fallback, it.message) }
                     .getOrNull()
             }
             val result = execution?.value
                 ?: fallbackModel?.let { aiClient.chatOnce(it, promptMessages) }
                 ?: return 0
             if (result.error != null) {
-                LocalLogger.w(TAG, "记忆抽取失败: ${result.error}")
+                LocalLogger.w(TAG, R.string.log_memx_extract_failed, result.error)
                 return 0
             }
             if (result.usage.isNotEmpty()) {
@@ -587,7 +588,7 @@ internal class AgentMemoryWriter(
             }
             val actions = AgentMemoryExtractor.parseActions(result.content)
             if (actions.isEmpty()) {
-                LocalLogger.i(TAG, "本轮没有符合标准的长期记忆改动（NONE 或输出不可解析）")
+                LocalLogger.i(TAG, R.string.log_memx_no_valid_changes)
                 return 0
             }
             // 重新读一次再落库：模型调用期间用户可能刚手工改过记忆，
@@ -595,19 +596,16 @@ internal class AgentMemoryWriter(
             val base = runCatching { readMemory() }.getOrDefault(existing)
             val applied = AgentMemoryExtractor.applyActions(base, actions)
             if (applied.changedItems <= 0) {
-                LocalLogger.i(TAG, "模型给出的操作未改变任何内容，跳过写入")
+                LocalLogger.i(TAG, R.string.log_memx_no_change_skip)
                 return 0
             }
             writeMemory(applied.content)
-            LocalLogger.i(
-                TAG,
-                "已更新 Agent 长期记忆: 新增 ${applied.added}、改写 ${applied.replaced}、删除 ${applied.deleted}"
-            )
+            LocalLogger.i(TAG, R.string.log_memx_memory_updated, applied.added, applied.replaced, applied.deleted)
             applied.changedItems
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "记忆抽取异常（不影响主流程）: ${e.message}", e)
+            LocalLogger.w(TAG, R.string.log_memx_extract_error, e.message, throwable = e)
             0
         } finally {
             inProgress.remove(sessionId)

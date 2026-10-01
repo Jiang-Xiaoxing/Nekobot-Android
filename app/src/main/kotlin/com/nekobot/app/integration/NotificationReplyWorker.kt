@@ -5,6 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.automation.LocalAutomationNotifier
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.data.remote.RealtimeEvent
@@ -57,6 +58,7 @@ class NotificationReplyWorker(
             NekobotWidgetProvider.refreshAll(applicationContext)
             Result.success()
         }.getOrElse { error ->
+            LocalLogger.e(TAG, R.string.log_reply_send_failed, error.message, throwable = error)
             LocalAutomationNotifier.show(
                 context = applicationContext,
                 notificationId = sessionId.hashCode(),
@@ -69,6 +71,7 @@ class NotificationReplyWorker(
     }
 
     companion object {
+        private const val TAG = "NotificationReply"
         const val KEY_SESSION_ID = "session_id"
         const val KEY_TEXT = "text"
     }

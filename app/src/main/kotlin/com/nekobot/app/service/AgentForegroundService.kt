@@ -14,6 +14,7 @@ import android.provider.Settings
 import com.nekobot.app.MainActivity
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.ai.AgentAttentionCenter
 import com.nekobot.app.data.local.ai.AgentAttentionItem
 import com.nekobot.app.data.local.ai.AgentAttentionKind
@@ -36,6 +37,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * 服务按会话引用计数：多个 Agent 会话并行运行时共享一条通知，最后一个会话结束后自动停止。
  */
+private const val TAG = "AgentForegroundService"
+
 class AgentForegroundService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -150,6 +153,7 @@ class AgentForegroundService : Service() {
                 activeSessions.clear()
                 AgentOverlayBus.clear()
                 runCatching { ServiceContainer.localRepository.stopGeneration() }
+                    .onFailure { LocalLogger.w(TAG, R.string.log_fgs_stop_generation_failed, it.message) }
                 LocalLinuxSandboxCoordinator.closeAll()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -161,6 +165,7 @@ class AgentForegroundService : Service() {
                     activeSessions.remove(sessionId)
                     AgentOverlayBus.onRunFinished(sessionId)
                     runCatching { ServiceContainer.localRepository.stopGeneration(sessionId) }
+                    .onFailure { LocalLogger.w(TAG, R.string.log_fgs_stop_generation_failed, it.message) }
                     LocalLinuxSandboxCoordinator.stopSession(sessionId)
                 }
                 if (activeSessions.isEmpty()) {
@@ -176,7 +181,8 @@ class AgentForegroundService : Service() {
             }
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification())
+        runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }
+            .onFailure { LocalLogger.e(TAG, R.string.log_fgs_start_failed, it.message) }
         wakeLock?.takeIf { !it.isHeld }?.acquire(6 * 60 * 60 * 1_000L)
         return START_NOT_STICKY
     }
@@ -274,11 +280,13 @@ class AgentForegroundService : Service() {
         fun acquire(context: Context, sessionId: String) {
             if (sessionId.isBlank()) return
             activeSessions.add(sessionId)
-            context.applicationContext.startForegroundService(
-                Intent(context, AgentForegroundService::class.java)
-                    .setAction(ACTION_ACQUIRE)
-                    .putExtra(EXTRA_SESSION_ID, sessionId)
-            )
+            runCatching {
+                context.applicationContext.startForegroundService(
+                    Intent(context, AgentForegroundService::class.java)
+                        .setAction(ACTION_ACQUIRE)
+                        .putExtra(EXTRA_SESSION_ID, sessionId)
+                )
+            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
         }
 
         fun release(context: Context, sessionId: String) {
@@ -290,7 +298,7 @@ class AgentForegroundService : Service() {
                         .setAction(ACTION_RELEASE)
                         .putExtra(EXTRA_SESSION_ID, sessionId)
                 )
-            }
+            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
         }
 
         /** 后台自动化任务开始：占用自动化槽位保活（不打扰通知文案的会话计数）。 */
@@ -302,7 +310,7 @@ class AgentForegroundService : Service() {
                         .setAction(ACTION_ACQUIRE)
                         .putExtra(EXTRA_SESSION_ID, AUTOMATION_SLOT)
                 )
-            }
+            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
         }
 
         /** 后台自动化任务结束：释放槽位；无其它会话时前台服务自动停止。 */
@@ -314,7 +322,7 @@ class AgentForegroundService : Service() {
                         .setAction(ACTION_RELEASE)
                         .putExtra(EXTRA_SESSION_ID, AUTOMATION_SLOT)
                 )
-            }
+            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
         }
 
         /**

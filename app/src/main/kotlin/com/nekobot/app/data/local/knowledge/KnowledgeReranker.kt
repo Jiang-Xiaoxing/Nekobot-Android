@@ -5,6 +5,7 @@ import com.nekobot.app.data.local.ai.LocalAiClient
 import com.nekobot.app.data.local.db.LocalAiModelEntity
 import com.nekobot.app.data.local.db.NekobotDatabase
 import com.nekobot.app.data.model.KnowledgeSearchResult
+import com.nekobot.app.R
 
 /**
  * LLM-based 知识库检索结果重排器。
@@ -56,11 +57,11 @@ class KnowledgeReranker(
         val result = runCatching {
             aiClient.chatOnce(rerankModel, messages, emptyMap(), "rerank")
         }.onFailure {
-            LocalLogger.w(TAG, "重排模型 ${rerankModel.name} 调用失败: ${it.message}")
+            LocalLogger.w(TAG, R.string.log_krerank_model_failed, rerankModel.name, it.message)
         }.getOrNull()
 
         if (result == null || !result.error.isNullOrBlank() || result.content.isBlank()) {
-            LocalLogger.w(TAG, "重排失败，降级为原 score 排序: ${result?.error ?: "空响应"}")
+            LocalLogger.w(TAG, R.string.log_krerank_fallback_score, result?.error ?: "-")
             return candidates.sortedByDescending { it.score ?: 0f }
         }
 

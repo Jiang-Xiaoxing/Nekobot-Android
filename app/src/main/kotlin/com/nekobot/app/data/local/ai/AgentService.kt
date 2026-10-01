@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * 同一批次内允许并行执行的只读工具上限。
@@ -955,10 +956,7 @@ suspend fun runToolCallLoop(
         if (persist) {
             runCatching { hooks?.onToolMessageAppended?.invoke(message) }
                 .onFailure { error ->
-                    com.nekobot.app.data.local.LocalLogger.w(
-                        "AgentService",
-                        "工具消息落库失败: ${error.message}"
-                    )
+                    com.nekobot.app.data.local.LocalLogger.w("AgentService", R.string.log_svc_tool_message_persist_failed, error.message)
                 }
         }
     }
@@ -990,10 +988,7 @@ suspend fun runToolCallLoop(
             outputReserveRatio = contextOutputReserveRatio
         )
         if (contextTrimNotice != null) {
-            com.nekobot.app.data.local.LocalLogger.i(
-                "AgentService",
-                "循环内上下文裁剪 | iteration=$iteration | 消息=${toolMessages.size} | $contextTrimNotice"
-            )
+            com.nekobot.app.data.local.LocalLogger.i("AgentService", R.string.log_svc_context_trim, iteration, toolMessages.size, contextTrimNotice)
         }
 
         val callStartNanos = System.nanoTime()

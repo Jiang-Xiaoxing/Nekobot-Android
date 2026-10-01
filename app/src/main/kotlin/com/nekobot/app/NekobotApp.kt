@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.nekobot.app.R
 
 /**
  * 全局依赖容器：单例持有 Prefs / Network / Repository / Gson。
@@ -262,11 +263,7 @@ object ServiceContainer {
         applicationScope.launch {
             runCatching { localRepository.migrateStoredSecrets() }
                 .onFailure {
-                    com.nekobot.app.data.local.LocalLogger.e(
-                        "LocalSecrets",
-                        "本地敏感凭据迁移失败: ${it.message}",
-                        it
-                    )
+                    com.nekobot.app.data.local.LocalLogger.e("LocalSecrets", R.string.log_app_secrets_migrate_failed, it.message, throwable = it)
                 }
         }
         if (prefs.isLocalMode) {
@@ -314,11 +311,7 @@ object ServiceContainer {
             LocalPlotStoryStore.migrateLegacyProfile(context, profileName, sessionIds)
         } catch (error: Exception) {
             // 数据库暂时不可读时继续使用 legacy 存储，避免启动循环或提前丢数据。
-            com.nekobot.app.data.local.LocalLogger.e(
-                "PlotStory",
-                "数据库 $profileName 的旧故事地图迁移失败: ${error.message}",
-                error
-            )
+            com.nekobot.app.data.local.LocalLogger.e("PlotStory", R.string.log_app_plot_story_migrate_failed, profileName, error.message, throwable = error)
         }
     }
 
@@ -351,11 +344,7 @@ object ServiceContainer {
             applicationScope.launch {
                 runCatching { localRepository.migrateStoredSecrets() }
                     .onFailure {
-                        com.nekobot.app.data.local.LocalLogger.e(
-                            "LocalSecrets",
-                            "本地敏感凭据迁移失败: ${it.message}",
-                            it
-                        )
+                        com.nekobot.app.data.local.LocalLogger.e("LocalSecrets", R.string.log_app_secrets_migrate_failed, it.message, throwable = it)
                     }
             }
             applicationScope.launch { localRepository.syncAutomationSchedules() }
@@ -420,11 +409,7 @@ object ServiceContainer {
             legacyCharCount = legacyContent.length
         )
     }.onFailure {
-        com.nekobot.app.data.local.LocalLogger.e(
-            "GlobalAgentMemory",
-            "解析记忆迁移询问失败: ${it.message}",
-            it
-        )
+        com.nekobot.app.data.local.LocalLogger.e("GlobalAgentMemory", R.string.log_app_memory_migration_prompt_failed, it.message, throwable = it)
     }.getOrNull()
 
     /**
@@ -446,11 +431,7 @@ object ServiceContainer {
                     }
                 }
             }.onFailure {
-                com.nekobot.app.data.local.LocalLogger.e(
-                    "GlobalAgentMemory",
-                    "旧全局记忆迁移失败: ${it.message}",
-                    it
-                )
+                com.nekobot.app.data.local.LocalLogger.e("GlobalAgentMemory", R.string.log_app_global_memory_migrate_failed, it.message, throwable = it)
             }
         }
         prefs.agentMemoryMigrationAsked = true

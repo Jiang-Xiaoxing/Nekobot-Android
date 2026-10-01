@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.time.Instant
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * 故事分支图系统，对应原仓库 nbot/plot/。
@@ -670,12 +671,12 @@ class PlotChoiceGenerator(
                 val usedModel = execution?.model ?: fallbackModel!!
                 if (result.error != null) {
                     lastError = "LLM 错误: ${result.error}"
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "剧情选项 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次失败: ${result.error}")
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_plot_llm_attempt_failed, attempt + 1, MAX_LLM_RETRIES, result.error)
                     return@repeat
                 }
                 if (result.content.isBlank()) {
                     lastError = "LLM 返回空内容"
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "剧情选项 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次返回空内容")
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_plot_llm_attempt_empty, attempt + 1, MAX_LLM_RETRIES)
                     return@repeat
                 }
 
@@ -701,11 +702,11 @@ class PlotChoiceGenerator(
 
                 if (parsed.isEmpty()) {
                     lastError = "解析后为空"
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "剧情选项 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次解析失败，将重试")
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_plot_llm_attempt_parse_failed, attempt + 1, MAX_LLM_RETRIES)
                     return@repeat
                 }
 
-                com.nekobot.app.data.local.LocalLogger.i(TAG, "剧情选项 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次成功，生成 ${parsed.size} 个选项")
+                com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_plot_llm_attempt_success, attempt + 1, MAX_LLM_RETRIES, parsed.size)
 
                 // 不足 3 个用默认补齐
                 val finalChoices = parsed.toMutableList()
@@ -715,10 +716,10 @@ class PlotChoiceGenerator(
                 return finalChoices.take(3)
             } catch (e: Exception) {
                 lastError = "异常: ${e.message}"
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "剧情选项 LLM 第 ${attempt + 1}/$MAX_LLM_RETRIES 次异常: ${e.message}", e)
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_plot_llm_attempt_error, attempt + 1, MAX_LLM_RETRIES, e.message, throwable = e)
             }
         }
-        com.nekobot.app.data.local.LocalLogger.w(TAG, "剧情选项 LLM $MAX_LLM_RETRIES 次重试均失败: $lastError，使用默认选项")
+        com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_plot_llm_all_retries_failed, MAX_LLM_RETRIES, lastError)
         return DEFAULT_CHOICES
     }
 

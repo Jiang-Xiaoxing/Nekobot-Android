@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.nekobot.app.data.local.db.LocalAiModelEntity
 import java.time.Instant
+import com.nekobot.app.R
 
 /**
  * 完整版 AutoState（LLM 状态评估），对应原仓库 nbot/character/auto_state.py。
@@ -64,20 +65,20 @@ class AutoState(
         resultError: String? = null
     ): Triple<CharacterState, RelationshipState, Boolean> {
         if (resultError != null) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "跳过 AutoState: resultError=$resultError")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_skip_result_error, resultError)
             return Triple(state, relationship, false)
         }
         if (metadata["is_heartbeat"] == true) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "跳过 AutoState: heartbeat")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_skip_heartbeat)
             return Triple(state, relationship, false)
         }
         if (metadata["skip_auto_state"] == true) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "跳过 AutoState: skip_auto_state=true")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_skip_flag)
             return Triple(state, relationship, false)
         }
 
         if (userMessage.length < 2 || assistantMessage.length < 2) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "跳过 AutoState: 消息过短 (user=${userMessage.length}, assistant=${assistantMessage.length})")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_skip_too_short, userMessage.length, assistantMessage.length)
             return Triple(state, relationship, false)
         }
 
@@ -85,7 +86,7 @@ class AutoState(
         val targetId = relationship.targetId.ifEmpty { (metadata["target_id"] as? String) ?: "" }
         val sessionId = (metadata["session_id"] as? String) ?: conversationId
         if (characterId.isEmpty() || targetId.isEmpty()) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "跳过 AutoState: characterId=$characterId targetId=$targetId 为空")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_skip_empty_ids, characterId, targetId)
             return Triple(state, relationship, false)
         }
 
@@ -103,14 +104,14 @@ class AutoState(
         // 会话级间隔覆盖
         val sessionInterval = (metadata["auto_state_interval"] as? Number)?.toInt() ?: STATE_TURN_INTERVAL
         if (sessionInterval <= 0) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "跳过 AutoState: sessionInterval=$sessionInterval <= 0")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_skip_interval, sessionInterval)
             return Triple(state, relationship, false)
         }
         if (count < sessionInterval) {
-            com.nekobot.app.data.local.LocalLogger.d(TAG, "AutoState 计数 $count/$sessionInterval，未达触发间隔 (key=$key)")
+            com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_astate_counting, count, sessionInterval, key)
             return Triple(state, relationship, false)
         }
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "AutoState 达到触发条件: count=$count interval=$sessionInterval (key=$key)")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_astate_triggered, count, sessionInterval, key)
 
         // 取出缓冲区
         val turns = buffer.toList()
@@ -119,7 +120,7 @@ class AutoState(
         val adjustment = try {
             callStateModel(turns, profile, state, relationship)
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "状态评估异常: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_astate_eval_error, e.message, throwable = e)
             turnCounters[key] = 0
             return Triple(state, relationship, false)
         }
@@ -161,7 +162,7 @@ class AutoState(
     ): Map<String, Any> {
         val fallbackModel = if (failoverExecutor == null) aiModelProvider?.invoke() else null
         if (failoverExecutor == null && fallbackModel == null) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "callStateModel: 无可用激活模型（aiModelProvider 返回 null）")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_astate_no_active_model)
             return emptyMap()
         }
 
@@ -183,10 +184,7 @@ class AutoState(
         val execution = failoverExecutor?.execute(messages)
         val result = execution?.value ?: aiClient.chatOnce(fallbackModel!!, messages)
         val usedModel = execution?.model ?: fallbackModel!!
-        com.nekobot.app.data.local.LocalLogger.i(
-            TAG,
-            "callStateModel: 完成 LLM 状态评估 | 模型=${usedModel.name}(${usedModel.model}) | 轮次=${turns.size}"
-        )
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_astate_llm_done, usedModel.name, usedModel.model, turns.size)
         // 记账二级 LLM 调用 token（与主对话区分，source=state）
         if (result.usage.isNotEmpty()) {
             onTokenUsage?.invoke(
@@ -196,20 +194,20 @@ class AutoState(
             )
         }
         if (result.error != null) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "callStateModel: LLM 调用返回错误: ${result.error}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_astate_llm_error, result.error)
             return emptyMap()
         }
         if (result.content.isBlank()) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "callStateModel: LLM 返回空内容")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_astate_llm_empty)
             return emptyMap()
         }
 
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "callStateModel: LLM 返回内容长度=${result.content.length}")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_astate_llm_length, result.content.length)
         val parsed = parseStateResponse(result.content)
         if (parsed.isEmpty()) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "callStateModel: JSON 解析失败，返回空 Map")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_astate_parse_failed)
         } else {
-            com.nekobot.app.data.local.LocalLogger.i(TAG, "callStateModel: 解析成功，字段=${parsed.keys}")
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_astate_parse_success, parsed.keys)
         }
         return parsed
     }

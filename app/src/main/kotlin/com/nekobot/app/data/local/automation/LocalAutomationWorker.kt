@@ -6,6 +6,7 @@ import androidx.work.WorkerParameters
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.service.AgentForegroundService
+import com.nekobot.app.R
 
 /**
  * 后台自动化统一执行入口。
@@ -27,7 +28,7 @@ class LocalAutomationWorker(
         val profile = inputData.getString(KEY_PROFILE) ?: return Result.failure()
 
         if (!ServiceContainer.prefs.isLocalMode || ServiceContainer.prefs.activeDbName != profile) {
-            LocalLogger.i(TAG, "忽略非当前本地 Profile 的自动化: $profile/$type/$targetId")
+            LocalLogger.i(TAG, R.string.log_auto_wrong_profile, profile, type, targetId)
             return Result.success()
         }
 
@@ -58,7 +59,7 @@ class LocalAutomationWorker(
             ServiceContainer.localRepository.onAutomationWorkerFinished(type, targetId)
             Result.success()
         } catch (error: Exception) {
-            LocalLogger.e(TAG, "自动化执行失败: $type/$targetId: ${error.message}", error)
+            LocalLogger.e(TAG, R.string.log_auto_execute_failed, type, targetId, error.message, throwable = error)
             if (runAttemptCount < MAX_RETRY_ATTEMPTS) {
                 Result.retry()
             } else {

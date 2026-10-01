@@ -4,6 +4,8 @@ import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.db.AiModelDao
 import com.nekobot.app.data.local.db.LocalAiModelEntity
 import com.nekobot.app.data.local.db.LocalOAuthAccountEntity
@@ -456,7 +458,10 @@ class LocalOAuthManager(
         ).execute()
         response.use {
             val raw = it.body?.string().orEmpty()
-            val data = runCatching { JsonParser.parseString(raw).asJsonObject }.getOrDefault(JsonObject())
+            val data = runCatching { JsonParser.parseString(raw).asJsonObject }
+                .onFailure {
+                    LocalLogger.w(TAG, R.string.log_oauth_poll_parse_failed, it.message)
+                }.getOrDefault(JsonObject())
             if (!it.isSuccessful) {
                 return when (data.string("error")) {
                     "authorization_pending", "slow_down" -> OAuthPollResult.Pending
@@ -780,7 +785,10 @@ class LocalOAuthManager(
         gson.fromJson(secrets.decrypt(account.encryptedCredentials), OAuthTokenState::class.java)
 
     private fun parseMetadata(raw: String): JsonObject =
-        runCatching { JsonParser.parseString(raw).asJsonObject }.getOrDefault(JsonObject())
+        runCatching { JsonParser.parseString(raw).asJsonObject }
+            .onFailure {
+                LocalLogger.w(TAG, R.string.log_oauth_metadata_parse_failed, it.message)
+            }.getOrDefault(JsonObject())
 
     private fun mergeModels(curated: List<String>, fetched: List<String>): List<String> =
         (fetched + curated).distinct()
@@ -837,6 +845,7 @@ class LocalOAuthManager(
         get(key)?.takeIf { !it.isJsonNull && it.isJsonPrimitive }?.runCatching { asInt }?.getOrNull()
 
     private companion object {
+        private const val TAG = "LocalOAuthManager"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val REFRESH_SKEW_MS = 120_000L
 

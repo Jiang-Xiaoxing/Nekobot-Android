@@ -2,6 +2,7 @@ package com.nekobot.app.data.local.ai
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import com.nekobot.app.R
 
 /**
  * 会话级“Agent 运行通知”队列。
@@ -46,10 +47,7 @@ internal object AgentNoticeBus {
         }
         if (wakeIfIdle) {
             runCatching { onNoticePublished?.invoke(sessionId) }.onFailure { error ->
-                com.nekobot.app.data.local.LocalLogger.w(
-                    "AgentNoticeBus",
-                    "唤醒回调失败: ${error.message}"
-                )
+                com.nekobot.app.data.local.LocalLogger.w("AgentNoticeBus", R.string.log_notice_wake_callback_failed, error.message)
             }
         }
     }

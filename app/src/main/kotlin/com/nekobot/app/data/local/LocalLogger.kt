@@ -1,9 +1,13 @@
 package com.nekobot.app.data.local
 
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Build
+import android.os.LocaleList
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.security.SecurePreferenceStore
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -38,6 +42,7 @@ object LocalLogger {
 
     private var legacyPrefs: android.content.SharedPreferences? = null
     private var securePrefs: SecurePreferenceStore? = null
+    private var appContext: Context? = null
     private var persistScheduled = false
 
     const val LEVEL_DEBUG = "debug"
@@ -56,6 +61,7 @@ object LocalLogger {
     fun init(context: Context) {
         lock.withLock {
             val appContext = context.applicationContext
+            this.appContext = appContext
             legacyPrefs = runCatching {
                 appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             }.getOrNull()
@@ -83,6 +89,41 @@ object LocalLogger {
 
     fun e(tag: String, msg: String, throwable: Throwable? = null) =
         log(LEVEL_ERROR, tag, exceptionMessage(msg, throwable))
+
+    /** 资源化日志：记录时按当前所选语言渲染消息文案。 */
+    fun d(tag: String, msgRes: Int, vararg fmtArgs: Any?) = log(LEVEL_DEBUG, tag, str(msgRes, fmtArgs))
+
+    fun i(tag: String, msgRes: Int, vararg fmtArgs: Any?) = log(LEVEL_INFO, tag, str(msgRes, fmtArgs))
+
+    fun w(tag: String, msgRes: Int, vararg fmtArgs: Any?, throwable: Throwable? = null) =
+        log(LEVEL_WARNING, tag, exceptionMessage(str(msgRes, fmtArgs), throwable))
+
+    fun e(tag: String, msgRes: Int, vararg fmtArgs: Any?, throwable: Throwable? = null) =
+        log(LEVEL_ERROR, tag, exceptionMessage(str(msgRes, fmtArgs), throwable))
+
+    /**
+     * 按当前语言解析资源文案；供数据层在记录前构造本地化的动态消息。
+     * localizedContext 未就绪时按语言偏好即时包装上下文，失败则回落资源名。
+     */
+    fun str(resId: Int, vararg fmtArgs: Any?): String {
+        val ctx = ServiceContainer.localizedContext ?: wrapByLanguagePref() ?: return resId.toString()
+        return runCatching { ctx.getString(resId, *fmtArgs) }.getOrDefault(resId.toString())
+    }
+
+    private fun wrapByLanguagePref(): Context? {
+        val app = appContext ?: return null
+        return runCatching {
+            val locale = LocaleHelper.getEffectiveLocale(app, ServiceContainer.prefs.language)
+            val config = Configuration(app.resources.configuration)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                config.setLocales(LocaleList(locale))
+            } else {
+                @Suppress("DEPRECATION")
+                config.locale = locale
+            }
+            app.createConfigurationContext(config)
+        }.getOrNull()
+    }
 
     private fun log(level: String, tag: String, rawMessage: String) {
         val message = redactForLocalLog(rawMessage)

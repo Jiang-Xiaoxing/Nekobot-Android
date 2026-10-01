@@ -14,6 +14,7 @@ import com.google.gson.JsonParser
 import com.nekobot.app.data.local.LocalCommandProgressReporter
 import com.nekobot.app.data.local.LocalRepository
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.model.AgentTodo
 import com.nekobot.app.data.model.AiConfig
@@ -151,7 +152,7 @@ internal class PluginApiDispatcher(
         return when (canonical) {
             "system.info" -> systemInfo()
             "log" -> {
-                android.util.Log.i(
+                LocalLogger.i(
                     "NekoPlugin",
                     "[${context.plugin.id}][${payload.string("level").take(16).ifBlank { "info" }}] " +
                         payload.string("message").take(MAX_LOG_CHARS)

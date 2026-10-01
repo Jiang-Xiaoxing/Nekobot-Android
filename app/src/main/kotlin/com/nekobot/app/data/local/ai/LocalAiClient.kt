@@ -1,8 +1,9 @@
 package com.nekobot.app.data.local.ai
 
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.db.LocalAiModelEntity
 import com.nekobot.app.data.local.oauth.LocalOAuthProviders
 import com.nekobot.app.data.local.oauth.OAuthRuntimeCredential
@@ -33,6 +34,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+private const val TAG = "LocalAiClient"
 
 /**
  * AI 请求结果（非流式）。
@@ -351,7 +354,7 @@ class LocalAiClient(
             }
             emit(RealtimeEvent.StreamEnd(null))
         } catch (e: Exception) {
-            Log.e("LocalAiClient", "stream failed: ${e.message}")
+            LocalLogger.e(TAG, R.string.log_laic_stream_failed, e.message)
             emit(RealtimeEvent.Error(e.message ?: "流式请求异常"))
             emit(RealtimeEvent.StreamEnd(null))
         } finally {
@@ -438,7 +441,7 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("LocalAiClient", "chatOnce failed: ${e.message}")
+            LocalLogger.e(TAG, R.string.log_laic_chat_once_failed, e.message)
             throw e
         }
     }
@@ -827,10 +830,7 @@ class LocalAiClient(
         val firstError = response.body?.string().orEmpty().take(500)
         response.close()
         runCatching {
-            Log.w(
-                "LocalAiClient",
-                "OpenAI 兼容请求返回 400，使用最小参数重试: ${firstError.take(160)}"
-            )
+            LocalLogger.w(TAG, R.string.log_laic_400_minimal_retry, firstError.take(160))
         }
         return clientFor(model).newCall(buildRequest(fallbackExtra)).awaitResponse()
     }
@@ -1029,7 +1029,7 @@ class LocalAiClient(
                 return result.copy(usedModelId = model.id, usedModelName = model.name, usedModelActualName = model.model)
             } catch (e: FailoverHttpException) {
                 failover.recordFailure(model.id, e.statusCode)
-                Log.w("LocalAiClient", "模型 ${model.name} 调用失败 (HTTP ${e.statusCode})，尝试下一个: ${e.message?.take(120)}")
+                LocalLogger.w(TAG, R.string.log_laic_model_http_failover, model.name, e.statusCode, e.message?.take(120))
                 lastError = LocalAiResult("", error = e.message, statusCode = e.statusCode)
             } catch (e: FailoverRejectedContentException) {
                 failover.recordFailure(model.id)
@@ -1040,7 +1040,7 @@ class LocalAiClient(
                 if (shouldStop()) throw CancellationException("生成已停止").apply { initCause(e) }
                 val code = extractStatusCode(e)
                 failover.recordFailure(model.id, code)
-                Log.w("LocalAiClient", "模型 ${model.name} 调用异常，尝试下一个: ${e.message?.take(120)}")
+                LocalLogger.w(TAG, R.string.log_laic_model_exception_failover, model.name, e.message?.take(120))
                 lastError = LocalAiResult("", error = e.message ?: "请求异常", statusCode = code)
             }
         }
@@ -1139,7 +1139,7 @@ class LocalAiClient(
                     lastErrorMsg = "HTTP ${response.code}: $errBody"
                     failed = true
                     failover.recordFailure(model.id, httpCode)
-                    Log.w("LocalAiClient", "模型 ${model.name} 流式失败 (HTTP $httpCode)，尝试下一个")
+                    LocalLogger.w(TAG, R.string.log_laic_stream_http_failover, model.name, httpCode)
                     response.close()
                     continue
                 }
@@ -1301,7 +1301,7 @@ class LocalAiClient(
                     response?.close()
                     return@flow
                 }
-                Log.w("LocalAiClient", "模型 ${model.name} 流式异常: ${e.message}，尝试下一个")
+                LocalLogger.w(TAG, R.string.log_laic_stream_exception_failover, model.name, e.message)
                 lastErrorMsg = e.message ?: "流式请求异常"
                 failed = true
                 failover.recordFailure(model.id, extractStatusCode(e))
@@ -1371,7 +1371,7 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("LocalAiClient", "describeImage failed: ${e.message}")
+            LocalLogger.e(TAG, R.string.log_laic_describe_image_failed, e.message)
             throw e
         }
     }
@@ -2025,7 +2025,7 @@ class LocalAiClient(
             ?: resolveAudioUrl(model.baseUrl, model.appendBaseUrlPath, "audio/transcriptions")
         val audioMediaType = guessAudioMediaType(filename).toMediaType()
         val sttModel = model.sttModel.ifBlank { model.model }
-        Log.i("LocalAiClient", "STT(openai) 请求: url=$url, model=${model.model}, file=$filename, size=${audioBytes.size}, mime=$audioMediaType")
+        LocalLogger.i(TAG, R.string.log_laic_stt_openai_request, url, model.model, filename, audioBytes.size, audioMediaType)
         val audioPart = okhttp3.MultipartBody.Builder()
             .setType(okhttp3.MultipartBody.FORM)
             .addFormDataPart("model", sttModel)
@@ -2042,7 +2042,7 @@ class LocalAiClient(
             clientFor(model).newCall(req).awaitResponse().use { resp ->
                 if (!resp.isSuccessful) {
                     val err = resp.body?.string().orEmpty().take(500)
-                    Log.e("LocalAiClient", "STT(openai) 失败: HTTP ${resp.code} url=$url resp=$err")
+                    LocalLogger.e(TAG, R.string.log_laic_stt_openai_failed, resp.code, url, err)
                     throw FailoverHttpException(resp.code, "HTTP ${resp.code} [POST $url]: $err")
                 }
                 val raw = resp.body?.string().orEmpty()
@@ -2066,7 +2066,7 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("LocalAiClient", "transcribeSpeechOpenAI failed: ${e.message}")
+            LocalLogger.e(TAG, R.string.log_laic_stt_openai_error, e.message)
             throw e
         }
     }
@@ -2103,7 +2103,7 @@ class LocalAiClient(
                 val wav = AudioConverter.toWav(audioBytes, targetSampleRate = 16000, targetChannels = 1)
                 Triple(wav, "audio.wav", "audio/wav")
             } catch (e: Exception) {
-                Log.w("LocalAiClient", "STT(xiaomi) 转码失败 ext=$ext，回退原字节直传: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_laic_stt_xiaomi_transcode_failed, ext, e.message)
                 Triple(audioBytes, filename, guessAudioMediaType(filename))
             }
         }
@@ -2129,7 +2129,7 @@ class LocalAiClient(
         )
         val jsonBody = gson.toJson(bodyMap).toRequestBody("application/json".toMediaType())
 
-        Log.i("LocalAiClient", "STT(xiaomi) 请求: url=$url, model=${model.model}, origFile=$filename, effectiveFile=$effectiveFilename, size=${effectiveBytes.size}, mime=$effectiveMime, lang=$lang")
+        LocalLogger.i(TAG, R.string.log_laic_stt_xiaomi_request, url, model.model, filename, effectiveFilename, effectiveBytes.size, effectiveMime, lang)
 
         val req = Request.Builder().url(url).post(jsonBody)
             .header("api-key", model.apiKey)
@@ -2139,7 +2139,7 @@ class LocalAiClient(
             clientFor(model).newCall(req).awaitResponse().use { resp ->
                 if (!resp.isSuccessful) {
                     val err = resp.body?.string().orEmpty().take(500)
-                    Log.e("LocalAiClient", "STT(xiaomi) 失败: HTTP ${resp.code} url=$url resp=$err")
+                    LocalLogger.e(TAG, R.string.log_laic_stt_xiaomi_failed, resp.code, url, err)
                     throw FailoverHttpException(resp.code, "HTTP ${resp.code} [POST $url]: $err")
                 }
                 val raw = resp.body?.string().orEmpty()
@@ -2162,7 +2162,7 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("LocalAiClient", "transcribeSpeechXiaomi failed: ${e.message}")
+            LocalLogger.e(TAG, R.string.log_laic_stt_xiaomi_error, e.message)
             throw e
         }
     }
@@ -2387,7 +2387,7 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("LocalAiClient", "generateImage failed: ${e.message}")
+            LocalLogger.e(TAG, R.string.log_laic_generate_image_failed, e.message)
             throw e
         }
     }

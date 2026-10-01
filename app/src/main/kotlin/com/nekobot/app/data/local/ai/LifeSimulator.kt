@@ -7,6 +7,7 @@ import com.nekobot.app.data.local.db.MemoryDao
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import com.nekobot.app.R
 
 /**
  * 角色生活片段生成器（静默心跳的"懒触发"版）。
@@ -223,14 +224,14 @@ object LifeSimulator {
             val result = execution?.value ?: aiClient.chatOnce(activeModel, messages)
             val usedModel = execution?.model ?: activeModel
             if (result.error != null) {
-                LocalLogger.w(TAG, "life_sim 生成失败: ${result.error}")
+                LocalLogger.w(TAG, R.string.log_life_generate_failed, result.error)
                 return ""
             }
 
             // 防御性截断：模型偶尔会写成长文，超出部分不落库，避免记忆文件持续膨胀
             val content = result.content.trim().take(MAX_LIFE_SIM_CONTENT_CHARS)
             if (content.isBlank()) {
-                LocalLogger.w(TAG, "life_sim 生成内容为空")
+                LocalLogger.w(TAG, R.string.log_life_generate_empty)
                 return ""
             }
 
@@ -271,7 +272,7 @@ object LifeSimulator {
             try {
                 trimLifeSimFile(memoryDao, lifeSimPath)
             } catch (e: Exception) {
-                LocalLogger.w(TAG, "life_sim 截断失败: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_life_truncate_failed, e.message)
             }
 
             // 记录 token 用量：不同协议 usage 键名不同（prompt/completion vs *_tokens），
@@ -291,10 +292,10 @@ object LifeSimulator {
                 )
             }
 
-            LocalLogger.i(TAG, "life_sim 生成成功 | char=$characterId | conv=$conversationId | activity=$activity | contentLen=${content.length}")
+            LocalLogger.i(TAG, R.string.log_life_generate_success, characterId, conversationId, activity, content.length)
             return activity
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "life_sim 生成异常: ${e.message}", e)
+            LocalLogger.w(TAG, R.string.log_life_generate_error, e.message, throwable = e)
             return ""
         }
     }

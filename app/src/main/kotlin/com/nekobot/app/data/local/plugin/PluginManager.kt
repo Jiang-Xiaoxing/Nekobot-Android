@@ -12,6 +12,7 @@ import android.webkit.WebResourceRequest
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.LocalCommandProgressReporter
 import com.nekobot.app.data.local.LocalRepository
 import com.nekobot.app.data.local.LocalSlashCommands
@@ -1233,7 +1234,7 @@ class PluginManager(
 
         @JavascriptInterface
         fun log(level: String?, message: String?) {
-            android.util.Log.i("NekoPlugin", "[${plugin.id}][${level ?: "info"}] ${message.orEmpty().take(500)}")
+            LocalLogger.i("NekoPlugin", "[${plugin.id}][${level ?: "info"}] ${message.orEmpty().take(500)}")
         }
 
         private fun sendApiResult(requestId: String, success: Boolean, payload: String) {

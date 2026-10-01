@@ -15,6 +15,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.TextView
 import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.remote.ExecAuthorization
 import com.nekobot.app.data.remote.ExecConfirmationRequest
@@ -119,7 +120,11 @@ internal class AgentOverlayWindow(private val context: Context) {
             y = dp(6)
         }
         restorePlacement(windowParams)
-        if (runCatching { windowManager.addView(view, windowParams) }.isFailure) return
+        val added = runCatching { windowManager.addView(view, windowParams) }
+        if (added.isFailure) {
+            LocalLogger.w("AgentOverlay", R.string.log_overlay_addview_failed, added.exceptionOrNull()?.message ?: "-")
+            return
+        }
         root = view
         params = windowParams
         card = view.findViewById(R.id.agent_overlay_card)

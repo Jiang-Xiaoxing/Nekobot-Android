@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import java.io.File
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference
 class NekobotAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
+        LocalLogger.i("NekobotA11y", R.string.log_a11y_connected)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -30,6 +32,7 @@ class NekobotAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        LocalLogger.i("NekobotA11y", R.string.log_a11y_disconnected)
         super.onDestroy()
     }
 
@@ -303,6 +306,7 @@ class NekobotAccessibilityService : AccessibilityService() {
                 }
 
                 override fun onFailure(errorCode: Int) {
+                    LocalLogger.w("NekobotA11y", R.string.log_a11y_screenshot_failed, errorCode)
                     result.set(AccessibilityActionResult(false, getString(R.string.accessibility_screenshot_failed, errorCode)))
                     latch.countDown()
                 }

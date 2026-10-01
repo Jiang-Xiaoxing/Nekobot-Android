@@ -10,6 +10,7 @@ import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.Inflater
+import com.nekobot.app.R
 
 /**
  * 纯 Kotlin 实现的 Git 只读差异引擎（无外部 git 二进制依赖）。
@@ -75,7 +76,7 @@ object WorkspaceGitDiff {
             summarizeInternal(workspace, changedPaths)
         } catch (t: Throwable) {
             // 差异引擎只是增强展示，任何解析异常都不应中断 Agent 主链路
-            com.nekobot.app.data.local.LocalLogger.w("WorkspaceGit", "git diff 摘要生成失败: ${t.message}")
+            com.nekobot.app.data.local.LocalLogger.w("WorkspaceGit", R.string.log_git_diff_failed, t.message)
             null
         }
     }

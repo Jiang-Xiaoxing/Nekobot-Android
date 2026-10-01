@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 本地日志文案（LocalLogger 资源化消息）。由 logtools/gen_logs.py 生成，请勿手工编辑。 -->
+<resources>
+    <string name="log_a11y_connected">ユーザー補助サービスが接続されました</string>
+    <string name="log_a11y_disconnected">ユーザー補助サービスが切断されました</string>
+    <string name="log_a11y_screenshot_failed">スクリーンショットに失敗: code=%1$s</string>
+    <string name="log_amem_accumulating">記憶抽出の累積中 %1$s/%2$s (key=%3$s)</string>
+    <string name="log_amem_entry_dropped_category">記憶エントリを破棄：分類が許可範囲外</string>
+    <string name="log_amem_entry_dropped_empty">記憶エントリを破棄：タイトルまたは内容が空（内容長=%1$s）</string>
+    <string name="log_amem_extract_failed">記憶抽出に失敗</string>
+    <string name="log_amem_llm_all_retries_failed">記憶抽出LLMは %1$s 回の再試行すべて失敗</string>
+    <string name="log_amem_llm_attempt_empty">記憶抽出LLMの %1$s/%2$s 回目は空の内容を返却</string>
+    <string name="log_amem_llm_attempt_error">記憶抽出LLMの %1$s/%2$s 回目でエラー</string>
+    <string name="log_amem_llm_attempt_failed">記憶抽出LLMの %1$s/%2$s 回目に失敗</string>
+    <string name="log_amem_llm_attempt_parse_failed">記憶抽出LLMの %1$s/%2$s 回目は解析失敗、再試行します</string>
+    <string name="log_amem_llm_attempt_success">記憶抽出LLMの %1$s/%2$s 回目が成功、%3$s文字を返却、解析開始</string>
+    <string name="log_amem_llm_call">記憶抽出LLMを呼び出し: turns=%1$s existing=%2$s</string>
+    <string name="log_amem_no_active_model">記憶抽出をスキップ：有効なAIモデル未設定（aiModelProviderがnullを返却）</string>
+    <string name="log_amem_no_output">記憶抽出の産出なし（LLMが有効な記憶を返さないか解析失敗）(key=%1$s)</string>
+    <string name="log_amem_parse_all_dropped">記憶抽出解析：LLMが %1$s 件返却したが正規化後にすべて破棄</string>
+    <string name="log_amem_parse_empty_after_clean">記憶抽出解析：cleanResponseContent 後に空（元の長さ=%1$s）</string>
+    <string name="log_amem_parse_gson_null">記憶抽出解析：Gsonがnullを返却（候補JSON長=%1$s）</string>
+    <string name="log_amem_parse_json_error">記憶抽出のJSON解析に失敗（候補JSON長=%1$s）</string>
+    <string name="log_amem_parse_not_json">記憶抽出解析：JSON配列・オブジェクトとして認識不可（元の長さ=%1$s）</string>
+    <string name="log_amem_persist_failed">記憶の保存に失敗</string>
+    <string name="log_amem_read_existing_failed">既存記憶の読み取りに失敗（メインフローには影響なし）</string>
+    <string name="log_amem_saved">%1$s件の記憶を抽出・保存 (key=%2$s)</string>
+    <string name="log_amem_skip_empty_ids">記憶抽出をスキップ：characterId または targetId が空 (characterId=%1$s targetId=%2$s)</string>
+    <string name="log_amem_timeline_derived">timeline を %1$s 件生成、%2$s 件に切り詰め</string>
+    <string name="log_amem_triggered">記憶抽出トリガー：%1$sターンで間隔到達 (key=%2$s)</string>
+    <string name="log_app_global_memory_migrate_failed">旧グローバル記憶の移行に失敗: %1$s</string>
+    <string name="log_app_memory_migration_prompt_failed">記憶移行プロンプトの解析に失敗: %1$s</string>
+    <string name="log_app_plot_story_migrate_failed">データベース %1$s の旧ストーリーマップの移行に失敗: %2$s</string>
+    <string name="log_app_secrets_migrate_failed">ローカルの機密情報の移行に失敗しました: %1$s</string>
+    <string name="log_astate_counting">AutoState カウント %1$s/%2$s、トリガー間隔に未達 (key=%3$s)</string>
+    <string name="log_astate_eval_error">状態評価エラー: %1$s</string>
+    <string name="log_astate_llm_done">callStateModel: LLM状態評価が完了 | モデル=%1$s(%2$s) | ターン=%3$s</string>
+    <string name="log_astate_llm_empty">callStateModel: LLMが空の内容を返却</string>
+    <string name="log_astate_llm_error">callStateModel: LLM呼び出しがエラーを返却: %1$s</string>
+    <string name="log_astate_llm_length">callStateModel: LLM返却内容の長さ=%1$s</string>
+    <string name="log_astate_no_active_model">callStateModel: 利用可能な有効モデルなし（aiModelProviderがnullを返却）</string>
+    <string name="log_astate_parse_failed">callStateModel: JSON解析に失敗、空のMapを返却</string>
+    <string name="log_astate_parse_success">callStateModel: 解析成功、フィールド=%1$s</string>
+    <string name="log_astate_skip_empty_ids">AutoState をスキップ：characterId=%1$s targetId=%2$s が空</string>
+    <string name="log_astate_skip_flag">AutoState をスキップ: skip_auto_state=true</string>
+    <string name="log_astate_skip_heartbeat">AutoState をスキップ: heartbeat</string>
+    <string name="log_astate_skip_interval">AutoState をスキップ：sessionInterval=%1$s &lt;= 0</string>
+    <string name="log_astate_skip_result_error">AutoState をスキップ: resultError=%1$s</string>
+    <string name="log_astate_skip_too_short">AutoState をスキップ：メッセージが短すぎます (user=%1$s, assistant=%2$s)</string>
+    <string name="log_astate_triggered">AutoState トリガー条件に到達: count=%1$s interval=%2$s (key=%3$s)</string>
+    <string name="log_auto_enqueue_failed">自動化タスクの enqueue に失敗: %1$s: %2$s</string>
+    <string name="log_auto_execute_failed">自動化の実行に失敗: %1$s/%2$s: %3$s</string>
+    <string name="log_auto_wrong_profile">現在のローカルProfile以外の自動化を無視: %1$s/%2$s/%3$s</string>
+    <string name="log_crun_afterturn_saved">afterTurn 状態を保存: mood=%1$s energy=%2$s affection=%3$s trust=%4$s</string>
+    <string name="log_crun_astate_applied">AutoState がLLM評価を適用: mood=%1$s moodIntensity=%2$s energy=%3$s</string>
+    <string name="log_crun_astate_failed">AutoState状態評価に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_crun_astate_not_updated">AutoState はこのターン未更新（トリガー間隔未達または変化なし）</string>
+    <string name="log_crun_memory_extract_cancelled">記憶抽出がキャンセル（アプリプロセス終了）: %1$s</string>
+    <string name="log_crun_memory_extract_failed">記憶抽出に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_crun_memoryfs_inject_failed">MemoryFSプロンプト注入に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_crun_review_delta_written">レビュー関係差分を書き戻し: %1$s → affection=%2$s trust=%3$s</string>
+    <string name="log_crun_snapshot_failed">状態スナップショットの書き込みに失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_crun_snapshot_written">状態スナップショットを書き込み (trigger=%1$s, hasQuality=%2$s)</string>
+    <string name="log_db_profile_close_failed">データベースのクローズに失敗: %1$s</string>
+    <string name="log_db_profile_delete_failed">データベースファイルの削除に失敗: %1$s: %2$s</string>
+    <string name="log_fgs_intent_failed">フォアグラウンドサービスへのIntent送信に失敗: %1$s</string>
+    <string name="log_fgs_start_failed">フォアグラウンドサービスの起動に失敗: %1$s</string>
+    <string name="log_fgs_stop_generation_failed">生成停止リクエストに失敗: %1$s</string>
+    <string name="log_git_diff_failed">git diff サマリー生成に失敗: %1$s</string>
+    <string name="log_hook_action_error">Hook %1$s のaction実行エラー: %2$s</string>
+    <string name="log_hook_condition_error">Hook %1$s の条件評価エラー: %2$s</string>
+    <string name="log_hook_context_appended">[Hook:%1$s] コンテキストメッセージを追加: %2$s</string>
+    <string name="log_hook_load_hooks_failed">hooksの読み込みに失敗: %1$s</string>
+    <string name="log_hook_load_records_failed">トリガー済みhook記録の読み込みに失敗: %1$s</string>
+    <string name="log_hook_loaded_records">%1$s件のトリガー済みhook記録を読み込み</string>
+    <string name="log_hook_log_write_failed">hookログの書き込みに失敗: %1$s</string>
+    <string name="log_hook_memory_write">[Hook:%1$s] 記憶を書き込み: %2$s [category=%3$s path=%4$s]</string>
+    <string name="log_hook_persist_records_failed">トリガー済みhook記録の永続化に失敗: %1$s</string>
+    <string name="log_hook_prompt_inject">[Hook:%1$s] プロンプトを注入: %2$s</string>
+    <string name="log_hook_records_reset">セッション %1$s の %2$s 件のhookトリガー記録をリセット</string>
+    <string name="log_hook_rel_delta_unknown_field">relationship_delta は不明なフィールドを無視: %1$s</string>
+    <string name="log_hook_rel_updated">[Hook:%1$s] 関係更新: affection=%2$s trust=%3$s</string>
+    <string name="log_hook_state_delta_unknown_field">state_delta は不明なフィールドを無視: %1$s</string>
+    <string name="log_hook_state_updated">[Hook:%1$s] 状態更新: mood=%2$s energy=%3$s</string>
+    <string name="log_hook_test_triggered">Hook テストトリガー: %1$s -&gt; %2$s</string>
+    <string name="log_hook_triggered">Hook トリガー: %1$s [%2$s] -&gt; %3$s</string>
+    <string name="log_hook_unknown_action">不明なaction type: %1$s（hook=%2$s）</string>
+    <string name="log_hook_workflow_unsupported">ローカルモードはworkflow action非対応（hook=%1$s）</string>
+    <string name="log_hook_worldbook_added">[Hook:%1$s] ワールドブックエントリを追加: %2$s</string>
+    <string name="log_kbase_embedding_fallback">Embeddingモデル %1$s が失敗、フォールバックモデルを試行: %2$s</string>
+    <string name="log_kbase_index_failed">ナレッジベースのインデックスに失敗 %1$s: %2$s</string>
+    <string name="log_krerank_fallback_score">リランク失敗、元のscore順にフォールバック: %1$s</string>
+    <string name="log_krerank_model_failed">リランクモデル %1$s の呼び出しに失敗: %2$s</string>
+    <string name="log_laic_400_minimal_retry">OpenAI互換リクエストが400を返却、最小パラメータで再試行: %1$s</string>
+    <string name="log_laic_chat_once_failed">単発チャットリクエストに失敗: %1$s</string>
+    <string name="log_laic_describe_image_failed">画像認識リクエストに失敗: %1$s</string>
+    <string name="log_laic_generate_image_failed">画像生成に失敗: %1$s</string>
+    <string name="log_laic_model_exception_failover">モデル %1$s の呼び出しでエラー、次を試行: %2$s</string>
+    <string name="log_laic_model_http_failover">モデル %1$s の呼び出しに失敗 (HTTP %2$s)、次を試行: %3$s</string>
+    <string name="log_laic_stream_exception_failover">モデル %1$s のストリーミングでエラー: %2$s、次を試行</string>
+    <string name="log_laic_stream_failed">ストリーミングリクエストに失敗: %1$s</string>
+    <string name="log_laic_stream_http_failover">モデル %1$s のストリーミングに失敗 (HTTP %2$s)、次を試行</string>
+    <string name="log_laic_stt_openai_error">音声文字起こし(openai) エラー: %1$s</string>
+    <string name="log_laic_stt_openai_failed">STT(openai) 失敗: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_openai_request">STT(openai) リクエスト: url=%1$s, model=%2$s, file=%3$s, size=%4$s, mime=%5$s</string>
+    <string name="log_laic_stt_xiaomi_error">音声文字起こし(xiaomi) エラー: %1$s</string>
+    <string name="log_laic_stt_xiaomi_failed">STT(xiaomi) 失敗: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_xiaomi_request">STT(xiaomi) リクエスト: url=%1$s, model=%2$s, origFile=%3$s, effectiveFile=%4$s, size=%5$s, mime=%6$s, lang=%7$s</string>
+    <string name="log_laic_stt_xiaomi_transcode_failed">STT(xiaomi) 変換に失敗 ext=%1$s、元バイト直接送信にフォールバック: %2$s</string>
+    <string name="log_life_generate_empty">life_sim の生成内容が空</string>
+    <string name="log_life_generate_error">life_sim 生成エラー: %1$s</string>
+    <string name="log_life_generate_failed">life_sim 生成に失敗: %1$s</string>
+    <string name="log_life_generate_success">life_sim 生成成功 | char=%1$s | conv=%2$s | activity=%3$s | contentLen=%4$s</string>
+    <string name="log_life_truncate_failed">life_sim の切り詰めに失敗: %1$s</string>
+    <string name="log_lrepo_ai_client_missing">記憶抽出をスキップ：AIクライアント未設定</string>
+    <string name="log_lrepo_extract_entry">extractIfNeeded 入口: characterId=%1$s sessionId=%2$s userId=%3$s userMsgLen=%4$s aiMsgLen=%5$s</string>
+    <string name="log_mcp_connected">MCP 接続済み: %1$s (%2$s)、%3$s 個のツール</string>
+    <string name="log_mcp_disconnect_failed">MCP切断に失敗: %1$s</string>
+    <string name="log_mcp_http_failed">MCP HTTP リクエスト失敗 [%1$s] %2$s -&gt; %3$s: %4$s%5$s</string>
+    <string name="log_mcp_stdio_sandbox_fallback">MCP stdioサンドボックスの起動に失敗、直接実行にフォールバック: %1$s</string>
+    <string name="log_mcp_tool_call_failed">MCPツール呼び出しに失敗: %1$s</string>
+    <string name="log_memx_delete_no_match">削除操作は既存エントリに一致せず、無視しました</string>
+    <string name="log_memx_extract_error">記憶抽出エラー（メインフローには影響なし）: %1$s</string>
+    <string name="log_memx_extract_failed">記憶抽出に失敗: %1$s</string>
+    <string name="log_memx_memory_updated">Agent長期記憶を更新: 追加 %1$s、書き換え %2$s、削除 %3$s</string>
+    <string name="log_memx_no_change_skip">モデルの操作は内容を変更せず、書き込みをスキップ</string>
+    <string name="log_memx_no_valid_changes">このターンは基準を満たす長期記憶の変更なし（NONE または解析不能）</string>
+    <string name="log_memx_op_ignored_action">記憶操作を無視：アクションを識別不可（%1$s）</string>
+    <string name="log_memx_op_ignored_category">記憶操作を無視：分類が標準範囲外（%1$s）</string>
+    <string name="log_memx_queue_unavailable_fallback">記憶抽出キューが利用不可、アクティブモデルにフォールバック: %1$s</string>
+    <string name="log_mfs_context_failed">記憶プロンプトコンテキストの構築に失敗: %1$s</string>
+    <string name="log_namegen_failed">セッション自動命名に失敗: %1$s</string>
+    <string name="log_namegen_queue_fallback">命名フェイルオーバーキューが利用不可、アクティブモデルにフォールバック: %1$s</string>
+    <string name="log_notice_wake_callback_failed">復帰コールバックに失敗: %1$s</string>
+    <string name="log_notif_listener_connected">通知リスナーサービスが接続されました</string>
+    <string name="log_notif_listener_disconnected">通知リスナーサービスが切断（権限が取り消された可能性）</string>
+    <string name="log_notif_op_failed">通知操作の実行に失敗: %1$s</string>
+    <string name="log_notifier_notify_failed">通知の送信に失敗: id=%1$s: %2$s</string>
+    <string name="log_oauth_metadata_parse_failed">OAuthメタデータの解析に失敗: %1$s</string>
+    <string name="log_oauth_poll_parse_failed">OAuthポーリング応答の解析に失敗: %1$s</string>
+    <string name="log_overlay_addview_failed">オーバーレイウィンドウの追加に失敗: %1$s</string>
+    <string name="log_pcb_agent_image_failed">Agent用画像の生成に失敗: %1$s</string>
+    <string name="log_pcb_dequeue_failed">キュー内メッセージの取り出しに失敗: %1$s</string>
+    <string name="log_pcb_file_to_datauri_failed">fileToDataUri に失敗: %1$s</string>
+    <string name="log_pcb_git_diff_attach_failed">git変更サマリーの添付に失敗: %1$s</string>
+    <string name="log_pcb_git_diff_attached">maybeAttachGitDiff: tool=%1$s changed=%2$s summary=%3$s</string>
+    <string name="log_pcb_git_diff_no_changes">maybeAttachGitDiff: changedPaths が空、gitサマリーをスキップ</string>
+    <string name="log_pcb_git_diff_no_reporter">maybeAttachGitDiff: activeAgentProgressReporter が null、gitサマリーをスキップ</string>
+    <string name="log_pcb_response_complete">レスポンス完了: %1$s 文字, エラー=%2$s</string>
+    <string name="log_pcb_routed_result_writeback_failed">ルーティング失敗結果の書き戻しに失敗: %1$s</string>
+    <string name="log_pcb_routed_result_writeback_failed2">ルーティング結果の書き戻しに失敗: %1$s</string>
+    <string name="log_pcb_subagent_token_persist_failed">サブエージェントのToken明細の永続化に失敗: %1$s</string>
+    <string name="log_pcb_subagent_token_stats_failed">サブエージェントのTokenStats記録に失敗: %1$s</string>
+    <string name="log_pcb_swipes_persisted">swipes の新候補を保存 | messageId=%1$s | 全 %2$s 版</string>
+    <string name="log_pcb_task_list_persist_failed">Agentタスクリストの永続化に失敗: %1$s</string>
+    <string name="log_pcb_token_record_persist_failed">Token記録の永続化に失敗: %1$s</string>
+    <string name="log_pcb_token_stats_failed">TokenStatsの記録に失敗: %1$s</string>
+    <string name="log_pcb_vision_describer_missing">resolveImages: visionDescriber が null（未注入）、ビジョン認識をスキップ</string>
+    <string name="log_pcb_vision_item_done">resolveImages: %1$s枚目の認識完了 | name=%2$s | 長さ=%3$s | 失敗マーカー=%4$s</string>
+    <string name="log_pcb_vision_item_failed">ビジョン認識に失敗 [%1$s]: %2$s</string>
+    <string name="log_pcb_vision_start">resolveImages: %1$s枚の画像を認識開始</string>
+    <string name="log_pipe_after_turn_error">CharacterRuntime after_turn エラー: %1$s</string>
+    <string name="log_pipe_before_turn_done">CharacterRuntime before_turn 完了 | キャラ=%1$s | 気分=%2$s | 注入項目=%3$s個 | promptText=%4$s文字</string>
+    <string name="log_pipe_before_turn_error">CharacterRuntime before_turn エラー: %1$s</string>
+    <string name="log_pipe_context_ready">コンテキスト準備完了 | system prompt=%1$s文字 | プロンプトスタック=%2$s項目 | 履歴=%3$s件</string>
+    <string name="log_pipe_done">Pipeline 完了 | 所要時間=%1$sms%2$s%3$s | 返信長=%4$s</string>
+    <string name="log_pipe_first_call_400_fallback">初回モデル呼び出しで400エラー、ツールなし会話にフォールバック</string>
+    <string name="log_pipe_inherit_memory_dedup">キャラ能力継承：キャラ記憶と重複するAgent長期記憶を %1$s 行除去</string>
+    <string name="log_pipe_offline_plot_inject">オフラインストーリー進行注入 | level=%1$s | elapsed=%2$s | promptLen=%3$s</string>
+    <string name="log_pipe_realtime_inject_done">現実時間注入完了 | level=%1$s | elapsed=%2$s | circadian=%3$s</string>
+    <string name="log_pipe_realtime_inject_error">現実時間注入エラー: %1$s</string>
+    <string name="log_pipe_review_delta_written">レビュー関係差分を書き戻し: %1$s</string>
+    <string name="log_pipe_review_error">ReviewPipelineレビューエラー: %1$s</string>
+    <string name="log_pipe_simple_call_done">モデル呼び出し完了(simple) | 返信=%1$s文字</string>
+    <string name="log_pipe_simple_call_failed">simpleモデル呼び出しに失敗: %1$s</string>
+    <string name="log_pipe_start">Pipeline 開始 | セッション=%1$s | ユーザーメッセージ長=%2$s</string>
+    <string name="log_pipe_sticker_original_attached">ユーザーStampに原画像を添付 | 数=%1$s</string>
+    <string name="log_pipe_stream_done">ストリーミング完了 | TTFT=%1$sms | 合計=%2$sms | 内容=%3$s文字</string>
+    <string name="log_pipe_streaming_failed">ストリーミングに失敗: %1$s</string>
+    <string name="log_pipe_tool_loop_failed">ツールループに失敗: %1$s</string>
+    <string name="log_pipe_vision_direct_attach">現在のchatモデルはビジョン対応、%1$s枚の画像を直接添付</string>
+    <string name="log_pipe_vision_done">ビジョン認識完了 | 画像=%1$s枚 | 説明合計=%2$s文字</string>
+    <string name="log_pipe_vision_error">ビジョン認識エラー: %1$s</string>
+    <string name="log_pipe_worldbook_depth_inject">ワールドブックを深度注入 | エントリ=%1$s件 | 深度=%2$s</string>
+    <string name="log_plot_llm_all_retries_failed">ストーリー選択肢LLMは %1$s 回の再試行すべて失敗: %2$s、既定の選択肢を使用</string>
+    <string name="log_plot_llm_attempt_empty">ストーリー選択肢LLMの %1$s/%2$s 回目は空の内容</string>
+    <string name="log_plot_llm_attempt_error">ストーリー選択肢LLMの %1$s/%2$s 回目でエラー: %3$s</string>
+    <string name="log_plot_llm_attempt_failed">ストーリー選択肢LLMの %1$s/%2$s 回目に失敗: %3$s</string>
+    <string name="log_plot_llm_attempt_parse_failed">ストーリー選択肢LLMの %1$s/%2$s 回目は解析失敗、再試行</string>
+    <string name="log_plot_llm_attempt_success">ストーリー選択肢LLMの %1$s/%2$s 回目が成功、%3$s個の選択肢を生成</string>
+    <string name="log_reply_send_failed">通知クイック返信の送信に失敗: %1$s</string>
+    <string name="log_repo_agent_memory_extract_failed">Agent長期記憶の抽出に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_repo_agent_memory_save_failed">Agent長期記憶の書き込みに失敗: %1$s</string>
+    <string name="log_repo_close_pause_skip">リポジトリ終了時にAgent実行の一時停止をスキップ: %1$s</string>
+    <string name="log_repo_composed_prompt_failed">composed_system_prompt の保存に失敗: %1$s</string>
+    <string name="log_repo_context_compress_failed">Agentコンテキスト圧縮リクエスト失敗（このターンには影響なし）: %1$s</string>
+    <string name="log_repo_describe_all_failed">describeImageViaQueue: 全モデル失敗 | 試行=%1$s | 失敗理由=%2$s</string>
+    <string name="log_repo_describe_start">describeImageViaQueue: 認識開始 | キュー=%1$sモデル | 先頭=%2$s | url=%3$s</string>
+    <string name="log_repo_describe_success">describeImageViaQueue: 認識成功 | モデル=%1$s | 結果の長さ=%2$s</string>
+    <string name="log_repo_experience_archive_failed">増分経験のアーカイブに失敗、圧縮境界は変更なし: %1$s</string>
+    <string name="log_repo_group_autoname_failed">グループセッションの自動命名に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_repo_group_composed_prompt_failed">グループcomposed_system_promptの保存に失敗: %1$s</string>
+    <string name="log_repo_group_prompt_stack_debug_failed">グループprompt_stack_debugの保存に失敗: %1$s</string>
+    <string name="log_repo_img_prompt_rewrite_failed">画像プロンプトの書き換えに失敗、元のプロンプトにフォールバック: %1$s</string>
+    <string name="log_repo_inherit_greeting">Agentセッションがキャラの開始挨拶を継承 | session=%1$s | char=%2$s</string>
+    <string name="log_repo_inherit_rel_init_failed">キャラ能力継承時の関係状態初期化に失敗: %1$s</string>
+    <string name="log_repo_life_sim_done">life_sim 完了 | source=heartbeat | activity=%1$s</string>
+    <string name="log_repo_life_sim_lazy_error">life_sim 遅延トリガーエラー: %1$s</string>
+    <string name="log_repo_life_sim_no_model">life_sim バックグラウンド心跳をスキップ：利用可能なモデル未設定</string>
+    <string name="log_repo_mcp_autoconnect_failed">MCP自動接続に失敗: %1$s</string>
+    <string name="log_repo_mcp_bg_connect_failed">バックグラウンドMCP自動接続に失敗、Agentチャットはブロックされません</string>
+    <string name="log_repo_memory_extract_skipped">このターンは記憶抽出をスキップ（%1$sターン目、間隔%2$sターン）</string>
+    <string name="log_repo_msg_image_save_failed">メッセージ画像の保存に失敗: %1$s</string>
+    <string name="log_repo_msg_image_task_failed">メッセージ画像タスクの作成に失敗: %1$s</string>
+    <string name="log_repo_parse_custom_prompt_failed">セッションカスタムプロンプトの解析に失敗: %1$s</string>
+    <string name="log_repo_persist_queued_msg_failed">キューインjectedメッセージの永続化に失敗: %1$s</string>
+    <string name="log_repo_plot_choice_failed">ストーリー選択肢の生成に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_repo_progress_card_persist_failed">進行状況カードの永続化に失敗: %1$s</string>
+    <string name="log_repo_prompt_stack_debug_failed">prompt_stack_debug の保存に失敗: %1$s</string>
+    <string name="log_repo_quality_parse_failed">品質スコアJSONの解析に失敗: %1$s</string>
+    <string name="log_repo_read_global_memory_failed">グローバルAgent記憶の読み取りに失敗: %1$s</string>
+    <string name="log_repo_scene_read_failed">キャラシーン状態の読み取りに失敗: %1$s</string>
+    <string name="log_repo_session_autoname_failed">通常セッションの自動命名に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_repo_session_autoname_failed2">セッション自動命名に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_repo_session_autonamed">セッション自動命名: %1$s -&gt; %2$s</string>
+    <string name="log_repo_skill_extract_failed">Agentスキル定着に失敗（メインフローには影響なし）: %1$s</string>
+    <string name="log_repo_state_cache_write_failed">状態履歴キャッシュの書き込みに失敗: %1$s</string>
+    <string name="log_repo_task_expired">タスク「%1$s」の前回実行ポイントが期限切れ、%2$s に繰り越し</string>
+    <string name="log_repo_token_usage_corrupt">Token使用量記録が破損、バックアップして再構築: %1$s</string>
+    <string name="log_repo_token_usage_recovered">メッセージ記録から %1$s 件のToken使用量を復元</string>
+    <string name="log_repo_token_usage_repair_failed">Token使用量修復の書き込みに失敗、次回読み取り時に再試行</string>
+    <string name="log_repo_token_usage_write_deferred">Token使用量の書き込みに失敗、後でメッセージ記録から復元</string>
+    <string name="log_repo_token_usage_write_failed">Token使用量の書き込みに失敗: %1$s</string>
+    <string name="log_repo_vision_chat_queues_empty">describeImageViaQueue: ビジョンとchatのモデルキューが両方空（purpose=vision/chat かつ enabled=1 のモデルなし）</string>
+    <string name="log_repo_vision_queue_empty">describeImageViaQueue: ビジョンモデルキューが空、chatモデルキューにフォールバック</string>
+    <string name="log_repo_wake_failed">セッション %1$s の復帰に失敗: %2$s</string>
+    <string name="log_repo_wake_run_error">復帰実行エラー（%1$s）: %2$s</string>
+    <string name="log_repo_wake_run_failed">復帰実行に失敗（%1$s）: %2$s</string>
+    <string name="log_repo_workflow_expired">ワークフロー「%1$s」の前回実行ポイントが期限切れ、次のcron時刻に繰り越し</string>
+    <string name="log_secure_decrypt_failed">セキュアストアの復号に失敗、値はクリアされます: %1$s</string>
+    <string name="log_shortcut_refresh_failed">ショートカットの更新に失敗: %1$s</string>
+    <string name="log_skill_created">Skill「%1$s」を新規作成（%2$s）</string>
+    <string name="log_skill_extract_error">スキル定着エラー（メインフローには影響なし）: %1$s</string>
+    <string name="log_skill_no_distill">このターンはSkill定着不要（skip または解析不能）</string>
+    <string name="log_skill_queue_unavailable_fallback">スキル定着キューが利用不可、アクティブモデルにフォールバック: %1$s</string>
+    <string name="log_skill_review_failed">スキル定着レビューに失敗: %1$s</string>
+    <string name="log_skill_skip_action">スキル定着をスキップ：action=%1$s</string>
+    <string name="log_skill_skip_bad_format">スキル定着をスキップ：SKILL.mdが標準形式に不適合（%1$s）</string>
+    <string name="log_skill_skip_json_parse">スキル定着をスキップ：JSON解析に失敗</string>
+    <string name="log_skill_skip_no_body">スキル定着をスキップ：SKILL.md本文なし</string>
+    <string name="log_skill_skip_no_description">スキル定着をスキップ：description なし（標準SKILL.mdの必須項目）</string>
+    <string name="log_skill_skip_no_name">スキル定着をスキップ：スキル名が利用不可</string>
+    <string name="log_skill_skip_not_json">スキル定着をスキップ：モデル出力がJSONオブジェクトではない</string>
+    <string name="log_skill_updated">Skill「%1$s」を更新（%2$s）</string>
+    <string name="log_sse_discard">%1$s を破棄: %2$s</string>
+    <string name="log_sse_reason_incomplete">SSEイベントが不完全（ストリームが中断された可能性）</string>
+    <string name="log_sse_reason_unparseable">解析できないSSEペイロード</string>
+    <string name="log_sub_execution_error">サブエージェントの実行エラー: %1$s</string>
+    <string name="log_sub_model_loop_failed">サブエージェントのモデルループに失敗（iteration=%1$s）: %2$s</string>
+    <string name="log_sub_terminated">サブエージェントが終了: %1$s</string>
+    <string name="log_svc_context_trim">ループ内コンテキスト削減 | iteration=%1$s | メッセージ=%2$s | %3$s</string>
+    <string name="log_svc_tool_message_persist_failed">ツールメッセージの保存に失敗: %1$s</string>
+    <string name="log_update_check_failed">アップデート確認に失敗: %1$s</string>
+    <string name="log_update_download_failed">アップデートパッケージのダウンロードに失敗: %1$s</string>
+    <string name="log_vm_task_failed">UIタスクの実行に失敗: %1$s</string>
+    <string name="log_widget_update_failed">ウィジェットの更新に失敗: %1$s</string>
+</resources>

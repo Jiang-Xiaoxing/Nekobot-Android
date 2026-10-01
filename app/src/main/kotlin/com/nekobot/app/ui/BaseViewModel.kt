@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.repository.Resource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +63,7 @@ abstract class BaseViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                LocalLogger.e(this::class.simpleName ?: "BaseViewModel", R.string.log_vm_task_failed, e.message, throwable = e)
                 onError(e.message ?: string(R.string.common_unknown_error))
             } finally {
                 setLoading(false)
@@ -86,6 +88,7 @@ abstract class BaseViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                LocalLogger.e(this::class.simpleName ?: "BaseViewModel", R.string.log_vm_task_failed, e.message, throwable = e)
                 onError(e.message ?: string(R.string.common_unknown_error))
             } finally {
                 setLoading(false)

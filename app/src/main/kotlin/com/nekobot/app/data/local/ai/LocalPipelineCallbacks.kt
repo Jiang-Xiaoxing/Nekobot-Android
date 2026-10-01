@@ -23,6 +23,7 @@ import com.nekobot.app.data.remote.RealtimeEvent
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import com.nekobot.app.R
 
 /**
  * 本地模式 PipelineCallbacks 实现。
@@ -254,10 +255,7 @@ internal class LocalPipelineCallbacks(
                             com.nekobot.app.data.model.AgentTodo.encodeList(todos)
                         )
                     }.onFailure { error ->
-                        com.nekobot.app.data.local.LocalLogger.w(
-                            TAG,
-                            "持久化 Agent 任务列表失败: ${error.message}"
-                        )
+                        com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_task_list_persist_failed, error.message)
                     }
                 }
                 emitEvent(
@@ -720,7 +718,7 @@ internal class LocalPipelineCallbacks(
                     )
                 }
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "路由失败结果回写失败: ${e.message}")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_routed_result_writeback_failed, e.message)
             }
             return
         }
@@ -790,10 +788,7 @@ internal class LocalPipelineCallbacks(
                     outputTokens = outputTokens,
                     durationMs = durationMs
                 )
-                com.nekobot.app.data.local.LocalLogger.i(
-                    TAG,
-                    "swipes 新候选已落库 | messageId=$variantTargetMessageId | 共 $variantTotal 版"
-                )
+                com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pcb_swipes_persisted, variantTargetMessageId, variantTotal)
             } else {
                 messageDao.upsert(LocalMessageEntity(
                     id = messageId,
@@ -891,7 +886,7 @@ internal class LocalPipelineCallbacks(
                     cacheWriteTokens = cacheWriteTokens
                 )
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "TokenStats 记录失败: ${e.message}")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_token_stats_failed, e.message)
             }
             // 同时持久化到 SharedPreferences（供 tokenStats()/tokenRankings() 聚合读取）
             try {
@@ -916,7 +911,7 @@ internal class LocalPipelineCallbacks(
                     priceModel.cacheWritePrice
                 )
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "持久化 Token 记录失败: ${e.message}")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_token_record_persist_failed, e.message)
             }
         }
 
@@ -937,7 +932,7 @@ internal class LocalPipelineCallbacks(
                 )
             }
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "路由结果回写失败: ${e.message}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_routed_result_writeback_failed2, e.message)
         }
     }
 
@@ -955,10 +950,7 @@ internal class LocalPipelineCallbacks(
                     images = images
                 )
             } catch (error: Exception) {
-                com.nekobot.app.data.local.LocalLogger.e(
-                    TAG,
-                    "关联 Agent 生成图片失败: ${error.message}"
-                )
+                com.nekobot.app.data.local.LocalLogger.e(TAG, R.string.log_pcb_agent_image_failed, error.message)
             }
         }
     }
@@ -1342,10 +1334,7 @@ internal class LocalPipelineCallbacks(
     override fun drainPendingUserMessages(ctx: PipelineContext): List<String> {
         val fromUser = pendingUserMessageProvider?.let { provider ->
             runCatching { provider() }.getOrElse { error ->
-                com.nekobot.app.data.local.LocalLogger.w(
-                    TAG,
-                    "取出排队消息失败: ${error.message}"
-                )
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_dequeue_failed, error.message)
                 emptyList()
             }
         }.orEmpty().filter(String::isNotBlank)
@@ -1438,7 +1427,7 @@ internal class LocalPipelineCallbacks(
             val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             "data:$mime;base64,$base64"
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "fileToDataUri 失败: ${e.message}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_file_to_datauri_failed, e.message)
             null
         }
     }
@@ -1459,20 +1448,20 @@ internal class LocalPipelineCallbacks(
     /** 视觉识别：对每张图片调用 vision 模型获取描述。 */
     override suspend fun resolveImages(ctx: PipelineContext, imageUrls: List<String>): List<String> {
         val describer = visionDescriber ?: run {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "resolveImages: visionDescriber 为 null（未注入），跳过视觉识别")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_vision_describer_missing)
             return emptyList()
         }
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "resolveImages: 开始识别 ${imageUrls.size} 张图片")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pcb_vision_start, imageUrls.size)
         return imageUrls.mapIndexed { idx, url ->
             val name = ctx.imageNames.getOrNull(idx)
             val question = "请详细描述这张图片的内容，包括主要对象、场景、颜色、文字等关键信息。"
             val desc = try {
                 describer.invoke(url, question)
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "视觉识别失败 [${name ?: url.take(80)}]: ${e.message}")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_vision_item_failed, (name ?: url.take(80)), e.message)
                 VISION_FAILURE_MARKER + "视觉识别异常：${e.message}"
             }
-            com.nekobot.app.data.local.LocalLogger.i(TAG, "resolveImages: 第${idx + 1}张识别完成 | name=$name | 长度=${desc.length} | 含失败标记=${desc.contains(VISION_FAILURE_MARKER)}")
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pcb_vision_item_done, idx + 1, name, desc.length, desc.contains(VISION_FAILURE_MARKER))
             buildString {
                 if (!name.isNullOrBlank()) append("【附件: $name】\n")
                 append(desc)
@@ -1483,7 +1472,7 @@ internal class LocalPipelineCallbacks(
     // ---- 后处理 ----
 
     override fun onResponseComplete(ctx: PipelineContext, result: PipelineResult) {
-        com.nekobot.app.data.local.LocalLogger.d(TAG, "Response complete: ${result.finalContent.length} chars, error=${result.error}")
+        com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_pcb_response_complete, result.finalContent.length, result.error)
         // 触发 character.after_turn.finished hook（此时 afterTurn 已完成，状态/关系已是最新）
         triggerAfterTurnHook(ctx)
     }
@@ -1721,23 +1710,20 @@ internal class LocalPipelineCallbacks(
         if (toolName !in fileMutationTools) return
         if (result["success"] != true) return
         val reporter = activeAgentProgressReporter ?: run {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "maybeAttachGitDiff: activeAgentProgressReporter 为空，跳过 git 摘要")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_git_diff_no_reporter)
             return
         }
         val changed = localToolExecutor.currentChangedPaths()
         if (changed.isEmpty()) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "maybeAttachGitDiff: changedPaths 为空，跳过 git 摘要")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_git_diff_no_changes)
             return
         }
         runCatching {
             val summary = localToolExecutor.currentGitDiffSummary()
-            com.nekobot.app.data.local.LocalLogger.i(
-                TAG,
-                "maybeAttachGitDiff: tool=$toolName changed=$changed summary=${summary?.files?.size ?: "null"}"
-            )
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_pcb_git_diff_attached, toolName, changed, summary?.files?.size ?: "null")
             reporter.attachGitDiff(summary)
         }.onFailure { e ->
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "附加 git 变更摘要失败: ${e.message}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_git_diff_attach_failed, e.message)
         }
     }
 
@@ -2352,7 +2338,7 @@ internal class LocalPipelineCallbacks(
                 cacheWriteTokens = usage.cacheWriteTokens
             )
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "子代理 TokenStats 记录失败: ${e.message}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_subagent_token_stats_failed, e.message)
         }
         try {
             onTokenRecorded?.invoke(
@@ -2376,7 +2362,7 @@ internal class LocalPipelineCallbacks(
                 priceModel.cacheWritePrice
             )
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "子代理 Token 明细持久化失败: ${e.message}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pcb_subagent_token_persist_failed, e.message)
         }
     }
 

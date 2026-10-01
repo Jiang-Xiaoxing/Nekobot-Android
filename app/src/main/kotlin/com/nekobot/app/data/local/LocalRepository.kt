@@ -1,7 +1,6 @@
 package com.nekobot.app.data.local
 
 import android.os.StatFs
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
@@ -207,6 +206,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
+import com.nekobot.app.R
 
 /** Agent 会话压缩摘要的持久化标记。 */
 internal const val AGENT_CONTEXT_SUMMARY_SOURCE = "agent_context_summary"
@@ -1206,7 +1206,7 @@ class LocalRepository(
                     ServiceContainer.globalAgentMemory.replace(
                         merged.take(com.nekobot.app.data.local.ai.GlobalAgentMemoryStore.MAX_CONTENT_CHARS)
                     )
-                }.onFailure { LocalLogger.w(TAG, "写入 Agent 长期记忆失败: ${it.message}") }
+                }.onFailure { LocalLogger.w(TAG, R.string.log_repo_agent_memory_save_failed, it.message) }
             },
             aiModelProvider = { aiModelDao.getActive() },
             failoverExecutor = chatFailoverExecutor,
@@ -1232,7 +1232,7 @@ class LocalRepository(
         val interval = ServiceContainer.prefs.agentMemoryInterval
         val turnIndex = ServiceContainer.prefs.incrementAgentMemoryTurnCount(sessionId)
         if (!extractor.shouldExtractOnTurn(turnIndex, interval)) {
-            LocalLogger.i(TAG, "本轮不触发记忆抽取（第 $turnIndex 轮，间隔 $interval 轮）")
+            LocalLogger.i(TAG, R.string.log_repo_memory_extract_skipped, turnIndex, interval)
             return
         }
         // 先通知界面"正在整理记忆"（与自动技能沉淀提示同一形态），再后台跑抽取。
@@ -1249,7 +1249,7 @@ class LocalRepository(
             val changed = runCatching {
                 agentMemoryWriter.extractAndAppend(sessionId, userMessage, assistantMessage)
             }.onFailure {
-                LocalLogger.w(TAG, "Agent 长期记忆抽取失败（不影响主流程）: ${it.message}")
+                LocalLogger.w(TAG, R.string.log_repo_agent_memory_extract_failed, it.message)
             }.getOrDefault(0)
             // 抽取结果写进设置：聊天界面的提示需要持久显示（不自动消失、重启后仍在）。
             // 同时记下触发它的回复，让提示重新进入会话时仍锚定在同一条消息下。
@@ -1354,7 +1354,7 @@ class LocalRepository(
                         )
                 )
             }.onFailure {
-                LocalLogger.w(TAG, "Agent 技能沉淀失败（不影响主流程）: ${it.message}")
+                LocalLogger.w(TAG, R.string.log_repo_skill_extract_failed, it.message)
                 _autoSkillEvents.tryEmit(
                     com.nekobot.app.data.local.ai.AgentSkillNotice(
                         sessionId = sessionId,
@@ -1908,10 +1908,10 @@ class LocalRepository(
         delayReplyDelaySeconds: Int? = null
     ) = withContext(Dispatchers.IO) {
         val entity = sessionDao.getById(id) ?: run {
-            android.util.Log.d("LocalRepo", "updateSession: entity not found for id=$id")
+            LocalLogger.d(TAG, "updateSession: entity not found for id=$id")
             return@withContext
         }
-        android.util.Log.d("LocalRepo", "updateSession: isPublic=$isPublic, entity.isPublic=${entity.isPublic}, ttsConfig=$ttsConfig, shareConfig=$shareConfig")
+        LocalLogger.d(TAG, "updateSession: isPublic=$isPublic, entity.isPublic=${entity.isPublic}, ttsConfig=$ttsConfig, shareConfig=$shareConfig")
         val updated = entity.copy(
             name = name ?: entity.name,
             systemPrompt = systemPrompt ?: entity.systemPrompt,
@@ -1991,7 +1991,7 @@ class LocalRepository(
         if (inheritCharacter == true) {
             ensureInheritedCharacterSetup(updated)
         }
-        android.util.Log.d("LocalRepo", "updateSession: updated.isPublic=${updated.isPublic}, updated.ttsConfig=${updated.ttsConfig}, updated.shareConfig=${updated.shareConfig}")
+        LocalLogger.d(TAG, "updateSession: updated.isPublic=${updated.isPublic}, updated.ttsConfig=${updated.ttsConfig}, updated.shareConfig=${updated.shareConfig}")
     }
 
     /** Zero-model-call on-ramp for an already large imported conversation. */
@@ -2091,7 +2091,7 @@ class LocalRepository(
                     source = RELATIONSHIP_STATE_SOURCE_INHERIT
                 )
             }.onFailure {
-                LocalLogger.w(TAG, "继承角色能力时初始化关系状态失败: ${it.message}")
+                LocalLogger.w(TAG, R.string.log_repo_inherit_rel_init_failed, it.message)
             }
         }
     }
@@ -2122,7 +2122,7 @@ class LocalRepository(
             )
         )
         sessionDao.touch(session.id, greeting.take(200), 1, now)
-        LocalLogger.i(TAG, "Agent 会话继承角色开场白 | session=${session.id} | char=${character.id}")
+        LocalLogger.i(TAG, R.string.log_repo_inherit_greeting, session.id, character.id)
     }
 
     suspend fun deleteSession(id: String) = withContext(Dispatchers.IO) {
@@ -2379,6 +2379,7 @@ class LocalRepository(
             com.nekobot.app.data.local.ai.LocalCharacterStateRepository(db.characterStateDao())
                 .get(characterId, session.id)?.scene
         } catch (e: Exception) {
+            LocalLogger.w(TAG, R.string.log_repo_scene_read_failed, e.message)
             null
         }
         val lastRun = scene?.get(com.nekobot.app.data.local.ai.LifeSimulator.SCENE_KEY_LAST_RUN) as? String
@@ -2411,7 +2412,7 @@ class LocalRepository(
                 ?: return@withContext AutomationExecutionResult(session.name, notify = false)
             val model = aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
             if (model == null) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "life_sim 后台心跳跳过：未配置可用模型")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_life_sim_no_model)
                 return@withContext AutomationExecutionResult(session.name, notify = false)
             }
             val activity = runLifeSimIfDue(session, character, model)
@@ -2535,7 +2536,7 @@ class LocalRepository(
         currentState.scene = newScene
         stateRepo.save(currentState)
 
-        com.nekobot.app.data.local.LocalLogger.i(TAG, "life_sim 完成 | source=heartbeat | activity=$activity")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_repo_life_sim_done, activity)
         return activity
     }
 
@@ -2593,7 +2594,9 @@ class LocalRepository(
     fun saveStateHistoryCache(json: String) {
         try {
             stateHistoryCacheFile?.writeText(json)
-        } catch (_: Exception) { /* 忽略缓存写入失败 */ }
+        } catch (e: Exception) {
+            LocalLogger.w(TAG, R.string.log_repo_state_cache_write_failed, e.message)
+        }
     }
 
     /** 读取缓存的状态历程数据 */
@@ -2766,14 +2769,14 @@ class LocalRepository(
                     prompt = prompt
                 )
             } catch (error: Exception) {
-                LocalLogger.e(TAG, "创建消息图片任务失败: ${error.message}")
+                LocalLogger.e(TAG, R.string.log_repo_msg_image_task_failed, error.message)
                 return@forEach
             }
             try {
                 completeMessageImage(task.id, image)
             } catch (error: Exception) {
                 failMessageImage(task.id, error.message ?: "图片保存失败")
-                LocalLogger.e(TAG, "保存消息图片失败: ${error.message}")
+                LocalLogger.e(TAG, R.string.log_repo_msg_image_save_failed, error.message)
             }
         }
     }
@@ -5449,7 +5452,7 @@ class LocalRepository(
                 val parsed = runCatching { JsonParser.parseString(existing).asJsonArray }
                 val arr = parsed.getOrElse {
                     tokenUsageReconciled = false
-                    LocalLogger.w("LocalRepo", "Token 用量记录损坏，已备份并重建: ${it.message}")
+                    LocalLogger.w(TAG, R.string.log_repo_token_usage_corrupt, it.message)
                     JsonArray()
                 }
                 val cachedInput = cachedInputTokens.coerceIn(0, inputTokens.coerceAtLeast(0))
@@ -5511,7 +5514,7 @@ class LocalRepository(
                 if (parsed.isFailure) editor.putString("records_corrupt_backup", existing)
                 if (!editor.commit()) {
                     tokenUsageReconciled = false
-                    LocalLogger.w("LocalRepo", "Token 用量记录写入失败，稍后将从消息记录恢复")
+                    LocalLogger.w(TAG, R.string.log_repo_token_usage_write_deferred)
                 }
                 // 成就触发：累计 token 消耗
                 kotlin.runCatching {
@@ -5522,7 +5525,7 @@ class LocalRepository(
                 }
             } catch (e: Exception) {
                 tokenUsageReconciled = false
-                LocalLogger.w("LocalRepo", "Token 用量记录写入失败: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_repo_token_usage_write_failed, e.message)
             }
         }
     }
@@ -5586,11 +5589,11 @@ class LocalRepository(
                 if (parsed.isFailure) editor.putString("records_corrupt_backup", raw)
                 if (!editor.commit()) {
                     tokenUsageReconciled = false
-                    LocalLogger.w("LocalRepo", "Token 用量修复写入失败，下次读取将重试")
+                    LocalLogger.w(TAG, R.string.log_repo_token_usage_repair_failed)
                     return@synchronized normalized
                 }
                 if (reconciliation.recoveredCount > 0) {
-                    LocalLogger.i("LocalRepo", "已从消息记录补回 ${reconciliation.recoveredCount} 条 Token 用量")
+                    LocalLogger.i(TAG, R.string.log_repo_token_usage_recovered, reconciliation.recoveredCount)
                 }
             }
             tokenUsageReconciled = true
@@ -6019,7 +6022,7 @@ class LocalRepository(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                LocalLogger.w(TAG, "普通会话自动命名失败（不影响主流程）: ${e.message}", e)
+                LocalLogger.w(TAG, R.string.log_repo_session_autoname_failed, e.message, throwable = e)
             }
         }
         emit(
@@ -6431,7 +6434,7 @@ class LocalRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "唤醒会话 $sessionId 失败: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_repo_wake_failed, sessionId, e.message)
         } finally {
             wakeUpLocks.remove(sessionId)
         }
@@ -6484,14 +6487,14 @@ class LocalRepository(
                 if (event is RealtimeEvent.Error && failure == null) failure = event.message
             }
             if (failure != null) {
-                LocalLogger.w(TAG, "唤醒运行失败（$sessionId）: $failure")
+                LocalLogger.w(TAG, R.string.log_repo_wake_run_failed, sessionId, failure)
                 AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
             }
         } catch (e: CancellationException) {
             AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
             throw e
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "唤醒运行异常（$sessionId）: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_repo_wake_run_error, sessionId, e.message)
             AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
         }
     }
@@ -6518,7 +6521,7 @@ class LocalRepository(
         // 直接让清理协程崩溃。关闭阶段以释放运行时资源为主，旧连接已关闭时跳过暂停写入。
         runCatching { stopGeneration() }
             .onFailure { error ->
-                LocalLogger.w("LocalRepository", "关闭仓库时跳过暂停 Agent 运行记录: ${error.message}", error)
+                LocalLogger.w(TAG, R.string.log_repo_close_pause_skip, error.message, throwable = error)
             }
         localMcpRuntime.close()
         localBrowserTools.values.forEach(LocalBrowserTool::close)
@@ -6624,7 +6627,7 @@ class LocalRepository(
             )
             val globalAgentMemory = runCatching { ServiceContainer.globalAgentMemory.read().content }
                 .onFailure {
-                    LocalLogger.w(TAG, "读取全局 Agent 记忆失败: ${it.message}")
+                    LocalLogger.w(TAG, R.string.log_repo_read_global_memory_failed, it.message)
                 }
                 .getOrDefault("")
             // 按当前用户消息检索相关小节，而不是每轮注入整份长期记忆。
@@ -6666,7 +6669,7 @@ class LocalRepository(
                     ?: emptyList()
                 ctx.metadata["custom_prompts"] = customPrompts
             } catch (e: Exception) {
-                LocalLogger.w(TAG, "解析会话自定义提示词失败: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_repo_parse_custom_prompt_failed, e.message)
             }
         }
 
@@ -7146,10 +7149,7 @@ class LocalRepository(
                             drained.forEach { content -> addMessage(sessionId, "user", content) }
                         }
                     }.onFailure { error ->
-                        com.nekobot.app.data.local.LocalLogger.w(
-                            TAG,
-                            "持久化排队注入消息失败: ${error.message}"
-                        )
+                        com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_persist_queued_msg_failed, error.message)
                     }
                     drained
                 }
@@ -7310,10 +7310,7 @@ class LocalRepository(
             )
             val globalAgentMemory = runCatching { ServiceContainer.globalAgentMemory.read().content }
                 .onFailure {
-                    com.nekobot.app.data.local.LocalLogger.w(
-                        TAG,
-                        "读取全局 Agent 记忆失败: ${it.message}"
-                    )
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_read_global_memory_failed, it.message)
                 }
                 .getOrDefault("")
             // 按当前用户消息检索相关小节，而不是每轮注入整份长期记忆。
@@ -7373,7 +7370,7 @@ class LocalRepository(
                 val customPrompts = gson.fromJson<List<Map<String, Any>>>(customPromptsRaw, type) ?: emptyList()
                 ctx.metadata["custom_prompts"] = customPrompts
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "解析会话自定义提示词失败: ${e.message}")
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_parse_custom_prompt_failed, e.message)
             }
         }
 
@@ -7386,7 +7383,7 @@ class LocalRepository(
             try {
                 runLifeSimIfDue(session, character, activeModel)
             } catch (e: Exception) {
-                com.nekobot.app.data.local.LocalLogger.w(TAG, "life_sim 懒触发异常: ${e.message}", e)
+                com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_life_sim_lazy_error, e.message, throwable = e)
             }
         }
 
@@ -7461,13 +7458,13 @@ class LocalRepository(
                             sessionDao.updateName(sessionId, newName, com.nekobot.app.data.local.LocalRepository.nowIsoStatic())
                             // 通知 UI 刷新
                             emit(RealtimeEvent.SessionRenamed(sessionId, newName))
-                            com.nekobot.app.data.local.LocalLogger.i(TAG, "会话自动命名: $sessionId -> $newName")
+                            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_repo_session_autonamed, sessionId, newName)
                         }
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "会话自动命名失败（不影响主流程）: ${e.message}", e)
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_session_autoname_failed2, e.message, throwable = e)
                 }
             }
             // Agent 会话的长期记忆：角色会话由 CharacterRuntime 抽取，Agent 会话此前完全没有，
@@ -7574,7 +7571,7 @@ class LocalRepository(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "保存 prompt_stack_debug 失败: ${e.message}")
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_prompt_stack_debug_failed, e.message)
                 }
             }
             val composedPrompt = ctx.metadata["composed_system_prompt"] as? String
@@ -7584,7 +7581,7 @@ class LocalRepository(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "保存 composed_system_prompt 失败: ${e.message}")
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_composed_prompt_failed, e.message)
                 }
             }
 
@@ -7652,7 +7649,7 @@ class LocalRepository(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    com.nekobot.app.data.local.LocalLogger.w(TAG, "剧情选项生成失败（不影响主流程）: ${e.message}", e)
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_plot_choice_failed, e.message, throwable = e)
                 }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -7954,7 +7951,7 @@ class LocalRepository(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    LocalLogger.w(TAG, "保存群聊 prompt_stack_debug 失败: ${e.message}")
+                    LocalLogger.w(TAG, R.string.log_repo_group_prompt_stack_debug_failed, e.message)
                 }
             }
             (ctx.metadata["composed_system_prompt"] as? String)?.takeIf { it.isNotBlank() }?.let { prompt ->
@@ -7963,7 +7960,7 @@ class LocalRepository(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    LocalLogger.w(TAG, "保存群聊 composed_system_prompt 失败: ${e.message}")
+                    LocalLogger.w(TAG, R.string.log_repo_group_composed_prompt_failed, e.message)
                 }
             }
         }
@@ -7990,7 +7987,7 @@ class LocalRepository(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                LocalLogger.w(TAG, "群聊会话自动命名失败（不影响主流程）: ${e.message}", e)
+                LocalLogger.w(TAG, R.string.log_repo_group_autoname_failed, e.message, throwable = e)
             }
         }
         emit(
@@ -8651,7 +8648,7 @@ class LocalRepository(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                LocalLogger.w(TAG, "增量经历归档失败，压缩边界保持不变: ${error.message}")
+                LocalLogger.w(TAG, R.string.log_repo_experience_archive_failed, error.message)
                 return ContextCompressionResult(compressed = false, errorMessage = "经历归档失败：${error.message}")
             }
         } else null
@@ -8832,7 +8829,7 @@ class LocalRepository(
                 throw e
             } catch (e: Exception) {
                 // 压缩失败不应中断本轮对话：返回 null，由调用方按"未压缩"继续。
-                LocalLogger.w(TAG, "Agent 上下文压缩请求失败（不影响本轮对话）: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_repo_context_compress_failed, e.message)
                 return null
             }
             recordFailoverTokenUsage(
@@ -9748,7 +9745,7 @@ ${AiOutputLanguage.directive()}
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "生图提示词改写失败，回退到原始提示词: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_repo_img_prompt_rewrite_failed, e.message)
             return@withContext null
         }
         recordRewrittenImagePromptUsage(execution, sessionId)
@@ -9919,14 +9916,14 @@ ${AiOutputLanguage.directive()}
         var queue = queueFor("vision")
         // 回退：若未配置 vision 模型，尝试使用 chat 模型（GPT-4o 等多模态聊天模型支持图片）
         if (queue.isEmpty()) {
-            com.nekobot.app.data.local.LocalLogger.w("LocalRepo", "describeImageViaQueue: 视觉模型队列为空，回退到 chat 模型队列")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_vision_queue_empty)
             queue = queueFor("chat")
         }
         if (queue.isEmpty()) {
-            com.nekobot.app.data.local.LocalLogger.w("LocalRepo", "describeImageViaQueue: 视觉和聊天模型队列均为空（没有 purpose=vision/chat 且 enabled=1 的模型）")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_vision_chat_queues_empty)
             return@withContext VISION_FAILURE_MARKER + "未配置视觉模型或聊天模型，不得猜测图片内容。"
         }
-        com.nekobot.app.data.local.LocalLogger.i("LocalRepo", "describeImageViaQueue: 开始识别 | 队列=${queue.size}个模型 | 首选=${queue.first().name} | url=${if (imageUrl.startsWith("data:")) "data:${imageUrl.length}字符" else imageUrl.take(100)}")
+        com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_repo_describe_start, queue.size, queue.first().name, if (imageUrl.startsWith("data:")) "data:" + imageUrl.length + "ch" else imageUrl.take(100))
         try {
             val exec = failoverCoordinator.execute(queue, "vision") { model ->
                 if (shouldStop()) throw kotlinx.coroutines.CancellationException("生成已停止")
@@ -9957,10 +9954,10 @@ ${AiOutputLanguage.directive()}
                     )
                 }
             }
-            com.nekobot.app.data.local.LocalLogger.i("LocalRepo", "describeImageViaQueue: 识别成功 | 模型=${exec.model.name} | 结果长度=${exec.value.content.length}")
+            com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_repo_describe_success, exec.model.name, exec.value.content.length)
             exec.value.content
         } catch (e: FailoverAllFailedException) {
-            com.nekobot.app.data.local.LocalLogger.w("LocalRepo", "describeImageViaQueue: 所有模型失败 | 尝试=${e.attempts.size} | 失败原因=${e.failures.map { it.message }}")
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_describe_all_failed, e.attempts.size, e.failures.map { it.message })
             VISION_FAILURE_MARKER + "视觉识别失败：" + (e.message ?: "所有模型均不可用") + "。不得猜测图片内容。"
         }
     }
@@ -10807,7 +10804,7 @@ ${AiOutputLanguage.directive()}
                     updateMessageThinkingCards(targetId, mergeProgressCards(existing, card))
                 }
             }.onFailure { error ->
-                LocalLogger.w(TAG, "持久化进度卡片失败: ${error.message}")
+                LocalLogger.w(TAG, R.string.log_repo_progress_card_persist_failed, error.message)
             }
         }
     }
@@ -11358,7 +11355,7 @@ ${AiOutputLanguage.directive()}
                         if (v.isJsonPrimitive) entry["quality_$k"] = v.asFloat
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "解析质量评分 JSON 失败: ${e.message}")
+                    LocalLogger.w(TAG, R.string.log_repo_quality_parse_failed, e.message)
                 }
             }
             entry
@@ -11724,10 +11721,7 @@ ${AiOutputLanguage.directive()}
             val next = preserved ?: LocalScheduleCalculator.nextRun(task.trigger, task.configJson)
             val overdueExisted = task.nextRun != null && preserved == null
             if (overdueExisted) {
-                com.nekobot.app.data.local.LocalLogger.i(
-                    TAG,
-                    "任务「${task.name}」上次执行点已过期，顺延到 $next"
-                )
+                com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_repo_task_expired, task.name, next)
             }
             next
         } else {
@@ -11963,10 +11957,7 @@ ${AiOutputLanguage.directive()}
                 // 同 scheduleTask：过期时间点必须重新计算，否则后台定时工作流会永久停摆。
                 ?.takeIf { !isOverdue(it) }
             if (workflow.nextRun != null && preserved == null) {
-                com.nekobot.app.data.local.LocalLogger.i(
-                    TAG,
-                    "工作流「${workflow.name}」上次执行点已过期，顺延到下一个 cron 时间"
-                )
+                com.nekobot.app.data.local.LocalLogger.i(TAG, R.string.log_repo_workflow_expired, workflow.name)
             }
             preserved ?: LocalScheduleCalculator.nextRun(workflow.trigger, workflow.configJson)
         } else {
@@ -12640,7 +12631,7 @@ ${AiOutputLanguage.directive()}
                     db.mcpServerDao().setRuntimeState(server.id, true, tools.size, nowIso())
                 }.onFailure { error ->
                     db.mcpServerDao().setRuntimeState(server.id, false, 0, null)
-                    LocalLogger.w(TAG, "MCP 自动连接失败: ${server.name}", error)
+                    LocalLogger.w(TAG, R.string.log_repo_mcp_autoconnect_failed, server.name, throwable = error)
                 }
             }
     }
@@ -12695,7 +12686,7 @@ ${AiOutputLanguage.directive()}
                             localMcpRuntime.getOpenAiToolDefinitions(latestConnectedIds)
                         registerMcpToolsForToolset(cachedMcpAgentTools)
                     }.onFailure { error ->
-                        LocalLogger.w(TAG, "后台自动连接 MCP 失败，不阻塞 Agent 对话", error)
+                        LocalLogger.w(TAG, R.string.log_repo_mcp_bg_connect_failed, throwable = error)
                     }
                 } finally {
                     mcpAutoConnectRunning.set(false)

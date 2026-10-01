@@ -8,11 +8,15 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.db.LocalTaskEntity
 import com.nekobot.app.data.local.db.LocalWorkflowEntity
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+
+private const val TAG = "LocalAutomationScheduler"
 
 /** WorkManager 调度外壳。业务执行与数据库状态更新仍由 LocalRepository 负责。 */
 class LocalAutomationScheduler(
@@ -151,15 +155,19 @@ class LocalAutomationScheduler(
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag(profileTag)
             .build()
-        workManager.enqueueUniqueWork(
-            uniqueName,
-            when {
-                appendAfterCurrent -> ExistingWorkPolicy.APPEND_OR_REPLACE
-                replaceExisting -> ExistingWorkPolicy.REPLACE
-                else -> ExistingWorkPolicy.KEEP
-            },
-            request
-        )
+        runCatching {
+            workManager.enqueueUniqueWork(
+                uniqueName,
+                when {
+                    appendAfterCurrent -> ExistingWorkPolicy.APPEND_OR_REPLACE
+                    replaceExisting -> ExistingWorkPolicy.REPLACE
+                    else -> ExistingWorkPolicy.KEEP
+                },
+                request
+            )
+        }.onFailure {
+            LocalLogger.e(TAG, R.string.log_auto_enqueue_failed, uniqueName, it.message, throwable = it)
+        }
     }
 
     private fun uniqueName(type: String, id: String): String =

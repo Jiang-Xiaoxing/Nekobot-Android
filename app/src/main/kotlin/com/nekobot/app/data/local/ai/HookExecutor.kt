@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import com.nekobot.app.R
 
 /**
  * 本地模式 Hook 执行引擎。
@@ -89,9 +90,9 @@ class HookExecutor(
             for (key in keys) {
                 triggeredKeys[key] = true
             }
-            LocalLogger.d(TAG, "加载 ${keys.size} 条已触发 hook 记录")
+            LocalLogger.d(TAG, R.string.log_hook_loaded_records, keys.size)
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "加载已触发 hook 记录失败: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_hook_load_records_failed, e.message)
         }
     }
 
@@ -101,7 +102,7 @@ class HookExecutor(
             val json = gson.toJson(triggeredKeys.keys.toSet())
             prefs?.edit()?.putString(PREF_KEY, json)?.apply()
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "持久化已触发 hook 记录失败: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_hook_persist_records_failed, e.message)
         }
     }
 
@@ -122,7 +123,7 @@ class HookExecutor(
         val hooks = try {
             hookDao.listEnabled()
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "加载 hooks 失败: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_hook_load_hooks_failed, e.message)
             return@withContext
         }
 
@@ -153,7 +154,7 @@ class HookExecutor(
             val conditionsMet = try {
                 evaluateConditions(hook.conditions, effCtx)
             } catch (e: Exception) {
-                LocalLogger.w(TAG, "Hook ${hook.name} 条件评估异常: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_hook_condition_error, hook.name, e.message)
                 recordHookLog(
                     hookId = hookId,
                     eventType = eventType,
@@ -173,7 +174,7 @@ class HookExecutor(
                 val result = try {
                     executeAction(actionJson, hook, effCtx)
                 } catch (e: Exception) {
-                    LocalLogger.e(TAG, "Hook ${hook.name} action 执行异常: ${e.message}", e)
+                    LocalLogger.e(TAG, R.string.log_hook_action_error, hook.name, e.message, throwable = e)
                     ActionResult(false, actionJson.safeType(), e.message ?: "执行异常")
                 }
                 results.add(result)
@@ -215,7 +216,7 @@ class HookExecutor(
                     displayMessage = displayMessage
                 )
                 _events.tryEmit(RealtimeEvent.HookNotificationEvent(notif))
-                LocalLogger.i(TAG, "Hook 触发: ${hook.name} [$eventType] -> $displayMessage")
+                LocalLogger.i(TAG, R.string.log_hook_triggered, hook.name, eventType, displayMessage)
             }
         }
     }
@@ -226,7 +227,7 @@ class HookExecutor(
         if (removed.isEmpty()) return
         removed.forEach { triggeredKeys.remove(it) }
         persistTriggeredKeys()
-        LocalLogger.i(TAG, "已重置会话 $conversationId 的 ${removed.size} 条 hook 触发记录")
+        LocalLogger.i(TAG, R.string.log_hook_records_reset, conversationId, removed.size)
     }
 
     /**
@@ -253,7 +254,7 @@ class HookExecutor(
             val result = try {
                 executeAction(actionJson, hook, effCtx)
             } catch (e: Exception) {
-                LocalLogger.e(TAG, "Hook ${hook.name} action 执行异常: ${e.message}", e)
+                LocalLogger.e(TAG, R.string.log_hook_action_error, hook.name, e.message, throwable = e)
                 ActionResult(false, actionJson.safeType(), e.message ?: "执行异常")
             }
             results.add(result)
@@ -292,7 +293,7 @@ class HookExecutor(
                 displayMessage = displayMessage
             )
             _events.tryEmit(RealtimeEvent.HookNotificationEvent(notif))
-            LocalLogger.i(TAG, "Hook 测试触发: ${hook.name} -> $displayMessage")
+            LocalLogger.i(TAG, R.string.log_hook_test_triggered, hook.name, displayMessage)
         }
     }
 
@@ -326,7 +327,7 @@ class HookExecutor(
             // 每个 hook 保留最近 200 条日志
             hookLogDao.trimByHook(hookId, keep = 200)
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "写入 hook 日志失败: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_hook_log_write_failed, e.message)
         }
     }
 
@@ -430,12 +431,12 @@ class HookExecutor(
             "relationship_delta" -> actionRelationshipDelta(action, hook, ctx)
             "message" -> actionMessage(action, hook, ctx)
             "workflow" -> {
-                LocalLogger.w(TAG, "本地模式不支持 workflow action（hook=${hook.name}）")
+                LocalLogger.w(TAG, R.string.log_hook_workflow_unsupported, hook.name)
                 ActionResult(true, type, "本地模式跳过 workflow")
             }
             "world_book_add" -> actionWorldBookAdd(action, hook, ctx)
             else -> {
-                LocalLogger.w(TAG, "未知 action type: $type（hook=${hook.name}）")
+                LocalLogger.w(TAG, R.string.log_hook_unknown_action, type, hook.name)
                 ActionResult(false, type, "未知 action type")
             }
         }
@@ -530,7 +531,7 @@ class HookExecutor(
                 memoryDao.upsert(tlEntity)
                 memoryDao.trimByCharacterAndCategory(characterId, "timeline", keep = 80)
             }
-            LocalLogger.i(TAG, "[Hook:${hook.name}] 写入记忆: $title [category=$category path=$memoryPath]")
+            LocalLogger.i(TAG, R.string.log_hook_memory_write, hook.name, title, category, memoryPath)
             return ActionResult(true, "memory_write", "已写入记忆: $title")
         } catch (e: Exception) {
             return ActionResult(false, "memory_write", "写入记忆失败: ${e.message}")
@@ -563,7 +564,7 @@ class HookExecutor(
         val priority = action.get("priority")?.takeUnless { it.isJsonNull }?.asNumber?.toInt() ?: 55
         val scope = action.get("scope")?.takeUnless { it.isJsonNull }?.asString ?: "turn"
         stack.add(key, content, priority = priority, scope = scope)
-        LocalLogger.i(TAG, "[Hook:${hook.name}] 注入提示词: $key")
+        LocalLogger.i(TAG, R.string.log_hook_prompt_inject, hook.name, key)
         return ActionResult(true, "prompt_inject", "已注入: $key")
     }
 
@@ -597,7 +598,7 @@ class HookExecutor(
                     val delta = value.asInt
                     state.energy = (state.energy + delta).coerceIn(0, 100)
                 }
-                else -> LocalLogger.w(TAG, "state_delta 忽略未知字段: $field")
+                else -> LocalLogger.w(TAG, R.string.log_hook_state_delta_unknown_field, field)
             }
         }
 
@@ -615,7 +616,7 @@ class HookExecutor(
                 updatedAt = com.nekobot.app.data.local.LocalRepository.nowIsoStatic()
             )
             stateDao.upsert(updated)
-            LocalLogger.i(TAG, "[Hook:${hook.name}] 状态更新: mood=${state.mood} energy=${state.energy}")
+            LocalLogger.i(TAG, R.string.log_hook_state_updated, hook.name, state.mood, state.energy)
             return ActionResult(true, "state_delta", "状态已更新")
         } catch (e: Exception) {
             return ActionResult(false, "state_delta", "状态保存失败: ${e.message}")
@@ -648,7 +649,7 @@ class HookExecutor(
                 "dependency" -> rel.dependency = (rel.dependency + delta).coerceIn(0, 100)
                 "security" -> rel.security = (rel.security + delta).coerceIn(0, 100)
                 "jealousy" -> rel.jealousy = (rel.jealousy + delta).coerceIn(0, 100)
-                else -> LocalLogger.w(TAG, "relationship_delta 忽略未知字段: $field")
+                else -> LocalLogger.w(TAG, R.string.log_hook_rel_delta_unknown_field, field)
             }
         }
 
@@ -666,7 +667,7 @@ class HookExecutor(
                 updatedAt = com.nekobot.app.data.local.LocalRepository.nowIsoStatic()
             )
             relationshipDao.upsert(updated)
-            LocalLogger.i(TAG, "[Hook:${hook.name}] 关系更新: affection=${rel.affection} trust=${rel.trust}")
+            LocalLogger.i(TAG, R.string.log_hook_rel_updated, hook.name, rel.affection, rel.trust)
             return ActionResult(true, "relationship_delta", "关系已更新")
         } catch (e: Exception) {
             return ActionResult(false, "relationship_delta", "关系保存失败: ${e.message}")
@@ -678,7 +679,7 @@ class HookExecutor(
         val content = action.get("content")?.takeUnless { it.isJsonNull }?.asString.orEmpty()
         if (content.isBlank()) return ActionResult(false, "message", "消息内容为空")
         ctx.hookMessages.add(content)
-        LocalLogger.i(TAG, "[Hook:${hook.name}] 追加上下文消息: ${content.take(40)}")
+        LocalLogger.i(TAG, R.string.log_hook_context_appended, hook.name, content.take(40))
         return ActionResult(true, "message", "已追加消息")
     }
 
@@ -724,7 +725,7 @@ class HookExecutor(
         )
         try {
             worldBookDao.upsertEntry(entry)
-            LocalLogger.i(TAG, "[Hook:${hook.name}] 添加世界书条目: $name")
+            LocalLogger.i(TAG, R.string.log_hook_worldbook_added, hook.name, name)
             return ActionResult(true, "world_book_add", "已添加: $name")
         } catch (e: Exception) {
             return ActionResult(false, "world_book_add", "添加条目失败: ${e.message}")

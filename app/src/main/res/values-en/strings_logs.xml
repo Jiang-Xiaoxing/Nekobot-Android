@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 本地日志文案（LocalLogger 资源化消息）。由 logtools/gen_logs.py 生成，请勿手工编辑。 -->
+<resources>
+    <string name="log_a11y_connected">Accessibility service connected</string>
+    <string name="log_a11y_disconnected">Accessibility service disconnected</string>
+    <string name="log_a11y_screenshot_failed">Screenshot failed: code=%1$s</string>
+    <string name="log_amem_accumulating">Memory extraction accumulating %1$s/%2$s (key=%3$s)</string>
+    <string name="log_amem_entry_dropped_category">Memory entry dropped: category not allowed</string>
+    <string name="log_amem_entry_dropped_empty">Memory entry dropped: title or content empty (content length=%1$s)</string>
+    <string name="log_amem_extract_failed">Memory extraction failed</string>
+    <string name="log_amem_llm_all_retries_failed">Memory extraction LLM failed after %1$s retries</string>
+    <string name="log_amem_llm_attempt_empty">Memory extraction LLM attempt %1$s/%2$s returned empty content</string>
+    <string name="log_amem_llm_attempt_error">Memory extraction LLM attempt %1$s/%2$s error</string>
+    <string name="log_amem_llm_attempt_failed">Memory extraction LLM attempt %1$s/%2$s failed</string>
+    <string name="log_amem_llm_attempt_parse_failed">Memory extraction LLM attempt %1$s/%2$s parse failed; retrying</string>
+    <string name="log_amem_llm_attempt_success">Memory extraction LLM attempt %1$s/%2$s succeeded, returned %3$s chars; parsing</string>
+    <string name="log_amem_llm_call">Calling memory extraction LLM: turns=%1$s existing=%2$s</string>
+    <string name="log_amem_no_active_model">Memory extraction skipped: no active AI model configured (aiModelProvider returned null)</string>
+    <string name="log_amem_no_output">Memory extraction produced nothing (LLM returned no valid memory or parse failed) (key=%1$s)</string>
+    <string name="log_amem_parse_all_dropped">Memory extraction parse: LLM returned %1$s entries but all dropped after normalization</string>
+    <string name="log_amem_parse_empty_after_clean">Memory extraction parse: empty after cleanResponseContent (original length=%1$s)</string>
+    <string name="log_amem_parse_gson_null">Memory extraction parse: Gson returned null (candidate JSON length=%1$s)</string>
+    <string name="log_amem_parse_json_error">Memory extraction JSON parse failed (candidate JSON length=%1$s)</string>
+    <string name="log_amem_parse_not_json">Memory extraction parse: not recognized as JSON array or object (original length=%1$s)</string>
+    <string name="log_amem_persist_failed">Failed to persist memories</string>
+    <string name="log_amem_read_existing_failed">Failed to read existing memories (main flow unaffected)</string>
+    <string name="log_amem_saved">Extracted and saved %1$s memories (key=%2$s)</string>
+    <string name="log_amem_skip_empty_ids">Memory extraction skipped: characterId or targetId empty (characterId=%1$s targetId=%2$s)</string>
+    <string name="log_amem_timeline_derived">Derived %1$s timeline entries; truncated to %2$s</string>
+    <string name="log_amem_triggered">Memory extraction triggered: %1$s turns reached interval (key=%2$s)</string>
+    <string name="log_app_global_memory_migrate_failed">Failed to migrate legacy global memory: %1$s</string>
+    <string name="log_app_memory_migration_prompt_failed">Failed to parse memory migration prompt: %1$s</string>
+    <string name="log_app_plot_story_migrate_failed">Failed to migrate legacy story map for database %1$s: %2$s</string>
+    <string name="log_app_secrets_migrate_failed">Failed to migrate local secrets: %1$s</string>
+    <string name="log_astate_counting">AutoState count %1$s/%2$s, interval not reached (key=%3$s)</string>
+    <string name="log_astate_eval_error">State evaluation error: %1$s</string>
+    <string name="log_astate_llm_done">callStateModel: LLM state evaluation done | model=%1$s(%2$s) | turns=%3$s</string>
+    <string name="log_astate_llm_empty">callStateModel: LLM returned empty content</string>
+    <string name="log_astate_llm_error">callStateModel: LLM call returned error: %1$s</string>
+    <string name="log_astate_llm_length">callStateModel: LLM content length=%1$s</string>
+    <string name="log_astate_no_active_model">callStateModel: no active model available (aiModelProvider returned null)</string>
+    <string name="log_astate_parse_failed">callStateModel: JSON parse failed, returning empty map</string>
+    <string name="log_astate_parse_success">callStateModel: parse succeeded, fields=%1$s</string>
+    <string name="log_astate_skip_empty_ids">Skipping AutoState: characterId=%1$s targetId=%2$s empty</string>
+    <string name="log_astate_skip_flag">Skipping AutoState: skip_auto_state=true</string>
+    <string name="log_astate_skip_heartbeat">Skipping AutoState: heartbeat</string>
+    <string name="log_astate_skip_interval">Skipping AutoState: sessionInterval=%1$s &lt;= 0</string>
+    <string name="log_astate_skip_result_error">Skipping AutoState: resultError=%1$s</string>
+    <string name="log_astate_skip_too_short">Skipping AutoState: messages too short (user=%1$s, assistant=%2$s)</string>
+    <string name="log_astate_triggered">AutoState trigger reached: count=%1$s interval=%2$s (key=%3$s)</string>
+    <string name="log_auto_enqueue_failed">Failed to enqueue automation job: %1$s: %2$s</string>
+    <string name="log_auto_execute_failed">Automation execution failed: %1$s/%2$s: %3$s</string>
+    <string name="log_auto_wrong_profile">Ignoring automation for non-current local profile: %1$s/%2$s/%3$s</string>
+    <string name="log_crun_afterturn_saved">afterTurn state saved: mood=%1$s energy=%2$s affection=%3$s trust=%4$s</string>
+    <string name="log_crun_astate_applied">AutoState applied LLM evaluation: mood=%1$s moodIntensity=%2$s energy=%3$s</string>
+    <string name="log_crun_astate_failed">AutoState evaluation failed (main flow unaffected): %1$s</string>
+    <string name="log_crun_astate_not_updated">AutoState not updated this turn (interval not reached or no change)</string>
+    <string name="log_crun_memory_extract_cancelled">Memory extraction cancelled (app process exiting): %1$s</string>
+    <string name="log_crun_memory_extract_failed">Memory extraction failed (main flow unaffected): %1$s</string>
+    <string name="log_crun_memoryfs_inject_failed">MemoryFS prompt injection failed (main flow unaffected): %1$s</string>
+    <string name="log_crun_review_delta_written">Reviewed relationship deltas written back: %1$s → affection=%2$s trust=%3$s</string>
+    <string name="log_crun_snapshot_failed">State snapshot write failed (main flow unaffected): %1$s</string>
+    <string name="log_crun_snapshot_written">State snapshot written (trigger=%1$s, hasQuality=%2$s)</string>
+    <string name="log_db_profile_close_failed">Failed to close database: %1$s</string>
+    <string name="log_db_profile_delete_failed">Failed to delete database file: %1$s: %2$s</string>
+    <string name="log_fgs_intent_failed">Failed to send foreground service intent: %1$s</string>
+    <string name="log_fgs_start_failed">Foreground service failed to start: %1$s</string>
+    <string name="log_fgs_stop_generation_failed">Failed to request stop generation: %1$s</string>
+    <string name="log_git_diff_failed">Failed to generate git diff summary: %1$s</string>
+    <string name="log_hook_action_error">Hook %1$s action execution error: %2$s</string>
+    <string name="log_hook_condition_error">Hook %1$s condition evaluation error: %2$s</string>
+    <string name="log_hook_context_appended">[Hook:%1$s] context message appended: %2$s</string>
+    <string name="log_hook_load_hooks_failed">Failed to load hooks: %1$s</string>
+    <string name="log_hook_load_records_failed">Failed to load triggered hook records: %1$s</string>
+    <string name="log_hook_loaded_records">Loaded %1$s triggered hook records</string>
+    <string name="log_hook_log_write_failed">Failed to write hook log: %1$s</string>
+    <string name="log_hook_memory_write">[Hook:%1$s] memory written: %2$s [category=%3$s path=%4$s]</string>
+    <string name="log_hook_persist_records_failed">Failed to persist triggered hook records: %1$s</string>
+    <string name="log_hook_prompt_inject">[Hook:%1$s] prompt injected: %2$s</string>
+    <string name="log_hook_records_reset">Reset %2$s hook trigger records for session %1$s</string>
+    <string name="log_hook_rel_delta_unknown_field">relationship_delta ignoring unknown field: %1$s</string>
+    <string name="log_hook_rel_updated">[Hook:%1$s] relationship updated: affection=%2$s trust=%3$s</string>
+    <string name="log_hook_state_delta_unknown_field">state_delta ignoring unknown field: %1$s</string>
+    <string name="log_hook_state_updated">[Hook:%1$s] state updated: mood=%2$s energy=%3$s</string>
+    <string name="log_hook_test_triggered">Hook test triggered: %1$s -&gt; %2$s</string>
+    <string name="log_hook_triggered">Hook triggered: %1$s [%2$s] -&gt; %3$s</string>
+    <string name="log_hook_unknown_action">Unknown action type: %1$s (hook=%2$s)</string>
+    <string name="log_hook_workflow_unsupported">workflow action not supported in local mode (hook=%1$s)</string>
+    <string name="log_hook_worldbook_added">[Hook:%1$s] world book entry added: %2$s</string>
+    <string name="log_kbase_embedding_fallback">Embedding model %1$s failed, trying fallback model: %2$s</string>
+    <string name="log_kbase_index_failed">Knowledge base indexing failed %1$s: %2$s</string>
+    <string name="log_krerank_fallback_score">Rerank failed, falling back to original score order: %1$s</string>
+    <string name="log_krerank_model_failed">Rerank model %1$s call failed: %2$s</string>
+    <string name="log_laic_400_minimal_retry">OpenAI-compatible request returned 400; retrying with minimal params: %1$s</string>
+    <string name="log_laic_chat_once_failed">Single-shot chat request failed: %1$s</string>
+    <string name="log_laic_describe_image_failed">Image recognition request failed: %1$s</string>
+    <string name="log_laic_generate_image_failed">Image generation failed: %1$s</string>
+    <string name="log_laic_model_exception_failover">Model %1$s call error, trying next: %2$s</string>
+    <string name="log_laic_model_http_failover">Model %1$s call failed (HTTP %2$s), trying next: %3$s</string>
+    <string name="log_laic_stream_exception_failover">Model %1$s streaming error: %2$s, trying next</string>
+    <string name="log_laic_stream_failed">Streaming request failed: %1$s</string>
+    <string name="log_laic_stream_http_failover">Model %1$s streaming failed (HTTP %2$s), trying next</string>
+    <string name="log_laic_stt_openai_error">Speech transcription (openai) error: %1$s</string>
+    <string name="log_laic_stt_openai_failed">STT(openai) failed: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_openai_request">STT(openai) request: url=%1$s, model=%2$s, file=%3$s, size=%4$s, mime=%5$s</string>
+    <string name="log_laic_stt_xiaomi_error">Speech transcription (xiaomi) error: %1$s</string>
+    <string name="log_laic_stt_xiaomi_failed">STT(xiaomi) failed: HTTP %1$s url=%2$s resp=%3$s</string>
+    <string name="log_laic_stt_xiaomi_request">STT(xiaomi) request: url=%1$s, model=%2$s, origFile=%3$s, effectiveFile=%4$s, size=%5$s, mime=%6$s, lang=%7$s</string>
+    <string name="log_laic_stt_xiaomi_transcode_failed">STT(xiaomi) transcode failed ext=%1$s, falling back to raw bytes: %2$s</string>
+    <string name="log_life_generate_empty">life_sim generation returned empty content</string>
+    <string name="log_life_generate_error">life_sim generation error: %1$s</string>
+    <string name="log_life_generate_failed">life_sim generation failed: %1$s</string>
+    <string name="log_life_generate_success">life_sim generated | char=%1$s | conv=%2$s | activity=%3$s | contentLen=%4$s</string>
+    <string name="log_life_truncate_failed">life_sim truncation failed: %1$s</string>
+    <string name="log_lrepo_ai_client_missing">Memory extraction skipped: AI client not configured</string>
+    <string name="log_lrepo_extract_entry">extractIfNeeded entry: characterId=%1$s sessionId=%2$s userId=%3$s userMsgLen=%4$s aiMsgLen=%5$s</string>
+    <string name="log_mcp_connected">MCP connected: %1$s (%2$s), %3$s tools</string>
+    <string name="log_mcp_disconnect_failed">Failed to disconnect MCP: %1$s</string>
+    <string name="log_mcp_http_failed">MCP HTTP request failed [%1$s] %2$s -&gt; %3$s: %4$s%5$s</string>
+    <string name="log_mcp_stdio_sandbox_fallback">MCP stdio sandbox failed to start; falling back to direct run: %1$s</string>
+    <string name="log_mcp_tool_call_failed">MCP tool call failed: %1$s</string>
+    <string name="log_memx_delete_no_match">Delete operation matched no existing entry; ignored</string>
+    <string name="log_memx_extract_error">Memory extraction error (main flow unaffected): %1$s</string>
+    <string name="log_memx_extract_failed">Memory extraction failed: %1$s</string>
+    <string name="log_memx_memory_updated">Agent long-term memory updated: added %1$s, replaced %2$s, deleted %3$s</string>
+    <string name="log_memx_no_change_skip">Model operations changed nothing; skipping write</string>
+    <string name="log_memx_no_valid_changes">No qualifying long-term memory changes this turn (NONE or unparseable output)</string>
+    <string name="log_memx_op_ignored_action">Memory operation ignored: unrecognized action (%1$s)</string>
+    <string name="log_memx_op_ignored_category">Memory operation ignored: category out of standard range (%1$s)</string>
+    <string name="log_memx_queue_unavailable_fallback">Memory extraction queue unavailable; falling back to active model: %1$s</string>
+    <string name="log_mfs_context_failed">Failed to build memory prompt context: %1$s</string>
+    <string name="log_namegen_failed">Session auto-naming failed: %1$s</string>
+    <string name="log_namegen_queue_fallback">Naming failover queue unavailable; falling back to active model: %1$s</string>
+    <string name="log_notice_wake_callback_failed">Wake callback failed: %1$s</string>
+    <string name="log_notif_listener_connected">Notification listener connected</string>
+    <string name="log_notif_listener_disconnected">Notification listener disconnected (permission may have been revoked)</string>
+    <string name="log_notif_op_failed">Notification operation failed: %1$s</string>
+    <string name="log_notifier_notify_failed">Failed to post notification: id=%1$s: %2$s</string>
+    <string name="log_oauth_metadata_parse_failed">Failed to parse OAuth metadata: %1$s</string>
+    <string name="log_oauth_poll_parse_failed">Failed to parse OAuth poll response: %1$s</string>
+    <string name="log_overlay_addview_failed">Failed to add overlay window: %1$s</string>
+    <string name="log_pcb_agent_image_failed">Failed to generate image for agent: %1$s</string>
+    <string name="log_pcb_dequeue_failed">Failed to dequeue message: %1$s</string>
+    <string name="log_pcb_file_to_datauri_failed">fileToDataUri failed: %1$s</string>
+    <string name="log_pcb_git_diff_attach_failed">Failed to attach git change summary: %1$s</string>
+    <string name="log_pcb_git_diff_attached">maybeAttachGitDiff: tool=%1$s changed=%2$s summary=%3$s</string>
+    <string name="log_pcb_git_diff_no_changes">maybeAttachGitDiff: changedPaths is empty, skipping git summary</string>
+    <string name="log_pcb_git_diff_no_reporter">maybeAttachGitDiff: activeAgentProgressReporter is null, skipping git summary</string>
+    <string name="log_pcb_response_complete">Response complete: %1$s chars, error=%2$s</string>
+    <string name="log_pcb_routed_result_writeback_failed">Failed to write back routed failure result: %1$s</string>
+    <string name="log_pcb_routed_result_writeback_failed2">Failed to write back routed result: %1$s</string>
+    <string name="log_pcb_subagent_token_persist_failed">Failed to persist subagent token details: %1$s</string>
+    <string name="log_pcb_subagent_token_stats_failed">Subagent TokenStats recording failed: %1$s</string>
+    <string name="log_pcb_swipes_persisted">swipes new variants persisted | messageId=%1$s | %2$s versions</string>
+    <string name="log_pcb_task_list_persist_failed">Failed to persist agent task list: %1$s</string>
+    <string name="log_pcb_token_record_persist_failed">Failed to persist token records: %1$s</string>
+    <string name="log_pcb_token_stats_failed">TokenStats recording failed: %1$s</string>
+    <string name="log_pcb_vision_describer_missing">resolveImages: visionDescriber is null (not injected), skipping vision recognition</string>
+    <string name="log_pcb_vision_item_done">resolveImages: image %1$s recognized | name=%2$s | length=%3$s | hasFailureMarker=%4$s</string>
+    <string name="log_pcb_vision_item_failed">Vision recognition failed [%1$s]: %2$s</string>
+    <string name="log_pcb_vision_start">resolveImages: starting recognition of %1$s images</string>
+    <string name="log_pipe_after_turn_error">CharacterRuntime after_turn error: %1$s</string>
+    <string name="log_pipe_before_turn_done">CharacterRuntime before_turn done | char=%1$s | mood=%2$s | injections=%3$s | promptText=%4$s chars</string>
+    <string name="log_pipe_before_turn_error">CharacterRuntime before_turn error: %1$s</string>
+    <string name="log_pipe_context_ready">Context ready | system prompt=%1$s chars | prompt stack=%2$s items | history=%3$s</string>
+    <string name="log_pipe_done">Pipeline done | took=%1$sms%2$s%3$s | reply length=%4$s</string>
+    <string name="log_pipe_first_call_400_fallback">First model call returned 400; falling back to tool-less chat</string>
+    <string name="log_pipe_inherit_memory_dedup">Inherited character traits: removed %1$s agent memory lines duplicating character memory</string>
+    <string name="log_pipe_offline_plot_inject">Offline plot progression injected | level=%1$s | elapsed=%2$s | promptLen=%3$s</string>
+    <string name="log_pipe_realtime_inject_done">Real-time context injected | level=%1$s | elapsed=%2$s | circadian=%3$s</string>
+    <string name="log_pipe_realtime_inject_error">Real-time injection error: %1$s</string>
+    <string name="log_pipe_review_delta_written">Reviewed relationship deltas written back: %1$s</string>
+    <string name="log_pipe_review_error">ReviewPipeline review error: %1$s</string>
+    <string name="log_pipe_simple_call_done">Model call done (simple) | reply=%1$s chars</string>
+    <string name="log_pipe_simple_call_failed">Simple model call failed: %1$s</string>
+    <string name="log_pipe_start">Pipeline start | session=%1$s | user message length=%2$s</string>
+    <string name="log_pipe_sticker_original_attached">User stickers attached as originals | count=%1$s</string>
+    <string name="log_pipe_stream_done">Streaming done | TTFT=%1$sms | total=%2$sms | content=%3$s chars</string>
+    <string name="log_pipe_streaming_failed">Streaming failed: %1$s</string>
+    <string name="log_pipe_tool_loop_failed">Tool loop failed: %1$s</string>
+    <string name="log_pipe_vision_direct_attach">Current chat model supports vision; attaching %1$s images directly</string>
+    <string name="log_pipe_vision_done">Vision recognition done | images=%1$s | total description=%2$s chars</string>
+    <string name="log_pipe_vision_error">Vision recognition error: %1$s</string>
+    <string name="log_pipe_worldbook_depth_inject">World book injected by depth | entries=%1$s | depths=%2$s</string>
+    <string name="log_plot_llm_all_retries_failed">Plot choice LLM failed after %1$s retries: %2$s, using default choices</string>
+    <string name="log_plot_llm_attempt_empty">Plot choice LLM attempt %1$s/%2$s returned empty content</string>
+    <string name="log_plot_llm_attempt_error">Plot choice LLM attempt %1$s/%2$s error: %3$s</string>
+    <string name="log_plot_llm_attempt_failed">Plot choice LLM attempt %1$s/%2$s failed: %3$s</string>
+    <string name="log_plot_llm_attempt_parse_failed">Plot choice LLM attempt %1$s/%2$s parse failed; retrying</string>
+    <string name="log_plot_llm_attempt_success">Plot choice LLM attempt %1$s/%2$s succeeded, generated %3$s choices</string>
+    <string name="log_reply_send_failed">Notification quick reply failed: %1$s</string>
+    <string name="log_repo_agent_memory_extract_failed">Agent long-term memory extraction failed (main flow unaffected): %1$s</string>
+    <string name="log_repo_agent_memory_save_failed">Failed to write agent long-term memory: %1$s</string>
+    <string name="log_repo_close_pause_skip">Skipped pausing agent runs while closing repository: %1$s</string>
+    <string name="log_repo_composed_prompt_failed">Failed to save composed_system_prompt: %1$s</string>
+    <string name="log_repo_context_compress_failed">Agent context compression request failed (this turn unaffected): %1$s</string>
+    <string name="log_repo_describe_all_failed">describeImageViaQueue: all models failed | attempts=%1$s | reasons=%2$s</string>
+    <string name="log_repo_describe_start">describeImageViaQueue: starting | queue=%1$s models | first=%2$s | url=%3$s</string>
+    <string name="log_repo_describe_success">describeImageViaQueue: success | model=%1$s | result length=%2$s</string>
+    <string name="log_repo_experience_archive_failed">Incremental experience archiving failed; compression boundary unchanged: %1$s</string>
+    <string name="log_repo_group_autoname_failed">Group session auto-naming failed (main flow unaffected): %1$s</string>
+    <string name="log_repo_group_composed_prompt_failed">Failed to save group composed_system_prompt: %1$s</string>
+    <string name="log_repo_group_prompt_stack_debug_failed">Failed to save group prompt_stack_debug: %1$s</string>
+    <string name="log_repo_img_prompt_rewrite_failed">Image prompt rewrite failed; falling back to original prompt: %1$s</string>
+    <string name="log_repo_inherit_greeting">Agent session inherits character greeting | session=%1$s | char=%2$s</string>
+    <string name="log_repo_inherit_rel_init_failed">Failed to init relationship state while inheriting character traits: %1$s</string>
+    <string name="log_repo_life_sim_done">life_sim done | source=heartbeat | activity=%1$s</string>
+    <string name="log_repo_life_sim_lazy_error">life_sim lazy trigger error: %1$s</string>
+    <string name="log_repo_life_sim_no_model">life_sim background heartbeat skipped: no available model configured</string>
+    <string name="log_repo_mcp_autoconnect_failed">MCP auto-connect failed: %1$s</string>
+    <string name="log_repo_mcp_bg_connect_failed">Background MCP auto-connect failed; agent chat not blocked</string>
+    <string name="log_repo_memory_extract_skipped">Memory extraction skipped this turn (turn %1$s, interval %2$s)</string>
+    <string name="log_repo_msg_image_save_failed">Failed to save message image: %1$s</string>
+    <string name="log_repo_msg_image_task_failed">Failed to create message image task: %1$s</string>
+    <string name="log_repo_parse_custom_prompt_failed">Failed to parse session custom prompt: %1$s</string>
+    <string name="log_repo_persist_queued_msg_failed">Failed to persist queued injection message: %1$s</string>
+    <string name="log_repo_plot_choice_failed">Plot choice generation failed (main flow unaffected): %1$s</string>
+    <string name="log_repo_progress_card_persist_failed">Failed to persist progress card: %1$s</string>
+    <string name="log_repo_prompt_stack_debug_failed">Failed to save prompt_stack_debug: %1$s</string>
+    <string name="log_repo_quality_parse_failed">Failed to parse quality score JSON: %1$s</string>
+    <string name="log_repo_read_global_memory_failed">Failed to read global agent memory: %1$s</string>
+    <string name="log_repo_scene_read_failed">Failed to read character scene state: %1$s</string>
+    <string name="log_repo_session_autoname_failed">Auto-naming for regular session failed (main flow unaffected): %1$s</string>
+    <string name="log_repo_session_autoname_failed2">Session auto-naming failed (main flow unaffected): %1$s</string>
+    <string name="log_repo_session_autonamed">Session auto-named: %1$s -&gt; %2$s</string>
+    <string name="log_repo_skill_extract_failed">Agent skill distillation failed (main flow unaffected): %1$s</string>
+    <string name="log_repo_state_cache_write_failed">Failed to write state history cache: %1$s</string>
+    <string name="log_repo_task_expired">Task \"%1$s\" last run point expired; deferred to %2$s</string>
+    <string name="log_repo_token_usage_corrupt">Token usage records corrupted; backed up and rebuilt: %1$s</string>
+    <string name="log_repo_token_usage_recovered">Recovered %1$s token usage entries from message records</string>
+    <string name="log_repo_token_usage_repair_failed">Token usage repair write failed; will retry on next read</string>
+    <string name="log_repo_token_usage_write_deferred">Token usage write failed; will recover from message records later</string>
+    <string name="log_repo_token_usage_write_failed">Token usage write failed: %1$s</string>
+    <string name="log_repo_vision_chat_queues_empty">describeImageViaQueue: both vision and chat model queues empty (no enabled model with purpose=vision/chat)</string>
+    <string name="log_repo_vision_queue_empty">describeImageViaQueue: vision model queue empty, falling back to chat model queue</string>
+    <string name="log_repo_wake_failed">Failed to wake session %1$s: %2$s</string>
+    <string name="log_repo_wake_run_error">Wake run error (%1$s): %2$s</string>
+    <string name="log_repo_wake_run_failed">Wake run failed (%1$s): %2$s</string>
+    <string name="log_repo_workflow_expired">Workflow \"%1$s\" last run point expired; deferred to next cron time</string>
+    <string name="log_secure_decrypt_failed">Secure store decryption failed; value will be cleared: %1$s</string>
+    <string name="log_shortcut_refresh_failed">Failed to refresh shortcuts: %1$s</string>
+    <string name="log_skill_created">Skill \"%1$s\" created (%2$s)</string>
+    <string name="log_skill_extract_error">Skill distillation error (main flow unaffected): %1$s</string>
+    <string name="log_skill_no_distill">No skill to distill this turn (skip or unparseable output)</string>
+    <string name="log_skill_queue_unavailable_fallback">Skill distillation queue unavailable; falling back to active model: %1$s</string>
+    <string name="log_skill_review_failed">Skill distillation review failed: %1$s</string>
+    <string name="log_skill_skip_action">Skill distillation skipped: action=%1$s</string>
+    <string name="log_skill_skip_bad_format">Skill distillation skipped: SKILL.md not in standard format (%1$s)</string>
+    <string name="log_skill_skip_json_parse">Skill distillation skipped: JSON parse failed</string>
+    <string name="log_skill_skip_no_body">Skill distillation skipped: missing SKILL.md body</string>
+    <string name="log_skill_skip_no_description">Skill distillation skipped: missing description (required by standard SKILL.md)</string>
+    <string name="log_skill_skip_no_name">Skill distillation skipped: skill name unavailable</string>
+    <string name="log_skill_skip_not_json">Skill distillation skipped: model output is not a JSON object</string>
+    <string name="log_skill_updated">Skill \"%1$s\" updated (%2$s)</string>
+    <string name="log_sse_discard">Discarding %1$s: %2$s</string>
+    <string name="log_sse_reason_incomplete">SSE event incomplete (stream may be interrupted)</string>
+    <string name="log_sse_reason_unparseable">Unparseable SSE payload</string>
+    <string name="log_sub_execution_error">Subagent execution error: %1$s</string>
+    <string name="log_sub_model_loop_failed">Subagent model loop failed (iteration=%1$s): %2$s</string>
+    <string name="log_sub_terminated">Subagent terminated: %1$s</string>
+    <string name="log_svc_context_trim">In-loop context trim | iteration=%1$s | messages=%2$s | %3$s</string>
+    <string name="log_svc_tool_message_persist_failed">Failed to persist tool message: %1$s</string>
+    <string name="log_update_check_failed">Update check failed: %1$s</string>
+    <string name="log_update_download_failed">Update package download failed: %1$s</string>
+    <string name="log_vm_task_failed">UI task failed: %1$s</string>
+    <string name="log_widget_update_failed">Widget update failed: %1$s</string>
+</resources>

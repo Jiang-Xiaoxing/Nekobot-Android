@@ -4,6 +4,7 @@ import com.nekobot.app.data.local.db.LocalAiModelEntity
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.data.local.db.LocalSessionEntity
 import java.util.concurrent.ConcurrentHashMap
+import com.nekobot.app.R
 
 private const val MIN_MESSAGES_FOR_FIRST_NAMING = 2
 private const val RE_NAME_INTERVAL = 10
@@ -342,7 +343,7 @@ internal class SessionNameGenerator(
             runCatching { stateSaver?.invoke(sessionId, nextState) }
             return newName
         } catch (e: Exception) {
-            com.nekobot.app.data.local.LocalLogger.w(TAG, "会话自动命名失败: ${e.message}", e)
+            com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_namegen_failed, e.message, throwable = e)
             return null
         } finally {
             inProgress[sessionId] = false
@@ -395,10 +396,7 @@ internal class SessionNameGenerator(
         val execution = failoverExecutor?.let { executor ->
             runCatching { executor.execute(promptMessages) }
                 .onFailure {
-                    com.nekobot.app.data.local.LocalLogger.w(
-                        TAG,
-                        "命名故障转移队列不可用，回退到当前激活模型: ${it.message}"
-                    )
+                    com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_namegen_queue_fallback, it.message)
                 }
                 .getOrNull()
         }

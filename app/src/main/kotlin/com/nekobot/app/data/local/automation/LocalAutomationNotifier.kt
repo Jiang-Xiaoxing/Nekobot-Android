@@ -11,9 +11,12 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import com.nekobot.app.MainActivity
 import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.integration.NotificationReplyReceiver
 
 /** 主动聊天、任务和工作流共用的结果通知。 */
+private const val TAG = "LocalAutomationNotifier"
+
 object LocalAutomationNotifier {
     private const val CHANNEL_ID = "local_automation"
 
@@ -70,6 +73,8 @@ object LocalAutomationNotifier {
         val notification = builder.build()
         runCatching {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
+        }.onFailure {
+            LocalLogger.w(TAG, R.string.log_notifier_notify_failed, notificationId, it.message)
         }
     }
 

@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
+import com.nekobot.app.R
 
 private const val TAG = "LocalMcpRuntime"
 private const val MCP_PROTOCOL_VERSION = "2025-11-25"
@@ -190,10 +191,7 @@ internal class LocalMcpRuntime(
                 )
             }
             runCatching {
-                LocalLogger.i(
-                    TAG,
-                    "MCP 已连接: ${server.name} (${server.transport}), ${initialized.tools.size} 个工具"
-                )
+                LocalLogger.i(TAG, R.string.log_mcp_connected, server.name, server.transport, initialized.tools.size)
             }
             initialized.tools
         } catch (error: Throwable) {
@@ -215,7 +213,7 @@ internal class LocalMcpRuntime(
     fun disconnect(serverId: String) {
         val connection = synchronized(connectionsLock) { connections.remove(serverId) } ?: return
         runCatching { connection.session.close() }
-            .onFailure { LocalLogger.w(TAG, "断开 MCP 失败: $serverId", it) }
+            .onFailure { LocalLogger.w(TAG, R.string.log_mcp_disconnect_failed, serverId, throwable = it) }
     }
 
     fun isConnected(serverId: String): Boolean =
@@ -285,7 +283,7 @@ internal class LocalMcpRuntime(
             )
             parseToolCallResult(response)
         } catch (error: Throwable) {
-            LocalLogger.e(TAG, "MCP 工具调用失败: $fullName", error)
+            LocalLogger.e(TAG, R.string.log_mcp_tool_call_failed, fullName, throwable = error)
             failure(error.message ?: "MCP 工具调用失败")
         } finally {
             activeToolCalls.remove(connection.session)
@@ -545,10 +543,7 @@ private class HttpMcpTransportSession(
                         ""
                     }
                     val shownUrl = redactUrlQuerySecrets(url)
-                    LocalLogger.e(
-                        TAG,
-                        "MCP HTTP 请求失败 [$method] $shownUrl -> ${response.code}: $detail$hint"
-                    )
+                    LocalLogger.e(TAG, R.string.log_mcp_http_failed, method, shownUrl, response.code, detail, hint)
                     throw IllegalStateException(
                         "MCP HTTP ${response.code} [$method] $shownUrl: $detail$hint"
                     )
@@ -661,7 +656,7 @@ private class StdioMcpTransportSession(
                     sandboxed = true
                 )
             } catch (error: Throwable) {
-                LocalLogger.w(TAG, "MCP stdio 沙盒启动失败，回退直接运行: $command", error)
+                LocalLogger.w(TAG, R.string.log_mcp_stdio_sandbox_fallback, command, throwable = error)
                 return try {
                     ProcessLaunch(startHostProcess(), sandboxed = false)
                 } catch (hostError: Throwable) {

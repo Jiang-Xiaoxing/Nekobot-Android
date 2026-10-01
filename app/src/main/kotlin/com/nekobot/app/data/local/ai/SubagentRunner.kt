@@ -4,6 +4,7 @@ import com.nekobot.app.data.local.LocaleHelper
 import com.google.gson.Gson
 import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.model.ThinkingStep
+import com.nekobot.app.R
 
 /**
  * 子代理一次运行的规格与执行结果。
@@ -167,7 +168,7 @@ internal object SubagentRunner {
         } catch (e: kotlinx.coroutines.CancellationException) {
             // 任务被终止（subagent_kill / 协程取消）：补发终态卡片并返回 KILLED，
             // 不向上抛出——后台清理（通知路由/额度释放）仍要完整执行。
-            LocalLogger.i(TAG, "子代理被终止: ${e.message}")
+            LocalLogger.i(TAG, R.string.log_sub_terminated, e.message)
             stepSink.finish(SubagentTaskStatus.KILLED)
             onProgress?.invoke(stepSink.header(), true, stepSink.steps())
             SubagentRunResult(
@@ -176,7 +177,7 @@ internal object SubagentRunner {
                 status = SubagentTaskStatus.KILLED
             )
         } catch (e: ToolLoopModelError) {
-            LocalLogger.w(TAG, "子代理模型循环失败（iteration=${e.iteration}）: ${e.message}")
+            LocalLogger.w(TAG, R.string.log_sub_model_loop_failed, e.iteration, e.message)
             stepSink.finish(SubagentTaskStatus.FAILED)
             onProgress?.invoke(stepSink.header(), true, stepSink.steps())
             SubagentRunResult(
@@ -190,7 +191,7 @@ internal object SubagentRunner {
                 onProgress?.invoke(stepSink.header(), true, stepSink.steps())
                 SubagentRunResult("", error = "生成已停止", status = SubagentTaskStatus.KILLED)
             } else {
-                LocalLogger.w(TAG, "子代理执行异常: ${e.message}")
+                LocalLogger.w(TAG, R.string.log_sub_execution_error, e.message)
                 stepSink.finish(SubagentTaskStatus.FAILED)
                 onProgress?.invoke(stepSink.header(), true, stepSink.steps())
                 SubagentRunResult(content = "", error = e.message ?: "子代理执行失败", status = SubagentTaskStatus.FAILED)

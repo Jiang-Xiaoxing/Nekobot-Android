@@ -7,15 +7,20 @@ import android.media.session.MediaSessionManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.nekobot.app.R
+import com.nekobot.app.data.local.LocalLogger
+
+private const val TAG = "NekobotNotifListener"
 
 /** 用户显式开启通知使用权后，为 Agent 提供受控的通知摘要与媒体会话操作。 */
 class NekobotNotificationListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         instance = this
+        LocalLogger.i(TAG, R.string.log_notif_listener_connected)
     }
 
     override fun onListenerDisconnected() {
         if (instance === this) instance = null
+        LocalLogger.w(TAG, R.string.log_notif_listener_disconnected)
     }
 
     override fun onDestroy() {
@@ -61,6 +66,7 @@ class NekobotNotificationListenerService : NotificationListenerService() {
                 else -> NotificationOperationResult(false, getString(R.string.notification_supported_actions))
             }
         } catch (error: Exception) {
+            LocalLogger.w(TAG, R.string.log_notif_op_failed, error.message, throwable = error)
             NotificationOperationResult(false, error.message ?: getString(R.string.notification_operation_failed))
         }
     }
@@ -104,6 +110,7 @@ class NekobotNotificationListenerService : NotificationListenerService() {
                 controller.packageName
             )
         } catch (error: Exception) {
+            LocalLogger.w(TAG, R.string.log_notif_op_failed, error.message, throwable = error)
             NotificationOperationResult(false, error.message ?: getString(R.string.media_control_failed), controller.packageName)
         }
     }

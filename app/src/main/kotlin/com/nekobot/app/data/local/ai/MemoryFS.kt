@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken
 import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.db.MemoryDao
 import java.time.Instant
+import com.nekobot.app.R
 
 /**
  * MemoryFS — 记忆逻辑文件系统，对应原仓库 nbot/memory/fs.py。
@@ -179,7 +180,7 @@ class MemoryFS(
                 if (text.isNotBlank()) parts.add("【近期摘要】\n$text")
             }
         } catch (e: Exception) {
-            LocalLogger.w(TAG, "构建记忆提示词上下文失败: ${e.message}", e)
+            LocalLogger.w(TAG, R.string.log_mfs_context_failed, e.message, throwable = e)
         }
 
         return parts.joinToString("\n\n").trim().take(MAX_MEMORY_CHARS * 3)
