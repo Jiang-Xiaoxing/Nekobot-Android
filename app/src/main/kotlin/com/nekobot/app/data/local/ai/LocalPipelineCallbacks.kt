@@ -164,6 +164,9 @@ internal class LocalPipelineCallbacks(
 
     companion object {
         private const val TAG = "LocalPipelineCB"
+
+        /** 单个文本附件最多读取的字符数，其余截断。 */
+        private const val MAX_TEXT_ATTACHMENT_CHARS = 100_000
     }
 
     private val gson = Gson()
@@ -1377,7 +1380,11 @@ internal class LocalPipelineCallbacks(
     override fun resolveAttachmentData(ctx: PipelineContext, attachment: Map<String, Any>): Map<String, Any>? {
         val attType = (attachment["type"] as? String ?: "").lowercase()
         val isImage = attType.startsWith("image/") || looksLikeImageName(attachment)
-        if (!isImage) return attachment
+        if (!isImage) {
+            // 文本类附件：本地工作区文件直接读出内容，交给管道注入上下文
+            val text = readLocalTextAttachment(attachment)
+            return if (text == null) attachment else attachment + mapOf("text_content" to text)
+        }
 
         // 图片附件：优先将本地文件路径转为 base64 data URI，供 vision API 直接使用
         val filePath = (attachment["path"] as? String) ?: (attachment["file_path"] as? String)
@@ -1415,6 +1422,46 @@ internal class LocalPipelineCallbacks(
         val imageExt = setOf(".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg")
         val ext = if ("." in name) "." + name.substringAfterLast(".") else ""
         return ext in imageExt
+    }
+
+    /** 可按纯文本读取的扩展名（MIME 缺失时的兜底判断）。 */
+    private val TEXT_ATTACHMENT_EXTS = setOf(
+        "txt", "md", "markdown", "csv", "json", "xml", "html", "htm", "css", "js", "ts",
+        "kt", "java", "py", "go", "rs", "sh", "bat", "ps1", "sql", "yaml", "yml",
+        "toml", "ini", "cfg", "conf", "properties", "log"
+    )
+
+    /**
+     * 读取文本类附件内容（仅本地工作区文件）。
+     *
+     * 返回 null 表示不是可读的文本附件，附件按原样交给管道处理。
+     */
+    private fun readLocalTextAttachment(att: Map<String, Any>): String? {
+        val mime = ((att["type"] as? String) ?: "").substringBefore(';').trim().lowercase()
+        val name = ((att["name"] as? String) ?: (att["filename"] as? String) ?: "")
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val isText = mime.startsWith("text/") ||
+            mime in setOf("application/json", "application/xml", "application/javascript") ||
+            ext in TEXT_ATTACHMENT_EXTS
+        if (!isText) return null
+
+        val path = (att["path"] as? String) ?: (att["file_path"] as? String) ?: return null
+        if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) {
+            return null
+        }
+        val file = runCatching { java.io.File(path) }.getOrNull()?.takeIf { it.isFile } ?: return null
+        return runCatching {
+            file.bufferedReader().use { reader ->
+                val buffer = CharArray(MAX_TEXT_ATTACHMENT_CHARS)
+                var read = 0
+                while (read < buffer.size) {
+                    val count = reader.read(buffer, read, buffer.size - read)
+                    if (count <= 0) break
+                    read += count
+                }
+                String(buffer, 0, read)
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
     /** 将图片文件转为 base64 data URI，供 vision API 使用。 */

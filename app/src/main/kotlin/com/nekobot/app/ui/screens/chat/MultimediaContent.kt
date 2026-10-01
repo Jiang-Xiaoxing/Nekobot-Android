@@ -1234,8 +1234,9 @@ private fun fileCardVisual(fileName: String): FileCardVisual {
     }
 }
 
+/** 文件类型图标（预览与待发送文件卡片共用）。 */
 @Composable
-private fun FileCardIcon(fileName: String, modifier: Modifier = Modifier) {
+internal fun FileCardIcon(fileName: String, modifier: Modifier = Modifier) {
     val visual = remember(fileName) { fileCardVisual(fileName) }
     Box(
         modifier = modifier

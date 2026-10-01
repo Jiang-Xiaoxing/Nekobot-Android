@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -767,7 +768,8 @@ private fun ModernChatComposer(
     var pendingPlotChoiceId by remember { mutableStateOf<String?>(null) }
     var filePickMode by remember { mutableStateOf<String?>(null) }
     var fileBusy by remember { mutableStateOf(false) }
-    var pendingImageAttachments by remember(sessionId) {
+    // 待发送附件：图片显示缩略图，其他文件显示文件卡片（不再把引用写进输入框）
+    var pendingAttachments by remember(sessionId) {
         mutableStateOf<List<Map<String, Any>>>(emptyList())
     }
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -914,27 +916,27 @@ private fun ModernChatComposer(
                             )
                             val uploadedName = baseAttachment["name"]?.toString() ?: name
                             val mime = baseAttachment["type"]?.toString() ?: modernGuessMime(uploadedName)
-                            if (mime.startsWith("image/")) {
-                                val localFile = if (ServiceContainer.prefs.isLocalMode) {
-                                    resolveLocalWorkspaceFile(context, sessionId, uploadedName)
-                                } else {
-                                    null
-                                }
-                                pendingImageAttachments = pendingImageAttachments + buildWorkspaceChatAttachment(
-                                    uploadResult = result.data,
-                                    sessionId = sessionId,
-                                    originalName = uploadedName,
-                                    fallbackMime = mime,
-                                    localPath = localFile?.absolutePath
-                                )
-                                toast(context.getString(R.string.chat_image_attached, uploadedName))
+                            // 本地模式记录工作区绝对路径，供文件卡片与附件解析使用
+                            val localFile = if (ServiceContainer.prefs.isLocalMode) {
+                                resolveLocalWorkspaceFile(context, sessionId, uploadedName)
                             } else {
-                                updateInput(buildString {
-                                    if (input.isNotBlank()) append(input).append('\n')
-                                    append(context.getString(R.string.chat_file_uploaded_ref_inline, uploadedName))
-                                })
-                                toast(context.getString(R.string.chat_file_uploaded_ref))
+                                null
                             }
+                            // 图片与非图片统一作为待发送附件展示在输入框上方，不再写入输入框
+                            pendingAttachments = pendingAttachments + buildWorkspaceChatAttachment(
+                                uploadResult = result.data,
+                                sessionId = sessionId,
+                                originalName = uploadedName,
+                                fallbackMime = mime,
+                                localPath = localFile?.absolutePath
+                            )
+                            toast(
+                                context.getString(
+                                    if (mime.startsWith("image/")) R.string.chat_image_attached
+                                    else R.string.chat_file_attached,
+                                    uploadedName
+                                )
+                            )
                         } else {
                             toast(context.getString(R.string.chat_uploaded_to_workspace_colon, name))
                         }
@@ -978,25 +980,19 @@ private fun ModernChatComposer(
                         )
                         val uploadedName = baseAttachment["name"]?.toString() ?: attachment.name
                         val uploadedMime = baseAttachment["type"]?.toString() ?: mime
-                        if (uploadedMime.startsWith("image/")) {
-                            val localFile = if (ServiceContainer.prefs.isLocalMode) {
-                                resolveLocalWorkspaceFile(context, sessionId, uploadedName)
-                            } else {
-                                null
-                            }
-                            pendingImageAttachments = pendingImageAttachments + buildWorkspaceChatAttachment(
-                                uploadResult = result.data,
-                                sessionId = sessionId,
-                                originalName = uploadedName,
-                                fallbackMime = uploadedMime,
-                                localPath = localFile?.absolutePath
-                            )
+                        // 分享进来的文件同样作为待发送附件，图片与非图片一致展示在输入框上方
+                        val localFile = if (ServiceContainer.prefs.isLocalMode) {
+                            resolveLocalWorkspaceFile(context, sessionId, uploadedName)
                         } else {
-                            updateInput(buildString {
-                                if (input.isNotBlank()) append(input).append('\n')
-                                append(context.getString(R.string.chat_file_uploaded_ref_inline, uploadedName))
-                            })
+                            null
                         }
+                        pendingAttachments = pendingAttachments + buildWorkspaceChatAttachment(
+                            uploadResult = result.data,
+                            sessionId = sessionId,
+                            originalName = uploadedName,
+                            fallbackMime = uploadedMime,
+                            localPath = localFile?.absolutePath
+                        )
                     }
                     is Resource.Error -> toast(context.getString(R.string.chat_upload_failed, result.message))
                     is Resource.Loading -> Unit
@@ -1149,7 +1145,7 @@ private fun ModernChatComposer(
         layoutMode = chatInputLayout,
         inputExpanded = inputExpanded,
         hasPlotSurface = hasPlotSurface,
-        hasDraft = input.isNotBlank() || pendingImageAttachments.isNotEmpty()
+        hasDraft = input.isNotBlank() || pendingAttachments.isNotEmpty()
     )
     // 跳过输入框首次退出动画：进入剧情模式会话时避免选项框从上方滑下的效果
     var skipInputExit by remember { mutableStateOf(true) }
@@ -1157,7 +1153,7 @@ private fun ModernChatComposer(
         if (hasPlotSurface) skipInputExit = false
     }
     val toggleInput = {
-        if (input.isBlank() && pendingImageAttachments.isEmpty()) {
+        if (input.isBlank() && pendingAttachments.isEmpty()) {
             inputExpanded = !inputVisible
             if (inputVisible) keyboard?.hide()
         }
@@ -1324,12 +1320,12 @@ private fun ModernChatComposer(
                         }
                     )
 
-                    if (pendingImageAttachments.isNotEmpty()) {
-                        PendingImageAttachments(
+                    if (pendingAttachments.isNotEmpty()) {
+                        PendingChatAttachments(
                             sessionId = sessionId,
-                            attachments = pendingImageAttachments,
+                            attachments = pendingAttachments,
                             onRemove = { target ->
-                                pendingImageAttachments = pendingImageAttachments.filterNot { it === target }
+                                pendingAttachments = pendingAttachments.filterNot { it === target }
                             }
                         )
                     }
@@ -1469,7 +1465,7 @@ private fun ModernChatComposer(
                             // 主操作按钮：背景和图标同步过渡，避免语音/发送/停止状态生硬跳变
                             // Agent 会话生成中：已输入内容时切换为发送（消息进入排队队列），否则保持停止
                             // 后台生成（标题总结/剧情选项/记忆沉淀/唤醒运行等）进行中：无草稿时也提供停止入口
-                            val hasDraft = input.isNotBlank() || pendingImageAttachments.isNotEmpty()
+                            val hasDraft = input.isNotBlank() || pendingAttachments.isNotEmpty()
                             val action = when {
                                 delayReplyPending && hasDraft -> ModernComposerAction.SEND
                                 delayReplyPending -> ModernComposerAction.STOP
@@ -1505,7 +1501,7 @@ private fun ModernChatComposer(
                                         ModernComposerAction.SEND -> {
                                             val text = input
                                             val choiceId = pendingPlotChoiceId
-                                            val attachments = pendingImageAttachments
+                                            val attachments = pendingAttachments
                                             val keepComposerOpen = shouldKeepComposerOpen(
                                                 text,
                                                 choiceId == null
@@ -1513,7 +1509,7 @@ private fun ModernChatComposer(
                                             updateInput("")
                                             inputExpanded = keepComposerOpen
                                             pendingPlotChoiceId = null
-                                            pendingImageAttachments = emptyList()
+                                            pendingAttachments = emptyList()
                                             closePanel()
                                             if (!keepComposerOpen) keyboard?.hide()
                                             onSend(text, choiceId, attachments, reasoningEffort)
@@ -1757,8 +1753,11 @@ private fun ModernChatComposer(
     }
 }
 
+/**
+ * 输入框上方的待发送附件预览：图片显示缩略图，其他文件显示文件卡片（类型图标 + 文件名）。
+ */
 @Composable
-private fun PendingImageAttachments(
+private fun PendingChatAttachments(
     sessionId: String,
     attachments: List<Map<String, Any>>,
     onRemove: (Map<String, Any>) -> Unit
@@ -1777,26 +1776,49 @@ private fun PendingImageAttachments(
             }
         ) { attachment ->
             val name = attachment["name"] as? String ?: return@items
+            val mime = attachment["type"] as? String ?: ""
             val localFile = (attachment["path"] as? String)
                 ?.let { java.io.File(it) }
                 ?.takeIf { it.isFile }
                 ?: resolveLocalWorkspaceFile(context, sessionId, name)
-            val model: Any? = localFile ?: buildWorkspaceFileUrl(sessionId, name)
+            val isImage = classifyFilePreview(name, mime) == FilePreviewType.IMAGE
 
             Surface(
-                modifier = Modifier.size(76.dp),
+                modifier = if (isImage) Modifier.size(76.dp) else Modifier.height(76.dp),
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 border = null
             ) {
                 Box {
-                    if (model != null) {
-                        AsyncImage(
-                            model = model,
-                            contentDescription = name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    if (isImage) {
+                        val model: Any? = localFile ?: buildWorkspaceFileUrl(sessionId, name)
+                        if (model != null) {
+                            AsyncImage(
+                                model = model,
+                                contentDescription = name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        // 文件卡片：与消息气泡里的文件卡片使用同一套类型图标与配色
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .height(76.dp)
+                                .padding(start = 10.dp, end = 32.dp, top = 8.dp, bottom = 8.dp)
+                        ) {
+                            FileCardIcon(fileName = name, modifier = Modifier.size(44.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 120.dp)
+                            )
+                        }
                     }
                     IconButton(
                         onClick = { onRemove(attachment) },
