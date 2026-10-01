@@ -1422,3 +1422,80 @@ body.lightbox-open { overflow: hidden; }
   .footer-inner { grid-template-columns: 1fr; gap: 22px; }
   .to-top { right: 16px; bottom: 16px; }
 }
+
+/* ============ 语言切换器 ============ */
+.lang-switch { position: relative; }
+.lang-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 999px;
+  border: 1.5px solid var(--border); background: rgba(255,255,255,.6);
+  color: var(--text-2); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: color .2s, border-color .2s, box-shadow .2s;
+}
+.lang-btn:hover { color: var(--primary-deep); border-color: var(--primary); }
+.lang-chev { transition: transform .25s var(--ease-spring); }
+.lang-switch.open .lang-chev { transform: rotate(180deg); }
+.lang-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; min-width: 152px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--shadow-lg);
+  padding: 6px; margin: 0; list-style: none;
+  opacity: 0; visibility: hidden; transform: translateY(-8px);
+  transition: all .25s var(--ease-spring); z-index: 120;
+}
+.lang-switch.open .lang-menu { opacity: 1; visibility: visible; transform: translateY(0); }
+.lang-menu button {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border-radius: 9px; border: 0; background: none;
+  font: inherit; font-size: 14px; font-weight: 500; color: var(--text-2);
+  cursor: pointer; text-align: left; white-space: nowrap;
+  transition: color .15s, background .15s;
+}
+.lang-menu button:hover { background: var(--primary-soft); color: var(--primary-deep); }
+.lang-menu button.active { color: var(--primary-deep); font-weight: 700; }
+.lang-menu button.active::after { content: '✓'; font-size: 12px; }
+/* 手机模型在线状态文字（原为纯文本节点，改为 <b> 承载翻译） */
+.chat-status b { font-weight: 400; }
+
+/* ===== 导航栏防换行（多语言） ===== */
+/* 任何语言下导航项都不允许内部折行 */
+.nav-links a, .nav-actions .btn, .lang-btn { white-space: nowrap; }
+/* 基础收紧（全语言）：加入语言切换器后顶栏更满，压缩留白 */
+.nav-inner { gap: 18px; }
+.nav-links { gap: 0; }
+.nav-links a { padding-inline: 10px; }
+.nav-actions { gap: 8px; }
+.nav-actions .btn-sm { padding-inline: 12px; }
+.lang-btn { padding-inline: 10px; }
+/* 日韩文案为全角字符、更宽：基础档就收紧一档 */
+html:lang(ja) .nav-links a, html:lang(ko) .nav-links a { padding-inline: 9px; font-size: 13px; }
+html:lang(ja) .nav-actions .btn, html:lang(ko) .nav-actions .btn { font-size: 13px; }
+/* 窄桌面档：链接与按钮再收一档，并收起顶栏下载按钮（入口保留在 Hero、菜单与下载区） */
+@media (max-width: 1180px) {
+  .nav-links a { font-size: 13px; padding-inline: 8px; }
+  .nav-actions .btn { font-size: 13px; padding-inline: 10px; }
+  .lang-btn { padding: 6px 9px; font-size: 12.5px; }
+  .nav-actions .btn-primary { display: none; }
+}
+/* 平板~窄桌面统一折叠为汉堡菜单（与 ≤640 相同的折叠形态） */
+@media (min-width: 641px) and (max-width: 1080px) {
+  .nav-inner { gap: 12px; }
+  .nav-links {
+    position: fixed; top: var(--nav-h); left: 12px; right: 12px;
+    background: rgba(255,255,255,.96); backdrop-filter: blur(16px);
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    flex-direction: column; padding: 10px; gap: 2px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0; visibility: hidden; transform: translateY(-12px);
+    transition: all .3s var(--ease-spring);
+  }
+  .nav-links.open { opacity: 1; visibility: visible; transform: translateY(0); }
+  .nav-links a { padding: 11px 16px; font-size: 14.5px; }
+  .nav-burger { display: flex; }
+}
+@media (max-width: 640px) {
+  .lang-btn { padding: 7px 9px; }
+  /* 小屏语言按钮只留地球图标，避免顶栏拥挤 */
+  .lang-btn #langBtnLabel, .lang-btn .lang-chev { display: none; }
+  .lang-menu { min-width: 140px; }
+}
