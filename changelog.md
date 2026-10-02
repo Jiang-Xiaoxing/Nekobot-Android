@@ -2,6 +2,39 @@
 
 本文件记录 Nekobot Android 应用的版本变更。
 
+## v0.8.1 - 2026-10-02
+
+### 新增
+
+- 新增繁体中文界面语言：设置页语言弹窗新增「繁體中文」，跟随系统时自动识别 zh-TW / zh-HK / zh-MO / zh-Hant；AI 输出语言、Agent 提示词与角色卡生成/翻译同步补繁体分支。
+- 新增独立日志查看页：支持等级筛选（全部/错误/警告/信息/调试）、关键词搜索、复制、刷新与清空，本地日志上限由 500 提升至 5000，设置页改为「日志与诊断」区导航入口。
+- 日志文案全面多语言化：日志按当前所选语言渲染（简中/繁中/英/日/韩），并补全前台服务、悬浮窗、无障碍、通知监听、自动化、OAuth 等模块诊断日志。
+- 支持发送非图片文件作为附件：文本类文件按 MIME 或扩展名判定后解析内容注入上下文（单附件最多 10 万字符），图片显示缩略图、其他文件显示类型图标 + 文件名卡片。
+- 平板形态改用左侧悬浮液态玻璃侧边导航栏：宽度 ≥600dp 且高度 ≥520dp 时启用，与底栏互斥，主界面 Tab 自动避让侧栏宽度。
+- 数据维护新增一键删除已删除会话的残留工作区：展示工作区数量与总大小并二次确认，单个删除失败不中断；文件界面返回键优先回到工作区列表。
+- 用量解析兼容 OpenAI Responses API：input/output tokens、缓存命中与缓存写入字段；扩充 DeepSeek、Qwen、GLM、Grok、GPT-6 Luna、Kimi、MiMo 等模型定价目录；OpenCode Go 模型列表更新，gpt-/grok- 前缀模型改用 Responses 协议。
+- 进度卡片工具详情弹窗对工具返回结果做结构化递归解析，并移除描述字段。
+- 官网新增五语言本地化与语言切换。
+- 新增安全策略文件 SECURITY.md。
+
+### 优化
+
+- 关于页 Logo 移除白色圆形底框改为圆角矩形直裁，版权年份更新为 2025-2026。
+
+### English
+
+- Added Traditional Chinese (zh-TW) interface language: selectable in settings, auto-detected for zh-TW/HK/MO/Hant system locales; AI output language, agent prompts and character card generation/translation follow suit
+- New standalone log viewer page with level filters, keyword search, copy, refresh and clear; local log cap raised from 500 to 5000
+- Log messages fully localized (zh-CN/zh-TW/en/ja/ko) with diagnostic logs added across modules such as foreground service, floating window, accessibility and automation
+- Non-image files can be sent as chat attachments: text files are parsed into context (up to 100k characters each); images show thumbnails, other files show type-icon cards
+- Tablets now use a floating liquid-glass side navigation rail (width ≥600dp and height ≥520dp) instead of the bottom bar; main tabs avoid the rail automatically
+- Data maintenance adds one-click cleanup of leftover workspaces from deleted sessions, with count and total size confirmed before deletion
+- Usage parsing supports the OpenAI Responses API (input/output tokens, cache hit and write fields); expanded model pricing catalog (DeepSeek, Qwen, GLM, Grok, GPT-6 Luna, Kimi, MiMo and more); gpt-/grok- models switched to the Responses protocol
+- Progress-card tool detail dialogs parse tool results with structured recursive parsing and drop the description field
+- Website adds five-language localization with a language switcher
+- Added security policy (SECURITY.md)
+- Refreshed the About page logo (removed the white circular frame) and updated the copyright year to 2025-2026
+
 ## v0.8.0 - 2026-09-30
 
 ### 新增
