@@ -1,6 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -112,11 +113,11 @@ private fun formatJsonArgumentValue(value: JsonElement): String = when {
  */
 internal fun parseFlattenedArgumentPreview(text: String): List<ToolArgumentRow> {
     val trimmed = text.trim()
-    val body = if (trimmed.length >= 2 && trimmed.startsWith("{") && trimmed.endsWith("}")) {
-        trimmed.substring(1, trimmed.length - 1)
-    } else {
-        trimmed
-    }
+    // 预览被截断时右括号可能缺失（如 "{success=true, data=…"），两侧括号需独立剥离，
+    // 否则左括号会混进第一个键名；非键值的裸文本由调用方按原文回退，不受影响
+    var body = trimmed
+    if (body.startsWith("{")) body = body.substring(1)
+    if (body.endsWith("}")) body = body.substring(0, body.length - 1)
     val rows = mutableListOf<ToolArgumentRow>()
     var index = 0
     while (index < body.length) {
@@ -200,4 +201,66 @@ private fun formatArgumentValue(value: Any?): String = when (value) {
     is Map<*, *>, is Iterable<*>, is Array<*> ->
         runCatching { Gson().toJson(value) }.getOrElse { value.toString() }
     else -> value.toString()
+}
+
+/** 返回结果递归解析的深度上限：防止超深嵌套拖垮解析与渲染。 */
+internal const val STEP_RESULT_MAX_DEPTH = 6
+
+/**
+ * 工具返回结果的结构化节点：
+ * - [Obj] 对象：有序键值对；
+ * - [Arr] 数组：有序元素；
+ * - [Text] 标量或纯文本（不可再拆）。
+ */
+internal sealed class StepResultNode {
+    internal data class Obj(val entries: List<Pair<String, StepResultNode>>) : StepResultNode()
+    internal data class Arr(val items: List<StepResultNode>) : StepResultNode()
+    internal data class Text(val text: String) : StepResultNode()
+}
+
+/**
+ * 把工具返回结果解析成结构化节点树，供详情弹窗递归渲染：
+ * 1. 严格 JSON 对象/数组 → 按 JSON 递归；
+ * 2. 本地 Agent 的扁平化预览（`{key=value, key={...}}`）→ 按扁平化格式递归；
+ * 3. 字符串值本身又是一段 JSON（如 data 字段里嵌了转义 JSON）→ 继续下钻；
+ * 4. 其余（普通文本 / 截断残缺的 JSON）按纯文本原样展示。
+ */
+internal fun parseStepResultNode(raw: String, depth: Int = 0): StepResultNode {
+    val text = raw.trim()
+    if (text.isEmpty()) return StepResultNode.Text("")
+    if (depth >= STEP_RESULT_MAX_DEPTH) return StepResultNode.Text(text)
+    if (text.startsWith("{")) {
+        if (looksLikeJsonObject(text)) {
+            (runCatching { JsonParser.parseString(text) }.getOrNull() as? JsonObject)?.let { obj ->
+                return StepResultNode.Obj(
+                    obj.entrySet().map { (name, value) -> name to jsonElementToNode(value, depth + 1) }
+                )
+            }
+        }
+        val rows = parseFlattenedArgumentPreview(text)
+        // 只在真的解析出「名称=值」条目时才按对象展示；整段裸值（非键值格式）保留原文
+        if (rows.any { it.name.isNotEmpty() }) {
+            return StepResultNode.Obj(
+                rows.map { it.name to parseStepResultNode(it.value, depth + 1) }
+            )
+        }
+        return StepResultNode.Text(text)
+    }
+    if (text.startsWith("[")) {
+        (runCatching { JsonParser.parseString(text) }.getOrNull() as? JsonArray)?.let { arr ->
+            return StepResultNode.Arr(arr.map { jsonElementToNode(it, depth + 1) })
+        }
+    }
+    return StepResultNode.Text(text)
+}
+
+/** JSON 元素转节点：字符串标量可能是嵌套 JSON（转义过的一层），继续下钻解析。 */
+private fun jsonElementToNode(element: JsonElement, depth: Int): StepResultNode = when {
+    element.isJsonNull -> StepResultNode.Text("null")
+    depth >= STEP_RESULT_MAX_DEPTH -> StepResultNode.Text(element.toString())
+    element.isJsonObject -> StepResultNode.Obj(
+        element.asJsonObject.entrySet().map { (name, value) -> name to jsonElementToNode(value, depth + 1) }
+    )
+    element.isJsonArray -> StepResultNode.Arr(element.asJsonArray.map { jsonElementToNode(it, depth + 1) })
+    else -> parseStepResultNode(element.asString, depth + 1)
 }

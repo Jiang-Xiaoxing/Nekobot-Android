@@ -37,9 +37,11 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -174,6 +176,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
@@ -184,6 +187,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -249,8 +253,8 @@ import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.ThirdPartyPluginConsentContent
+import com.nekobot.app.ui.components.builtinToolParameterEntries
 import com.nekobot.app.ui.components.resolveAvatarUrl
-import com.nekobot.app.ui.components.localToolDefinitionDescription
 import com.nekobot.app.ui.components.toolDescResId
 import com.nekobot.app.ui.components.ToolParameterList
 import com.nekobot.app.ui.theme.BubbleUser
@@ -3781,6 +3785,11 @@ internal fun isThinkingStep(step: com.nekobot.app.data.model.ThinkingStep): Bool
     step.type.equals("thinking", ignoreCase = true) ||
         step.type.equals("ai_thinking", ignoreCase = true)
 
+/** 是否为工具调用步骤（本地/远程的 tool 与 tool_done），决定详情弹窗是否渲染参数定义区块。 */
+internal fun isLocalToolStep(step: com.nekobot.app.data.model.ThinkingStep): Boolean =
+    step.type.equals("tool", ignoreCase = true) ||
+        step.type.equals("tool_done", ignoreCase = true)
+
 /** 思考步骤是否仍在流式追加正文（决定行内预览与详情弹窗的跟随行为）。 */
 internal fun isStreamingThinkingStep(step: com.nekobot.app.data.model.ThinkingStep): Boolean =
     isThinkingStep(step) &&
@@ -4394,7 +4403,6 @@ private fun StepDetailDialog(
 ) {
     val name = step.name?.stripEmoji()?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.chat_step_details)
-    val detail = step.detail?.stripEmoji()?.takeIf { it.isNotBlank() }
     val rawThinkingContent = step.thinkingContent?.takeIf(String::isNotBlank)
     val thinkingWasTruncated = rawThinkingContent?.length
         ?.let { it > AgentToolLimits.PROGRESS_REASONING_CHARS } == true
@@ -4425,21 +4433,13 @@ private fun StepDetailDialog(
         fullResultIndicatesTruncation(step.fullResult)
     val durationLabel = step.durationMs?.let { formatToolDuration(it) }
     val toolName = step.name?.stripEmoji()?.takeIf { it.isNotBlank() }
-    // 优先本地化工具说明（tool_desc_<id>），其次取模型看到的工具定义说明，
-    // 最后回退数据库内置说明；动态 MCP 工具三者皆无时才回退步骤摘要
-    val toolDescriptionRes = remember(toolName) {
-        toolName?.let { toolDescResId(it) }?.takeIf { it != 0 }
+    // 详情弹窗不再展示「描述/摘要」字段：思考步骤有推理正文、工具步骤有参数与返回结果，
+    // 步骤摘要只是重复预览（AI 思考与 MCP 动态工具尤其冗余），任何步骤类型都不再显示。
+    // 参数定义（本地已知 Schema 的工具步骤才有）与 hasAny 判定共用这一份缓存结果。
+    val parameterToolId = remember(step.type, toolName) {
+        toolName?.takeIf { isLocalToolStep(step) && builtinToolParameterEntries(it).isNotEmpty() }
     }
-    val toolDescription = toolDescriptionRes?.let { stringResource(it) }
-        ?: remember(toolName) {
-            toolName?.let { localToolDefinitionDescription(it) }
-                ?: com.nekobot.app.data.local.db.BuiltinTools.all
-                    .firstOrNull { it.id == toolName }?.description
-                    ?.takeIf { it.isNotBlank() }
-        }
-    // 工具说明即该步骤的描述，不再重复显示调用参数/结果的摘要
-    val stepDetail = if (toolDescription.isNullOrBlank()) detail else null
-    val hasAny = stepDetail != null || toolDescription != null || thinkingContent != null ||
+    val hasAny = parameterToolId != null || thinkingContent != null ||
         argumentRows.isNotEmpty() || !argumentsJson.isNullOrBlank() || !fullResultJson.isNullOrBlank()
 
     val scrollState = rememberScrollState()
@@ -4514,21 +4514,10 @@ private fun StepDetailDialog(
                     )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (!toolDescription.isNullOrBlank()) {
-                            StepDetailSection(
-                                label = stringResource(R.string.chat_step_tool_description),
-                                icon = Icons.Filled.Build,
-                                content = toolDescription
-                            )
-                        }
-                        if (toolName != null) {
-                            StepToolParameterSection(toolName)
-                        }
-                        if (!stepDetail.isNullOrBlank()) {
-                            StepDetailSection(
-                                label = stringResource(R.string.chat_step_description),
-                                content = stepDetail
-                            )
+                        // 参数定义只对本地已知 Schema 的工具步骤展示；
+                        // 思考等非工具步骤与动态 MCP 工具没有本地定义，不渲染这一区块
+                        if (parameterToolId != null) {
+                            StepToolParameterSection(parameterToolId)
                         }
                         if (!thinkingContent.isNullOrBlank()) {
                             StepDetailSection(
@@ -4554,12 +4543,9 @@ private fun StepDetailDialog(
                             )
                         }
                         if (!fullResultJson.isNullOrBlank()) {
-                            StepDetailSection(
-                                label = stringResource(R.string.chat_step_result),
-                                icon = Icons.Filled.CheckCircle,
-                                content = fullResultJson,
-                                isCode = true,
-                                notice = if (toolOutputWasTruncated) {
+                            StepResultSection(
+                                resultText = fullResultJson,
+                                truncatedNotice = if (toolOutputWasTruncated) {
                                     stringResource(R.string.chat_step_result_truncated)
                                 } else {
                                     null
@@ -4687,6 +4673,237 @@ private fun StepArgumentSection(rows: List<ToolArgumentRow>) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** 返回结果值的同行展示长度上限：超过（或多行）换为堆叠排版。 */
+private const val STEP_RESULT_INLINE_MAX_CHARS = 60
+
+/**
+ * 返回结果区块：把返回内容解析成结构化节点树后渲染。
+ *
+ * 支持：严格 JSON 对象/数组、本地 Agent 的扁平化预览（`{key=value, ...}`）、
+ * 字符串值里再嵌一层 JSON 的递归下钻；解析不动的部分按纯文本整段展示。
+ */
+@Composable
+private fun StepResultSection(
+    resultText: String,
+    truncatedNotice: String?
+) {
+    val rootNode = remember(resultText) { parseStepResultNode(resultText) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.chat_step_result),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (!truncatedNotice.isNullOrBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = truncatedNotice,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        androidx.compose.material3.Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ) {
+            Column(
+                modifier = Modifier.padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                StepResultNodeView(rootNode)
+            }
+        }
+    }
+}
+
+/** 结构化结果节点渲染：对象逐键、数组逐项、文本整段。 */
+@Composable
+private fun StepResultNodeView(node: StepResultNode) {
+    when (node) {
+        is StepResultNode.Obj -> node.entries.forEach { (name, value) ->
+            StepResultEntry(name = name, value = value)
+        }
+        is StepResultNode.Arr -> node.items.forEachIndexed { index, item ->
+            StepResultListItem(index = index + 1, item = item)
+        }
+        is StepResultNode.Text -> Text(
+            text = node.text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/**
+ * 对象单键渲染：键永不换行，键值能否同行由实测总宽决定。
+ *
+ * 短文本值用 TextMeasurer 分别实测键与值的单行宽度：两者加间距能放进一行就同行
+ * （键按实际宽度排、不换行，值占满剩余空间），放不下（键过长 / 值过长）则值换到键的下方。
+ * 键在任何布局下都单行展示，超宽时省略号收尾。
+ */
+@Composable
+private fun StepResultEntry(name: String, value: StepResultNode) {
+    val inlineText = (value as? StepResultNode.Text)?.text
+        ?.takeIf { it.length <= STEP_RESULT_INLINE_MAX_CHARS && !it.contains('\n') }
+    if (inlineText == null || name.isBlank()) {
+        // 值是多行长文本/嵌套结构，或没有键名：键（如有）单独一行，内容缩进在下方
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (name.isNotBlank()) {
+                StepResultKeyText(name)
+                Spacer(Modifier.height(2.dp))
+            }
+            StepResultNested(value)
+        }
+        return
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val keyStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+        val valueStyle = MaterialTheme.typography.labelSmall
+        val textMeasurer = rememberTextMeasurer()
+        val keyWidthPx = remember(name, keyStyle) {
+            textMeasurer.measure(
+                text = AnnotatedString(name),
+                style = keyStyle,
+                softWrap = false,
+                maxLines = 1
+            ).size.width
+        }
+        val valueWidthPx = remember(inlineText, valueStyle) {
+            textMeasurer.measure(
+                text = AnnotatedString(inlineText),
+                style = valueStyle,
+                softWrap = false,
+                maxLines = 1
+            ).size.width
+        }
+        val gapPx = with(LocalDensity.current) { 6.dp.toPx() }
+        // 键 + 间距 + 值的整体宽度放得下一行才同行；键很长但值很短时同样命中
+        if (keyWidthPx + gapPx + valueWidthPx <= constraints.maxWidth) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                StepResultKeyText(name)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = inlineText,
+                    style = valueStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                StepResultKeyText(name)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = inlineText,
+                    style = valueStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** 键文本：单行不换行，超宽时省略号收尾。 */
+@Composable
+private fun StepResultKeyText(name: String, modifier: Modifier = Modifier) {
+    Text(
+        text = name,
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+        softWrap = false,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+    )
+}
+
+/** 数组单项渲染：短文本带序号同行展示，复杂结构序号在上、内容缩进。 */
+@Composable
+private fun StepResultListItem(index: Int, item: StepResultNode) {
+    val inlineText = (item as? StepResultNode.Text)?.text
+    if (inlineText != null &&
+        inlineText.length <= STEP_RESULT_INLINE_MAX_CHARS && !inlineText.contains('\n')
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                text = "$index.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(22.dp)
+            )
+            Text(
+                text = inlineText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "$index.",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(2.dp))
+            StepResultNested(item)
+        }
+    }
+}
+
+/** 嵌套值渲染：左侧竖线标识层级，内容递归渲染，逐层自然缩进。 */
+@Composable
+private fun StepResultNested(value: StepResultNode) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(1.dp)
+                )
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            StepResultNodeView(value)
         }
     }
 }

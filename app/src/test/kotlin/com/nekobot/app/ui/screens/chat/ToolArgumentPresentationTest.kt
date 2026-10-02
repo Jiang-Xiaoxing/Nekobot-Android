@@ -98,4 +98,98 @@ class ToolArgumentPresentationTest {
         // 没有参数名的裸文本只能堆叠展示
         assertTrue(!ToolArgumentRow("", "adb shell").fitsInline())
     }
+
+    @Test
+    fun strictJsonResultBecomesObjectNode() {
+        val node = parseStepResultNode("""{"success": true, "count": 3}""")
+
+        assertTrue(node is StepResultNode.Obj)
+        node as StepResultNode.Obj
+        assertEquals(2, node.entries.size)
+        assertEquals("success" to StepResultNode.Text("true"), node.entries[0])
+        assertEquals("count" to StepResultNode.Text("3"), node.entries[1])
+    }
+
+    @Test
+    fun jsonArrayResultBecomesArrayNode() {
+        val node = parseStepResultNode("""["a", "b"]""")
+
+        assertTrue(node is StepResultNode.Arr)
+        node as StepResultNode.Arr
+        assertEquals(listOf("a", "b"), node.items.map { (it as StepResultNode.Text).text })
+    }
+
+    @Test
+    fun flattenedPreviewResultIsParsedRecursively() {
+        val node = parseStepResultNode("{success=true, data={status=done, size=3}, tags=[a, b]}")
+
+        assertTrue(node is StepResultNode.Obj)
+        node as StepResultNode.Obj
+        assertEquals(3, node.entries.size)
+        assertEquals("success" to StepResultNode.Text("true"), node.entries[0])
+        // 嵌套的扁平化对象继续下钻成对象节点，而不是整段文本
+        val data = node.entries[1].second
+        assertTrue(data is StepResultNode.Obj)
+        assertEquals(2, (data as StepResultNode.Obj).entries.size)
+        // 嵌套数组下钻成数组节点
+        val tags = node.entries[2].second
+        assertTrue(tags is StepResultNode.Arr)
+        assertEquals(2, (tags as StepResultNode.Arr).items.size)
+    }
+
+    @Test
+    fun jsonStringValuesContainingJsonAreDrilledDown() {
+        val node = parseStepResultNode("""{"data": "{\"a\": 1}"}""")
+
+        assertTrue(node is StepResultNode.Obj)
+        val data = (node as StepResultNode.Obj).entries.single().second
+        assertTrue(data is StepResultNode.Obj)
+        assertEquals("a" to StepResultNode.Text("1"), (data as StepResultNode.Obj).entries.single())
+    }
+
+    @Test
+    fun plainTextResultIsKeptVerbatim() {
+        val text = "{这不是键值格式的内容}"
+        assertEquals(StepResultNode.Text(text), parseStepResultNode(text))
+        assertEquals(
+            StepResultNode.Text("adb shell input keyevent 3"),
+            parseStepResultNode("adb shell input keyevent 3")
+        )
+    }
+
+    @Test
+    fun truncatedFlattenedResultKeepsLeadingBraceOutOfKeyNames() {
+        // 预览超限被截断时右括号缺失，左括号不能混进第一个键名
+        val node = parseStepResultNode("{success=true, data=被截断的长文本…")
+
+        assertTrue(node is StepResultNode.Obj)
+        val entries = (node as StepResultNode.Obj).entries
+        assertEquals("success", entries[0].first)
+        assertEquals("true", (entries[0].second as StepResultNode.Text).text)
+        assertEquals("data", entries[1].first)
+    }
+
+    @Test
+    fun truncatedJsonResultFallsBackToRawText() {
+        val text = """{"success": true, "data": "被截断的内容"""
+        val node = parseStepResultNode(text)
+
+        // 残缺 JSON 不强行拆分，整段原文展示
+        assertEquals(StepResultNode.Text(text), node)
+    }
+
+    @Test
+    fun deepNestingIsCappedByDepthLimit() {
+        var text = "底层"
+        repeat(10) { text = "{\"n\": $text}" }
+        var node: StepResultNode = parseStepResultNode(text)
+        var levels = 0
+        while (node is StepResultNode.Obj) {
+            node = (node as StepResultNode.Obj).entries.single().second
+            levels++
+        }
+        // 深度上限 6：超过后按纯文本展示，不再无限展开
+        assertTrue(levels <= STEP_RESULT_MAX_DEPTH)
+        assertTrue(node is StepResultNode.Text)
+    }
 }
