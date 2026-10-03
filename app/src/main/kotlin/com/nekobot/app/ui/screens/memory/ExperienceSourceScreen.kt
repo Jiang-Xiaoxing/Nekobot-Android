@@ -137,16 +137,19 @@ private class OriginalChatReadSession(
 
 class ExperienceSourceViewModel(
     val dataSourceRevision: StateFlow<Long> = ServiceContainer.dataSourceRevision,
-    private val readerFactory: () -> ExperienceSourceReader = { ServiceContainer.localRepository.experienceSourceReader() },
+    private val readerFactory: (() -> ExperienceSourceReader)? = null,
     private val readPage: (suspend (String, String, String?) -> ExperienceSourcePage?)? = null
 ) : BaseViewModel() {
     private val _page = MutableStateFlow<ExperienceSourcePage?>(null)
     val page = _page.asStateFlow()
     private var request = 0
     private var job: Job? = null
+    private var readActive = false
+    private var refreshPending = false
     private var requestedTarget: Pair<String, String>? = null
     private val access = OriginalChatReadSession(viewModelScope, dataSourceRevision,
-        if (readPage == null) readerFactory else null, { invalidate() }, ::refreshLoaded,
+        if (readPage == null || readerFactory != null) readerFactory ?: { ServiceContainer.localRepository.experienceSourceReader() } else null,
+        { invalidate() }, ::refreshLoaded,
         { invalidate(R.string.experience_source_load_failed) })
 
     fun ownsCurrentDatabase(revision: Long = dataSourceRevision.value): Boolean = access.isCurrent(revision)
@@ -157,6 +160,9 @@ class ExperienceSourceViewModel(
     private fun invalidate(reason: Int = R.string.experience_source_database_changed) {
         request++
         job?.cancel()
+        job = null
+        readActive = false
+        refreshPending = false
         _page.value = null
         setLoading(false)
         showError(string(reason))
@@ -194,43 +200,61 @@ class ExperienceSourceViewModel(
     }
 
     private fun refreshLoaded() {
+        if (readActive) { refreshPending = true; return }
         val current = _page.value ?: return
         val reader = access.reader ?: return
         read(showBusy = false, clearOnFailure = true) { reader.refreshSource(current) }
     }
 
-    /** Publish only a still-current read; repeat a bounded query if originals changed during it. */
+    /** Defer background invalidation instead of cancelling pagination or repeatedly fetching it. */
     private fun read(showBusy: Boolean = true, clearOnFailure: Boolean = false, block: suspend () -> ExperienceSourcePage?) {
         val token = ++request
         job?.cancel()
-        clearError()
+        readActive = true
+        refreshPending = false
+        if (showBusy) clearError()
         setLoading(showBusy)
         job = viewModelScope.launch {
             try {
                 access.awaitObserver()
-                while (token == request && access.isCurrent()) {
-                    val version = access.sourceVersion
-                    val result = block()
-                    if (token != request || !access.isCurrent()) return@launch
-                    if (version != access.sourceVersion) continue
-                    _page.value = result
-                    if (result == null) showError(string(R.string.experience_source_missing))
-                    break
+                if (token != request || !access.isCurrent()) return@launch
+                val version = access.sourceVersion
+                refreshPending = false
+                var result = block()
+                if (token != request || !access.isCurrent()) return@launch
+                if (version != access.sourceVersion && result != null && access.reader != null) {
+                    // Validate the expanded result once, without discarding or rereading the next page.
+                    val validatedVersion = access.sourceVersion
+                    result = access.reader!!.refreshSource(result)
+                    if (validatedVersion == access.sourceVersion) refreshPending = false
                 }
+                if (token != request || !access.isCurrent()) return@launch
+                _page.value = result
+                if (result == null) showError(string(R.string.experience_source_missing))
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 if (token == request && access.isCurrent()) {
                     if (clearOnFailure) _page.value = null
                     showError(string(R.string.experience_source_load_failed))
                 }
-            } finally { if (token == request) setLoading(false) }
+            } finally {
+                if (token == request) {
+                    job = null
+                    readActive = false
+                    setLoading(false)
+                    if (refreshPending && access.isCurrent()) {
+                        refreshPending = false
+                        refreshLoaded()
+                    }
+                }
+            }
         }
     }
 }
 
 class ChatLocationViewModel(
     val dataSourceRevision: StateFlow<Long> = ServiceContainer.dataSourceRevision,
-    private val readerFactory: () -> ExperienceSourceReader = { ServiceContainer.localRepository.experienceSourceReader() },
+    private val readerFactory: (() -> ExperienceSourceReader)? = null,
     private val readWindow: (suspend (String, String, String?) -> ChatHistoryWindow?)? = null,
     private val readPage: (suspend (String, String, Boolean, String?) -> com.nekobot.app.data.local.ChatHistoryPage?)? = null
 ) : BaseViewModel() {
@@ -240,9 +264,12 @@ class ChatLocationViewModel(
     val locationRevision = _locationRevision.asStateFlow()
     private var request = 0
     private var job: Job? = null
+    private var readActive = false
+    private var refreshPending = false
     private var requestedTarget: Triple<String, String, String?>? = null
     private val access = OriginalChatReadSession(viewModelScope, dataSourceRevision,
-        if (readWindow == null) readerFactory else null, { invalidate() }, ::refreshLoaded,
+        if (readWindow == null || readerFactory != null) readerFactory ?: { ServiceContainer.localRepository.experienceSourceReader() } else null,
+        { invalidate() }, ::refreshLoaded,
         { invalidate(R.string.experience_source_load_failed) })
 
     fun ownsCurrentDatabase(revision: Long = dataSourceRevision.value): Boolean = access.isCurrent(revision)
@@ -252,6 +279,9 @@ class ChatLocationViewModel(
     private fun invalidate(reason: Int = R.string.experience_source_database_changed) {
         request++
         job?.cancel()
+        job = null
+        readActive = false
+        refreshPending = false
         _window.value = null
         setLoading(false)
         showError(string(reason))
@@ -298,6 +328,7 @@ class ChatLocationViewModel(
     }
 
     private fun refreshLoaded() {
+        if (readActive) { refreshPending = true; return }
         val current = _window.value ?: return
         val reader = access.reader ?: return
         read(showBusy = false, clearOnFailure = true) { reader.refreshHistory(current) }
@@ -307,28 +338,44 @@ class ChatLocationViewModel(
     private fun read(locate: Boolean = false, showBusy: Boolean = true, clearOnFailure: Boolean = false, block: suspend () -> ChatHistoryWindow?) {
         val token = ++request
         job?.cancel()
-        clearError()
+        readActive = true
+        refreshPending = false
+        if (showBusy) clearError()
         setLoading(showBusy)
         job = viewModelScope.launch {
             try {
                 access.awaitObserver()
-                while (token == request && access.isCurrent()) {
-                    val version = access.sourceVersion
-                    val result = block()
-                    if (token != request || !access.isCurrent()) return@launch
-                    if (version != access.sourceVersion) continue
-                    _window.value = result
-                    if (result != null && locate) _locationRevision.value = token
-                    if (result == null) showError(string(R.string.chat_location_missing))
-                    break
+                if (token != request || !access.isCurrent()) return@launch
+                val version = access.sourceVersion
+                refreshPending = false
+                var result = block()
+                if (token != request || !access.isCurrent()) return@launch
+                if (version != access.sourceVersion && result != null && access.reader != null) {
+                    val validatedVersion = access.sourceVersion
+                    result = access.reader!!.refreshHistory(result)
+                    if (validatedVersion == access.sourceVersion) refreshPending = false
                 }
+                if (token != request || !access.isCurrent()) return@launch
+                _window.value = result
+                if (result != null && locate) _locationRevision.value = token
+                if (result == null) showError(string(R.string.chat_location_missing))
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 if (token == request && access.isCurrent()) {
                     if (clearOnFailure) _window.value = null
                     showError(string(R.string.experience_source_load_failed))
                 }
-            } finally { if (token == request) setLoading(false) }
+            } finally {
+                if (token == request) {
+                    job = null
+                    readActive = false
+                    setLoading(false)
+                    if (refreshPending && access.isCurrent()) {
+                        refreshPending = false
+                        refreshLoaded()
+                    }
+                }
+            }
         }
     }
 

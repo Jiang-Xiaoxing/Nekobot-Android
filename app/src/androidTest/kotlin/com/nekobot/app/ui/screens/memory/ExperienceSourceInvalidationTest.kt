@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
+import androidx.room.InvalidationTracker
 import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -32,8 +33,10 @@ import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.data.local.db.LocalSessionEntity
 import com.nekobot.app.data.local.db.NekobotDatabase
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -42,6 +45,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class ExperienceSourceInvalidationTest {
@@ -69,6 +73,129 @@ class ExperienceSourceInvalidationTest {
     private fun clickPage(id: Int) {
         compose.onNode(hasScrollAction()).performScrollToNode(hasText(text(id)))
         compose.onNodeWithText(text(id)).performClick()
+    }
+
+    /** Real writes from a separate chat reproduce table-wide Room invalidation. */
+    private fun writeOtherChatProgress(db: NekobotDatabase) = runBlocking {
+        db.sessionDao().upsert(LocalSessionEntity(id = "other", name = "后台会话", createdAt = "now", updatedAt = "now"))
+        repeat(8) { step ->
+            db.messageDao().upsert(rows("后台", 1..1).single().copy(
+                id = "other-progress", sessionId = "other", thinkingCards = "[{\"title\":\"step-$step\"}]"
+            ))
+            delay(25)
+        }
+    }
+
+    @Test fun otherChatWritesDoNotCancelSourcePaginationAndOwnEditsAreRevalidated() = sourcePaginationSurvivesWrites(fail = false)
+    @Test fun backgroundRefreshDoesNotHideSourcePaginationFailure() = sourcePaginationSurvivesWrites(fail = true)
+
+    private fun sourcePaginationSurvivesWrites(fail: Boolean) {
+        val db = database(); seed(db, "A", 180)
+        val reader = ExperienceSourceReader(db)
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val cancelled = AtomicBoolean(false); val pageReads = AtomicInteger()
+        val invalidations = AtomicInteger()
+        val observer = object : InvalidationTracker.Observer("local_messages") {
+            override fun onInvalidated(tables: Set<String>) { invalidations.incrementAndGet() }
+        }
+        db.invalidationTracker.addObserver(observer)
+        val vm = ExperienceSourceViewModel(MutableStateFlow(0L), { reader }) { session, archive, cursor ->
+            val result = reader.sourcePage(session, archive, cursor)
+            if (cursor != null) {
+                pageReads.incrementAndGet(); started.complete(Unit)
+                try { release.await() } catch (error: CancellationException) { cancelled.set(true); throw error }
+                if (fail) error("Synthetic pagination failure")
+            }
+            result
+        }
+        try {
+            compose.runOnIdle { vm.load("s", "episode") }
+            compose.waitUntil(10_000) { vm.page.value?.messages?.size == 60 && !vm.loading.value }
+            compose.runOnIdle { vm.loadMore() }
+            compose.waitUntil(5000) { started.isCompleted }
+            writeOtherChatProgress(db)
+            runBlocking {
+                db.messageDao().updateContent("m1", "已修改 原话 1")
+                db.messageDao().updateDeleted("m2", true)
+            }
+            compose.waitUntil(5000) { invalidations.get() > 0 }
+            compose.runOnIdle {
+                assertFalse("Background writes cancelled source pagination", cancelled.get())
+                assertTrue("The user read must remain in progress", vm.loading.value)
+            }
+            release.complete(Unit)
+            compose.waitUntil(10_000) {
+                val completed = if (fail) vm.error.value != null && vm.page.value?.messages?.size == 59
+                    else vm.page.value?.messages?.any { it.id == "m120" } == true
+                completed && !vm.loading.value
+            }
+            compose.runOnIdle {
+                val page = vm.page.value!!
+                val end = if (fail) 60 else 120
+                assertEquals((1..end).filter { it != 2 }.map { "m$it" }, page.messages.map { it.id })
+                assertEquals("已修改 原话 1", page.messages.first().content)
+                assertEquals(1, pageReads.get())
+                assertTrue(page.hasMore)
+                if (fail) assertNotNull(vm.error.value) else assertNull(vm.error.value)
+            }
+        } finally {
+            release.complete(Unit); compose.runOnIdle { vm.viewModelScope.cancel() }
+            db.invalidationTracker.removeObserver(observer); db.close()
+        }
+    }
+
+    @Test fun otherChatWritesDoNotCancelNewerHistoryPagination() = historyPaginationSurvivesWrites(older = false)
+    @Test fun otherChatWritesDoNotCancelOlderHistoryPagination() = historyPaginationSurvivesWrites(older = true)
+
+    private fun historyPaginationSurvivesWrites(older: Boolean) {
+        val db = database(); seed(db, "A", 300)
+        val reader = ExperienceSourceReader(db)
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val cancelled = AtomicBoolean(false); val pageReads = AtomicInteger()
+        val invalidations = AtomicInteger()
+        val observer = object : InvalidationTracker.Observer("local_messages") {
+            override fun onInvalidated(tables: Set<String>) { invalidations.incrementAndGet() }
+        }
+        db.invalidationTracker.addObserver(observer)
+        val vm = ChatLocationViewModel(MutableStateFlow(0L), { reader },
+            readWindow = { session, message, archive -> reader.historyWindow(session, message, archive) },
+            readPage = { session, cursor, direction, archive ->
+                val result = reader.historyPage(session, cursor, direction, archive)
+                pageReads.incrementAndGet(); started.complete(Unit)
+                try { release.await() } catch (error: CancellationException) { cancelled.set(true); throw error }
+                result
+            })
+        try {
+            compose.runOnIdle { vm.load("s", "m120", "episode") }
+            compose.waitUntil(10_000) { vm.window.value?.messages?.size == 121 && !vm.loading.value }
+            compose.runOnIdle { vm.loadMore(older) }
+            compose.waitUntil(5000) { started.isCompleted }
+            writeOtherChatProgress(db)
+            runBlocking {
+                db.messageDao().updateContent("m60", "已修改 原话 60")
+                db.messageDao().updateDeleted("m61", true)
+            }
+            compose.waitUntil(5000) { invalidations.get() > 0 }
+            compose.runOnIdle {
+                assertFalse("Background writes cancelled history pagination", cancelled.get())
+                assertTrue("The user read must remain in progress", vm.loading.value)
+            }
+            release.complete(Unit)
+            val endpoint = if (older) "m1" else "m240"
+            compose.waitUntil(10_000) { vm.window.value?.messages?.any { it.id == endpoint } == true && !vm.loading.value }
+            compose.runOnIdle {
+                val window = vm.window.value!!
+                val expected = (if (older) 1..180 else 60..240).filter { it != 61 }.map { "m$it" }
+                assertEquals(expected, window.messages.map { it.id })
+                assertEquals("已修改 原话 60", window.messages.single { it.id == "m60" }.content)
+                assertFalse("m61" in window.sourceMessageIds)
+                assertEquals(1, pageReads.get())
+                assertNull(vm.error.value)
+            }
+        } finally {
+            release.complete(Unit); compose.runOnIdle { vm.viewModelScope.cancel() }
+            db.invalidationTracker.removeObserver(observer); db.close()
+        }
     }
 
     @Test fun retiredArchiveListClearsPrivateMetadataAndRejectsQueuedSourceClickAndSave() {
