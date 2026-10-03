@@ -4,24 +4,33 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.test.platform.app.InstrumentationRegistry
 import android.graphics.Bitmap
 import java.io.File
+import com.nekobot.app.R
 import com.nekobot.app.data.local.ChatHistoryWindow
 import com.nekobot.app.data.local.ChatHistoryPage
 import com.nekobot.app.data.local.ExperienceSourcePage
@@ -33,7 +42,7 @@ import org.junit.Rule
 import org.junit.Test
 
 class ExperienceSourceScreenTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val original = LocalMessageEntity(
         id = "original", sessionId = "s", role = "user", content = "这是逐句原话，不是经历摘要。",
         timestamp = "2026-10-02 18:02:00", createdAt = "2026-10-02 18:02:00"
@@ -44,19 +53,149 @@ class ExperienceSourceScreenTest {
         summary = "这一段的摘要", sourceFingerprint = "f", createdAt = "now", updatedAt = "now"
     )
 
+    private fun uiText(resourceId: Int, vararg args: Any) = compose.activity.getString(resourceId, *args)
+
     private fun captureFixture(name: String) {
         val image = compose.onRoot().captureToImage().asAndroidBitmap()
         val folder = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)!!
         File(folder, name).outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    private fun conversationRows(range: IntRange) = range.map {
+        original.copy(id = "m$it", role = if (it % 2 == 1) "user" else "assistant", content = "原话 $it")
+    }
+
+    private fun scrollToOriginal(id: String) {
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("source-message:$id"))
+        compose.onNodeWithTag("source-message:$id").assertIsDisplayed()
+    }
+
+    @Test fun sourceRetainsLoadedPagesAndScrollOnResumeAndBackStackReturn() {
+        var firstPageReads = 0
+        val visible = mutableStateOf(true)
+        val vm = ExperienceSourceViewModel { _, _, cursor ->
+            if (cursor == null) firstPageReads++
+            ExperienceSourcePage(archive, "原会话", conversationRows(if (cursor == null) 1..20 else 21..40),
+                40, 40, cursor == null)
+        }
+        compose.setContent {
+            MaterialTheme {
+                val savedState = rememberSaveableStateHolder()
+                if (visible.value) savedState.SaveableStateProvider("source") {
+                    ExperienceSourceScreen("s", "episode", {}, {}, vm)
+                }
+            }
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(uiText(R.string.experience_source_load_more)))
+        compose.onNodeWithText(uiText(R.string.experience_source_load_more)).performClick()
+        scrollToOriginal("m39")
+        val previousTop = compose.onNodeWithTag("source-message:m39").fetchSemanticsNode().boundsInRoot.top
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(1, firstPageReads)
+            assertEquals(40, vm.page.value!!.messages.size)
+        }
+        compose.onNodeWithTag("source-message:m39").assertIsDisplayed()
+        assertEquals(previousTop, compose.onNodeWithTag("source-message:m39").fetchSemanticsNode().boundsInRoot.top, 1f)
+        compose.runOnIdle { visible.value = false }
+        compose.waitForIdle()
+        compose.runOnIdle { visible.value = true }
+        compose.onNodeWithTag("source-message:m39").assertIsDisplayed()
+        assertEquals(previousTop, compose.onNodeWithTag("source-message:m39").fetchSemanticsNode().boundsInRoot.top, 1f)
+        compose.runOnIdle { assertEquals(1, firstPageReads) }
+    }
+
+    @Test fun historyRetainsLoadedPagesAndBrowsedPositionOnResumeAndReturn() {
+        var windowReads = 0
+        val visible = mutableStateOf(true)
+        val vm = ChatLocationViewModel(
+            readWindow = { _, _, _ ->
+                windowReads++
+                ChatHistoryWindow("s", "原会话", "m10", conversationRows(1..40), false, true)
+            },
+            readPage = { _, _, _, _ -> ChatHistoryPage(conversationRows(41..60), false) }
+        )
+        compose.setContent {
+            MaterialTheme {
+                val savedState = rememberSaveableStateHolder()
+                if (visible.value) savedState.SaveableStateProvider("history") {
+                    ChatLocationScreen("s", "m10", {}, {}, vm)
+                }
+            }
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(uiText(R.string.chat_location_newer)))
+        compose.onNodeWithText(uiText(R.string.chat_location_newer)).performClick()
+        scrollToOriginal("m59")
+        val previousTop = compose.onNodeWithTag("source-message:m59").fetchSemanticsNode().boundsInRoot.top
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(1, windowReads)
+            assertEquals(60, vm.window.value!!.messages.size)
+        }
+        compose.onNodeWithTag("source-message:m59").assertIsDisplayed()
+        assertEquals(previousTop, compose.onNodeWithTag("source-message:m59").fetchSemanticsNode().boundsInRoot.top, 1f)
+        compose.runOnIdle { visible.value = false }
+        compose.waitForIdle()
+        compose.runOnIdle { visible.value = true }
+        compose.onNodeWithTag("source-message:m59").assertIsDisplayed()
+        assertEquals(previousTop, compose.onNodeWithTag("source-message:m59").fetchSemanticsNode().boundsInRoot.top, 1f)
+        compose.runOnIdle { assertEquals(1, windowReads) }
+    }
+
+    @Test fun sourceReloadsForExplicitRefreshAndEachChangedTarget() {
+        val target = mutableStateOf("s" to "episode")
+        val reads = mutableListOf<Pair<String, String>>()
+        val vm = ExperienceSourceViewModel { session, episode, _ ->
+            reads += session to episode
+            ExperienceSourcePage(archive.copy(id = episode, sessionId = session), "原会话",
+                listOf(original.copy(content = "$session/$episode")), 1, 1, false)
+        }
+        compose.setContent { MaterialTheme { ExperienceSourceScreen(target.value.first, target.value.second, {}, {}, vm) } }
+        compose.onNodeWithText("s/episode").assertIsDisplayed()
+        compose.onNodeWithContentDescription(uiText(R.string.experience_source_refresh)).performClick()
+        compose.runOnIdle { assertEquals(listOf("s" to "episode", "s" to "episode"), reads) }
+        compose.runOnIdle { target.value = "s" to "other-episode" }
+        compose.onNodeWithText("s/other-episode").assertIsDisplayed()
+        compose.runOnIdle { target.value = "other-session" to "other-episode" }
+        compose.onNodeWithText("other-session/other-episode").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(4, reads.size) }
+    }
+
+    @Test fun historyReloadsAndLocatesForEachChangedTarget() {
+        val target = mutableStateOf(Triple("s", "m10", "episode"))
+        val reads = mutableListOf<Triple<String, String, String?>>()
+        val vm = ChatLocationViewModel(readWindow = { session, message, episode ->
+            reads += Triple(session, message, episode)
+            ChatHistoryWindow(session, "原会话", message, conversationRows(1..40), false, false,
+                archiveId = episode, sourceMessageIds = setOf(message))
+        })
+        compose.setContent { MaterialTheme {
+            ChatLocationScreen(target.value.first, target.value.second, {}, {}, vm, target.value.third)
+        } }
+        compose.onNodeWithTag("source-message:m10").assertIsDisplayed()
+        compose.runOnIdle { target.value = Triple("s", "m20", "episode") }
+        compose.onNodeWithTag("source-message:m20").assertIsDisplayed()
+        compose.runOnIdle { target.value = Triple("s", "m20", "other-episode") }
+        compose.onNodeWithTag("source-message:m20").assertIsDisplayed()
+        compose.runOnIdle { target.value = Triple("other-session", "m20", "other-episode") }
+        compose.onNodeWithTag("source-message:m20").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(listOf(Triple("s", "m10", "episode"), Triple("s", "m20", "episode"),
+                Triple("s", "m20", "other-episode"), Triple("other-session", "m20", "other-episode")), reads)
+        }
+    }
+
     @Test fun sourcePageShowsConversationAndOriginalAndLocatesById() {
         var located: String? = null
         val vm = ExperienceSourceViewModel { _, _, _ -> ExperienceSourcePage(archive, "姜晚星原会话", listOf(original), 1, 1, false) }
         compose.setContent { MaterialTheme { ExperienceSourceScreen("s", "episode", {}, { located = it }, vm) } }
-        compose.onNodeWithText("来源会话：姜晚星原会话").assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.experience_source_session, "姜晚星原会话")).assertIsDisplayed()
         compose.onNodeWithText(original.content).assertIsDisplayed()
-        compose.onNodeWithText("定位原聊天").performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_jump)).performClick()
         compose.runOnIdle { assertEquals("original", located) }
     }
 
@@ -66,8 +205,8 @@ class ExperienceSourceScreenTest {
         val vm = ChatLocationViewModel(readWindow = { _, _, _ -> ChatHistoryWindow("s", "姜晚星原会话", "m60", rows, true, true) })
         compose.setContent { MaterialTheme { ChatLocationScreen("s", "m60", {}, { latest = true }, vm) } }
         compose.onNodeWithText("周边原话 60").assertIsDisplayed()
-        compose.onNodeWithText("已定位到这条原消息").assertIsDisplayed()
-        compose.onNodeWithText("回到最新聊天").performClick()
+        compose.onNodeWithText(uiText(R.string.chat_location_target)).assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.chat_location_latest)).performClick()
         compose.runOnIdle { assertEquals(true, latest) }
     }
 
@@ -89,9 +228,9 @@ class ExperienceSourceScreenTest {
             compose.waitForIdle()
         }
         compose.runOnIdle { assertEquals(300, vm.window.value!!.messages.size) }
-        compose.onNodeWithText("返回定位消息").performClick()
+        compose.onNodeWithText(uiText(R.string.chat_location_return_target)).performClick()
         compose.onNodeWithText("周边原话 60").assertIsDisplayed()
-        compose.onNodeWithText("已定位到这条原消息").assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.chat_location_target)).assertIsDisplayed()
     }
 
     @Test fun importedOtherCharacterShowsOwnNameWithCompactRepliesAndOneSegmentButton() {
@@ -102,7 +241,7 @@ class ExperienceSourceScreenTest {
             ExperienceSourcePage(archive, "另一个玩家的会话", replies, 3, 3, false, assistantName = "苏雨")
         }
         compose.setContent { MaterialTheme { ExperienceSourceScreen("s", "episode", {}, { located = it }, vm) } }
-        compose.onAllNodesWithText("定位原聊天").assertCountEquals(1)
+        compose.onAllNodesWithText(uiText(R.string.experience_source_jump)).assertCountEquals(1)
         compose.onNodeWithTag("source-message:a2").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("苏雨").assertCountEquals(1)
         compose.onNodeWithText("助手").assertDoesNotExist()
@@ -115,7 +254,7 @@ class ExperienceSourceScreenTest {
         assertTrue("User replies align right of role replies", userBounds.left > roleBounds.left)
         assertTrue("Consecutive replies have a small gap", nextBounds.top - roleBounds.bottom <= 16f)
         captureFixture("source-bubbles-other-role.png")
-        compose.onNodeWithText("定位原聊天").performScrollTo().performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_jump)).performScrollTo().performClick()
         compose.runOnIdle { assertEquals("original", located) }
     }
 
@@ -128,11 +267,11 @@ class ExperienceSourceScreenTest {
             else ExperienceSourcePage(archive, "原会话", listOf(a2), 3, 3, false, "苏雨")
         }
         compose.setContent { MaterialTheme { ExperienceSourceScreen("s", "episode", {}, { located = it }, vm) } }
-        compose.onNodeWithText("加载更多原话").performScrollTo().performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_load_more)).performScrollTo().performClick()
         compose.onNodeWithTag("source-message:a2").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("source-turn:a2").assertDoesNotExist()
-        compose.onNodeWithText("定位原聊天").performScrollTo().performClick()
-        compose.onAllNodesWithText("定位原聊天").assertCountEquals(1)
+        compose.onNodeWithText(uiText(R.string.experience_source_jump)).performScrollTo().performClick()
+        compose.onAllNodesWithText(uiText(R.string.experience_source_jump)).assertCountEquals(1)
         compose.runOnIdle { assertEquals("original", located) }
     }
 
@@ -152,7 +291,7 @@ class ExperienceSourceScreenTest {
             }
         )
         compose.setContent { MaterialTheme { ChatLocationScreen("s", "m60", {}, {}, vm, "episode") } }
-        compose.onNodeWithText("已定位到这段原聊天").assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.chat_location_segment_target)).assertIsDisplayed()
         compose.onNodeWithText("连续原话 60").assertIsDisplayed()
         compose.onNodeWithText("助手").assertDoesNotExist()
         compose.runOnIdle { assertEquals("episode", requestedArchive) }
@@ -165,8 +304,8 @@ class ExperienceSourceScreenTest {
             assertEquals(300, vm.window.value!!.messages.size)
             assertEquals(emptySet<String>(), vm.window.value!!.sourceMessageIds)
         }
-        compose.onNodeWithText("返回定位段落").performClick()
-        compose.onNodeWithText("已定位到这段原聊天").assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.chat_location_return_segment)).performClick()
+        compose.onNodeWithText(uiText(R.string.chat_location_segment_target)).assertIsDisplayed()
         compose.onNodeWithText("连续原话 60").assertIsDisplayed()
         compose.runOnIdle { assertEquals((60..70).map { "m$it" }.toSet(), vm.window.value!!.sourceMessageIds) }
     }
@@ -184,11 +323,11 @@ class ExperienceSourceScreenTest {
         compose.onNodeWithTag("source-expand:long").performScrollTo().performClick()
         val expandedHeight = compose.onNodeWithTag("source-message:long").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Expanded original has more visible lines", expandedHeight > collapsedHeight)
-        compose.onNodeWithText("收起原文").performScrollTo().performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_original_collapse)).performScrollTo().performClick()
         val restoredHeight = compose.onNodeWithTag("source-message:long").fetchSemanticsNode().boundsInRoot.height
         assertEquals(collapsedHeight, restoredHeight, 1f)
-        compose.onNodeWithText("展开原文").assertIsDisplayed()
-        compose.onNodeWithText("定位原聊天").performScrollTo().performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_original_expand)).assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.experience_source_jump)).performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(longBody, vm.page.value!!.messages.last().content)
             assertEquals("original", located)
@@ -201,9 +340,9 @@ class ExperienceSourceScreenTest {
         compose.onNodeWithTag("source-summary").assertDoesNotExist()
         compose.onNodeWithTag("source-summary-toggle").performClick()
         compose.onNodeWithTag("source-summary").assertTextEquals(archive.summary).assertIsDisplayed()
-        compose.onNodeWithText("收起经历摘要").performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_summary_collapse)).performClick()
         compose.onNodeWithTag("source-summary").assertDoesNotExist()
-        compose.onAllNodesWithText("定位原聊天").assertCountEquals(1)
+        compose.onAllNodesWithText(uiText(R.string.experience_source_jump)).assertCountEquals(1)
     }
 
     @Test fun bubbleLayoutAtLargeFontKeepsShortEmotionsCompactAndOriginalExpandable() {
@@ -229,7 +368,7 @@ class ExperienceSourceScreenTest {
                 }
             }
         }
-        compose.onNodeWithText("定位原聊天").assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.experience_source_jump)).assertIsDisplayed()
         compose.onNodeWithTag("source-message:emotion").assertTextEquals("[哼]")
         val emotion = compose.onNodeWithTag("source-bubble:emotion").fetchSemanticsNode().boundsInRoot
         val user = compose.onNodeWithTag("source-bubble:original").fetchSemanticsNode().boundsInRoot
@@ -238,10 +377,10 @@ class ExperienceSourceScreenTest {
         captureFixture("source-bubbles-large-font.png")
         compose.onNodeWithTag("source-expand:reply-0").performClick()
         compose.onNodeWithTag("source-message:reply-0").assertTextEquals(replyBodies.first())
-        compose.onNodeWithText("收起原文").performScrollTo().performClick()
+        compose.onNodeWithText(uiText(R.string.experience_source_original_collapse)).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(rows, vm.page.value!!.messages) }
         compose.runOnIdle { previewFontScale.value = 1f }
-        compose.onNodeWithText("定位原聊天").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(uiText(R.string.experience_source_jump)).performScrollTo().assertIsDisplayed()
         captureFixture("source-bubbles-normal-font.png")
     }
 }

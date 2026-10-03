@@ -47,8 +47,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,8 +75,16 @@ class ExperienceSourceViewModel(
     val page = _page.asStateFlow()
     private var request = 0
     private var job: Job? = null
+    private var requestedTarget: Pair<String, String>? = null
 
+    /** Keep loaded pages when the same back-stack entry resumes or re-enters composition. */
+    fun loadIfNeeded(sessionId: String, archiveId: String) {
+        if (requestedTarget != (sessionId to archiveId)) load(sessionId, archiveId)
+    }
+
+    /** Explicit refresh and retry always start a new read, including after a failed attempt. */
     fun load(sessionId: String, archiveId: String) {
+        requestedTarget = sessionId to archiveId
         val token = ++request
         job?.cancel()
         clearError()
@@ -131,8 +137,16 @@ class ChatLocationViewModel(
     val locationRevision = _locationRevision.asStateFlow()
     private var request = 0
     private var job: Job? = null
+    private var requestedTarget: Triple<String, String, String?>? = null
 
+    /** Initialize each requested location once; pagination survives backgrounding and return. */
+    fun loadIfNeeded(sessionId: String, messageId: String, archiveId: String? = null) {
+        if (requestedTarget != Triple(sessionId, messageId, archiveId)) load(sessionId, messageId, archiveId)
+    }
+
+    /** Retry and returning to an evicted anchor deliberately reload the original window. */
     fun load(sessionId: String, messageId: String, archiveId: String? = null) {
+        requestedTarget = Triple(sessionId, messageId, archiveId)
         val token = ++request
         job?.cancel()
         clearError()
@@ -194,7 +208,8 @@ fun ExperienceSourceScreen(
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val turns = remember(page?.messages) { sourceChatTurns(page?.messages.orEmpty()) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.load(sessionId, archiveId) }
+    val listState = key(sessionId, archiveId) { rememberLazyListState() }
+    LaunchedEffect(sessionId, archiveId) { viewModel.loadIfNeeded(sessionId, archiveId) }
     Scaffold(topBar = {
         TopAppBar(
             title = { Text(stringResource(R.string.experience_source_title)) },
@@ -203,7 +218,7 @@ fun ExperienceSourceScreen(
         )
     }) { padding ->
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding)) {
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LazyColumn(state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 error?.let { message -> item("error") { ErrorBanner(message = message, onRetry = { viewModel.load(sessionId, archiveId) }) } }
                 page?.let { current ->
                     item("source") {
@@ -270,14 +285,24 @@ fun ChatLocationScreen(
     val locationRevision by viewModel.locationRevision.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
+    val listState = key(sessionId, messageId, archiveId) { rememberLazyListState() }
+    var positionedRevision by rememberSaveable(sessionId, messageId, archiveId) { mutableStateOf<Int?>(null) }
     val highlightedIds = window?.let { if (it.archiveId == null) setOf(it.anchorMessageId) else it.sourceMessageIds }.orEmpty()
     val turns = remember(window?.messages, highlightedIds) { sourceChatTurns(window?.messages.orEmpty(), highlightedIds) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.load(sessionId, messageId, archiveId) }
+    LaunchedEffect(sessionId, messageId, archiveId) { viewModel.loadIfNeeded(sessionId, messageId, archiveId) }
     LaunchedEffect(window?.anchorMessageId, locationRevision) {
-        val current = window ?: return@LaunchedEffect
+        val current = window
+        if (current == null) {
+            positionedRevision = null
+            return@LaunchedEffect
+        }
+        if (current.sessionId != sessionId || current.anchorMessageId != messageId || current.archiveId != archiveId ||
+            positionedRevision == locationRevision) return@LaunchedEffect
         val index = turns.indexOfFirst { turn -> turn.any { it.id == current.anchorMessageId } }
-        if (index >= 0) listState.scrollToItem(index + 1)
+        if (index >= 0) {
+            listState.scrollToItem(index + 1)
+            positionedRevision = locationRevision
+        }
     }
     Scaffold(topBar = {
         TopAppBar(
