@@ -54,6 +54,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.ChatHistoryWindow
 import com.nekobot.app.data.local.ExperienceSourcePage
+import com.nekobot.app.data.local.ExperienceSourceReader
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
@@ -63,73 +64,175 @@ import com.nekobot.app.ui.components.LoadingOverlay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
+
+/** A retained page belongs to the database generation in which it was opened. */
+private class OriginalChatReadSession(
+    scope: CoroutineScope,
+    private val revisions: StateFlow<Long>,
+    private val readerFactory: (() -> ExperienceSourceReader)?,
+    private val invalidate: () -> Unit,
+    private val refresh: () -> Unit,
+    private val unavailable: () -> Unit
+) {
+    private val ownerRevision = revisions.value
+    private var bound = false
+    private val ownedDatabase: ExperienceSourceReader? = readerFactory?.invoke()
+    private var observer: Job? = null
+    private var observerReady: CompletableDeferred<Unit>? = null
+    private val scope = scope
+    var reader: ExperienceSourceReader? = null
+        private set
+    var sourceVersion = 0L
+        private set
+
+    init {
+        scope.launch {
+            revisions.collect {
+                if (!isCurrent()) {
+                    observer?.cancel()
+                    reader = null
+                    invalidate()
+                }
+            }
+        }
+    }
+
+    /** Capture one repository instance; matching IDs never rebind an old page to another database. */
+    fun bind(): Boolean {
+        if (!isCurrent()) { invalidate(); return false }
+        if (!bound) {
+            reader = ownedDatabase
+            bound = true
+        }
+        if (!isCurrent()) { invalidate(); return false }
+        val boundReader = reader
+        if (boundReader != null && observer?.isActive != true) {
+            val ready = CompletableDeferred<Unit>()
+            observerReady = ready
+            observer = scope.launch {
+                try {
+                    boundReader.changes().collect {
+                        if (isCurrent()) { sourceVersion++; ready.complete(Unit); refresh() }
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (error: Exception) {
+                    ready.completeExceptionally(error)
+                    if (isCurrent()) unavailable()
+                }
+            }
+        }
+        return true
+    }
+
+    suspend fun awaitObserver() { observerReady?.await() }
+    fun isCurrent(revision: Long = revisions.value): Boolean = ownerRevision == revision &&
+        (ownedDatabase == null || runCatching { ownedDatabase!!.sharesDatabase(readerFactory!!.invoke()) }.getOrDefault(false))
+}
 
 class ExperienceSourceViewModel(
-    private val readPage: suspend (String, String, String?) -> ExperienceSourcePage? = { session, archive, cursor ->
-        ServiceContainer.localRepository.readExperienceSourcePage(session, archive, cursor)
-    }
+    val dataSourceRevision: StateFlow<Long> = ServiceContainer.dataSourceRevision,
+    private val readerFactory: () -> ExperienceSourceReader = { ServiceContainer.localRepository.experienceSourceReader() },
+    private val readPage: (suspend (String, String, String?) -> ExperienceSourcePage?)? = null
 ) : BaseViewModel() {
     private val _page = MutableStateFlow<ExperienceSourcePage?>(null)
     val page = _page.asStateFlow()
     private var request = 0
     private var job: Job? = null
     private var requestedTarget: Pair<String, String>? = null
+    private val access = OriginalChatReadSession(viewModelScope, dataSourceRevision,
+        if (readPage == null) readerFactory else null, { invalidate() }, ::refreshLoaded,
+        { invalidate(R.string.experience_source_load_failed) })
+
+    fun ownsCurrentDatabase(revision: Long = dataSourceRevision.value): Boolean = access.isCurrent(revision)
+    fun ownsTarget(sessionId: String, archiveId: String, revision: Long): Boolean =
+        access.isCurrent(revision) && requestedTarget == (sessionId to archiveId)
+
+    /** Fail closed on a database switch or failed change subscription. */
+    private fun invalidate(reason: Int = R.string.experience_source_database_changed) {
+        request++
+        job?.cancel()
+        _page.value = null
+        setLoading(false)
+        showError(string(reason))
+    }
 
     /** Keep loaded pages when the same back-stack entry resumes or re-enters composition. */
     fun loadIfNeeded(sessionId: String, archiveId: String) {
-        if (requestedTarget != (sessionId to archiveId)) load(sessionId, archiveId)
+        if (!access.isCurrent()) invalidate()
+        else if (requestedTarget != (sessionId to archiveId)) load(sessionId, archiveId)
     }
 
     /** Explicit refresh and retry always start a new read, including after a failed attempt. */
     fun load(sessionId: String, archiveId: String) {
+        if (!access.bind()) return
         requestedTarget = sessionId to archiveId
-        val token = ++request
-        job?.cancel()
-        clearError()
         _page.value = null
-        job = viewModelScope.launch {
-            setLoading(true)
-            try {
-                val result = readPage(sessionId, archiveId, null)
-                if (token != request) return@launch
-                _page.value = result
-                if (result == null) showError(string(R.string.experience_source_missing))
-            } catch (cancelled: CancellationException) { throw cancelled
-            } catch (_: Exception) {
-                if (token == request) showError(string(R.string.experience_source_load_failed))
-            } finally { if (token == request) setLoading(false) }
+        read {
+            readPage?.invoke(sessionId, archiveId, null) ?: if (readPage == null)
+                access.reader!!.sourcePage(sessionId, archiveId) else null
         }
     }
 
     fun loadMore() {
+        if (!access.isCurrent()) { invalidate(); return }
         val current = _page.value ?: return
         if (loading.value || !current.hasMore) return
         val cursor = current.messages.lastOrNull()?.id ?: return
-        val token = request
+        read {
+            val next = if (readPage != null) readPage.invoke(current.archive.sessionId, current.archive.id, cursor)
+                else access.reader!!.sourcePage(current.archive.sessionId, current.archive.id, cursor)
+            checkNotNull(next)
+            val combined = next.copy(messages = (current.messages + next.messages).distinctBy { it.id })
+            if (access.reader == null) combined else access.reader!!.refreshSource(combined)
+        }
+    }
+
+    private fun refreshLoaded() {
+        val current = _page.value ?: return
+        val reader = access.reader ?: return
+        read(showBusy = false, clearOnFailure = true) { reader.refreshSource(current) }
+    }
+
+    /** Publish only a still-current read; repeat a bounded query if originals changed during it. */
+    private fun read(showBusy: Boolean = true, clearOnFailure: Boolean = false, block: suspend () -> ExperienceSourcePage?) {
+        val token = ++request
+        job?.cancel()
+        clearError()
+        setLoading(showBusy)
         job = viewModelScope.launch {
-            setLoading(true)
             try {
-                val next = readPage(current.archive.sessionId, current.archive.id, cursor)
-                if (token != request) return@launch
-                if (next == null) showError(string(R.string.experience_source_load_failed))
-                else _page.value = next.copy(messages = (current.messages + next.messages).distinctBy { it.id })
+                access.awaitObserver()
+                while (token == request && access.isCurrent()) {
+                    val version = access.sourceVersion
+                    val result = block()
+                    if (token != request || !access.isCurrent()) return@launch
+                    if (version != access.sourceVersion) continue
+                    _page.value = result
+                    if (result == null) showError(string(R.string.experience_source_missing))
+                    break
+                }
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
-                if (token == request) showError(string(R.string.experience_source_load_failed))
+                if (token == request && access.isCurrent()) {
+                    if (clearOnFailure) _page.value = null
+                    showError(string(R.string.experience_source_load_failed))
+                }
             } finally { if (token == request) setLoading(false) }
         }
     }
 }
 
 class ChatLocationViewModel(
-    private val readWindow: suspend (String, String, String?) -> ChatHistoryWindow? = { session, message, archive ->
-        ServiceContainer.localRepository.readChatHistoryWindow(session, message, archive)
-    },
-    private val readPage: suspend (String, String, Boolean, String?) -> com.nekobot.app.data.local.ChatHistoryPage? = { session, cursor, older, archive ->
-        ServiceContainer.localRepository.readChatHistoryPage(session, cursor, older, archive)
-    }
+    val dataSourceRevision: StateFlow<Long> = ServiceContainer.dataSourceRevision,
+    private val readerFactory: () -> ExperienceSourceReader = { ServiceContainer.localRepository.experienceSourceReader() },
+    private val readWindow: (suspend (String, String, String?) -> ChatHistoryWindow?)? = null,
+    private val readPage: (suspend (String, String, Boolean, String?) -> com.nekobot.app.data.local.ChatHistoryPage?)? = null
 ) : BaseViewModel() {
     private val _window = MutableStateFlow<ChatHistoryWindow?>(null)
     val window = _window.asStateFlow()
@@ -138,59 +241,93 @@ class ChatLocationViewModel(
     private var request = 0
     private var job: Job? = null
     private var requestedTarget: Triple<String, String, String?>? = null
+    private val access = OriginalChatReadSession(viewModelScope, dataSourceRevision,
+        if (readWindow == null) readerFactory else null, { invalidate() }, ::refreshLoaded,
+        { invalidate(R.string.experience_source_load_failed) })
+
+    fun ownsCurrentDatabase(revision: Long = dataSourceRevision.value): Boolean = access.isCurrent(revision)
+    fun ownsTarget(sessionId: String, messageId: String, archiveId: String?, revision: Long): Boolean =
+        access.isCurrent(revision) && requestedTarget == Triple(sessionId, messageId, archiveId)
+
+    private fun invalidate(reason: Int = R.string.experience_source_database_changed) {
+        request++
+        job?.cancel()
+        _window.value = null
+        setLoading(false)
+        showError(string(reason))
+    }
 
     /** Initialize each requested location once; pagination survives backgrounding and return. */
     fun loadIfNeeded(sessionId: String, messageId: String, archiveId: String? = null) {
-        if (requestedTarget != Triple(sessionId, messageId, archiveId)) load(sessionId, messageId, archiveId)
+        if (!access.isCurrent()) invalidate()
+        else if (requestedTarget != Triple(sessionId, messageId, archiveId)) load(sessionId, messageId, archiveId)
     }
 
     /** Retry and returning to an evicted anchor deliberately reload the original window. */
     fun load(sessionId: String, messageId: String, archiveId: String? = null) {
+        if (!access.bind()) return
         requestedTarget = Triple(sessionId, messageId, archiveId)
-        val token = ++request
-        job?.cancel()
-        clearError()
         _window.value = null
-        job = viewModelScope.launch {
-            setLoading(true)
-            try {
-                val result = readWindow(sessionId, messageId, archiveId)
-                if (token != request) return@launch
-                _window.value = result
-                if (result != null) _locationRevision.value = token
-                if (result == null) showError(string(R.string.chat_location_missing))
-            } catch (cancelled: CancellationException) { throw cancelled
-            } catch (_: Exception) {
-                if (token == request) showError(string(R.string.experience_source_load_failed))
-            } finally { if (token == request) setLoading(false) }
+        read(locate = true) {
+            if (readWindow != null) readWindow.invoke(sessionId, messageId, archiveId)
+            else access.reader!!.historyWindow(sessionId, messageId, archiveId)
         }
     }
 
     fun loadMore(older: Boolean) {
+        if (!access.isCurrent()) { invalidate(); return }
         val current = _window.value ?: return
         if (loading.value || (if (older) !current.hasOlder else !current.hasNewer)) return
         val cursor = (if (older) current.messages.firstOrNull() else current.messages.lastOrNull())?.id ?: return
-        val token = request
+        read {
+            val next = if (readPage != null) readPage.invoke(current.sessionId, cursor, older, current.archiveId)
+                else access.reader?.historyPage(current.sessionId, cursor, older, current.archiveId)
+            checkNotNull(next)
+            val combined = (if (older) next.messages + current.messages else current.messages + next.messages).distinctBy { it.id }
+            val trimmed = combined.size > MAX_MESSAGES
+            val visible = if (older) combined.take(MAX_MESSAGES) else combined.takeLast(MAX_MESSAGES)
+            val visibleIds = visible.mapTo(hashSetOf()) { it.id }
+            val merged = current.copy(
+                messages = visible,
+                hasOlder = if (older) next.hasMore else current.hasOlder || trimmed,
+                hasNewer = if (older) current.hasNewer || trimmed else next.hasMore,
+                sourceMessageIds = (current.sourceMessageIds + next.sourceMessageIds).filterTo(hashSetOf()) { it in visibleIds }
+            )
+            if (access.reader == null) merged else access.reader!!.refreshHistory(merged)
+        }
+    }
+
+    private fun refreshLoaded() {
+        val current = _window.value ?: return
+        val reader = access.reader ?: return
+        read(showBusy = false, clearOnFailure = true) { reader.refreshHistory(current) }
+    }
+
+    /** Revalidation updates text in place; only an explicit location read recenters the screen. */
+    private fun read(locate: Boolean = false, showBusy: Boolean = true, clearOnFailure: Boolean = false, block: suspend () -> ChatHistoryWindow?) {
+        val token = ++request
+        job?.cancel()
+        clearError()
+        setLoading(showBusy)
         job = viewModelScope.launch {
-            setLoading(true)
             try {
-                val next = readPage(current.sessionId, cursor, older, current.archiveId)
-                if (token != request) return@launch
-                if (next == null) showError(string(R.string.experience_source_load_failed)) else {
-                    val combined = (if (older) next.messages + current.messages else current.messages + next.messages).distinctBy { it.id }
-                    val trimmed = combined.size > MAX_MESSAGES
-                    val visible = if (older) combined.take(MAX_MESSAGES) else combined.takeLast(MAX_MESSAGES)
-                    val visibleIds = visible.mapTo(hashSetOf()) { it.id }
-                    _window.value = current.copy(
-                        messages = visible,
-                        hasOlder = if (older) next.hasMore else current.hasOlder || trimmed,
-                        hasNewer = if (older) current.hasNewer || trimmed else next.hasMore,
-                        sourceMessageIds = (current.sourceMessageIds + next.sourceMessageIds).filterTo(hashSetOf()) { it in visibleIds }
-                    )
+                access.awaitObserver()
+                while (token == request && access.isCurrent()) {
+                    val version = access.sourceVersion
+                    val result = block()
+                    if (token != request || !access.isCurrent()) return@launch
+                    if (version != access.sourceVersion) continue
+                    _window.value = result
+                    if (result != null && locate) _locationRevision.value = token
+                    if (result == null) showError(string(R.string.chat_location_missing))
+                    break
                 }
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
-                if (token == request) showError(string(R.string.experience_source_load_failed))
+                if (token == request && access.isCurrent()) {
+                    if (clearOnFailure) _window.value = null
+                    showError(string(R.string.experience_source_load_failed))
+                }
             } finally { if (token == request) setLoading(false) }
         }
     }
@@ -204,7 +341,13 @@ fun ExperienceSourceScreen(
     sessionId: String, archiveId: String, onBack: () -> Unit,
     onLocate: (String) -> Unit, viewModel: ExperienceSourceViewModel = viewModel()
 ) {
-    val page by viewModel.page.collectAsStateWithLifecycle()
+    val cachedPage by viewModel.page.collectAsStateWithLifecycle()
+    val databaseRevision by viewModel.dataSourceRevision.collectAsStateWithLifecycle()
+    val ownerCurrent = viewModel.ownsCurrentDatabase(databaseRevision)
+    val page = cachedPage?.takeIf {
+        viewModel.ownsTarget(sessionId, archiveId, databaseRevision) &&
+            it.archive.sessionId == sessionId && it.archive.id == archiveId
+    }
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val turns = remember(page?.messages) { sourceChatTurns(page?.messages.orEmpty()) }
@@ -214,12 +357,14 @@ fun ExperienceSourceScreen(
         TopAppBar(
             title = { Text(stringResource(R.string.experience_source_title)) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
-            actions = { IconButton(onClick = { viewModel.load(sessionId, archiveId) }) { Icon(Icons.Filled.Refresh, stringResource(R.string.experience_source_refresh)) } }
+            actions = { IconButton(onClick = { viewModel.load(sessionId, archiveId) }, enabled = ownerCurrent) { Icon(Icons.Filled.Refresh, stringResource(R.string.experience_source_refresh)) } }
         )
     }) { padding ->
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                error?.let { message -> item("error") { ErrorBanner(message = message, onRetry = { viewModel.load(sessionId, archiveId) }) } }
+                if (!ownerCurrent) item("database-changed") {
+                    Text(stringResource(R.string.experience_source_database_changed), color = MaterialTheme.colorScheme.error)
+                } else error?.let { message -> item("error") { ErrorBanner(message = message, onRetry = { viewModel.load(sessionId, archiveId) }) } }
                 page?.let { current ->
                     item("source") {
                         var summaryExpanded by rememberSaveable(archiveId) { mutableStateOf(false) }
@@ -230,7 +375,9 @@ fun ExperienceSourceScreen(
                                     modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
                                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 current.messages.firstOrNull()?.let { first ->
-                                    OutlinedButton(onClick = { onLocate(first.id) }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+                                    OutlinedButton(onClick = {
+                                        if (viewModel.ownsTarget(sessionId, archiveId, viewModel.dataSourceRevision.value)) onLocate(first.id)
+                                    }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                                         Text(stringResource(R.string.experience_source_jump))
                                     }
                                 }
@@ -281,7 +428,13 @@ fun ChatLocationScreen(
     sessionId: String, messageId: String, onBack: () -> Unit, onLatest: () -> Unit,
     viewModel: ChatLocationViewModel = viewModel(), archiveId: String? = null
 ) {
-    val window by viewModel.window.collectAsStateWithLifecycle()
+    val cachedWindow by viewModel.window.collectAsStateWithLifecycle()
+    val databaseRevision by viewModel.dataSourceRevision.collectAsStateWithLifecycle()
+    val ownerCurrent = viewModel.ownsCurrentDatabase(databaseRevision)
+    val window = cachedWindow?.takeIf {
+        viewModel.ownsTarget(sessionId, messageId, archiveId, databaseRevision) &&
+            it.sessionId == sessionId && it.anchorMessageId == messageId && it.archiveId == archiveId
+    }
     val locationRevision by viewModel.locationRevision.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
@@ -313,11 +466,15 @@ fun ChatLocationScreen(
                 }
             },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
-            actions = { TextButton(onClick = onLatest) { Text(stringResource(R.string.chat_location_latest)) } }
+            actions = { TextButton(onClick = {
+                if (viewModel.ownsCurrentDatabase()) onLatest()
+            }, enabled = ownerCurrent) { Text(stringResource(R.string.chat_location_latest)) } }
         )
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            error?.let { ErrorBanner(message = it, onRetry = { viewModel.load(sessionId, messageId, archiveId) }) }
+            if (!ownerCurrent) Text(stringResource(R.string.experience_source_database_changed),
+                modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
+            else error?.let { ErrorBanner(message = it, onRetry = { viewModel.load(sessionId, messageId, archiveId) }) }
             window?.let { current ->
                 if (current.messages.none { it.id == current.anchorMessageId }) {
                     TextButton(onClick = { viewModel.load(sessionId, messageId, archiveId) }) {

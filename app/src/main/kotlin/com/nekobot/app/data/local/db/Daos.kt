@@ -163,6 +163,14 @@ interface MessageDao {
     )
     suspend fun visibleAnchorRow(sessionId: String, id: String): LocalMessageRow?
 
+    /** Revalidate only displayed originals, scoped to their conversation and visibility. */
+    @Query(
+        "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId " +
+            "AND id IN (:messageIds) AND deleted = 0 AND role IN ('user', 'assistant') " +
+            "ORDER BY created_at ASC, rowid ASC"
+    )
+    suspend fun visibleRowsByIds(sessionId: String, messageIds: List<String>): List<LocalMessageRow>
+
     @Query(
         "SELECT *, rowid AS row_id FROM local_messages WHERE session_id = :sessionId AND deleted = 0 " +
             "AND role IN ('user', 'assistant') " +

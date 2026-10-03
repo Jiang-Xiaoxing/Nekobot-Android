@@ -1,6 +1,7 @@
 package com.nekobot.app.data.local
 
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.nekobot.app.data.local.db.LocalExperienceArchiveEntity
@@ -9,6 +10,12 @@ import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.data.local.db.LocalSessionEntity
 import com.nekobot.app.data.local.db.NekobotDatabase
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +36,102 @@ class ExperienceSourceReaderTest {
             sourceStartedAt = "2026-10-02 18:02:00", sourceEndedAt = "2026-10-02 18:02:00",
             summary = "经历摘要", sourceFingerprint = "fingerprint", createdAt = "now", updatedAt = "now"
         ), ids)
+    }
+
+    @Test fun refreshingLoadedSourcesRevalidatesTextMembershipAndOwnershipBeyondSqliteBindLimit() = runBlocking {
+        val db = database()
+        try {
+            session(db); session(db, "other")
+            val rows = (1..1300).map { message("m$it") }
+            db.messageDao().upsertAll(rows)
+            archive(db, rows.map { it.id })
+            val reader = ExperienceSourceReader(db)
+            val loaded = reader.sourcePage("s", "episode")!!.copy(messages = rows, hasMore = false)
+            db.messageDao().updateContent("m1250", "修改后的原话")
+            db.messageDao().updateDeleted("m200", true)
+            db.messageDao().upsert(message("m400", "other"))
+            db.experienceArchiveDao().replaceSources("episode", rows.map { it.id }.filter { it != "m300" })
+            val fresh = reader.refreshSource(loaded)!!
+            assertEquals((1..1300).filter { it !in setOf(200, 300, 400) }.map { "m$it" }, fresh.messages.map { it.id })
+            assertEquals("修改后的原话", fresh.messages.single { it.id == "m1250" }.content)
+            assertEquals(1299, fresh.sourceCount)
+            assertEquals(1297, fresh.availableCount)
+            assertFalse(fresh.hasMore)
+            assertEquals(60, reader.sourcePage("s", "episode")!!.messages.size)
+        } finally { db.close() }
+    }
+
+    @Test fun refreshingSourcesKeepsPaginationUsableAfterAllLoadedOriginalsDisappear() = runBlocking {
+        val db = database()
+        try {
+            session(db)
+            val rows = (1..130).map { message("m$it") }
+            db.messageDao().upsertAll(rows)
+            archive(db, rows.map { it.id })
+            val reader = ExperienceSourceReader(db)
+            val loaded = reader.sourcePage("s", "episode")!!
+            db.experienceArchiveDao().replaceSources("episode", (61..130).map { "m$it" })
+            val remapped = reader.refreshSource(loaded)!!
+            assertEquals((61..120).map { "m$it" }, remapped.messages.map { it.id })
+            assertEquals(70, remapped.availableCount)
+            assertTrue(remapped.hasMore)
+            db.withTransaction { (61..120).forEach { db.messageDao().updateDeleted("m$it", true) } }
+            val deleted = reader.refreshSource(remapped)!!
+            assertEquals((121..130).map { "m$it" }, deleted.messages.map { it.id })
+            assertEquals(10, deleted.availableCount)
+            assertFalse(deleted.hasMore)
+            db.withTransaction { (121..130).forEach { db.messageDao().updateDeleted("m$it", true) } }
+            val empty = reader.refreshSource(deleted)!!
+            assertTrue(empty.messages.isEmpty())
+            assertEquals(0, empty.availableCount)
+            assertFalse(empty.hasMore)
+        } finally { db.close() }
+    }
+
+    @Test fun refreshingHistoryKeepsBrowsedRangeAndDropsHiddenRowsAndChangedHighlights() = runBlocking {
+        val db = database()
+        try {
+            session(db)
+            val rows = (1..250).map { message("m$it") }
+            db.messageDao().upsertAll(rows)
+            archive(db, rows.map { it.id })
+            val reader = ExperienceSourceReader(db)
+            val browsed = reader.historyWindow("s", "m30", "episode")!!.copy(messages = rows.subList(119, 200))
+            db.messageDao().updateContent("m180", "已编辑的历史原话")
+            db.messageDao().updateDeleted("m150", true)
+            db.experienceArchiveDao().replaceSources("episode", rows.map { it.id }.filter { it != "m190" })
+            val fresh = reader.refreshHistory(browsed)!!
+            assertEquals((120..200).filter { it != 150 }.map { "m$it" }, fresh.messages.map { it.id })
+            assertEquals("已编辑的历史原话", fresh.messages.single { it.id == "m180" }.content)
+            assertTrue(fresh.hasOlder && fresh.hasNewer)
+            assertFalse("m190" in fresh.sourceMessageIds)
+            assertTrue(fresh.messages.any { it.id == "m190" })
+            db.messageDao().updateDeleted("m30", true)
+            assertNull(reader.refreshHistory(fresh))
+        } finally { db.close() }
+    }
+
+    @Test fun readerObservesEditsDeletesAndSourceMappingChangesWithoutReadingAllMessages() = runBlocking {
+        val db = database()
+        try {
+            session(db)
+            db.messageDao().upsertAll(listOf(message("a"), message("b")))
+            archive(db, listOf("a", "b"))
+            val signals = AtomicInteger()
+            val watcher = launch { ExperienceSourceReader(db).changes().collect { signals.incrementAndGet() } }
+            suspend fun awaitSignals(count: Int) = withTimeout(5000) { while (signals.get() < count) delay(10) }
+            awaitSignals(1)
+            var previous = signals.get()
+            db.messageDao().updateContent("a", "编辑")
+            awaitSignals(previous + 1)
+            previous = signals.get()
+            db.messageDao().updateDeleted("b", true)
+            awaitSignals(previous + 1)
+            previous = signals.get()
+            db.experienceArchiveDao().replaceSources("episode", listOf("a"))
+            awaitSignals(previous + 1)
+            watcher.cancelAndJoin()
+        } finally { db.close() }
     }
 
     @Test fun sourcesUseExactMembershipAndDoNotDiscloseOtherSessionsOrHiddenRows() = runBlocking {

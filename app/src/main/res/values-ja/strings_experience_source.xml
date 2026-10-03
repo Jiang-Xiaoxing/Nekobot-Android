@@ -35,4 +35,5 @@
     <string name="chat_location_missing">この元のメッセージは削除されたか存在しないため、位置を表示できません。</string>
     <string name="chat_location_return_target">対象メッセージに戻る</string>
     <string name="chat_location_return_segment">対象の会話区間に戻る</string>
+    <string name="experience_source_database_changed">データベースが切り替わりました。会話一覧に戻って、このページを開き直してください。</string>
 </resources>

@@ -11011,6 +11011,9 @@ ${AiOutputLanguage.directive()}
         true
     }
 
+    /** Bind a read-only browser to this repository's database, including its change observer. */
+    fun experienceSourceReader(): ExperienceSourceReader = ExperienceSourceReader(db)
+
     /** Read source membership with bounded pages; no generation or chat-state changes. */
     suspend fun readExperienceSourcePage(sessionId: String, archiveId: String, afterMessageId: String? = null): ExperienceSourcePage? =
         withContext(Dispatchers.IO) { ExperienceSourceReader(db).sourcePage(sessionId, archiveId, afterMessageId) }

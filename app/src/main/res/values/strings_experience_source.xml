@@ -8,6 +8,7 @@
     <string name="experience_source_summary">这份经历的摘要</string>
     <string name="experience_source_originals">对应的原聊天</string>
     <string name="experience_source_missing">这份经历或来源会话已不存在，无法查看原话。</string>
+    <string name="experience_source_database_changed">已切换数据库，请返回会话列表重新打开。</string>
     <string name="experience_source_missing_messages">有 %1$d 条来源消息已删除或不可用。</string>
     <string name="experience_source_changed">原话已改动；下方显示当前保留的原聊天，摘要可能尚未更新。</string>
     <string name="experience_source_empty">没有可查看的来源原话</string>

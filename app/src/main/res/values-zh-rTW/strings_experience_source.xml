@@ -35,4 +35,5 @@
     <string name="chat_location_missing">這則原訊息已刪除或不存在，無法定位。</string>
     <string name="chat_location_return_target">返回定位訊息</string>
     <string name="chat_location_return_segment">返回定位段落</string>
+    <string name="experience_source_database_changed">已切換資料庫，請返回會話列表重新開啟。</string>
 </resources>

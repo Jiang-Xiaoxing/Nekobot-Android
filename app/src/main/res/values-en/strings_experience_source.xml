@@ -35,4 +35,5 @@
     <string name="chat_location_missing">This original message has been deleted or does not exist. It cannot be located.</string>
     <string name="chat_location_return_target">Return to located message</string>
     <string name="chat_location_return_segment">Return to located segment</string>
+    <string name="experience_source_database_changed">Database changed. Return to the conversation list and open this page again.</string>
 </resources>
