@@ -200,6 +200,7 @@ class ExperienceArchiveViewModel : BaseViewModel() {
 fun ExperienceArchiveScreen(
     sessionId: String,
     onBack: () -> Unit,
+    onOpenSource: (String) -> Unit = {},
     viewModel: ExperienceArchiveViewModel = viewModel()
 ) {
     val archives by viewModel.archives.collectAsStateWithLifecycle()
@@ -382,6 +383,7 @@ fun ExperienceArchiveScreen(
                             ExperienceArchiveCard(
                                 archive = archive,
                                 onEdit = { editing = archive },
+                                onOpenSource = { onOpenSource(archive.id) },
                                 onTagClick = { selectedTag = it }
                             )
                         }
@@ -463,6 +465,7 @@ fun ExperienceArchiveScreen(
 private fun ExperienceArchiveCard(
     archive: LocalExperienceArchiveEntity,
     onEdit: () -> Unit,
+    onOpenSource: () -> Unit,
     onTagClick: (String) -> Unit
 ) {
     val tags = remember(archive.tagsJson) { MemoryTags.fromJson(archive.tagsJson) }
@@ -503,6 +506,9 @@ private fun ExperienceArchiveCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onOpenSource) {
+                Text(stringResource(R.string.experience_source_open))
+            }
             TextButton(onClick = onEdit) {
                 Icon(Icons.Filled.Edit, contentDescription = null)
                 Text(stringResource(R.string.common_edit))
