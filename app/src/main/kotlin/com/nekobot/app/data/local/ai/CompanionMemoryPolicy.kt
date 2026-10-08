@@ -56,11 +56,20 @@ internal object CompanionMemoryPolicy {
     fun score(query: String, text: String): Float = LocalKnowledgeSearch.lexicalScore(
         expand(query) + " " + dateTerms(query).joinToString(" "), expand(text) + " " + dateTerms(text).joinToString(" ")) +
         if (dateTerms(query).any { it in dateTerms(text) }) 1f else 0f
-    fun fingerprint(message: LocalMessageEntity): String = digest(listOf(
-        message.id, message.role, message.createdAt, message.timestamp, message.content, message.deleted.toString()
-    ).joinToString("\u0000"))
-    fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    fun fingerprint(message: LocalMessageEntity): String = fingerprint(
+        message.id, message.role, message.createdAt, message.timestamp, message.content, message.deleted)
+    fun fingerprint(id: String, role: String, createdAt: String, timestamp: String?, content: String, deleted: Boolean): String =
+        digest(listOf(id, role, createdAt, timestamp, content, deleted.toString()).joinToString("\u0000"))
+    fun digest(value: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        val hex = "0123456789abcdef"
+        return buildString(bytes.size * 2) {
+            for (byte in bytes) {
+                val value = byte.toInt() and 255
+                append(hex[value ushr 4]); append(hex[value and 15])
+            }
+        }
+    }
 
     /** Split at whole turns; if one turn exceeds budget keep it whole and let the caller reject its size. */
     fun batches(messages: List<LocalMessageEntity>, budget: Int = BATCH_CHARS): List<List<LocalMessageEntity>> {

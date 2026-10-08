@@ -15,6 +15,28 @@ import java.time.ZonedDateTime
 
 @RunWith(AndroidJUnit4::class)
 class FusedCompanionAndroidTest {
+    @Test fun rankedRecallRejectsBrokenEvidenceAndFindsNextValidCandidate() = runBlocking<Unit> {
+        val db=db(); try {
+            val session=setup(db)
+            val store=CompanionMemoryStore(db)
+            val scope=store.ensureScope(session)
+            val source=say(db,"tea-source","我喝茶不加糖")
+            val dao=db.companionMemoryDao()
+            fun fact(id:String,content:String)=CompanionMemoryEntity(id,scope.id,id,1,"fact","用户",content,"active",
+                createdAt="now",updatedAt="now")
+            dao.saveMemory(fact("bad","喝茶喝茶喝茶加糖"))
+            dao.saveMemory(fact("good","喝茶不加糖"))
+            dao.saveSources(listOf(
+                CompanionSourceEntity("bad",source.id,"bad fingerprint","我喝茶",null,"user"),
+                CompanionSourceEntity("good",source.id,CompanionMemoryPolicy.fingerprint(source),"我喝茶",null,"user")))
+            val result=store.fusedRecall(session,"喝茶",FusedCompanionPolicy.budgets(14000)).first
+            val ids=JsonParser.parseString(result.substringAfter('\n')).asJsonArray.map { it.asJsonObject["id"].asString }
+            assertFalse("Invalid high-ranking evidence must never reach the model", "bad" in ids)
+            assertTrue("The next valid fact must still be considered", "good" in ids)
+            db.messageDao().upsert(source.copy(content="我现在改成喝白水"))
+            assertFalse(store.fusedRecall(session,"喝茶",FusedCompanionPolicy.budgets(14000)).first.contains("不加糖"))
+        } finally { db.close() }
+    }
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     private val gson = Gson()
     private fun db() = Room.inMemoryDatabaseBuilder(context, NekobotDatabase::class.java).build()
@@ -52,6 +74,10 @@ class FusedCompanionAndroidTest {
             fails { db.sessionDao().update(s.copy(longConversationEnabled=false)) }
             fails { db.sessionDao().upsert(s.copy(id="ordinary",companionMode=false,longConversationEnabled=false)) }
             fails { db.sessionDao().upsert(s.copy(id="group",characterId=null,characterIds="[\"c\"]",sessionMode="group",companionMode=false)) }
+            assertEquals("s",db.companionMemoryDao().owner("c")?.sessionId)
+            // Portable imports use UPDATE OR ABORT for existing rows, even on identical backups.
+            db.openHelper.writableDatabase.execSQL("UPDATE OR ABORT local_sessions SET name='Imported title' WHERE id='s'")
+            db.openHelper.writableDatabase.execSQL("UPDATE OR ABORT local_sessions SET name='Imported again' WHERE id='s'")
             assertEquals("s",db.companionMemoryDao().owner("c")?.sessionId)
             db.sessionDao().upsert(s.copy(id="unrelated",characterId="new",companionMode=false,longConversationEnabled=false))
         } finally { db.close() }

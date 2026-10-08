@@ -77,8 +77,24 @@ data class CompanionClarificationEntity(
     val questionMessageId: String? = null, val createdAt: String, val updatedAt: String
 )
 
+/** A single joined scan avoids one database round trip per historical utterance. */
+data class CompanionSourceValidation(
+    val memoryId: String, val messageId: String, val fingerprint: String, val quote: String,
+    val sourceRole: String, val storedId: String?, val sessionId: String?, val role: String?,
+    val content: String?, val createdAt: String?, val timestamp: String?, val deleted: Boolean?
+)
+
 @Dao
 interface CompanionMemoryDao {
+    @Query("""SELECT x.memoryId, x.messageId, x.fingerprint, x.quote, x.role AS sourceRole,
+        r.id AS storedId, r.session_id AS sessionId, r.role, r.content,
+        r.created_at AS createdAt, r.timestamp, r.deleted
+        FROM companion_sources x JOIN companion_memories m ON m.id=x.memoryId
+        LEFT JOIN local_messages r ON r.id=x.messageId
+        WHERE m.scopeId=:scopeId AND m.valid=1 AND m.manual=0 AND m.id IN (:ids)""")
+    suspend fun sourceValidationRows(scopeId: String, ids: List<String>): List<CompanionSourceValidation>
+    @Query("SELECT messageId FROM companion_sources WHERE memoryId=:memoryId ORDER BY spokenDate,messageId LIMIT 3")
+    suspend fun sourceAnchorIds(memoryId: String): List<String>
     @Query("SELECT * FROM companion_context_materials WHERE scopeId = :scopeId ORDER BY sequence")
     suspend fun contextMaterials(scopeId: String): List<CompanionContextMaterialEntity>
     @Upsert suspend fun saveContextMaterial(row: CompanionContextMaterialEntity)

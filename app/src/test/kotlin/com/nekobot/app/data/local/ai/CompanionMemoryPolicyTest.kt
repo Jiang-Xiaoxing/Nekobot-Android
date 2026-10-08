@@ -7,6 +7,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CompanionMemoryPolicyTest {
+    @Test fun digestRemainsCompatibleWithPersistedSha256Fingerprints() {
+        assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", CompanionMemoryPolicy.digest(""))
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", CompanionMemoryPolicy.digest("abc"))
+    }
     private fun row(id: Int, role: String, text: String) = LocalMessageEntity(
         "$id", "s", role, text, timestamp = "2026-10-05", createdAt = "2026-10-05")
 

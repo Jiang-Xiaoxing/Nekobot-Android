@@ -41,9 +41,14 @@ internal object FusedCompanionSchema {
         """.trimIndent()
         for (action in listOf("INSERT", "UPDATE")) {
             db.execSQL("CREATE TRIGGER IF NOT EXISTS fused_session_guard_${action.lowercase()} BEFORE $action ON local_sessions BEGIN $checks END")
+            // An outer UPDATE OR ABORT (portable merge) overrides OR IGNORE inside triggers.
+            // Avoid attempting the duplicate insert at all; also refresh pre-fix installations.
+            db.execSQL("DROP TRIGGER IF EXISTS fused_session_owner_${action.lowercase()}")
             db.execSQL("""CREATE TRIGGER IF NOT EXISTS fused_session_owner_${action.lowercase()} AFTER $action ON local_sessions
               WHEN NEW.companion_mode = 1 BEGIN
-                INSERT OR IGNORE INTO companion_owners(characterId,sessionId) VALUES(NEW.character_id,NEW.id);
+                INSERT INTO companion_owners(characterId,sessionId)
+                  SELECT NEW.character_id,NEW.id WHERE NOT EXISTS
+                    (SELECT 1 FROM companion_owners WHERE characterId=NEW.character_id AND sessionId=NEW.id);
               END""")
         }
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS fused_owner_guard_insert BEFORE INSERT ON companion_owners
