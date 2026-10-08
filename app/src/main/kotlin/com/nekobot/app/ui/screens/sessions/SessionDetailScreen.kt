@@ -1271,6 +1271,7 @@ fun SessionDetailScreen(
                             // 更改绑定角色按钮
                             OutlinedButton(
                                 onClick = { showBindCharacterDialog = true },
+                                enabled = s.companionMode != true,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(
@@ -1287,12 +1288,21 @@ fun SessionDetailScreen(
                         }
 
                         // === 4.2 Agent 会话：继承完整角色能力 ===
+                        if (s.companionMode == true) GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            SectionHeader(title = "Agent 角色（长久陪伴）")
+                            Text("固定单窗口，自动整理角色记忆，保留近期原话。转换为普通模式须备份后由外部 Agent 协助，不能直接切换或换绑角色。",
+                                style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.companion_embedding_free_hint), style = MaterialTheme.typography.labelSmall)
+                            OutlinedButton(onClick = { onOpenExperienceArchive(sessionId) }, modifier = Modifier.fillMaxWidth()) {
+                                Text("角色记忆与整理状态")
+                            }
+                        }
                         // 仅对已绑定角色的 Agent 会话展示；默认关闭，保持既有 Agent 行为。
                         // 该能力依赖本地角色运行时，因此只在本地模式提供。
                         if (
                             com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
                             s.sessionMode.equals("agent", ignoreCase = true) &&
-                            !s.characterId.isNullOrBlank()
+                            !s.characterId.isNullOrBlank() && s.companionMode != true
                         ) {
                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                 SectionHeader(title = inheritCharacterTitle)
@@ -1342,6 +1352,21 @@ fun SessionDetailScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     if (longConversationEnabled) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(
+                                            stringResource(R.string.companion_hybrid_hint),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            stringResource(R.string.companion_embedding_free_hint),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.clickable {
+                                                uriHandler.openUri("https://cloud.siliconflow.cn/me/models?types=embedding")
+                                            }
+                                        )
                                         Spacer(Modifier.height(8.dp))
                                         OutlinedButton(
                                             onClick = { onOpenExperienceArchive(sessionId) },
@@ -1855,7 +1880,7 @@ fun SessionDetailScreen(
                     ?: stringResource(R.string.experience_backfill_unknown),
                 longConversationCost?.outputPricePerMillionUsd?.toString()
                     ?: stringResource(R.string.experience_backfill_unknown)
-            ),
+            ) + "\n\n" + stringResource(R.string.sessions_long_conversation_mode_risk),
             confirmText = stringResource(R.string.sessions_long_conversation_cost_confirm),
             cancelText = stringResource(R.string.common_cancel),
             onConfirm = {

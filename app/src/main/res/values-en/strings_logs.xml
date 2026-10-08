@@ -225,6 +225,7 @@
     <string name="log_repo_session_autonamed">Session auto-named: %1$s -&gt; %2$s</string>
     <string name="log_repo_skill_extract_failed">Agent skill distillation failed (main flow unaffected): %1$s</string>
     <string name="log_repo_state_cache_write_failed">Failed to write state history cache: %1$s</string>
+    <string name="log_repo_oversize_row_repair_retry">Message row exceeds CursorWindow limit; repaired and retrying: %1$s</string>
     <string name="log_repo_task_expired">Task \"%1$s\" last run point expired; deferred to %2$s</string>
     <string name="log_repo_token_usage_corrupt">Token usage records corrupted; backed up and rebuilt: %1$s</string>
     <string name="log_repo_token_usage_recovered">Recovered %1$s token usage entries from message records</string>
@@ -262,6 +263,7 @@
     <string name="log_svc_tool_message_persist_failed">Failed to persist tool message: %1$s</string>
     <string name="log_update_check_failed">Update check failed: %1$s</string>
     <string name="log_update_download_failed">Update package download failed: %1$s</string>
+    <string name="log_update_signature_unreadable">Could not read update package signature; skipping the comparison and leaving it to the system installer</string>
     <string name="log_vm_task_failed">UI task failed: %1$s</string>
     <string name="log_widget_update_failed">Widget update failed: %1$s</string>
 </resources>

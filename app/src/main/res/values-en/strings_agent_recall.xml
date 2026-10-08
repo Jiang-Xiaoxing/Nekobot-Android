@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="tool_name_agent_recall_search">Search character memories and experiences</string>
+    <string name="companion_memory_title">Independent memories and past versions</string>
+    <string name="companion_memory_lock">Lock confirmed memory</string>
+    <string name="companion_memory_unlock">Unlock</string>
+    <string name="companion_memory_pending_error">Memory processing is incomplete. Pending messages are preserved for the next conversation: %1$s</string>
+    <string name="tool_name_agent_recall_search">Search independent memories and experiences</string>
     <string name="tool_name_agent_history_search">Search original chat</string>
     <string name="tool_name_agent_history_read">Read original chat</string>
-    <string name="tool_desc_agent_recall_search">Search permitted character memories and this session’s experience summaries together.</string>
+    <string name="tool_desc_agent_recall_search">Search independent memories and relevant experiences for this conversation and character, with verified sources.</string>
     <string name="tool_desc_agent_history_search">Search visible original messages in this session by keyword.</string>
     <string name="tool_desc_agent_history_read">Read an original message by ID with nearby messages; continue through long text in segments.</string>
     <string name="experience_backfill_title">Build old experience archives</string>
@@ -22,7 +26,10 @@
     <string name="experience_history_copy_rebuild">Rebuild history copy</string>
     <string name="experience_history_copy_done">History copy rebuilt: %1$d messages</string>
     <string name="experience_history_copy_failed">Could not rebuild history copy</string>
-    <string name="sessions_long_conversation_cost_title">Confirm cost before enabling long chat</string>
-    <string name="sessions_long_conversation_cost_notice">When future chats reach the context compaction threshold, this mode makes extra model calls to build episodic archives (up to 4 segments per pass, plus another summary call when needed). This uses tokens and may cost money. Existing history is not automatically backfilled. Reference model: %1$s; reference rates: input %2$s and output %3$s USD per million tokens. Total cost cannot be predicted; routing or failover may change model and rates. Save this page after confirming.</string>
+    <string name="sessions_long_conversation_cost_title">Confirm cost before enabling lasting companionship</string>
+    <string name="sessions_long_conversation_cost_notice">With an active embedding model, memory indexing and question embeddings may also cost extra. New messages are processed in batches by a model to extract and update independent memories. Context compaction also creates separate episodic archives, without merging a lifetime summary. These extra calls use tokens and may cost money, including later retries after failures. Existing history is not automatically backfilled. Reference model: %1$s; reference rates: input %2$s and output %3$s USD per million tokens. Total cost cannot be predicted; routing or failover may change model and rates. Save this page after confirming.</string>
+    <string name="sessions_long_conversation_mode_risk">Long-term companionship uses independent memories. Automatic continuity with ordinary mode is not supported yet. After enabling or switching modes, your companion may be unable to recall some memories from the other mode. Original chats are preserved. We recommend continuing with the same mode in the same conversation.</string>
     <string name="sessions_long_conversation_cost_confirm">Understand cost, enable</string>
+    <string name="companion_hybrid_hint">Both independent memory collections share keyword and vector search. Activate an embedding model to build indexes; keyword search remains available without it or when the API fails. Indexing and question embeddings may cost extra. No automatic fallback model is used.</string>
+    <string name="companion_embedding_free_hint">Optional free embedding model: SiliconFlow BAAI/bge-m3, available at cloud.siliconflow.cn. Configure your own API key and activate the embedding purpose. Pro/BAAI/bge-m3 is paid; check current platform pricing and limits.</string>
 </resources>

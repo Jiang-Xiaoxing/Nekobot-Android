@@ -179,6 +179,8 @@ fun ModernChatScreen(
     onOpenWenku8Login: () -> Unit = {},
     /** 打开表情包管理页（聊天输入区表情面板的「管理」入口）。 */
     onOpenStickers: () -> Unit = {},
+    /** 内置浏览器「更多 → 浏览器设置」入口。 */
+    onOpenBrowserSettings: () -> Unit = {},
     /**
      * 「跳到最新」处理：null 表示由本页自行滚动到底部。
      *
@@ -240,6 +242,7 @@ fun ModernChatScreen(
     onOpenSessionDetail = onOpenSessionDetail,
     onOpenWorkspace = onOpenWorkspace,
     onOpenStoryGraph = onOpenStoryGraph,
+    onOpenBrowserSettings = onOpenBrowserSettings,
     externalListState = listState,
     embeddedBottomBarClearance = embeddedBottomBarClearance,
     customBottomBar = {
@@ -953,8 +956,37 @@ private fun ModernChatComposer(
     }
 
     val pendingShare by ServiceContainer.pendingShare.collectAsStateWithLifecycle()
-    LaunchedEffect(sessionId, pendingShare?.id) {
+    var confirmedIncomingShareId by remember { mutableStateOf<String?>(null) }
+    val shareAwaitingUploadConfirmation = pendingShare?.takeIf {
+        it.attachments.isNotEmpty() && confirmedIncomingShareId != it.id
+    }
+    if (shareAwaitingUploadConfirmation != null) {
+        AlertDialog(
+            onDismissRequest = { ServiceContainer.consumePendingShare(shareAwaitingUploadConfirmation.id) },
+            title = { Text(context.getString(R.string.share_upload_confirmation_title)) },
+            text = {
+                Text(
+                    context.getString(
+                        R.string.share_upload_confirmation_message,
+                        shareAwaitingUploadConfirmation.attachments.size
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmedIncomingShareId = shareAwaitingUploadConfirmation.id }) {
+                    Text(context.getString(R.string.share_upload_confirmation_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { ServiceContainer.consumePendingShare(shareAwaitingUploadConfirmation.id) }) {
+                    Text(context.getString(R.string.common_cancel))
+                }
+            }
+        )
+    }
+    LaunchedEffect(sessionId, pendingShare?.id, confirmedIncomingShareId) {
         val share = pendingShare ?: return@LaunchedEffect
+        if (share.attachments.isNotEmpty() && confirmedIncomingShareId != share.id) return@LaunchedEffect
         fileBusy = share.attachments.isNotEmpty()
         try {
             if (share.text.isNotBlank()) {
@@ -1071,7 +1103,7 @@ private fun ModernChatComposer(
             ChatQuickAction.CONTEXT -> onOpenContextAnalysis()
             ChatQuickAction.COMPRESS -> {
                 // AI 持续 loop 期间禁用（按钮已置灰，这里兜底防御）
-                if (!compressing && !replyBusy) onCompress()
+                if (session?.companionMode != true && !compressing && !replyBusy) onCompress()
             }
             ChatQuickAction.CLEAR -> showClearConfirm = true
             ChatQuickAction.LATEST -> onJumpToLatest()
@@ -1263,6 +1295,7 @@ private fun ModernChatComposer(
                         showToolSetDialog = true
                     },
                     onCompress = { onCompress() },
+                    allowCompression = session?.companionMode != true,
                     onOpenContextAnalysis = {
                         panelExpanded = true
                         onOpenContextAnalysis()
@@ -1565,7 +1598,7 @@ private fun ModernChatComposer(
                         exit = shrinkVertically() + fadeOut()
                     ) {
                         ChatQuickActionBar(
-                            actions = quickActions,
+                            actions = quickActions.filter { session?.companionMode != true || it != ChatQuickAction.COMPRESS },
                             onCollapse = {
                                 quickActionsCollapsed = true
                                 ServiceContainer.prefs.chatQuickActionsCollapsed = true
@@ -2250,6 +2283,7 @@ private fun ReasoningEffortSelector(
 
 @Composable
 private fun ModernChatActionPanel(
+    allowCompression: Boolean = true,
     messageCount: Int,
     cacheHitRate: Double?,
     usedTokens: Long,
@@ -2299,6 +2333,7 @@ private fun ModernChatActionPanel(
         ) {
             item {
                 ModernContextCard(
+                    allowCompression = allowCompression,
                     messageCount = messageCount,
                     cacheHitRate = cacheHitRate,
                     usedTokens = usedTokens,
@@ -2584,6 +2619,7 @@ private fun AgentToolSetDialog(
 
 @Composable
 private fun ModernContextCard(
+    allowCompression: Boolean = true,
     messageCount: Int,
     cacheHitRate: Double?,
     usedTokens: Long,
@@ -2656,7 +2692,7 @@ private fun ModernContextCard(
                         )
                     }
                 }
-                TextButton(
+                if (allowCompression) TextButton(
                     onClick = onCompress,
                     // 延迟回复等待期间同样禁止压缩：压缩会重写历史边界，待发批次会因此错乱
                     enabled = !sending && !delayPending && messageCount > 0 && !compressing

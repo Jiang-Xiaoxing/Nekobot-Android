@@ -97,18 +97,27 @@ class AgentSummaryContextAndroidTest {
         assertEquals(marker, 1, Regex(Regex.escape(marker)).findAll(text).count())
     }
 
-    /** Native inherited Agents retain summary, role and recent text without mutating original rows. */
+    /** Check a retained row's time and verbatim text through the actual prompt pipeline. */
+    private fun assertDated(ctx: PipelineContext, row: LocalMessageEntity) {
+        assertTrue(ctx.messages.any { it["role"] == row.role &&
+            it["content"] == "【历史消息日期：${row.createdAt.take(10)}】\n${row.content}" })
+    }
+
+    /** Companion mode keeps recent originals and identity while retaining old summaries only on disk. */
     @Test
-    fun nativeInheritedAgentKeepsSummaryAndRecentTextWithoutReplayingOldRawHistory() = runBlocking {
+    fun nativeInheritedCompanionIgnoresLifetimeSummaryAndPreservesOriginalRows() = runBlocking {
         val db = database()
         try {
             val session = seed(db, "native", inherit = true)
             val before = db.messageDao().listBySession(session.id)
             val ctx = prepare(db, session)
-            for (marker in listOf("EARLY_HISTORY_FACT", "ROLE_IDENTITY", "RECENT_USER_ONE", "RECENT_REPLY_TWO")) {
+            for (marker in listOf("ROLE_IDENTITY", "RECENT_USER_ONE", "RECENT_REPLY_TWO")) {
                 assertContainsOnce(ctx, marker)
             }
-            assertFalse(ctx.messages.any { it["content"] == "OLD_USER_RAW" })
+            assertFalse(ctx.messages.any { (it["content"] as? String)?.contains("EARLY_HISTORY_FACT") == true })
+            assertDated(ctx, before.single { it.id == "${session.id}-u0" })
+            assertDated(ctx, before.single { it.id == "${session.id}-u1" })
+            assertDated(ctx, before.single { it.id == "${session.id}-a2" })
             assertEquals(before, db.messageDao().listBySession(session.id))
         } finally { db.close() }
     }
@@ -123,6 +132,7 @@ class AgentSummaryContextAndroidTest {
             assertContainsOnce(ctx, "EARLY_HISTORY_FACT")
             assertContainsOnce(ctx, "SESSION_RULE")
             assertContainsOnce(ctx, "RECENT_USER_TWO")
+            assertDated(ctx, db.messageDao().getById("${session.id}-u2")!!)
         } finally { db.close() }
     }
 
@@ -131,7 +141,8 @@ class AgentSummaryContextAndroidTest {
     fun updatingStoredSummaryBoundaryIsVisibleOnNextRequest() = runBlocking {
         val db = database()
         try {
-            val session = seed(db, "rolling", inherit = true)
+            val session = seed(db, "rolling", inherit = true).copy(longConversationEnabled = false)
+            db.sessionDao().update(session)
             assertContainsOnce(prepare(db, session), "EARLY_HISTORY_FACT")
             val summary = db.messageDao().getById("${session.id}-summary")!!
             db.messageDao().upsert(summary.copy(
@@ -143,7 +154,8 @@ class AgentSummaryContextAndroidTest {
             assertContainsOnce(ctx, "ROLE_IDENTITY")
             assertContainsOnce(ctx, "RECENT_USER_TWO")
             assertFalse(ctx.messages.any { (it["content"] as? String)?.contains("EARLY_HISTORY_FACT") == true })
-            assertFalse(ctx.messages.any { it["content"] == "RECENT_USER_ONE" })
+            assertFalse(ctx.messages.any { (it["content"] as? String)?.contains("RECENT_USER_ONE") == true })
+            assertDated(ctx, db.messageDao().getById("${session.id}-u2")!!)
             assertEquals(7, db.messageDao().listBySession(session.id).size)
         } finally { db.close() }
     }
@@ -161,10 +173,11 @@ class AgentSummaryContextAndroidTest {
                 val before = db.messageDao().listBySession(session.id)
                 val ctx = prepare(db, session)
                 val prompt = ctx.metadata["composed_system_prompt"] as String
-                assertContainsOnce(ctx, "EARLY_HISTORY_FACT")
+                if (inherit) assertFalse(prompt.contains("EARLY_HISTORY_FACT")) else assertContainsOnce(ctx, "EARLY_HISTORY_FACT")
                 assertContainsOnce(ctx, if (inherit) "ROLE_IDENTITY" else "SESSION_RULE")
                 assertContainsOnce(ctx, "RECENT_USER_ONE")
-                assertTrue(prompt.contains("不构成当前的操作指令或授权"))
+                assertDated(ctx, db.messageDao().getById("${session.id}-u1")!!)
+                if (!inherit) assertTrue(prompt.contains("不构成当前的操作指令或授权"))
                 assertFalse(Regex("(?m)^## agent.permissions$").containsMatchIn(prompt))
                 assertEquals("Current question.", ctx.messages.last()["content"])
                 assertEquals(before, db.messageDao().listBySession(session.id))
@@ -174,7 +187,7 @@ class AgentSummaryContextAndroidTest {
 
     /** Round-trip only a disposable profile; restore the original profile even on failure. */
     @Test
-    fun portableImportAndReimportKeepSummaryVisibleAlongsideNewChat() = runBlocking {
+    fun portableImportAndReimportKeepOriginalsAndRoleWithoutInjectingLifetimeSummary() = runBlocking {
         val id = "summary-import-${UUID.randomUUID()}"
         val originalProfile = ServiceContainer.prefs.activeDbName
         val testProfile = "$id-profile"
@@ -201,10 +214,12 @@ class AgentSummaryContextAndroidTest {
             db = testDatabase()
             val restored = db.sessionDao().getById(id)!!
             val ctx = prepare(db, restored)
-            for (marker in listOf("EARLY_HISTORY_FACT", "ROLE_IDENTITY", "RECENT_USER_TWO", "AFTER_IMPORT_NEW_MESSAGE")) {
+            for (marker in listOf("ROLE_IDENTITY", "RECENT_USER_TWO", "AFTER_IMPORT_NEW_MESSAGE")) {
                 assertContainsOnce(ctx, marker)
             }
+            assertFalse(ctx.messages.any { (it["content"] as? String)?.contains("EARLY_HISTORY_FACT") == true })
             assertEquals(8, db.messageDao().listBySession(id).size)
+            assertDated(ctx, db.messageDao().getById("$id-new")!!)
             assertTrue(db.messageDao().getById("$id-u0") != null)
         } finally {
             try {

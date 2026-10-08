@@ -389,4 +389,9 @@
     <string name="aimodel_editor_stt_provider_gemini">Gemini ネイティブ音声認識</string>
     <string name="aimodel_editor_stt_provider_glm">GLM-ASR</string>
     <string name="aimodel_editor_stt_provider_qwen">Qwen ASR</string>
+    <string name="aimodel_editor_embedding_dimensions_default">サービスの既定値</string>
+    <string name="aimodel_editor_embedding_dimensions_custom">カスタム</string>
+    <string name="aimodel_editor_embedding_dimensions_fixed">このモデルのベクトル次元数は固定です。設定は不要です。</string>
+    <string name="aimodel_editor_embedding_dimensions_hint">既定値、または1〜65536の整数を指定してください。対応する次元数はモデルサービスの仕様に従います。</string>
+    <string name="aimodel_editor_embedding_dimensions_invalid">カスタム次元数は1〜65536の整数で指定してください。</string>
 </resources>

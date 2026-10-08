@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="tool_name_agent_recall_search">キャラクターの記憶と体験を検索</string>
+    <string name="companion_memory_title">独立した記憶と過去の版</string>
+    <string name="companion_memory_lock">確認した記憶をロック</string>
+    <string name="companion_memory_unlock">ロック解除</string>
+    <string name="companion_memory_pending_error">記憶の整理は未完了です。未処理メッセージは保存され、次の会話で再開します：%1$s</string>
+    <string name="tool_name_agent_recall_search">独立した記憶と体験を検索</string>
     <string name="tool_name_agent_history_search">会話の原文を検索</string>
     <string name="tool_name_agent_history_read">会話の原文を読む</string>
-    <string name="tool_desc_agent_recall_search">閲覧可能なキャラクターの記憶と、この会話の体験要約をまとめて検索します。</string>
+    <string name="tool_desc_agent_recall_search">この会話とキャラクターの独立した記憶や関連する体験を、確認できる出典とともに検索します。</string>
     <string name="tool_desc_agent_history_search">この会話の表示可能な元メッセージをキーワードで検索します。</string>
     <string name="tool_desc_agent_history_read">メッセージ ID から原文と前後のメッセージを読み、長文は分割して続きから読みます。</string>
     <string name="experience_backfill_title">古い体験のアーカイブ作成</string>
@@ -22,7 +26,10 @@
     <string name="experience_history_copy_rebuild">原文コピーを再作成</string>
     <string name="experience_history_copy_done">原文コピーを再作成しました：%1$d 件</string>
     <string name="experience_history_copy_failed">原文コピーを再作成できませんでした</string>
-    <string name="sessions_long_conversation_cost_title">長期会話を有効にする前の費用確認</string>
-    <string name="sessions_long_conversation_cost_notice">今後の会話がコンテキスト圧縮しきい値に達すると、体験アーカイブ作成のため追加のモデル呼び出し（1回あたり最大4区間、必要なら要約をもう1回）を行い、トークン費用が発生する場合があります。既存履歴の有料補完は自動実行しません。参考モデル：%1$s。参考単価：入力 %2$s、出力 %3$s USD/百万トークン。総額は予測できず、ルーティングや障害時の切替でモデルと単価が変わる場合があります。確認後、この画面の設定を保存してください。</string>
+    <string name="sessions_long_conversation_cost_title">「ずっと一緒」を有効にする前の費用確認</string>
+    <string name="sessions_long_conversation_cost_notice">埋め込みモデルを有効にすると、記憶の索引と質問の埋め込みにも追加料金が発生する場合があります。新しいメッセージから、モデルが独立した記憶を分割して抽出・更新します。コンテキスト整理では体験を区間ごとに保存し、生涯の総要約には統合しません。追加呼び出しや失敗後の再試行はトークンを消費し、費用が発生する場合があります。既存履歴の有料補完は自動実行しません。参考モデル：%1$s。参考単価：入力 %2$s、出力 %3$s USD/百万トークン。総額は予測できず、ルーティングや障害時の切替でモデルと単価が変わる場合があります。確認後、この画面の設定を保存してください。</string>
+    <string name="sessions_long_conversation_mode_risk">長く寄り添うモードは独立した記憶を使用します。通常モードとの自動的な記憶の引き継ぎはまだ対応していません。有効化やモード切替後、別のモードの一部の記憶を思い出せない場合があります。チャット原文は保持されます。同じ会話で選んだモードを継続して使うことをおすすめします。</string>
     <string name="sessions_long_conversation_cost_confirm">費用を理解して有効化</string>
+    <string name="companion_hybrid_hint">2種類の独立メモリでキーワードとベクトル検索を共有します。埋め込みモデルを有効にすると索引を作成します。未設定またはAPI失敗時はキーワード検索を使います。索引と質問の埋め込みは追加料金が発生する場合があります。別モデルへの自動切り替えはありません。</string>
+    <string name="companion_embedding_free_hint">無料の埋め込みモデルの候補：SiliconFlow BAAI/bge-m3（cloud.siliconflow.cn）。ご自身のAPIキーを設定し、埋め込み用途を有効にしてください。Pro/BAAI/bge-m3は有料です。現在の料金と制限は提供元でご確認ください。</string>
 </resources>

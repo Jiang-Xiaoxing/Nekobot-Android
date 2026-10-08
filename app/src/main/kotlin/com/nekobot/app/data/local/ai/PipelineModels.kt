@@ -185,6 +185,8 @@ typealias StreamModelCall = (messages: List<Map<String, Any>>, stopped: Boolean)
  * 对应原仓库 PipelineCallbacks。
  */
 open class PipelineCallbacks {
+    open suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>,
+        tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> = messages
 
     // ---- 会话 / 消息 I/O ----
 

@@ -89,6 +89,8 @@ data class LocalSessionEntity(
     @ColumnInfo(name = "inherit_character_greeting", defaultValue = "0") val inheritCharacterGreeting: Boolean = false,
     /** Agent 会话长期记忆增强开关，旧会话默认关闭。 */
     @ColumnInfo(name = "long_conversation_enabled", defaultValue = "0") val longConversationEnabled: Boolean = false,
+    /** 单窗口融合记忆模式；旧长久陪伴记录不自动升级。创建后不可直接切换。 */
+    @ColumnInfo(name = "companion_mode", defaultValue = "0") val companionMode: Boolean = false,
     /** 压缩后近期原话的截止消息 ID；供上下文构建跳过已完成回合的工具轨迹。 */
     @ColumnInfo(name = "long_conversation_tail_until_id") val longConversationTailUntilId: String? = null,
     /** 发送后等待一段时间再触发回复；仅本地普通角色和继承角色能力的 Agent 会话使用。 */
@@ -182,6 +184,17 @@ data class LocalMessageRow(
 data class LocalMessageCursor(
     @ColumnInfo(name = "created_at") val createdAt: String,
     @ColumnInfo(name = "row_id") val rowId: Long
+)
+
+/**
+ * 消息行各大 TEXT 字段的 UTF-8 字节数（体积自愈检测用，只回传数字、不搬运大字段）。
+ */
+data class MessageFieldSizes(
+    @ColumnInfo(name = "content") val content: Long,
+    @ColumnInfo(name = "reasoning_content") val reasoningContent: Long,
+    @ColumnInfo(name = "thinking_cards") val thinkingCards: Long,
+    @ColumnInfo(name = "tool_call_history") val toolCallHistory: Long,
+    @ColumnInfo(name = "knowledge_citations") val knowledgeCitations: Long
 )
 
 /**
@@ -634,6 +647,7 @@ data class LocalCharacterMemoryEntity(
 data class LocalExperienceArchiveEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "character_id") val characterId: String? = null,
     @ColumnInfo(name = "start_message_id") val startMessageId: String,
     @ColumnInfo(name = "end_message_id") val endMessageId: String,
     @ColumnInfo(name = "source_started_at") val sourceStartedAt: String,

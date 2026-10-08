@@ -324,7 +324,7 @@ class AIPipeline {
         // 现实时间连续性 + 昼夜节律 + 离线剧情推进注入（对齐原仓库 _phase_real_time_prompt_fallback
         // 与 character/runtime._inject_real_time_context / _inject_circadian_state）
         // CharacterRuntime 未注入时由管线兜底注入，确保现实时间感知生效。
-        phaseRealTimeAndCircadianInjection(ctx)
+        if (ctx.metadata[META_FUSED_COMPANION] != true) phaseRealTimeAndCircadianInjection(ctx)
 
         // 继承完整角色能力的 Agent 会话：角色记忆与 Agent 全局长期记忆会同时注入，
         // 关于用户的事实往往重复，这里做一次去重。
@@ -377,11 +377,14 @@ class AIPipeline {
         val pipelineExtraItems = ctx.promptStack.getItems()
             .filter { it.enabled && it.content.isNotBlank() }
             .sortedBy { it.priority }
+        val fused = ctx.metadata[META_FUSED_COMPANION] == true
+        val dynamicKeys = setOf("knowledge.rag", "agent.todos", "agent.goal", "agent.spec")
+        val dynamicItems = if (fused) pipelineExtraItems.filter { it.key in dynamicKeys || it.scope == "turn" } else emptyList()
         val baseParts = listOf(characterBasePrompt, basePrompt)
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
-        val composedSystem = (baseParts + pipelineExtraItems.map { "## ${it.key}\n${it.content.trim()}" })
+        val composedSystem = (baseParts + pipelineExtraItems.filterNot { it in dynamicItems }.map { "## ${it.key}\n${it.content.trim()}" })
             .joinToString("\n\n")
         ctx.metadata["composed_system_prompt"] = composedSystem
 
@@ -416,13 +419,16 @@ class AIPipeline {
         )
 
         messagesForAi = listOf(mapOf("role" to "system", "content" to composedSystem)) + depthInjectedHistory
+        val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty() else emptyList())
+            .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { "${it.key}: ${it.content}" }
+        messagesForAi = callbacks.finalizeContext(ctx, messagesForAi, tools, dynamic)
 
         // 裁剪上下文
         val prepared = prepareChatContext(
             messagesForAi,
             userContent,
             knowledgeText = "",
-            maxTotalChars = maxContextChars
+            maxTotalChars = if (fused) Int.MAX_VALUE else maxContextChars
         )
         ctx.messages = if (sendImagesDirectly) {
             attachImagesToLatestUserMessage(prepared.messages, ctx.imageUrls)
@@ -492,7 +498,9 @@ class AIPipeline {
                 emptyList()
             }
 
-            val turn = runtime.beforeTurn(ctx.chatRequest, identity, recentMessages)
+            val turn = runtime.beforeTurn(ctx.chatRequest, identity, recentMessages,
+                allowSharedMemory = ctx.metadata[META_COMPANION_MEMORY] != true,
+                fusedCompanion = ctx.metadata[META_FUSED_COMPANION] == true)
             ctx.characterTurn = turn
 
             // 角色运行时已在 beforeTurn 内部调用 buildCharacterInjections 注册了 PromptStack 注入项
@@ -750,7 +758,10 @@ class AIPipeline {
             // arguments 可能是 Map，也可能是 JSON 字符串（部分协议原样下发）
             val args = normalizeAgentToolArguments(toolCall["arguments"])
 
-            val result = callbacks.executeTool(name, args, ctx.toolContext)
+            val executionContext = ctx.toolContext + (
+                SESSION_ALLOWED_TOOL_NAMES_CONTEXT_KEY to tools.mapNotNull(::toolNameOf).toSet()
+            )
+            val result = callbacks.executeTool(name, args, executionContext)
 
             // 处理确认请求
             if (result["require_confirmation"] == true) {
@@ -781,7 +792,9 @@ class AIPipeline {
             onToolStart = { toolCall, thinking, _, _ ->
                 val name = (toolCall["name"] as? String) ?: ""
                 // 与工具执行共用同一份参数规范化：JSON 字符串也要能显示在进度卡片上
-                val args = normalizeAgentToolArguments(toolCall["arguments"])
+                val args = sanitizeSensitiveAgentToolCall(
+                    mapOf("name" to name, "arguments" to normalizeAgentToolArguments(toolCall["arguments"]))
+                )["arguments"] as? Map<String, Any> ?: emptyMap()
                 progress.onToolStart(ctx, name, args, thinking)
                 callbacks.markAgentToolRunning(ctx, name)
             },
@@ -831,6 +844,7 @@ class AIPipeline {
         )
 
         val session = ToolLoopSession(
+            preserveConversation = ctx.metadata[META_FUSED_COMPANION] == true,
             initialMessages = ctx.messages,
             modelCall = modelCall,
             toolExecutor = toolExecutor,
@@ -1009,6 +1023,7 @@ class AIPipeline {
             ctx.streamedMessage = streamedMsg
 
             callbacks.saveAssistantMessage(ctx, streamedMsg)
+            if (ctx.metadata["companion_question_added"] == true) streamedMsg["content"] = ctx.finalContent
 
             val result = PipelineResult(
                 finalContent = ctx.finalContent,
@@ -1072,6 +1087,8 @@ class AIPipeline {
 
         // 保存历史
         callbacks.saveAssistantMessage(ctx, assistantMessage)
+
+        if (ctx.metadata["companion_question_added"] == true) assistantMessage["content"] = ctx.finalContent
 
         // 发送回复
         callbacks.sendResponse(ctx, assistantMessage)
@@ -1188,7 +1205,8 @@ class AIPipeline {
         val turn = ctx.characterTurn ?: return
 
         try {
-            runtime.afterTurn(ctx.chatRequest, result.finalContent, turn)
+            runtime.afterTurn(ctx.chatRequest, result.finalContent, turn,
+                allowSharedMemory = ctx.metadata[META_COMPANION_MEMORY] != true)
         } catch (e: Exception) {
             com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_after_turn_error, e.message, throwable = e)
         }

@@ -70,6 +70,10 @@ import com.nekobot.app.data.local.ai.ContextUsageBreakdown
 import com.nekobot.app.data.local.ai.ContextUsageMessageRow
 import com.nekobot.app.data.local.ai.estimateToolDefinitionsTokens
 import com.nekobot.app.data.local.ai.IncrementalExperienceArchiver
+import com.nekobot.app.data.local.ai.CompanionMemoryStore
+import com.nekobot.app.data.local.ai.CompanionMemoryPolicy
+import com.nekobot.app.data.local.ai.usesCompanionMemory
+import com.nekobot.app.data.local.ai.usesFusedCompanionMemory
 import com.nekobot.app.data.local.ai.CONTEXT_USAGE_AGENT_OVERHEAD_TOKENS
 import com.nekobot.app.data.local.ai.decodeThinkingCardsForUi
 import com.nekobot.app.data.local.ai.mergeProgressCards
@@ -164,6 +168,7 @@ import com.nekobot.app.data.remote.RealtimeEvent
 import com.nekobot.app.ServiceContainer
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -569,7 +574,9 @@ class LocalRepository(
         val contextTokens = sessionId.takeIf(String::isNotBlank)
             ?.let { id ->
                 if (session?.longConversationEnabled == true) ensureLongConversationBoundary(id)
-                val messages = if (session?.sessionMode.equals("agent", ignoreCase = true)) {
+                val messages = if (session?.usesCompanionMemory() == true) {
+                    listAiContextMessages(id)
+                } else if (session?.sessionMode.equals("agent", ignoreCase = true)) {
                     messageDao.listAgentRowsWithBoundary(
                         id,
                         strictBoundary = session?.longConversationEnabled == true
@@ -1222,6 +1229,11 @@ class LocalRepository(
         userMessage: String,
         assistantMessage: String
     ) {
+        val current = kotlinx.coroutines.runBlocking { sessionDao.getById(sessionId) }
+        if (current?.usesCompanionMemory() == true) {
+            scheduleCompanionMemoryExtraction(current, assistantMessage, userMessage)
+            return
+        }
         if (!ServiceContainer.prefs.agentAutoMemoryEnabled) return
         if (!com.nekobot.app.data.local.ai.AgentMemoryExtractor.shouldExtract(userMessage, assistantMessage)) {
             return
@@ -1527,6 +1539,9 @@ class LocalRepository(
         val now = nowIso()
         val id = UUID.randomUUID().toString()
         val character = req.characterId?.let { characterDao.getById(it) }
+        require(!req.companionMode || (character != null && req.sessionMode.equals("agent", true))) {
+            "Agent 角色（长久陪伴）需要选择全新角色"
+        }
         val isGroup = req.sessionMode.equals("group", ignoreCase = true)
         val groupCharacterIds = req.characterIds.orEmpty().filter { it.isNotBlank() }.distinct()
         val entity = LocalSessionEntity(
@@ -1545,12 +1560,19 @@ class LocalRepository(
             createdAt = now,
             updatedAt = now,
             sessionMode = req.sessionMode,
+            companionMode = req.companionMode,
+            inheritCharacter = req.companionMode,
+            longConversationEnabled = req.companionMode,
             groupId = if (isGroup) "gc_${UUID.randomUUID().toString().replace("-", "").take(12)}" else null,
             characterIds = groupCharacterIds.takeIf { isGroup }
                 ?.let { gson.toJson(it) },
             groupConfig = req.groupConfig?.takeIf { isGroup }?.toString()
         )
-        sessionDao.upsert(entity)
+        db.withTransaction {
+            com.nekobot.app.data.local.db.FusedCompanionSchema.installTriggers(db.openHelper.writableDatabase)
+            sessionDao.upsert(entity)
+            if (entity.companionMode) CompanionMemoryStore(db).ensureScope(entity)
+        }
 
         // 成就触发：会话数量
         kotlin.runCatching {
@@ -1685,6 +1707,9 @@ class LocalRepository(
         newId: String,
         now: String
     ): LocalSessionEntity {
+        require(sessionObj.boolVal("companion_mode", "companionMode") != true) {
+            "长久陪伴须通过数据导出中心恢复完整备份（包括记忆、来源和整理进度），不能作为普通聊天 JSON 导入"
+        }
         // system_prompt：优先 session 字段，否则从 messages 里找 role==system 的消息
         var systemPrompt = sessionObj.str("system_prompt", "systemPrompt")
         if (systemPrompt.isNullOrBlank()) {
@@ -1943,7 +1968,7 @@ class LocalRepository(
         // Existing imported history must not trigger hundreds of paid summary calls on the
         // first reply. Keep a small original tail and make older original messages searchable;
         // only an explicit backfill action may generate their episodic summaries.
-        val initialSummary = if (longConversationEnabled == true && !entity.longConversationEnabled &&
+        val initialSummary = if (!updated.usesCompanionMemory() && longConversationEnabled == true && !entity.longConversationEnabled &&
             updated.sessionMode.equals("agent", true) && updated.inheritCharacter &&
             !hasValidAgentSummaryBoundary(id)
         ) prepareUnindexedHistoryBoundary(id) else null
@@ -1955,6 +1980,9 @@ class LocalRepository(
                 messageDao.upsert(summary)
                 sessionDao.updateLongConversationTailUntilId(id, retainedEndId)
             }
+        }
+        if (updated.usesCompanionMemory() && !entity.usesCompanionMemory()) {
+            CompanionMemoryStore(db).ensureScope(updated)
         }
         // 额外用直接 SQL 确保 is_public / share_config / tts_config / proactive_chat 落库
         // （@Update 理论上会更新所有字段，但实测 is_public 等新增列偶发不生效，此处兜底）
@@ -2041,6 +2069,7 @@ class LocalRepository(
     /** Short naturally-grown sessions need no boundary until they approach an unsafe row count. */
     private suspend fun ensureLongConversationBoundary(sessionId: String) {
         val session = sessionDao.getById(sessionId) ?: return
+        if (session.usesCompanionMemory()) return
         if (!session.longConversationEnabled || !session.sessionMode.equals("agent", true)) return
         if (hasValidAgentSummaryBoundary(sessionId)) return
         if (messageDao.countVisibleFinalBySession(sessionId) <= 1_500) {
@@ -2608,8 +2637,21 @@ class LocalRepository(
 
     // ==================== 消息 ====================
 
+    /**
+     * 消息读取的体积自愈兜底：单行 TEXT 字段合计超过 CursorWindow（约 2MB）时，
+     * 任何整行读取都会抛 SQLiteBlobTooBigException，导致会话打不开。
+     * 捕获后转存截断超限字段（[MessageOversizeRepair]）再重试一次。
+     */
+    private suspend fun <T> withMessageRowRepair(sessionId: String?, block: suspend () -> T): T = try {
+        block()
+    } catch (e: android.database.sqlite.SQLiteBlobTooBigException) {
+        LocalLogger.w(TAG, R.string.log_repo_oversize_row_repair_retry, e.message)
+        MessageOversizeRepair.repairOversizedRows(messageDao, appContext, sessionId)
+        block()
+    }
+
     suspend fun listMessages(sessionId: String): List<Message> = withContext(Dispatchers.IO) {
-        messageDao.listBySession(sessionId).map { it.toMessage() }
+        withMessageRowRepair(sessionId) { messageDao.listBySession(sessionId).map { it.toMessage() } }
     }
 
     /**
@@ -2619,13 +2661,17 @@ class LocalRepository(
      * 一次性查询并渲染全部消息；AI 上下文、导出、统计等路径仍使用 [listMessages] 全量查询。
      */
     suspend fun listRecentMessages(sessionId: String, limit: Int): MessagePage = withContext(Dispatchers.IO) {
-        val pageSize = limit.coerceAtLeast(1)
-        // 多取一条用于判断是否还有更早历史，避免额外的 COUNT 查询
-        val rows = messageDao.listRecentRows(sessionId, pageSize + 1)
-        MessagePage(
-            messages = rows.take(pageSize).asReversed().map { it.message.toMessage() },
-            hasMore = rows.size > pageSize
-        )
+        // 打开会话时的主动检查：存量超大行会让下面所有整行查询崩溃，先转存截断。
+        MessageOversizeRepair.ensureSessionReadable(messageDao, appContext, sessionId)
+        withMessageRowRepair(sessionId) {
+            val pageSize = limit.coerceAtLeast(1)
+            // 多取一条用于判断是否还有更早历史，避免额外的 COUNT 查询
+            val rows = messageDao.listRecentRows(sessionId, pageSize + 1)
+            MessagePage(
+                messages = rows.take(pageSize).asReversed().map { it.message.toMessage() },
+                hasMore = rows.size > pageSize
+            )
+        }
     }
 
     /**
@@ -2639,13 +2685,19 @@ class LocalRepository(
         beforeMessageId: String,
         limit: Int
     ): MessagePage = withContext(Dispatchers.IO) {
-        val cursor = messageDao.cursorOf(beforeMessageId) ?: return@withContext MessagePage()
-        val pageSize = limit.coerceAtLeast(1)
-        val rows = messageDao.listRowsBefore(sessionId, cursor.createdAt, cursor.rowId, pageSize + 1)
-        MessagePage(
-            messages = rows.take(pageSize).asReversed().map { it.message.toMessage() },
-            hasMore = rows.size > pageSize
-        )
+        withMessageRowRepair(sessionId) {
+            val cursor = messageDao.cursorOf(beforeMessageId)
+            val pageSize = limit.coerceAtLeast(1)
+            if (cursor == null) {
+                MessagePage()
+            } else {
+                val rows = messageDao.listRowsBefore(sessionId, cursor.createdAt, cursor.rowId, pageSize + 1)
+                MessagePage(
+                    messages = rows.take(pageSize).asReversed().map { it.message.toMessage() },
+                    hasMore = rows.size > pageSize
+                )
+            }
+        }
     }
 
     /** 全局搜索使用的本地消息全文匹配；限制结果数，避免把完整历史载入 UI。 */
@@ -2656,18 +2708,25 @@ class LocalRepository(
     }
 
     /** 仅供 AI 调用链读取；命令输入和命令结果继续保留在聊天记录中。 */
-    private suspend fun listAiContextMessages(sessionId: String): List<LocalMessageEntity> {
-        val session = sessionDao.getById(sessionId)
-        if (session?.longConversationEnabled == true) ensureLongConversationBoundary(sessionId)
-        return (if (session?.sessionMode.equals("agent", true)) {
-            messageDao.listAgentRowsWithBoundary(
-                sessionId,
-                strictBoundary = session?.longConversationEnabled == true
-            )
-        } else {
-            messageDao.listBySession(sessionId)
-        }).filterNot { it.isLocalCommandMessage() }
-    }
+    private suspend fun listAiContextMessages(sessionId: String): List<LocalMessageEntity> =
+        withMessageRowRepair(sessionId) {
+            val session = sessionDao.getById(sessionId)
+            if (session?.usesCompanionMemory() == true) {
+                CompanionMemoryStore(db).permittedHistory(session,
+                    messageDao.listRecentRows(sessionId, 1024).asReversed().map { it.message }
+                        .filter { it.role in setOf("user", "assistant") && !it.isLocalCommandMessage() })
+            } else {
+                if (session?.longConversationEnabled == true) ensureLongConversationBoundary(sessionId)
+                (if (session?.sessionMode.equals("agent", true)) {
+                    messageDao.listAgentRowsWithBoundary(
+                        sessionId,
+                        strictBoundary = session?.longConversationEnabled == true
+                    )
+                } else {
+                    messageDao.listBySession(sessionId)
+                }).filterNot { it.isLocalCommandMessage() }
+            }
+        }
 
     fun observeMessages(sessionId: String): Flow<List<LocalMessageEntity>> =
         messageDao.observeBySession(sessionId)
@@ -2984,6 +3043,9 @@ class LocalRepository(
     ) =
         withContext(Dispatchers.IO) {
             val now = nowIso()
+            sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() }?.let {
+                CompanionMemoryStore(db).ensureScope(it)
+            }
             val msg = LocalMessageEntity(
                 id = UUID.randomUUID().toString(),
                 sessionId = sessionId,
@@ -5428,6 +5490,15 @@ class LocalRepository(
      * @param durationMs 完成耗时（毫秒），主对话路径从 AIPipeline 透传
      * @param ttftMs 首字延迟（毫秒），主对话路径从 AIPipeline 透传
      */
+    internal fun recordCompanionEmbeddingUsage(owner: NekobotDatabase, sessionId: String,
+        model: LocalAiModelEntity, inputTokens: Int, durationMs: Double, estimated: Boolean) {
+        if (owner !== db) return // A late result must never enter another profile's statistics.
+        appendTokenUsageRecord(sessionId, model.name, model.model, inputTokens, 0, nowIsoStatic(),
+            source = "companion_embedding", purpose = com.nekobot.app.data.local.ai.TokenStatsManager.PURPOSE_EMBEDDING,
+            durationMs = durationMs, estimated = estimated, provider = model.provider, inputPricePerMillion = model.inputPrice,
+            outputPricePerMillion = 0.0)
+    }
+
     private fun appendTokenUsageRecord(
         sessionId: String, model: String, actualModel: String = "",
         inputTokens: Int, outputTokens: Int, timestamp: String,
@@ -5658,6 +5729,7 @@ class LocalRepository(
         messageId: String,
         sourceDeleted: Boolean
     ) {
+        if (sessionDao.getById(sessionId)?.usesCompanionMemory() == true) return
         val summary = messageDao.latestAgentSummaryBySession(sessionId) ?: return
         val boundaryId = summary.agentContextSummaryBoundaryId() ?: return
         val changed = messageDao.cursorOf(messageId) ?: return
@@ -6045,7 +6117,9 @@ class LocalRepository(
     ): Flow<RealtimeEvent> = flow {
         val session = sessionDao.getById(sessionId)
         if (session?.longConversationEnabled == true) ensureLongConversationBoundary(sessionId)
-        val messages = if (session?.sessionMode.equals("agent", true)) {
+        val messages = if (session?.usesCompanionMemory() == true) {
+            listAiContextMessages(sessionId)
+        } else if (session?.sessionMode.equals("agent", true)) {
             messageDao.listAgentRowsWithBoundary(
                 sessionId,
                 strictBoundary = session?.longConversationEnabled == true
@@ -6616,7 +6690,8 @@ class LocalRepository(
             ctx.promptStack.addAgentEnvPrompt(
                 deviceSummary = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}，" +
                     "Android ${android.os.Build.VERSION.RELEASE}（API ${android.os.Build.VERSION.SDK_INT}）",
-                language = promptLanguage
+                language = promptLanguage,
+                includeClock = !session.companionMode
             )
             ctx.promptStack.addAgentTodosPrompt(
                 com.nekobot.app.data.model.AgentTodo.fromJsonList(session.agentTodos)
@@ -6625,7 +6700,7 @@ class LocalRepository(
             ctx.promptStack.addAgentSpecPrompt(
                 com.nekobot.app.data.model.AgentSessionSpec.fromJson(session.agentSpec)
             )
-            val globalAgentMemory = runCatching { ServiceContainer.globalAgentMemory.read().content }
+            val globalAgentMemory = if (session.usesCompanionMemory()) "" else runCatching { ServiceContainer.globalAgentMemory.read().content }
                 .onFailure {
                     LocalLogger.w(TAG, R.string.log_repo_read_global_memory_failed, it.message)
                 }
@@ -6865,6 +6940,12 @@ class LocalRepository(
         val generationController = LocalGenerationController()
         var agentForegroundStarted = false
         activeGenerations.put(sessionId, generationController)?.requestStop()
+        // Cancel background extraction before building a fresh foreground request. Its
+        // transaction has either committed already or leaves receipts unchanged for retry.
+        val pendingExtraction = synchronized(companionExtractionJobs) {
+            companionExtractionJobs.filterKeys { it.startsWith("${db.dbName}:$sessionId:") }.values.toList()
+        }
+        pendingExtraction.forEach { it.cancelAndJoin() }
         // 登记全局"生成中"状态：会话列表据此显示运行中竖条
         ServiceContainer.notifySessionGenerating(sessionId, true)
         try {
@@ -7299,7 +7380,8 @@ class LocalRepository(
             ctx.promptStack.addAgentEnvPrompt(
                 deviceSummary = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}，" +
                     "Android ${android.os.Build.VERSION.RELEASE}（API ${android.os.Build.VERSION.SDK_INT}）",
-                language = promptLanguage
+                language = promptLanguage,
+                includeClock = !session.companionMode
             )
             ctx.promptStack.addAgentTodosPrompt(
                 com.nekobot.app.data.model.AgentTodo.fromJsonList(promptSession.agentTodos)
@@ -7308,7 +7390,7 @@ class LocalRepository(
             ctx.promptStack.addAgentSpecPrompt(
                 com.nekobot.app.data.model.AgentSessionSpec.fromJson(promptSession.agentSpec)
             )
-            val globalAgentMemory = runCatching { ServiceContainer.globalAgentMemory.read().content }
+            val globalAgentMemory = if (session.usesCompanionMemory()) "" else runCatching { ServiceContainer.globalAgentMemory.read().content }
                 .onFailure {
                     com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_repo_read_global_memory_failed, it.message)
                 }
@@ -7473,7 +7555,7 @@ class LocalRepository(
                 session.sessionMode.equals("agent", ignoreCase = true) &&
                 !generationController.isStopped &&
                 ctx.finalContent.isNotBlank() &&
-                !ctx.metadata.containsKey("is_heartbeat")
+                (session.usesCompanionMemory() || !ctx.metadata.containsKey("is_heartbeat"))
             ) {
                 scheduleAgentMemoryExtraction(
                     sessionId = sessionId,
@@ -8187,8 +8269,17 @@ class LocalRepository(
     private fun filterDefinitionsForSession(
         sessionId: String,
         definitions: List<Map<String, Any>>
-    ): List<Map<String, Any>> =
-        sessionToolRegistry.filterDefinitions(sessionId, definitions)
+    ): List<Map<String, Any>> {
+        val session = kotlinx.coroutines.runBlocking { sessionDao.getById(sessionId) }
+        val independent = session?.usesCompanionMemory() == true
+        val allowed = if (session?.companionMode == true) com.nekobot.app.data.local.ai.FusedCompanionTools.definitions(definitions)
+        else if (independent) definitions.filterNot {
+            @Suppress("UNCHECKED_CAST")
+            val name = (it["function"] as? Map<String, Any>)?.get("name") ?: it["name"]
+            name in setOf("agent_memory_read", "agent_memory_update")
+        } else definitions
+        return sessionToolRegistry.filterDefinitions(sessionId, allowed)
+    }
 
     fun respondToExecConfirmation(
         requestId: String,
@@ -8413,6 +8504,8 @@ class LocalRepository(
         keepRecent: Int = 10
     ): ContextCompressionResult = withContext(Dispatchers.IO) {
         val session = sessionDao.getById(sessionId)
+        if (session?.companionMode == true) return@withContext ContextCompressionResult(false,
+            errorMessage = "长久陪伴自动整理记忆，不支持手动压缩原话")
         if (session?.sessionMode.equals("agent", ignoreCase = true)) {
             val maxContextTokens = aiModelDao.getActive()?.maxContextLength
                 ?.takeIf { it > 0 }
@@ -8534,6 +8627,16 @@ class LocalRepository(
         maxContextTokens: Int
     ): Boolean {
         if (maxContextTokens <= 0) return false
+        val independent = sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() }
+        if (independent != null) {
+            val scope = CompanionMemoryStore(db).ensureScope(independent)
+            val forgotten = db.companionMemoryDao().forgotten(scope.id).toSet()
+            val pending = (if (independent.companionMode) db.companionMemoryDao().pending(scope.id, Int.MAX_VALUE)
+                else db.companionMemoryDao().unarchived(scope.id, Int.MAX_VALUE))
+                .filterNot { it.id in forgotten || it.isLocalCommandMessage() }
+            return pending.size >= 512 || pending.sumOf { estimateLocalTextTokens(it.content) + 16 } >=
+                agentCompactionBudgetTokens(maxContextTokens) / 2
+        }
         val historyTokens = listAiContextMessages(sessionId)
             .agentContextWindow()
             .asSequence()
@@ -8576,6 +8679,12 @@ class LocalRepository(
         automatic: Boolean,
         protectedMessageIds: Set<String> = emptySet()
     ): ContextCompressionResult {
+        val companionSession = sessionDao.getById(sessionId)
+        if (companionSession?.companionMode == true && !automatic) return ContextCompressionResult(false,
+            errorMessage = "长久陪伴自动整理，不支持手动压缩")
+        if (companionSession?.usesCompanionMemory() == true) {
+            return archiveCompanionContext(companionSession, maxContextTokens, protectedMessageIds)
+        }
         val messages = listAiContextMessages(sessionId)
         val currentSummary = messages.asReversed().firstOrNull(LocalMessageEntity::isAgentContextSummary)
         val contextWindow = messages.agentContextWindow()
@@ -8738,6 +8847,124 @@ class LocalRepository(
             updatedAt = now
         )
         return ContextCompressionResult(compressed = true)
+    }
+
+    private val companionExtractionJobs = ConcurrentHashMap<String, Job>()
+    private val companionReschedule = ConcurrentHashMap.newKeySet<String>()
+
+    /** Independent scheduling: debounce accumulated new content, prioritize explicit maintenance. */
+    private fun scheduleCompanionMemoryExtraction(session: LocalSessionEntity, anchor: String = "", userHint: String = ""): Unit = synchronized(companionExtractionJobs) {
+        val key = "${db.dbName}:${session.id}:${session.characterId}"
+        if (companionExtractionJobs[key]?.isActive == true) {
+            companionReschedule.add(key)
+            return@synchronized
+        }
+        var succeeded = false
+        val job = ServiceContainer.applicationScope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            if (!CompanionMemoryPolicy.explicitChange.containsMatchIn(userHint)) kotlinx.coroutines.delay(1_500)
+            while (activeGenerations.containsKey(session.id)) kotlinx.coroutines.delay(250)
+            _autoMemoryEvents.tryEmit(com.nekobot.app.data.local.ai.AgentMemoryNotice(
+                session.id, 0, com.nekobot.app.data.local.ai.AgentMemoryPhase.RUNNING, anchorContent = anchor))
+            var changed = 0
+            try {
+                val current = sessionDao.getById(session.id)
+                if (current?.usesCompanionMemory() == true && current.characterId == session.characterId) {
+                    val model = aiModelDao.getActiveByPurpose("compression") ?: aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
+                    val inputBudget = ((model?.maxContextLength ?: DEFAULT_AGENT_CONTEXT_TOKENS) -
+                        if (current.companionMode) (model?.maxTokens ?: 4_000) + 1_000 else 2_000).coerceAtLeast(512)
+                    changed = CompanionMemoryStore(db).process(current,
+                        generate = { system, material -> generateExperienceArchive(current.id, system, material) },
+                        inputBudgetChars = inputBudget,
+                        recentTokenBudget = if (current.companionMode) fusedRecentTokenBudget(current) else null)
+                    succeeded = true
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                LocalLogger.w(TAG, R.string.log_repo_agent_memory_extract_failed, error.message)
+            } finally {
+                _autoMemoryEvents.tryEmit(com.nekobot.app.data.local.ai.AgentMemoryNotice(
+                    session.id, changed, com.nekobot.app.data.local.ai.AgentMemoryPhase.DONE, anchorContent = anchor))
+            }
+        }
+        companionExtractionJobs[key] = job
+        job.invokeOnCompletion {
+            val again = synchronized(companionExtractionJobs) {
+                companionExtractionJobs.remove(key, job)
+                companionReschedule.remove(key) && succeeded && db.isOpen
+            }
+            if (again) scheduleCompanionMemoryExtraction(session, anchor, userHint)
+        }
+        job.start()
+        Unit
+    }
+
+    private suspend fun validateCompanionArchiveSources(session: LocalSessionEntity,
+        scope: com.nekobot.app.data.local.db.CompanionScopeEntity, rows: List<LocalMessageEntity>) {
+        require(db.isOpen && db.companionMemoryDao().scope(scope.id)?.revision == scope.revision)
+        val current = sessionDao.getById(session.id)
+        require(current?.usesCompanionMemory() == true && current.characterId == scope.characterId)
+        val forgotten = db.companionMemoryDao().forgotten(scope.id).toSet()
+        for (row in rows) require(row.id !in forgotten && messageDao.getById(row.id)?.let {
+            it.sessionId == session.id && !it.deleted && CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row)
+        } == true) { "归档期间来源已变化，未推进边界" }
+    }
+
+    /** Archive independent segments; there is no lifetime summary record or summary model call. */
+    private suspend fun fusedRecentTokenBudget(session: LocalSessionEntity): Int {
+        val chat = aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
+        val available = (chat?.maxContextLength ?: DEFAULT_AGENT_CONTEXT_TOKENS) - (chat?.maxTokens ?: 4000) -
+            sessionSystemPromptTokens(session) - estimateToolDefinitionsTokens(sessionAgentToolDefinitions(session.id)) - 1024
+        return com.nekobot.app.data.local.ai.FusedCompanionPolicy.budgets(available).recent
+    }
+
+    private suspend fun archiveCompanionContext(
+        session: LocalSessionEntity, maxContextTokens: Int, protectedMessageIds: Set<String>
+    ): ContextCompressionResult {
+        if (session.usesFusedCompanionMemory()) {
+            return try {
+                val model = aiModelDao.getActiveByPurpose("compression") ?: aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
+                CompanionMemoryStore(db).process(session,
+                    generate = { system, material -> generateExperienceArchive(session.id, system, material) },
+                    inputBudgetChars = (model?.maxContextLength ?: maxContextTokens) - (model?.maxTokens ?: 4_000) - 1_000,
+                    force = true, recentTokenBudget = fusedRecentTokenBudget(session))
+                ContextCompressionResult(compressed = true)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { ContextCompressionResult(false, errorMessage = error.message) }
+        }
+        val store = CompanionMemoryStore(db)
+        val scope = store.ensureScope(session)
+        val dao = db.companionMemoryDao()
+        val forgotten = dao.forgotten(scope.id).toSet()
+        val pending = dao.unarchived(scope.id, Int.MAX_VALUE).filterNot { it.id in protectedMessageIds || it.id in forgotten || it.isLocalCommandMessage() }
+        val split = splitLongConversationHistory(pending,
+            maxRecentTokens = minOf(8_000, maxContextTokens / 4).coerceAtLeast(128))
+        if (split.toSummarize.isEmpty()) return ContextCompressionResult(compressed = false)
+        return try {
+            val result = IncrementalExperienceArchiver(
+                archiveDao = db.experienceArchiveDao(),
+                generate = { system, material -> generateExperienceArchive(session.id, system, material) },
+                characterId = session.characterId,
+                validateSources = { rows -> validateCompanionArchiveSources(session, scope, rows) },
+                commitGenerated = { candidate, ids, rows -> db.withTransaction {
+                    validateCompanionArchiveSources(session, scope, rows)
+                    db.experienceArchiveDao().saveGenerated(candidate, ids)
+                }
+                }
+            ).archiveNewOldMessages(session.id, split.toSummarize, "", independentSegments = true)
+            val end = result.processedThroughMessageId ?: return ContextCompressionResult(compressed = false)
+            db.withTransaction {
+                val latest = dao.scope(scope.id) ?: error("记忆范围已失效")
+                require(latest.revision == scope.revision)
+                val rowId = messageDao.cursorOf(end)?.rowId ?: error("原消息已删除")
+                dao.saveScope(latest.copy(archiveRowId = rowId, archiveMessageId = end, error = null, updatedAt = nowIso()))
+            }
+            ContextCompressionResult(compressed = true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            ContextCompressionResult(compressed = false, errorMessage = "独立经历归档未完成：${error.message}")
+        }
     }
 
     /** Only called for newly archived old turns, never automatically for imported backlog. */
@@ -10738,6 +10965,7 @@ ${AiOutputLanguage.directive()}
         inheritCharacter = inheritCharacter,
         inheritCharacterGreeting = inheritCharacterGreeting,
         longConversationEnabled = longConversationEnabled,
+        companionMode = companionMode,
         delayReplyEnabled = delayReplyEnabled,
         delayReplyDelaySeconds = delayReplyDelaySeconds
     )
@@ -11014,6 +11242,62 @@ ${AiOutputLanguage.directive()}
     /** Bind a read-only browser to this repository's database, including its change observer. */
     fun experienceSourceReader(): ExperienceSourceReader = ExperienceSourceReader(db)
 
+    suspend fun listCompanionMemories(sessionId: String): List<com.nekobot.app.data.local.db.CompanionMemoryEntity> =
+        withContext(Dispatchers.IO) {
+            val session = sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() }
+                ?: return@withContext emptyList()
+            val store = CompanionMemoryStore(db)
+            store.validatedMemories(store.ensureScope(session))
+        }
+
+    suspend fun companionMemoryError(sessionId: String): String? = withContext(Dispatchers.IO) {
+        val session = sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() } ?: return@withContext null
+        val scope = CompanionMemoryStore(db).ensureScope(session)
+        db.companionMemoryDao().scope(scope.id)?.error
+    }
+
+    suspend fun companionMemoryStatus(sessionId: String): String = withContext(Dispatchers.IO) {
+        val session = sessionDao.getById(sessionId)?.takeIf { it.companionMode } ?: return@withContext ""
+        val scope = CompanionMemoryStore(db).ensureScope(session)
+        val pending = db.companionMemoryDao().pending(scope.id, Int.MAX_VALUE).size
+        val materials = db.companionMemoryDao().contextMaterials(scope.id)
+        val processed = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM companion_receipts WHERE scopeId = ?", arrayOf(scope.id))
+            .use { it.moveToFirst(); it.getInt(0) }
+        "已整理 $processed 条 · 未整理 $pending 条（含保留的近期原话）\n" +
+            "最近检索：${materials.lastOrNull()?.retrieval ?: "尚未聊天"}\n" +
+            (scope.error?.let { "整理失败：$it" } ?: "后台按旧消息 Token 量自动整理；原话始终保留")
+    }
+
+    suspend fun saveFusedMemory(sessionId: String, key: String?, content: String, category: String,
+        tags: List<String>, pinned: Boolean, onlyMe: Boolean) = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)).also { require(it.companionMode) }
+        CompanionMemoryStore(db).editFused(session, key, content, category, tags, pinned, onlyMe)
+        scheduleCompanionMemoryExtraction(session)
+    }
+
+    suspend fun deleteFusedMemory(sessionId: String, key: String) = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)).also { require(it.companionMode) }
+        CompanionMemoryStore(db).deleteFused(session, key)
+    }
+
+    suspend fun fusedMemoryVersions(sessionId: String, key: String): List<com.nekobot.app.data.local.db.CompanionMemoryEntity> = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)).also { require(it.companionMode) }
+        db.companionMemoryDao().versions(CompanionMemoryStore(db).ensureScope(session).id, key)
+    }
+
+    suspend fun fusedMemorySources(sessionId: String, memoryId: String): List<com.nekobot.app.data.local.db.CompanionSourceEntity> = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)).also { require(it.companionMode) }
+        val scope = CompanionMemoryStore(db).ensureScope(session)
+        require(db.companionMemoryDao().memories(scope.id).any { it.id == memoryId })
+        db.companionMemoryDao().sources(memoryId)
+    }
+
+    suspend fun lockCompanionMemory(sessionId: String, key: String, locked: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val session = sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() } ?: return@withContext false
+        CompanionMemoryStore(db).lock(session, key, locked)
+        true
+    }
+
     /** Read source membership with bounded pages; no generation or chat-state changes. */
     suspend fun readExperienceSourcePage(sessionId: String, archiveId: String, afterMessageId: String? = null): ExperienceSourcePage? =
         withContext(Dispatchers.IO) { ExperienceSourceReader(db).sourcePage(sessionId, archiveId, afterMessageId) }
@@ -11033,6 +11317,10 @@ ${AiOutputLanguage.directive()}
         db.experienceArchiveDao().listBySession(sessionId, limit.coerceIn(1, 200), offset.coerceAtLeast(0))
     }
 
+    /** Refresh only already loaded rows, preserving the user's pagination and scroll anchor. */
+    suspend fun refreshExperienceArchives(sessionId: String, ids: List<String>): List<com.nekobot.app.data.local.db.LocalExperienceArchiveEntity> =
+        withContext(Dispatchers.IO) { ids.mapNotNull { db.experienceArchiveDao().getById(it)?.takeIf { row -> row.sessionId == sessionId } } }
+
     /** 用户编辑经历档案只覆盖摘要和标签，源消息与位置保持不变。 */
     suspend fun updateExperienceArchive(id: String, summary: String, tags: List<String>): Boolean =
         withContext(Dispatchers.IO) {
@@ -11047,7 +11335,12 @@ ${AiOutputLanguage.directive()}
                 // The rolling summary may already contain the pre-edit archive text. It cannot
                 // be surgically patched without another paid model call, so invalidate that
                 // wording and let the next reply use the corrected archive via recall tools.
-                val rolling = messageDao.latestAgentSummaryBySession(archive.sessionId)
+                val companion = sessionDao.getById(archive.sessionId)?.takeIf { it.usesCompanionMemory() }
+                if (companion != null) {
+                    val scope = CompanionMemoryStore(db).ensureScope(companion)
+                    db.companionMemoryDao().saveScope(scope.copy(revision = scope.revision + 1))
+                }
+                val rolling = if (companion == null) messageDao.latestAgentSummaryBySession(archive.sessionId) else null
                 val boundaryId = rolling?.agentContextSummaryBoundaryId()
                 if (rolling != null && boundaryId != null) {
                     val end = messageDao.cursorOf(archive.endMessageId)
@@ -11096,9 +11389,9 @@ ${AiOutputLanguage.directive()}
         onProgress: (com.nekobot.app.data.local.db.LocalExperienceArchiveJobEntity) -> Unit = {}
     ): Boolean = withContext(Dispatchers.IO) {
         val session = sessionDao.getById(sessionId)
-        if (session?.longConversationEnabled != true || !session.inheritCharacter ||
-            !session.sessionMode.equals("agent", true)
-        ) return@withContext false
+        if (session?.usesCompanionMemory() != true) return@withContext false
+        val companionStore = CompanionMemoryStore(db)
+        val companionScope = companionStore.ensureScope(session)
         if ((aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()) == null) {
             throw IllegalStateException("请先配置聊天模型")
         }
@@ -11124,6 +11417,7 @@ ${AiOutputLanguage.directive()}
             try {
                 while (true) {
                     currentCoroutineContext().ensureActive()
+                    validateCompanionArchiveSources(session, companionScope, emptyList())
                     // A live reply takes priority over maintenance model requests.
                     while (activeGenerations.containsKey(sessionId)) {
                         delay(500)
@@ -11153,12 +11447,26 @@ ${AiOutputLanguage.directive()}
                         onProgress(state)
                         break
                     }
+                    val permittedPage = companionStore.permittedHistory(session, page.map { it.message })
+                    if (permittedPage.isEmpty()) {
+                        state = state.copy(checkpointMessageId = page.last().message.id,
+                            processedCount = state.processedCount + page.size, updatedAt = nowIso())
+                        jobs.upsert(state)
+                        onProgress(state)
+                        continue
+                    }
                     val result = IncrementalExperienceArchiver(
                         archiveDao = db.experienceArchiveDao(),
+                        characterId = session.characterId,
+                        validateSources = { rows -> validateCompanionArchiveSources(session, companionScope, rows) },
+                        commitGenerated = { candidate, ids, rows -> db.withTransaction {
+                            validateCompanionArchiveSources(session, companionScope, rows)
+                            db.experienceArchiveDao().saveGenerated(candidate, ids)
+                        } },
                         generate = { systemPrompt, userPrompt ->
                             generateExperienceArchive(sessionId, systemPrompt, userPrompt)
                         }
-                    ).archiveNewOldMessages(sessionId, page.map { it.message }, "")
+                    ).archiveNewOldMessages(sessionId, permittedPage, "", independentSegments = true)
                     val processedIndex = page.indexOfLast {
                         it.message.id == result.processedThroughMessageId
                     }
@@ -12178,7 +12486,38 @@ ${AiOutputLanguage.directive()}
     }
 
     suspend fun installSkillFromUrl(req: SkillInstallRequest): List<Skill> = withContext(Dispatchers.IO) {
-        val packages = skillPackageDownloader.download(req.url)
+        installSkillPackages(
+            packages = skillPackageDownloader.download(req.url),
+            enabled = req.enabled,
+            overwrite = req.overwrite
+        )
+    }
+
+    /**
+     * 从本地选取的 ZIP 文件安装 Skill。
+     *
+     * 与 URL 安装共用同一套校验、重名检查、覆盖与落库逻辑，只是包来源从网络换成
+     * 界面读到的 ZIP 字节；解压限制（25 MB / 500 文件 / 路径穿越）保持一致。
+     */
+    suspend fun installSkillFromZip(
+        zipBytes: ByteArray,
+        fileName: String,
+        enabled: Boolean,
+        overwrite: Boolean
+    ): List<Skill> = withContext(Dispatchers.IO) {
+        installSkillPackages(
+            packages = skillPackageDownloader.parseLocalZip(zipBytes, fileName),
+            enabled = enabled,
+            overwrite = overwrite
+        )
+    }
+
+    /** 写入已解析的 Skill 包：重名检查 → 覆盖处理 → 解压落盘 → 落库。 */
+    private suspend fun installSkillPackages(
+        packages: List<DownloadedSkillPackage>,
+        enabled: Boolean,
+        overwrite: Boolean
+    ): List<Skill> {
         require(packages.isNotEmpty()) { "没有发现可安装的 Skill" }
         val duplicatePackageNames = packages
             .groupBy { skillDirectoryName(it.name).lowercase(Locale.ROOT) }
@@ -12190,7 +12529,7 @@ ${AiOutputLanguage.directive()}
         packages.forEach { validateSkillNameValue(it.name) }
 
         val existing = db.skillDao().listAll()
-        if (!req.overwrite) {
+        if (!overwrite) {
             val conflicts = packages.filter { pkg ->
                 existing.any { it.name.equals(pkg.name, true) } ||
                     localSkillStorage?.exists(pkg.name) == true
@@ -12200,22 +12539,22 @@ ${AiOutputLanguage.directive()}
             }
         }
 
-        packages.map { pkg ->
+        return packages.map { pkg ->
             val old = existing.firstOrNull { it.name.equals(pkg.name, true) }
             val entity = LocalSkillEntity(
                 id = old?.id ?: UUID.randomUUID().toString(),
                 name = pkg.name.trim(),
                 description = pkg.description,
                 aliasesJson = gson.toJson(pkg.aliases),
-                enabled = req.enabled,
+                enabled = enabled,
                 parametersJson = old?.parametersJson,
                 createdAt = old?.createdAt ?: nowIso()
             )
-            if (req.overwrite && old != null && old.name != pkg.name) {
+            if (overwrite && old != null && old.name != pkg.name) {
                 localSkillStorage?.delete(old.name)
             }
             localSkillStorage
-                ?.install(pkg, overwrite = req.overwrite)
+                ?.install(pkg, overwrite = overwrite)
                 ?: throw IllegalStateException("本地 Skill 存储不可用")
             db.skillDao().upsert(entity)
             entity.toSkill()
@@ -12450,9 +12789,48 @@ ${AiOutputLanguage.directive()}
         ensureBuiltinTools()
         // 内置工具按预设顺序置顶，用户自定义工具按创建时间倒序
         val builtinOrder = com.nekobot.app.data.local.db.BuiltinTools.all.mapIndexed { i, s -> s.id to i }.toMap()
-        db.toolDao().listAll()
+        val dbTools = db.toolDao().listAll()
             .sortedWith(compareBy({ builtinOrder[it.id] ?: Int.MAX_VALUE }, { it.createdAt }))
             .map { it.toTool() }
+        // 代码定义但不落库的会话工具（Skill / 数据库 / 子代理 / MCP）补成虚拟条目：
+        // 与 SessionToolCatalog 目录保持同一口径，新增工具进入定义构建函数后自动在本页出现。
+        dbTools + virtualSessionToolRows(dbTools.mapNotNull { it.id }.toSet())
+    }
+
+    /** 把 function-calling 定义转换为 Tools 页展示用的虚拟 Tool 条目。 */
+    private fun definitionToVirtualTool(
+        definition: Map<String, Any>,
+        existingIds: Set<String>,
+        enabled: Boolean,
+        builtin: Boolean,
+        displayName: String? = null
+    ): Tool? {
+        val function = definition["function"] as? Map<String, Any> ?: return null
+        val id = function["name"]?.toString() ?: return null
+        if (id in existingIds) return null
+        return Tool(
+            id = id,
+            // MCP 工具 id 带 mcp__<server>__<name> 前缀，留空让 UI 用去前缀的兜底名展示
+            name = displayName ?: id,
+            description = function["description"]?.toString(),
+            enabled = enabled,
+            parameters = function["parameters"]?.let { gson.toJsonTree(it) },
+            builtin = builtin
+        )
+    }
+
+    private fun virtualSessionToolRows(existingIds: Set<String>): List<Tool> {
+        val subagentEnabled = ServiceContainer.prefs.subagentEnabled
+        return buildSubagentToolDefinitions()
+            .mapNotNull { definitionToVirtualTool(it, existingIds, subagentEnabled, builtin = true) } +
+            buildLocalSkillToolDefinitions()
+                .mapNotNull { definitionToVirtualTool(it, existingIds, enabled = true, builtin = true) } +
+            buildLocalDbToolDefinitions()
+                .mapNotNull { definitionToVirtualTool(it, existingIds, enabled = true, builtin = true) } +
+            // MCP 工具取运行时缓存（不触发连接），未连接时为空列表
+            cachedMcpAgentTools.mapNotNull {
+                definitionToVirtualTool(it, existingIds, enabled = true, builtin = false, displayName = "")
+            }
     }
 
     suspend fun createTool(req: ToolRequest): Tool = withContext(Dispatchers.IO) {

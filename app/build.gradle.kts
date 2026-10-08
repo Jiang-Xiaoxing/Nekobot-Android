@@ -13,8 +13,8 @@ android {
         applicationId = "com.nekobot.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 63
-        versionName = "0.8.1"
+        versionCode = 64
+        versionName = "0.8.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // 内置 Linux 沙盒当前使用 arm64 PRoot。
@@ -79,6 +79,7 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
     androidResources {
         // tom_roush pdfbox 的 afm 资源在 Windows 上压缩时会导致路径异常，跳过压缩
         noCompress += listOf("afm", "ttf", "otf", "pfb")

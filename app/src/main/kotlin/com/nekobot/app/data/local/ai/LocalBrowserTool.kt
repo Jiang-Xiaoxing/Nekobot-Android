@@ -31,7 +31,8 @@ import kotlin.math.roundToInt
  * Agent 模式的会话级原生浏览器工具。
  *
  * 模型通过单个工具选择动作，页面变化后自动回传当前页面文本、可交互元素与截图。
- * WebView 只允许 http(s)，文件产物固定写入会话工作区。
+ * WebView 允许 http(s)、本地回环 http（localhost/127.0.0.1/::1）与本地 .html 文件，
+ * 文件产物固定写入会话工作区。
  *
  * Agent 工具循环运行在 Dispatchers.IO；Android WebView 的所有调用仍统一切回主线程。
  */
@@ -251,8 +252,26 @@ internal class LocalBrowserTool(
                 synchronized(tabs) { tabs[tab.id] = tab }
                 selectedTabId = tab.id
                 webView = tab.view
+                publishTabs()
             }.view
         }
+    }
+
+    /** 把标签页快照推给 UI：内置浏览器据此镜像标签页并跟随 AI 当前页。 */
+    private fun publishTabs() {
+        LocalBrowserPreviewRegistry.updateTabs(
+            sessionId = sessionId,
+            tabs = synchronized(tabs) {
+                tabs.values.map { tab ->
+                    LocalBrowserTabInfo(
+                        tabId = tab.id,
+                        url = tab.url,
+                        title = tab.title,
+                        selected = tab.id == selectedTabId
+                    )
+                }
+            }
+        )
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -268,7 +287,7 @@ internal class LocalBrowserTool(
                     blockNetworkImage = !config.imagesEnabled
                     mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                     cacheMode = WebSettings.LOAD_DEFAULT
-                    allowFileAccess = false
+                    allowFileAccess = true
                     allowContentAccess = false
                     javaScriptCanOpenWindowsAutomatically = false
                     setSupportMultipleWindows(false)
@@ -296,6 +315,7 @@ internal class LocalBrowserTool(
                                 title = currentTitle
                             )
                         }
+                        publishTabs()
                     }
                 }
                 applyViewport(this, config.viewportWidthCss, config.viewportHeightCss)
@@ -329,6 +349,7 @@ internal class LocalBrowserTool(
                     advanceRevision = true
                 )
             }
+            publishTabs()
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
@@ -347,6 +368,7 @@ internal class LocalBrowserTool(
                 )
                 navigationLatch?.countDown()
             }
+            publishTabs()
         }
 
         override fun onReceivedError(
@@ -371,9 +393,9 @@ internal class LocalBrowserTool(
     }
 
     private fun shouldBlockNavigation(view: WebView?, url: String?): Boolean {
-        if (url.isNullOrBlank() || isAllowedWebUrl(url)) return false
+        if (url.isNullOrBlank() || isNavigableUrl(url)) return false
         if (view?.let(::findTabForView)?.id == selectedTabId) {
-            navigationError = "已阻止非 http(s) 地址: $url"
+            navigationError = "已阻止非 https/回环 http/本地 .html 地址: $url"
             LocalBrowserPreviewRegistry.update(
                 sessionId = sessionId,
                 isLoading = false,
@@ -408,6 +430,7 @@ internal class LocalBrowserTool(
             isLoading = false,
             advanceRevision = true
         )
+        publishTabs()
         return null
     }
 
@@ -455,6 +478,7 @@ internal class LocalBrowserTool(
             val fallbackId = synchronized(tabs) { tabs.keys.last() }
             selectTab(fallbackId)
         }
+        publishTabs()
         return success(
             "action" to "close_tab",
             "content" to "已关闭标签页 $tabId",
@@ -760,8 +784,8 @@ internal class LocalBrowserTool(
 
     private fun navigate(rawUrl: String): Map<String, Any> {
         if (rawUrl.isBlank()) return failure("navigate 缺少 url")
-        val normalized = normalizeWebUrl(rawUrl)
-            ?: return failure("只允许打开 http(s) URL")
+        val normalized = normalizeNavigableUrl(rawUrl)
+            ?: return failure("只允许打开 https 网页、本地回环 http 地址或本地 .html 文件")
 
         val navigation = CountDownLatch(1)
         navigationLatch = navigation
@@ -772,6 +796,7 @@ internal class LocalBrowserTool(
             isLoading = true,
             advanceRevision = true
         )
+        publishTabs()
         runOnMain { requireWebView().loadUrl(normalized) }
         val completed = navigation.await(NAVIGATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         navigationLatch = null
@@ -1616,16 +1641,68 @@ internal class LocalBrowserTool(
             .getOrNull()
             ?: mapOf("value" to raw)
 
+    /** http(s) 地址（Cookie / fetch 用）；明文 http 仅限本地回环，由网络安全配置放行。 */
     private fun normalizeWebUrl(raw: String): String? {
-        val normalized = raw.trim().let { value ->
-            if ("://" in value) value else "https://$value"
-        }
+        val value = raw.trim()
+        val normalized = if ("://" in value) value
+        else "${if (isLoopbackHost("http://${value.substringBefore('/')}")) "http" else "https"}://$value"
         return normalized.takeIf(::isAllowedWebUrl)
     }
 
+    /** navigate / 页面内跳转可打开的地址：在 http(s) 之外额外允许本地 .html 文件。 */
+    private fun normalizeNavigableUrl(raw: String): String? {
+        val value = raw.trim()
+        val normalized = when {
+            "://" in value -> value
+            isBareLocalHtmlPath(value) -> Uri.fromFile(File(value)).toString()
+            else -> "${if (isLoopbackHost("http://${value.substringBefore('/')}")) "http" else "https"}://$value"
+        }
+        return normalized.takeIf(::isNavigableUrl)
+    }
+
+    private fun isNavigableUrl(url: String): Boolean =
+        isAllowedWebUrl(url) || isLocalHtmlFileUrl(url)
+
     private fun isAllowedWebUrl(url: String): Boolean {
         val scheme = runCatching { Uri.parse(url).scheme?.lowercase() }.getOrNull()
-        return scheme == "https"
+        return scheme == "https" || (scheme == "http" && isLoopbackHost(url))
+    }
+
+    private fun isLocalHtmlFileUrl(url: String): Boolean {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        if (uri.scheme?.lowercase() != "file") return false
+        val path = uri.path?.lowercase().orEmpty()
+        return path.endsWith(".html") || path.endsWith(".htm")
+    }
+
+    private fun isBareLocalHtmlPath(value: String): Boolean {
+        if (!value.startsWith("/") || value.contains("://")) return false
+        val lower = value.lowercase()
+        return lower.endsWith(".html") || lower.endsWith(".htm")
+    }
+
+    private fun isLoopbackHost(url: String): Boolean {
+        val host = hostOf(url) ?: return false
+        return host == "localhost" ||
+            host == "::1" ||
+            host == "0:0:0:0:0:0:0:1" ||
+            host.startsWith("127.")
+    }
+
+    /** 取主机名：去掉用户信息、端口与 IPv6 方括号，兼容 http://[::1]:8080 这类写法。 */
+    private fun hostOf(url: String): String? {
+        val authority = url.substringAfter("://", "")
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+            .substringAfterLast('@')
+        if (authority.isBlank()) return null
+        val host = when {
+            authority.startsWith("[") -> authority.substringAfter('[').substringBefore(']')
+            authority.startsWith(":") -> authority
+            else -> authority.substringBefore(':')
+        }
+        return host.lowercase().takeIf { it.isNotBlank() }
     }
 
     private fun requireWebView(): WebView =

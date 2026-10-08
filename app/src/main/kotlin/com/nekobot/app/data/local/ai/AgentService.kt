@@ -143,6 +143,112 @@ internal fun normalizeAgentToolCall(toolCall: Map<String, Any>): Map<String, Any
     return normalized
 }
 
+/** 工具仍使用原始参数执行；历史消息和进度只保留脱敏后的模型配置字段。 */
+internal fun sanitizeSensitiveAgentToolCall(toolCall: Map<String, Any>): Map<String, Any> {
+    val name = toolCall["name"]?.toString().orEmpty()
+    if (name !in setOf("db_create_ai_model", "db_update_ai_model")) return toolCall
+    val arguments = toolCall["arguments"] as? Map<*, *> ?: return toolCall
+    val sanitized = arguments.entries.associate { (rawKey, rawValue) ->
+        val key = rawKey?.toString().orEmpty()
+        val value = rawValue?.toString().orEmpty()
+        key to when (key) {
+            "api_key" -> if (value.isBlank()) "" else "[已隐藏]"
+            "base_url" -> if (value.isBlank()) "" else sanitizeModelEndpointForHistory(value, includePath = true)
+            "proxy_url" -> if (value.isBlank()) "" else sanitizeModelEndpointForHistory(value, includePath = false)
+            else -> rawValue ?: ""
+        }
+    }
+    return toolCall.toMutableMap().apply { put("arguments", sanitized) }
+}
+
+private fun sanitizeModelEndpointForHistory(raw: String, includePath: Boolean): String = runCatching {
+    val uri = java.net.URI(raw.trim())
+    val scheme = uri.scheme ?: return@runCatching "[已隐藏]"
+    val host = uri.host ?: return@runCatching "[已隐藏]"
+    val port = if (uri.port >= 0) ":${uri.port}" else ""
+    val path = if (includePath) uri.rawPath.orEmpty() else ""
+    "$scheme://$host$port$path"
+}.getOrDefault("[已隐藏]")
+
+/** 读取旧轨迹时也脱敏，避免升级前保存的凭据再次进入模型上下文。 */
+internal fun sanitizeAgentToolHistoryMessage(message: Map<String, Any>): Map<String, Any> {
+    val sanitized = message.toMutableMap()
+    when (message["role"]?.toString()) {
+        "assistant" -> {
+            val calls = (message["tool_calls"] as? List<*>)?.map { rawCall ->
+                val call = rawCall as? Map<*, *> ?: return@map rawCall
+                val function = call["function"] as? Map<*, *> ?: return@map rawCall
+                val name = function["name"]?.toString().orEmpty()
+                if (name !in setOf("db_create_ai_model", "db_update_ai_model")) return@map rawCall
+                val rawArguments = function["arguments"]
+                val arguments = when (rawArguments) {
+                    is Map<*, *> -> rawArguments.entries.associate { it.key.toString() to (it.value ?: "") }
+                    is String -> parseToolArguments(rawArguments)
+                    else -> emptyMap()
+                }
+                val safeArguments = if (arguments.isNotEmpty() || rawArguments == "{}") {
+                    sanitizeSensitiveAgentToolCall(mapOf("name" to name, "arguments" to arguments))["arguments"]
+                } else {
+                    mapOf("api_key" to "[已隐藏]", "base_url" to "[已隐藏]", "proxy_url" to "[已隐藏]")
+                }
+                call.toMutableMap().apply {
+                    put("function", function.toMutableMap().apply {
+                        put("arguments", agentGson.toJson(safeArguments))
+                    })
+                }
+            }
+            if (calls != null) sanitized["tool_calls"] = calls
+        }
+        "tool" -> {
+            val content = message["content"] as? String
+            if (!content.isNullOrBlank()) sanitized["content"] = sanitizeCredentialJsonText(content)
+        }
+    }
+    return sanitized
+}
+
+private fun sanitizeCredentialJsonText(raw: String): String = runCatching {
+    val parsed = com.google.gson.JsonParser.parseString(raw)
+    val sanitized = redactCredentialJson(parsed)
+    // Gson accepts bare text as a primitive. Preserve ordinary tool output and
+    // original JSON formatting unless a credential was actually redacted.
+    if (sanitized == parsed) raw else agentGson.toJson(sanitized)
+}.getOrDefault(raw)
+
+private fun redactCredentialJson(element: com.google.gson.JsonElement): com.google.gson.JsonElement = when {
+    element.isJsonObject -> com.google.gson.JsonObject().apply {
+        element.asJsonObject.entrySet().forEach { (key, value) ->
+            val replacement = when (key.lowercase()) {
+                "api_key" -> if (value.asStringOrEmpty().isBlank()) value else
+                    com.google.gson.JsonPrimitive("[已隐藏]")
+                "base_url" -> redactJsonEndpoint(value, includePath = true)
+                "proxy_url" -> redactJsonEndpoint(value, includePath = false)
+                else -> redactCredentialJson(value)
+            }
+            add(key, replacement)
+        }
+    }
+    element.isJsonArray -> com.google.gson.JsonArray().apply {
+        element.asJsonArray.forEach { add(redactCredentialJson(it)) }
+    }
+    else -> element
+}
+
+private fun redactJsonEndpoint(
+    element: com.google.gson.JsonElement,
+    includePath: Boolean
+): com.google.gson.JsonElement {
+    if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) {
+        return com.google.gson.JsonPrimitive("[已隐藏]")
+    }
+    val raw = element.asString
+    return if (raw.isBlank()) element else
+        com.google.gson.JsonPrimitive(sanitizeModelEndpointForHistory(raw, includePath))
+}
+
+private fun com.google.gson.JsonElement.asStringOrEmpty(): String =
+    if (isJsonPrimitive && asJsonPrimitive.isString) asString else ""
+
 @Suppress("UNCHECKED_CAST")
 private fun parseToolArguments(raw: String): Map<String, Any> {
     val trimmed = raw.trim()
@@ -284,7 +390,8 @@ data class ToolLoopSession(
      * 每轮模型调用前检查的输入 token 预算；0 表示不做循环内上下文管理。
      * 与"轮次之间"的自动压缩互补：长任务往往在一轮内就堆满上下文。
      */
-    val contextBudgetTokens: () -> Int = { 0 }
+    val contextBudgetTokens: () -> Int = { 0 },
+    val preserveConversation: Boolean = false
 )
 
 /** 准备好的聊天上下文 */
@@ -475,13 +582,17 @@ private const val IN_LOOP_RECENT_MESSAGES_KEPT = 6
 internal fun manageInLoopContextBudget(
     toolMessages: MutableList<MutableMap<String, Any>>,
     budgetTokens: Int,
-    outputReserveRatio: Double = 0.2
+    outputReserveRatio: Double = 0.2,
+    preserveConversation: Boolean = false
 ): String? {
     if (budgetTokens <= 0) return null
     val usable = (budgetTokens * (1.0 - outputReserveRatio.coerceIn(0.0, 0.6))).toInt()
     if (usable <= 0) return null
     val before = estimateLocalMessagesTokens(toolMessages)
     if (before <= usable) return null
+    require(!preserveConversation) {
+        "本轮工具结果与完整原话超过模型容量；已保留原文及工具记录。请增大上下文或减少本次工具任务后重试"
+    }
 
     var elided = 0
     val elisionLimit = (toolMessages.size - IN_LOOP_RECENT_MESSAGES_KEPT).coerceAtLeast(0)
@@ -570,7 +681,7 @@ fun prepareChatContext(
 /** 将工具调用历史追加到消息列表末尾 */
 fun applyToolCallHistory(messages: List<Map<String, Any>>, toolCallHistory: List<Map<String, Any>>?): List<Map<String, Any>> {
     if (toolCallHistory.isNullOrEmpty()) return messages
-    return messages + toolCallHistory.map { it.toMap() }
+    return messages + toolCallHistory.map(::sanitizeAgentToolHistoryMessage)
 }
 
 /** 将持久化的工具调用历史 JSON 恢复为模型可直接使用的 assistant/tool 消息。 */
@@ -580,7 +691,7 @@ fun decodeToolCallHistory(json: String?): List<Map<String, Any>> {
         agentGson.fromJson<List<Map<String, Any>>>(json, toolCallHistoryType)
             .orEmpty()
             .filter { it["role"] in listOf("assistant", "tool") }
-            .map { it.toMap() }
+            .map(::sanitizeAgentToolHistoryMessage)
     }.getOrDefault(emptyList())
 }
 
@@ -588,13 +699,14 @@ fun decodeToolCallHistory(json: String?): List<Map<String, Any>> {
 fun encodeToolCallHistory(history: List<Map<String, Any>>?): String? {
     val normalized = history.orEmpty()
         .filter { it["role"] in listOf("assistant", "tool") }
-        .map { it.toMap() }
+        .map(::sanitizeAgentToolHistoryMessage)
     return normalized.takeIf { it.isNotEmpty() }?.let(agentGson::toJson)
 }
 
 /** 提取工具调用历史（role 为 assistant 或 tool 的消息） */
 fun extractToolCallHistory(messages: List<Map<String, Any>>): List<Map<String, Any>> {
-    return messages.filter { it["role"] in listOf("assistant", "tool") }.map { it.toMap() }
+    return messages.filter { it["role"] in listOf("assistant", "tool") }
+        .map(::sanitizeAgentToolHistoryMessage)
 }
 
 // ============================================================================
@@ -605,35 +717,39 @@ fun extractToolCallHistory(messages: List<Map<String, Any>>): List<Map<String, A
 internal const val AGENT_RECOVERY_SOURCE = "agent_recovery"
 
 /**
- * 单条工具消息落库上限（字符）。
+ * 单条工具消息落库上限（UTF-8 字节）。
  *
  * 工具自身的输出上限通常在 20 万字符以内，但截图类工具会把 data URI 塞进结果正文。
  * 这里再兜一层，保证任何单行都不会逼近 Android SQLite 的 CursorWindow 单行上限
- * （约 2MB，超限时整表读取会抛异常）。
+ * （约 2MB，超限时整表读取会抛异常）。按字节而非字符计：中文等内容 1 字符占 3 字节。
  */
-internal const val MAX_AGENT_TOOL_MESSAGE_ROW_CHARS = 600_000
+internal const val MAX_AGENT_TOOL_MESSAGE_ROW_BYTES = 600_000
 
-/** 单条 assistant 消息携带的 tool_call_history 上限，避免 local_messages 出现超大行。 */
-internal const val MAX_AGENT_MESSAGE_TOOL_HISTORY_CHARS = 1_000_000
+/** 单条 assistant 消息携带的 tool_call_history 上限（UTF-8 字节），避免 local_messages 出现超大行。 */
+internal const val MAX_AGENT_MESSAGE_TOOL_HISTORY_BYTES = 900_000
 
 private const val AGENT_CHECKPOINT_SUMMARY_VERSION = 2
 
 /** Agent 检查点摘要：只记录进度，不再把整轮工具正文塞进单行 JSON。 */
 internal data class AgentCheckpointSummary(val toolCalls: Int, val tokens: Int)
 
+/** UTF-8 编码字节数；体积防护统一按字节计，与 SQLite CursorWindow 的实际约束对齐。 */
+internal fun String.utf8Size(): Int = toByteArray(Charsets.UTF_8).size
+
 /** 单条工具消息 json 化：超出上限时保留正文头部并标注原始长度。 */
 internal fun encodeAgentToolMessageRow(message: Map<String, Any>): String {
     val json = agentGson.toJson(message)
-    if (json.length <= MAX_AGENT_TOOL_MESSAGE_ROW_CHARS) return json
+    if (json.utf8Size() <= MAX_AGENT_TOOL_MESSAGE_ROW_BYTES) return json
     val trimmed = message.toMutableMap()
     val role = (message["role"] as? String).orEmpty()
     if (role == "tool") {
-        trimmed["content"] = "[单条工具结果过大，仅保留落库记录占位；原始长度 ${json.length} 字符，" +
+        trimmed["content"] = "[单条工具结果过大，仅保留落库记录占位；原始长度 ${json.utf8Size()} 字节，" +
             "需要细节时请重新调用该工具]"
     } else {
+        // 4 字节/字符的最坏情况下，chars/4 也不会超过字节预算。
         trimmed["content"] = ((message["content"] as? String) ?: "")
-            .take(MAX_AGENT_TOOL_MESSAGE_ROW_CHARS / 2)
-        trimmed["tool_calls"] = "[工具调用参数过大，已省略；原始长度 ${json.length} 字符]"
+            .take(MAX_AGENT_TOOL_MESSAGE_ROW_BYTES / 4)
+        trimmed["tool_calls"] = "[工具调用参数过大，已省略；原始长度 ${json.utf8Size()} 字节]"
     }
     return agentGson.toJson(trimmed)
 }
@@ -644,7 +760,9 @@ internal fun decodeAgentToolMessageRow(payload: String?): Map<String, Any>? {
     return runCatching {
         val type = object : TypeToken<Map<String, Any>>() {}.type
         agentGson.fromJson<Map<String, Any>>(payload, type)?.toMap()
-    }.getOrNull()?.takeIf { it["role"] in listOf("assistant", "tool") }
+    }.getOrNull()
+        ?.takeIf { it["role"] in listOf("assistant", "tool") }
+        ?.let(::sanitizeAgentToolHistoryMessage)
 }
 
 /** 检查点摘要 JSON：`{"v":2,"count":N,"tokens":T}`。 */
@@ -677,27 +795,28 @@ internal fun decodeAgentCheckpointSummary(json: String?): AgentCheckpointSummary
 /**
  * 限制写进消息行的 tool_call_history 体积：保留最近的几轮，丢弃更早的并在最前面标注。
  *
- * 整轮工具正文超过 [maxChars] 时不能再原样写库——单个 TEXT 行超过 CursorWindow
+ * 整轮工具正文超过 [maxBytes] 时不能再原样写库——单个 TEXT 行超过 CursorWindow
  * 上限会让该会话的所有消息都读不出来。完整轨迹由 local_agent_tool_messages 承担。
+ * 按 UTF-8 字节计（中文 1 字符 3 字节），字符数挡不住窗口溢出。
  */
 internal fun boundAgentToolHistoryJson(
     history: List<Map<String, Any>>?,
-    maxChars: Int = MAX_AGENT_MESSAGE_TOOL_HISTORY_CHARS
+    maxBytes: Int = MAX_AGENT_MESSAGE_TOOL_HISTORY_BYTES
 ): String? {
     val normalized = history.orEmpty()
         .filter { it["role"] in listOf("assistant", "tool") }
         .map { it.toMap() }
     if (normalized.isEmpty()) return null
     val encoded = agentGson.toJson(normalized)
-    if (encoded.length <= maxChars || maxChars <= 0) return encoded
+    if (encoded.utf8Size() <= maxBytes || maxBytes <= 0) return encoded
 
     // 从最新往回累积可整体保留的消息块（assistant tool_calls 与其 tool 结果同生共死）。
     val blocks = groupMessageBlocks(normalized)
     val kept = ArrayDeque<List<Map<String, Any>>>()
     var used = 0
     for (block in blocks.asReversed()) {
-        val size = agentGson.toJson(block).length
-        if (kept.isNotEmpty() && used + size > maxChars) break
+        val size = agentGson.toJson(block).utf8Size()
+        if (kept.isNotEmpty() && used + size > maxBytes) break
         kept.addFirst(block)
         used += size
     }
@@ -709,7 +828,7 @@ internal fun boundAgentToolHistoryJson(
                 "如需这些信息请重新调用对应工具获取]"
         )
         val bounded = agentGson.toJson(listOf(notice) + kept.flatten())
-        if (bounded.length <= maxChars) return bounded
+        if (bounded.utf8Size() <= maxBytes) return bounded
     }
     // 单块本身就超限（例如一批并行工具返回了多个超大结果）：宁可只留说明，
     // 也不能写入超限的 TEXT 行——那会让整个会话的消息都读不出来。
@@ -909,7 +1028,8 @@ suspend fun runToolCallLoop(
     /** 本轮允许的输入 token 预算（0 表示不做循环内上下文管理）。 */
     contextBudgetTokens: () -> Int = { 0 },
     /** 输出预留比例：预算中留给模型回复的部分（默认 20%）。 */
-    contextOutputReserveRatio: Double = 0.2
+    contextOutputReserveRatio: Double = 0.2,
+    preserveConversation: Boolean = false
 ): ToolLoopResult {
     val toolMessages = initialMessages.map { it.toMutableMap() }.toMutableList()
     var finalContent = ""
@@ -985,7 +1105,8 @@ suspend fun runToolCallLoop(
         val contextTrimNotice = manageInLoopContextBudget(
             toolMessages = toolMessages,
             budgetTokens = contextBudgetTokens(),
-            outputReserveRatio = contextOutputReserveRatio
+            outputReserveRatio = contextOutputReserveRatio,
+            preserveConversation = preserveConversation
         )
         if (contextTrimNotice != null) {
             com.nekobot.app.data.local.LocalLogger.i("AgentService", R.string.log_svc_context_trim, iteration, toolMessages.size, contextTrimNotice)
@@ -1032,12 +1153,13 @@ suspend fun runToolCallLoop(
         if (toolCalls.isNotEmpty()) {
             // 构造 assistant 消息（含 tool_calls）
             val toolCallEntries = toolCalls.map { tc ->
+                val historyCall = sanitizeSensitiveAgentToolCall(tc)
                 buildMap {
                     put("id", tc["id"] ?: "")
                     put("type", "function")
                     val funcMap = mutableMapOf<String, Any>(
-                        "name" to (tc["name"] ?: ""),
-                        "arguments" to agentGson.toJson(tc["arguments"] ?: emptyMap<String, Any>())
+                        "name" to (historyCall["name"] ?: ""),
+                        "arguments" to agentGson.toJson(historyCall["arguments"] ?: emptyMap<String, Any>())
                     )
                     tc["_thought_signature"]?.let { funcMap["_thought_signature"] = it }
                     put("function", funcMap)
@@ -1071,7 +1193,12 @@ suspend fun runToolCallLoop(
 
                 // 1) 预检串行执行：守卫与参数校验的顺序必须稳定，越界调用直接返回错误结果。
                 val prepared = batch.map { toolCall ->
-                    hooks?.onToolStart?.invoke(toolCall, thinkingContent, iteration, toolMessages.map { it.toMap() })
+                    hooks?.onToolStart?.invoke(
+                        sanitizeSensitiveAgentToolCall(toolCall),
+                        thinkingContent,
+                        iteration,
+                        toolMessages.map { it.toMap() }
+                    )
                     val loopGuardMessage = loopAbortMessage ?: loopGuard.inspect(toolCall)
                     if (loopAbortMessage == null && loopGuardMessage != null) {
                         loopAbortMessage = loopGuardMessage
@@ -1145,7 +1272,11 @@ suspend fun runToolCallLoop(
                     var toolHistoryMessage: Map<String, Any>? = null
                     if (hooks?.onToolResult != null) {
                         toolHistoryMessage = hooks.onToolResult.invoke(
-                            toolCall, toolResult, thinkingContent, iteration, toolMessages.map { it.toMap() }
+                            sanitizeSensitiveAgentToolCall(toolCall),
+                            toolResult,
+                            thinkingContent,
+                            iteration,
+                            toolMessages.map { it.toMap() }
                         )
                     }
 
@@ -1223,7 +1354,8 @@ suspend fun runToolLoopSession(session: ToolLoopSession): ToolExecutionResult {
         hooks = session.hooks,
         shouldStop = session.shouldStop,
         pendingUserMessages = session.pendingUserMessages,
-        contextBudgetTokens = session.contextBudgetTokens
+        contextBudgetTokens = session.contextBudgetTokens,
+        preserveConversation = session.preserveConversation
     )
     return ToolExecutionResult(loopResult = loopResult, preparedMessages = preparedMessages)
 }

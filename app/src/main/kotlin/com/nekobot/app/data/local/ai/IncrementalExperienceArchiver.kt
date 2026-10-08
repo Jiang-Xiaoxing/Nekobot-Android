@@ -19,24 +19,30 @@ import java.util.concurrent.ConcurrentHashMap
 class IncrementalExperienceArchiver(
     private val archiveDao: ExperienceArchiveDao,
     private val generate: suspend (systemPrompt: String, userPrompt: String) -> String,
-    private val nowIso: () -> String = { Instant.now().toString() }
+    private val nowIso: () -> String = { Instant.now().toString() },
+    private val characterId: String? = null,
+    private val validateSources: suspend (List<LocalMessageEntity>) -> Unit = {},
+    /** Independent callers commit validation and the archive in one Room transaction. */
+    private val commitGenerated: (suspend (LocalExperienceArchiveEntity, List<String>, List<LocalMessageEntity>) -> LocalExperienceArchiveEntity)? = null
 ) {
 
     suspend fun archiveNewOldMessages(
         sessionId: String,
         messages: List<LocalMessageEntity>,
-        rollingSummary: String
-    ): ExperienceArchiveResult = sessionMutex(sessionId).withLock {
+        rollingSummary: String,
+        independentSegments: Boolean = false
+    ): ExperienceArchiveResult = sessionMutex("${System.identityHashCode(archiveDao)}:$sessionId").withLock {
         require(sessionId.isNotBlank()) { "会话 ID 不能为空" }
         val source = messages.map { message ->
             require(message.sessionId == sessionId) { "跨会话消息不能写入当前经历档案" }
-            ExperienceSourceMessage(message.id, message.role, message.content, message.createdAt, message.deleted)
+            ExperienceSourceMessage(message.id, message.role, message.content, message.createdAt, message.deleted,
+                agentUtteranceDay(message)?.toString())
         }
         val split = ExperienceSegmenter.split(source)
         val saved = mutableListOf<LocalExperienceArchiveEntity>()
         var generated = 0
         var reused = 0
-        var retainedContext = rollingSummary.takeLast(MAX_ROLLING_CONTEXT_CHARS)
+        var retainedContext = if (independentSegments) "" else rollingSummary.takeLast(MAX_ROLLING_CONTEXT_CHARS)
         for (segment in split.segments) {
             currentCoroutineContext().ensureActive()
             // Do not pay for a request that is already larger than our bounded segment
@@ -56,12 +62,13 @@ class IncrementalExperienceArchiver(
             if (old != null && old.sourceFingerprint == fingerprint &&
                 old.status == "ready"
             ) {
+                validateSources(messages.filter { row -> segment.messages.any { it.id == row.id } })
                 saved += old
                 reused++
-                if (old.status == "ready") retainedContext = appendContext(retainedContext, old.summary)
+                if (old.status == "ready" && !independentSegments) retainedContext = appendContext(retainedContext, old.summary)
                 continue
             }
-            val raw = generate(SYSTEM_PROMPT, buildUserPrompt(segment, retainedContext))
+            val raw = generate(SYSTEM_PROMPT, buildUserPrompt(segment, retainedContext, independentSegments))
             val parsed = ExperienceSummaryParser.parse(raw)
             val now = nowIso()
             val candidate = LocalExperienceArchiveEntity(
@@ -69,6 +76,7 @@ class IncrementalExperienceArchiver(
                     "$sessionId:${segment.startMessageId}:${segment.endMessageId}".toByteArray(StandardCharsets.UTF_8)
                 ).toString(),
                 sessionId = sessionId,
+                characterId = characterId,
                 startMessageId = segment.startMessageId,
                 endMessageId = segment.endMessageId,
                 sourceStartedAt = segment.messages.first().createdAt,
@@ -80,10 +88,14 @@ class IncrementalExperienceArchiver(
                 createdAt = old?.createdAt ?: now,
                 updatedAt = now
             )
-            val stored = archiveDao.saveGenerated(candidate, segment.messages.map { it.id })
+            val originals = messages.filter { row -> segment.messages.any { it.id == row.id } }
+            val stored = commitGenerated?.invoke(candidate, segment.messages.map { it.id }, originals) ?: run {
+                validateSources(originals)
+                archiveDao.saveGenerated(candidate, segment.messages.map { it.id })
+            }
             saved += stored
             generated++
-            if (stored.status == "ready") retainedContext = appendContext(retainedContext, stored.summary)
+            if (stored.status == "ready" && !independentSegments) retainedContext = appendContext(retainedContext, stored.summary)
         }
         ExperienceArchiveResult(
             archives = saved,
@@ -95,7 +107,11 @@ class IncrementalExperienceArchiver(
         )
     }
 
-    private fun buildUserPrompt(segment: ExperienceSegment, rollingContext: String): String = buildString {
+    private fun buildUserPrompt(segment: ExperienceSegment, rollingContext: String, independent: Boolean): String = if (independent) {
+        CompanionMemoryPolicy.quoteBlock("本段原话", segment.messages.map {
+            mapOf("message_id" to it.id, "role" to it.role, "spoken_day" to it.spokenDay, "text" to it.content)
+        })
+    } else buildString {
         if (rollingContext.isNotBlank()) {
             append("已有滚动摘要（只作理解背景，不要重复写入本段摘要）：\n")
             append(rollingContext)
@@ -152,7 +168,8 @@ data class ExperienceSourceMessage(
     val role: String,
     val content: String,
     val createdAt: String,
-    val deleted: Boolean = false
+    val deleted: Boolean = false,
+    val spokenDay: String? = null
 )
 
 data class ExperienceSegment(val messages: List<ExperienceSourceMessage>, val turnCount: Int) {

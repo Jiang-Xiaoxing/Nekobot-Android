@@ -120,6 +120,8 @@ data class Session(
     /** 本地 Agent 可选的长期单会话记忆模式。 */
     @SerializedName(value = "long_conversation_enabled", alternate = ["longConversationEnabled"])
     val longConversationEnabled: Boolean? = null,
+    @SerializedName(value = "companion_mode", alternate = ["companionMode"])
+    val companionMode: Boolean? = null,
     /** 本地会话是否启用延迟回复。 */
     @SerializedName(value = "delay_reply_enabled", alternate = ["delayReplyEnabled"])
     val delayReplyEnabled: Boolean? = null,
@@ -136,6 +138,7 @@ data class CreateSessionRequest(
     val name: String? = null,
     val type: String = "web",
     @SerializedName("session_mode") val sessionMode: String = "character",
+    @SerializedName("companion_mode") val companionMode: Boolean = false,
     @SerializedName("user_id") val userId: String? = null,
     @SerializedName("character_id") val characterId: String? = null,
     @SerializedName("character_ids") val characterIds: List<String>? = null,

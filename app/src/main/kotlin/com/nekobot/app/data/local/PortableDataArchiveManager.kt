@@ -44,7 +44,16 @@ enum class PortableDataCategory(
             "local_message_images",
             "local_experience_archives",
             "local_experience_sources",
-            "local_experience_archive_jobs"
+            "local_experience_archive_jobs",
+            "companion_scopes",
+            "companion_memories",
+            "companion_sources",
+            "companion_receipts",
+            "companion_forgotten_sources",
+            "companion_pending",
+            "companion_vectors",
+            "companion_clarifications",
+            "companion_owners"
         )
     ),
     CHARACTERS("characters", listOf("local_characters")),
@@ -295,6 +304,12 @@ class PortableDataArchiveManager(private val context: Context) {
                 }
                 if (PortableDataCategory.CONVERSATIONS in selected) {
                     invalidateExperiencesWithoutVisibleSources(db)
+                    // Explicit portable import retains the independent data within the selected
+                    // conversation category. Row IDs and database names are local to the destination.
+                    db.openHelper.writableDatabase.execSQL(
+                        "UPDATE companion_scopes SET profile = ?, baselineRowId = 0, " +
+                            "archiveRowId = COALESCE((SELECT rowid FROM local_messages WHERE id = companion_scopes.archiveMessageId), 0), " +
+                            "revision = revision + 1", arrayOf(db.dbName))
                 }
                 if (PortableDataCategory.CREDENTIALS in selected) {
                     require(password.trim().length >= MIN_PASSWORD_LENGTH) {
@@ -923,7 +938,7 @@ class PortableDataArchiveManager(private val context: Context) {
     }
 
     private fun safeName(value: String): String {
-        require(value.matches(Regex("[a-z0-9_]+"))) { "数据库对象名称无效" }
+        require(value.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) { "数据库对象名称无效" }
         return value
     }
 

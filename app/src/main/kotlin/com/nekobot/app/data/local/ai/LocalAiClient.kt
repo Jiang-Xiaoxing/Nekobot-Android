@@ -279,7 +279,8 @@ class LocalAiClient(
                             model = runtimeModel.model,
                             modelDisplayName = runtimeModel.name,
                             cachedInputTokens = detail.cachedPromptTokens,
-                            cacheWriteTokens = detail.cacheWriteTokens
+                            cacheWriteTokens = detail.cacheWriteTokens,
+                                cacheReported = detail.cacheReported
                         )
                     )
                 }
@@ -310,7 +311,8 @@ class LocalAiClient(
                                 model = runtimeModel.model,
                                 modelDisplayName = runtimeModel.name,
                                 cachedInputTokens = detail.cachedPromptTokens,
-                                cacheWriteTokens = detail.cacheWriteTokens
+                                cacheWriteTokens = detail.cacheWriteTokens,
+                                cacheReported = detail.cacheReported
                             )
                         )
                     }
@@ -857,6 +859,18 @@ class LocalAiClient(
      * 捕获 [FailoverHttpException] 等异常，转换为 [LocalAiResult]。
      */
     suspend fun testModel(model: LocalAiModelEntity): LocalAiResult {
+        if (model.purpose == "embedding") {
+            return try {
+                val result = createEmbeddings(model, listOf("你好"))
+                LocalAiResult("向量连接成功，返回 ${result.vectors.single().size} 维向量")
+            } catch (e: FailoverHttpException) {
+                LocalAiResult("", error = e.message ?: "HTTP ${e.statusCode}", statusCode = e.statusCode)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LocalAiResult("", error = e.message ?: "向量请求异常")
+            }
+        }
         if (model.purpose == "tts") {
             return try {
                 val audio = synthesizeSpeech(model, "你好")
@@ -1099,6 +1113,7 @@ class LocalAiClient(
             var inputTokens: Int? = null
             var outputTokens: Int? = null
             var cachedInputTokens: Int? = null
+            var cacheReported = false
             var cacheWriteTokens: Int? = null
             var failed = false
             var httpCode = 0
@@ -1180,7 +1195,8 @@ class LocalAiClient(
                                 model = runtimeModel.model,
                                 modelDisplayName = runtimeModel.name,
                                 cachedInputTokens = detail.cachedPromptTokens,
-                                cacheWriteTokens = detail.cacheWriteTokens
+                                cacheWriteTokens = detail.cacheWriteTokens,
+                                cacheReported = detail.cacheReported
                             )
                         )
                     }
@@ -1203,6 +1219,7 @@ class LocalAiClient(
                             outputTokens = detail.completionTokens
                             cachedInputTokens = detail.cachedPromptTokens
                             cacheWriteTokens = detail.cacheWriteTokens
+                            cacheReported = cacheReported || detail.cacheReported
                         }
                         protocol.parseStreamError(data)?.let { message ->
                             streamErrorMessage = message
@@ -1288,7 +1305,8 @@ class LocalAiClient(
                             model = runtimeModel.model,
                             modelDisplayName = runtimeModel.name,
                             cachedInputTokens = cachedInputTokens ?: 0,
-                            cacheWriteTokens = cacheWriteTokens ?: 0
+                            cacheWriteTokens = cacheWriteTokens ?: 0,
+                            cacheReported = cacheReported
                         )
                     )
                 }
@@ -2250,6 +2268,8 @@ class LocalAiClient(
             "model" to runtimeModel.model,
             "input" to inputs
         )
+        val dimensions = requestedEmbeddingDimensions(runtimeModel)
+        if (dimensions != null) payload["dimensions"] = dimensions
         val headers = mergeRuntimeHeaders(
             runtimeModel,
             mapOf(
@@ -2287,6 +2307,13 @@ class LocalAiClient(
                 .orEmpty()
             if (vectors.size != inputs.size) {
                 error("Embedding 响应数量不匹配：期望 ${inputs.size}，实际 ${vectors.size}")
+            }
+            require(vectors.all { vector ->
+                vector.isNotEmpty() && vector.size <= MAX_EMBEDDING_DIMENSIONS &&
+                    vector.all { it.isFinite() } && vector.any { it != 0f }
+            }) { "Embedding 返回了无效向量" }
+            require(dimensions == null || vectors.all { it.size == dimensions }) {
+                "Embedding 返回维度与请求不一致：期望 $dimensions，实际 ${vectors.map { it.size }.distinct()}"
             }
             val usage = root.getAsJsonObject("usage")
             val inputTokens = usage?.get("prompt_tokens")?.asInt

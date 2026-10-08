@@ -108,7 +108,9 @@ class AgentCrossTurnContextTest {
         val expanded = expandHiddenToolHistory(storedMessages)
         val restoredToolMessage = expanded.last { it["role"] == "tool" }
         val toolIndex = expanded.indexOf(restoredToolMessage)
-        val finalAssistantIndex = expanded.indexOfFirst { it["content"] == "已经读取完成。" }
+        val finalAssistantIndex = expanded.indexOfFirst {
+            it["content"] == "【历史消息日期：2026-07-26】\n已经读取完成。"
+        }
         val followUpIndex = expanded.indexOfFirst { it["content"] == "原文里提到了什么？" }
 
         assertEquals(toolHistory, decodeToolCallHistory(encoded))

@@ -462,7 +462,7 @@ class LocalAgentToolingTest {
                 runBlocking {
                     manager.requestAuthorization(
                     sessionId = "session-1",
-                    command = "git status && git diff --stat",
+                    command = "git status --short",
                     mainCommand = "git"
                 ) {
                     requestRef.set(it)

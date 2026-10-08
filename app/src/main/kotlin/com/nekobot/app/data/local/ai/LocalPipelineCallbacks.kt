@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import com.nekobot.app.R
 
+/** 本轮实际交给模型的工具名；执行时再次与会话当前权限取交集。 */
+internal const val SESSION_ALLOWED_TOOL_NAMES_CONTEXT_KEY = "_session_allowed_tool_names"
+
 /**
  * 本地模式 PipelineCallbacks 实现。
  *
@@ -176,6 +179,35 @@ internal class LocalPipelineCallbacks(
     private val agentRunDao = db.agentRunDao()
     private val agentToolMessageDao = db.agentToolMessageDao()
     private val pendingGeneratedImages = mutableListOf<Pair<String, List<LocalImageResult>>>()
+    private var companionScopeId: String? = null
+    private var companionRevision: Long? = null
+    private var companionQuestion: String? = null
+    private var fusedHistory: List<LocalMessageEntity> = emptyList()
+
+    override suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>,
+        tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> {
+        if (!session.usesFusedCompanionMemory()) return messages
+        val builder = FusedCompanionContext(db)
+        val result = builder.build(session, requireNotNull(parentMessageId), fusedHistory,
+            messages.filter { it["role"] == "system" }.joinToString("\n\n") { it["content"].toString() },
+            tools, messages.last { it["role"] == "user" }, dynamic,
+            activeModel.maxContextLength ?: 32_000, activeModel.maxTokens ?: 4_000)
+        ctx.metadata["companion_retrieval"] = builder.lastRetrieval
+        companionQuestion = CompanionMemoryStore(db).questionForReply(session)
+        return attachDurableAgentToolHistory(result, loadDurableAgentToolHistory(true))
+    }
+
+    private fun requireCurrentCompanionMaterial() {
+        if (!session.usesCompanionMemory()) return
+        kotlinx.coroutines.runBlocking {
+            require(db.isOpen) { "资料库已关闭，不能发送旧上下文" }
+            val current = sessionDao.getById(session.id)
+            require(current?.usesCompanionMemory() == true && current.characterId == session.characterId)
+            require(companionScopeId != null && db.companionMemoryDao().scope(companionScopeId!!)?.revision == companionRevision) {
+                "历史来源或独立记忆已变化，请重新发送以读取最新内容"
+            }
+        }
+    }
 
     // ---- Subagent 支持 ----
     // 子代理复用本会话的故障转移模型队列与本地工具执行器。
@@ -228,6 +260,8 @@ internal class LocalPipelineCallbacks(
             },
             generationController = generationController,
             sharedWorkspaceRoot = sharedWorkspaceRoot,
+            globalAgentMemoryStore = if (session.usesCompanionMemory()) null else runCatching { ServiceContainer.globalAgentMemory }.getOrNull(),
+            isolateCompanionMemory = session.companionMode,
             recallReader = recallReader,
             askUserQuestionManager = askUserQuestionManager,
             onAskUserQuestionRequired = { request ->
@@ -438,8 +472,28 @@ internal class LocalPipelineCallbacks(
     /** Load the safe history window, quote persisted summaries, and append the current request once. */
     override fun loadMessages(ctx: PipelineContext): List<Map<String, Any>> {
         val isAgentSession = session.sessionMode.equals("agent", ignoreCase = true)
+        val independent = session.usesCompanionMemory()
+        if (independent) ctx.metadata[META_COMPANION_MEMORY] = true
+        if (session.companionMode) ctx.metadata[META_FUSED_COMPANION] = true
         val history = kotlinx.coroutines.runBlocking {
-            if (isAgentSession) messageDao.listAgentRowsWithBoundary(
+            if (independent) {
+                val current = sessionDao.getById(session.id)
+                require(current?.usesCompanionMemory() == true && current.characterId == session.characterId) {
+                    "会话模式或角色已变化，请重新发送"
+                }
+                val store = CompanionMemoryStore(db)
+                store.ensureScope(current, parentMessageId)
+                if (companionScopeId == null) store.forgetRequested(current, ctx.chatRequest.content)
+                val scope = store.ensureScope(current)
+                if (companionScopeId == null) {
+                    companionScopeId = scope.id
+                    companionRevision = scope.revision
+                } else requireCurrentCompanionMaterial()
+                // Summaries remain in the database, but are not this mode's context or boundary.
+                store.permittedHistory(current, (if (session.companionMode) messageDao.listBySession(session.id)
+                    else messageDao.listRecentRows(session.id, 1024).asReversed().map { it.message })
+                    .filter { it.role in setOf("user", "assistant") })
+            } else if (isAgentSession) messageDao.listAgentRowsWithBoundary(
                 session.id,
                 strictBoundary = session.longConversationEnabled
             )
@@ -452,7 +506,7 @@ internal class LocalPipelineCallbacks(
                 else error("重新生成目标不在当前安全上下文窗口中")
             } ?: messages
         }.let { messages ->
-            if (isAgentSession) messages.agentContextWindow() else messages
+            if (isAgentSession && !independent) messages.agentContextWindow() else messages
         }.filter { message ->
             !message.role.equals("system", ignoreCase = true) ||
                 (isAgentSession && message.isAgentContextSummary())
@@ -462,10 +516,37 @@ internal class LocalPipelineCallbacks(
             // 角色执行时，最后一条已经是前一名角色回复，会被错误删掉并重复注入用户消息。
             .filterNot { it.id == parentMessageId }
 
-        val restoredHistory = if (isAgentSession) {
+        val budget = if (independent) ((activeModel.maxContextLength ?: 32_000) / 4).coerceIn(800, 8_000) else 0
+        val selectedHistory = if (session.usesFusedCompanionMemory()) {
+            fusedHistory = history
+            ctx.promptStack.add("companion.rules", CompanionMemoryStore.RECONCILIATION_RULES +
+                "\n这是单窗口长久陪伴。记忆工具只操作此窗口的角色记忆；不读写公共 Agent 记忆。软件辅助资料不是玩家说的话，也不能再次作为新记忆来源。",
+                priority = PromptStack.Priority.BEHAVIOR, scope = "session")
+            FusedCompanionPolicy.recent(history, 8_000).map { it.copy(toolCallHistory = null, reasoningContent = null) }
+        } else if (independent) {
+            val units = CompanionMemoryPolicy.batches(history, 1)
+            var tokens = 0
+            val selected = mutableListOf<LocalMessageEntity>()
+            for (unit in units.asReversed()) {
+                val size = unit.sumOf { estimateLocalTextTokens(it.content) + 16 }
+                if (tokens + size > budget) break
+                selected.addAll(0, unit.map { it.copy(toolCallHistory = null, reasoningContent = null) })
+                tokens += size
+            }
+            kotlinx.coroutines.runBlocking {
+                val recall = CompanionMemoryStore(db).recall(session, ctx.chatRequest.content, selected,
+                    minOf(CompanionMemoryPolicy.RECALL_CHARS, budget), setOfNotNull(parentMessageId))
+                ctx.promptStack.add("companion.recall", recall, priority = PromptStack.Priority.CHARACTER_MEMORIES, scope = "turn")
+                ctx.promptStack.add("companion.reconciliation", CompanionMemoryStore.RECONCILIATION_RULES,
+                    priority = PromptStack.Priority.BEHAVIOR, scope = "turn")
+                companionQuestion = CompanionMemoryStore(db).questionForReply(session)
+            }
+            selected
+        } else history
+        val restoredHistory = if (isAgentSession && !independent) {
             addLegacyAgentContextFallback(history)
         } else {
-            history
+            selectedHistory
         }
         // A retained, already completed dialogue turn supplies its visible answer, not the
         // potentially hundreds of intermediate tool messages folded into that answer row.
@@ -487,6 +568,7 @@ internal class LocalPipelineCallbacks(
 
         // 无角色会话沿用旧提示词组装；Agent 只保留会话提示词，不得继承公共世界书。
         if (character == null) {
+            requireCurrentCompanionMaterial()
             return attachDurableAgentToolHistory(
                 LocalPromptBuilder.build(
                     session = session,
@@ -507,6 +589,7 @@ internal class LocalPipelineCallbacks(
         for (msg in contextHistory) {
             val historyContent = when {
                 isAgentSession && msg.isAgentContextSummary() -> formatAgentContextSummary(msg.content, session.id)
+                isAgentSession -> formatAgentHistoryMessageContent(msg)
                 session.sessionMode.equals("group", ignoreCase = true) ->
                     LocalGroupChat.annotateHistoryContent(msg.role, msg.content, msg.sender)
                 else -> msg.content
@@ -525,6 +608,7 @@ internal class LocalPipelineCallbacks(
             })
         }
 
+        requireCurrentCompanionMaterial()
         // 当前用户消息
         messages.add(mapOf("role" to "user", "content" to ctx.chatRequest.content))
 
@@ -709,7 +793,17 @@ internal class LocalPipelineCallbacks(
     }
 
     override fun saveAssistantMessage(ctx: PipelineContext, message: Map<String, Any>) {
-        val content = (message["content"] as? String) ?: ""
+        requireCurrentCompanionMaterial()
+        var content = (message["content"] as? String) ?: ""
+        if (content.isNotBlank() && ctx.error == null && !ctx.stoppedPrematurely && variantTargetMessageId == null) {
+            companionQuestion?.let { question ->
+                if (!content.contains(question)) {
+                    content += "\n\n$question"
+                    ctx.metadata["companion_question_added"] = true
+                }
+                ctx.finalContent = content
+            }
+        }
         if (content.isBlank()) {
             try {
                 kotlinx.coroutines.runBlocking {
@@ -736,6 +830,16 @@ internal class LocalPipelineCallbacks(
             resolveLocalTokenUsage(ctx.usage, ctx.messages, content)
         } else {
             null
+        }
+        if (session.companionMode && ctx.error == null) kotlinx.coroutines.runBlocking {
+            companionScopeId?.let { scopeId ->
+                db.companionMemoryDao().contextMaterials(scopeId).firstOrNull { it.messageId == parentMessageId }?.let { row ->
+                    val reported = ctx.usage.containsKey(LocalModelUsage.KEY_CACHED_PROMPT)
+                    val description = if (reported) "命中 ${resolvedUsage?.cachedInputTokens ?: 0} Token / 输入 ${resolvedUsage?.inputTokens ?: 0} Token"
+                        else "服务商未提供"
+                    db.companionMemoryDao().saveContextMaterial(row.copy(retrieval = row.retrieval.substringBefore("\n缓存：") + "\n缓存：$description"))
+                }
+            }
         }
         val inputTokens = resolvedUsage?.inputTokens
         val outputTokens = resolvedUsage?.outputTokens
@@ -812,6 +916,10 @@ internal class LocalPipelineCallbacks(
                     // 生成耗时（毫秒）：气泡下方 tok/s 与 token 用量记录共用同一来源。
                     durationMs = durationMs
                 ))
+                if (session.usesCompanionMemory() && ctx.error == null && !ctx.stoppedPrematurely) {
+                    CompanionMemoryStore(db).recordClarificationQuestion(session, messageId)
+                    companionRevision = companionScopeId?.let { db.companionMemoryDao().scope(it)?.revision }
+                }
             }
 
             persistPendingGeneratedImages(messageId)
@@ -976,6 +1084,7 @@ internal class LocalPipelineCallbacks(
         // 在模型调用前触发 character.before_turn.finished（此时 ctx.characterTurn 已就绪）
         triggerBeforeTurnHook(ctx)
         return { messages, stopped ->
+            requireCurrentCompanionMaterial()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
                 activeModel.maxTokens?.let { put("max_tokens", it) }
@@ -1079,6 +1188,7 @@ internal class LocalPipelineCallbacks(
         triggerBeforeTurnHook(ctx)
 
         return { messages, stopped ->
+            requireCurrentCompanionMaterial()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
                 activeModel.maxTokens?.let { put("max_tokens", it) }
@@ -1123,13 +1233,14 @@ internal class LocalPipelineCallbacks(
                             is RealtimeEvent.Usage -> {
                                 usedModelName = event.modelDisplayName ?: usedModelName
                                 usedActualModel = event.model ?: usedActualModel
-                                usage = mapOf(
+                                usage = buildMap {
+                                    putAll(mapOf(
                                     "prompt" to event.inputTokens,
                                     "completion" to event.outputTokens,
-                                    "total" to event.inputTokens + event.outputTokens,
-                                    LocalModelUsage.KEY_CACHED_PROMPT to event.cachedInputTokens,
-                                    LocalModelUsage.KEY_CACHE_WRITE to event.cacheWriteTokens
-                                )
+                                    "total" to event.inputTokens + event.outputTokens))
+                                    if (event.cacheReported || event.cachedInputTokens > 0) put(LocalModelUsage.KEY_CACHED_PROMPT, event.cachedInputTokens)
+                                    if (event.cacheWriteTokens > 0) put(LocalModelUsage.KEY_CACHE_WRITE, event.cacheWriteTokens)
+                                }
                             }
                             is RealtimeEvent.Error -> streamError = event.message
                             else -> Unit
@@ -1205,7 +1316,7 @@ internal class LocalPipelineCallbacks(
         val msg = com.nekobot.app.data.model.Message(
             id = (message["id"] as? String),
             role = "assistant",
-            content = (message["content"] as? String) ?: "",
+            content = if (ctx.metadata["companion_question_added"] == true) ctx.finalContent else (message["content"] as? String) ?: "",
             reasoningContent = if (reasoningEffort == ReasoningEffort.NONE) null else {
                 (message["reasoning_content"] as? String)
                     ?: (message["thinking_content"] as? String)
@@ -1599,8 +1710,24 @@ internal class LocalPipelineCallbacks(
         args: Map<String, Any>,
         toolContext: Map<String, Any>
     ): Map<String, Any> {
-        if (toolName in agentRecallToolIds && isSessionToolEnabled?.invoke(toolName) != true) {
-            return mapOf("success" to false, "error" to "当前会话未启用此记忆回查工具")
+        requireCurrentCompanionMaterial()
+        if (session.usesCompanionMemory() && !session.companionMode && toolName in setOf("agent_memory_read", "agent_memory_update")) {
+            return mapOf("success" to false, "error" to "长久陪伴使用独立记忆；共享记忆工具在此模式不可用")
+        }
+        val providedToolNames = (toolContext[SESSION_ALLOWED_TOOL_NAMES_CONTEXT_KEY] as? Collection<*>)
+            ?.filterIsInstance<String>()
+            ?.toSet()
+            .orEmpty()
+        if (toolName !in providedToolNames || isSessionToolEnabled?.invoke(toolName) != true) {
+            return mapOf("success" to false, "error" to "当前会话未启用或未提供此工具")
+        }
+        if (session.companionMode && toolName in FusedCompanionTools.readNames + FusedCompanionTools.writeNames) {
+            return try {
+                CompanionMemoryStore(db).fusedTool(session, toolName, args, requireNotNull(parentMessageId)).also {
+                    companionRevision = db.companionMemoryDao().scope(requireNotNull(companionScopeId))?.revision
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { mapOf("success" to false, "error" to (error.message ?: "记忆操作失败")) }
         }
         // 策略闸门：网络总开关 + 共享工作区破坏性操作确认。必须在任何执行之前拦截，
         // 否则“删除共享工作区文件/写入共享工作区”会在用户毫不知情的情况下生效。
@@ -1652,7 +1779,9 @@ internal class LocalPipelineCallbacks(
     /** 需要用户确认的破坏性工具操作。 */
     private data class ToolConfirmation(
         val fingerprintArgument: String,
-        val message: String
+        val message: String,
+        val memorizable: Boolean = true,
+        val yoloExempt: Boolean = false
     )
 
     /**
@@ -1681,6 +1810,29 @@ internal class LocalPipelineCallbacks(
                     ToolConfirmation(action, "本地 Agent 请求执行插件操作：$action")
                 }
             }
+            toolName in setOf("db_create_ai_model", "db_update_ai_model") &&
+                (toolName == "db_create_ai_model" ||
+                    listOf("base_url", "proxy_url", "api_key").any(args::containsKey)) -> {
+                val modelId = args["model_id"]?.toString()?.takeIf(String::isNotBlank)
+                    ?: "新模型配置"
+                val destinations = buildList {
+                    args["base_url"]?.toString()?.takeIf(String::isNotBlank)
+                        ?.let { add("API 地址=${redactModelEndpoint(it)}") }
+                    if (args.containsKey("proxy_url")) {
+                        val proxy = args["proxy_url"]?.toString().orEmpty()
+                        add("代理=${if (proxy.isBlank()) "直连" else redactModelEndpoint(proxy)}")
+                    }
+                    if (args.containsKey("api_key")) {
+                        add(if (args["api_key"]?.toString().isNullOrBlank()) "API Key=清空" else "API Key=更新")
+                    }
+                }
+                ToolConfirmation(
+                    fingerprintArgument = "per-call",
+                    message = "本地 Agent 请求修改 AI 模型配置：$modelId；${destinations.joinToString("，")}",
+                    memorizable = false,
+                    yoloExempt = true
+                )
+            }
             toolName in setOf("workspace_create_file", "workspace_edit_file", "file_write", "file_edit") &&
                 isSharedWorkspacePath -> {
                 // 指纹用父目录：授权一次即覆盖该目录内的后续写入，避免每个文件都弹窗。
@@ -1693,6 +1845,15 @@ internal class LocalPipelineCallbacks(
             else -> null
         }
     }
+
+    /** 确认弹窗展示目标主机和路径，但不暴露 URL 用户信息或查询参数。 */
+    private fun redactModelEndpoint(raw: String): String = runCatching {
+        val uri = java.net.URI(raw.trim())
+        val scheme = uri.scheme ?: return@runCatching "无效地址"
+        val host = uri.host ?: return@runCatching "无效地址"
+        val port = if (uri.port >= 0) ":${uri.port}" else ""
+        "$scheme://$host$port${uri.rawPath.orEmpty()}"
+    }.getOrDefault("无效地址")
 
     /**
      * 策略闸门：返回非 null 表示已拦截（直接作为工具结果返回），null 表示放行。
@@ -1716,12 +1877,14 @@ internal class LocalPipelineCallbacks(
         }
 
         val confirmation = confirmationFor(toolName, args) ?: return null
-        if (execAuthorizationManager.isYoloEnabled(session.id)) return null
+        if (execAuthorizationManager.isYoloEnabled(session.id) && !confirmation.yoloExempt) return null
         val allowed = execAuthorizationManager.requestToolAuthorization(
             sessionId = session.id,
             toolName = toolName,
             fingerprintArgument = confirmation.fingerprintArgument,
             message = confirmation.message,
+            memorizable = confirmation.memorizable,
+            yoloExempt = confirmation.yoloExempt,
             onRequest = { request ->
                 execConfirmationEmitter?.invoke(request)
                     ?: emitEvent(RealtimeEvent.ExecConfirmationRequired(request))
@@ -1943,14 +2106,25 @@ internal class LocalPipelineCallbacks(
         return mapOf(
             "success" to true,
             "count" to tasks.size,
+            // 只返回任务元信息，不携带 result / prompt / steps：列表用于掌握全局进度，
+            // 单个任务的输出内容统一由 subagent_get 按 task_id 取回，避免长输出刷爆上下文。
             "tasks" to tasks.take(50).map { t ->
-                // status 统一为小写（与 subagent_get 一致，便于模型按 outputting 判断）；
-                // 进行中的任务补一条 activity，说明当前在做什么。
-                t.toMap(gson).toMutableMap().apply {
+                buildMap<String, Any> {
+                    put("task_id", t.id)
+                    put("description", t.description)
+                    // status 统一为小写（与 subagent_get 一致，便于模型按 outputting 判断）
                     put("status", t.status.name.lowercase())
-                    if (t.isActive) put("activity", subagentActivityText(t))
+                    put("depth", t.depth)
+                    t.parentTaskId?.let { put("parent_task_id", it) }
+                    put("tool_calls", t.toolCalls)
+                    if (t.isActive) {
+                        put("activity", subagentActivityText(t))
+                    } else if (t.status == SubagentTaskStatus.FAILED) {
+                        put("error", (t.error ?: "子代理执行失败").take(200))
+                    }
                 }
-            }
+            },
+            "instruction" to "列表只包含任务元信息，不含最终输出内容；需要查看某个任务的结果时，用 subagent_get 传入对应 task_id 查询。"
         )
     }
 
@@ -2270,6 +2444,7 @@ internal class LocalPipelineCallbacks(
                 LocalAiStreamCallbacks(onContentChunk = { markSubagentOutputting(taskId) })
             }
         val modelCall: ModelCall = { messages, stopped ->
+            requireCurrentCompanionMaterial()
             if (stopped || subagentShouldStop() || (respectParentStop && generationController.isStopped)) {
                 throw kotlinx.coroutines.CancellationException("子代理已停止")
             }
@@ -2337,10 +2512,15 @@ internal class LocalPipelineCallbacks(
                 }
                 // 把自己的任务 id 通过工具上下文传下去：
                 // 子代理内部若再委派 subagent，深度按任务树累加（不再依赖实例计数器）。
-                val context = ownerTaskId
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { mapOf(SUBAGENT_TASK_CONTEXT_KEY to it) }
-                    ?: emptyMap()
+                val context = buildMap<String, Any> {
+                    put(
+                        SESSION_ALLOWED_TOOL_NAMES_CONTEXT_KEY,
+                        toolDefinitions.mapNotNull(::toolNameOf).toSet()
+                    )
+                    ownerTaskId?.takeIf { it.isNotBlank() }?.let {
+                        put(SUBAGENT_TASK_CONTEXT_KEY, it)
+                    }
+                }
                 executeTool(name, callArgs, context)
             }
         return SubagentDelegateScope(buildModelCall = { modelCall }, toolExecutor = toolExecutor)

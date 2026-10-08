@@ -172,7 +172,8 @@ internal fun PromptStack.addCharacterInheritanceBridgePrompt(language: String = 
 internal fun PromptStack.addAgentEnvPrompt(
     now: java.time.ZonedDateTime = java.time.ZonedDateTime.now(),
     deviceSummary: String? = null,
-    language: String = "zh"
+    language: String = "zh",
+    includeClock: Boolean = true
 ) {
     val lower = language.lowercase(Locale.ROOT).replace('_', '-')
     val normalized = lower.substringBefore('-')
@@ -232,7 +233,7 @@ internal fun PromptStack.addAgentEnvPrompt(
 
     add(
         key = AGENT_ENV_PROMPT_KEY,
-        content = content,
+        content = if (includeClock) content else content.lineSequence().filterNot { it.contains(timeText) }.joinToString("\n"),
         priority = PromptStack.Priority.TOOL_INSTRUCTIONS,
         scope = "session"
     )

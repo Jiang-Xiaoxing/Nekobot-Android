@@ -20,6 +20,34 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class PortableDataArchiveManagerTest {
+    @Test fun fusedModeBackupRestoresOwnershipFactsSourcesAndProgressWithoutRequestCache() = runBlocking {
+        val db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+        val characterId = "fused-portable-${UUID.randomUUID()}"
+        val row = LocalSessionEntity(mergeSessionId,"Portable fused fixture",characterId=characterId,
+            sessionMode="agent",inheritCharacter=true,longConversationEnabled=true,companionMode=true,createdAt="now",updatedAt="now")
+        db.sessionDao().upsert(row)
+        val store=com.nekobot.app.data.local.ai.CompanionMemoryStore(db)
+        val scope=store.ensureScope(row)
+        val source=LocalMessageEntity("$mergeSessionId-source",row.id,"user","我怕辣",timestamp="2026-10-08",createdAt="2026-10-08")
+        db.messageDao().upsert(source)
+        store.fusedTool(row,"agent_memory_update",mapOf("key" to "diet","operation" to "add","category" to "user_profile",
+            "content" to "用户怕辣","quote" to source.content),source.id)
+        db.companionMemoryDao().saveReceipts(listOf(com.nekobot.app.data.local.db.CompanionReceiptEntity(scope.id,source.id,
+            com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(source))))
+        val output=ByteArrayOutputStream()
+        manager.export(setOf(PortableDataCategory.CONVERSATIONS),"",output,"test")
+        db.sessionDao().deleteById(row.id)
+        manager.import(ByteArrayInputStream(output.toByteArray()),"",setOf(PortableDataCategory.CONVERSATIONS))
+        val restored=requireNotNull(db.sessionDao().getById(row.id))
+        assertTrue(restored.companionMode)
+        assertEquals(row.id,db.companionMemoryDao().owner(characterId)?.sessionId)
+        val restoredScope=store.ensureScope(restored)
+        val fact=store.validatedMemories(restoredScope).single { it.current }
+        assertEquals("用户怕辣",fact.content)
+        assertEquals(source.id,db.companionMemoryDao().sources(fact.id).single().messageId)
+        assertTrue(db.companionMemoryDao().pending(restoredScope.id).isEmpty())
+        assertTrue(db.companionMemoryDao().contextMaterials(restoredScope.id).isEmpty())
+    }
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     private lateinit var manager: PortableDataArchiveManager
     private lateinit var workspaceRoot: File
@@ -100,7 +128,7 @@ class PortableDataArchiveManagerTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun credentialsRequirePassword() = runBlocking {
+    fun credentialsRequirePassword(): Unit = runBlocking {
         manager.export(
             selected = setOf(PortableDataCategory.CREDENTIALS),
             password = "",

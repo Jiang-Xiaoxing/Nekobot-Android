@@ -560,6 +560,11 @@ fun SessionsScreen(
                                 expanded = showCreateModeMenu,
                                 onDismissRequest = { showCreateModeMenu = false }
                             ) {
+                                if (ServiceContainer.prefs.isLocalMode) DropdownMenuItem(
+                                    text = { Text("Agent 角色（长久陪伴）") },
+                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                                    onClick = { showCreateModeMenu = false; createConfigMode = "companion" }
+                                )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.sessions_mode_role)) },
                                     leadingIcon = {
@@ -1432,7 +1437,7 @@ private fun CreateSessionDialog(
 
     NekoDialog(
         onDismiss = onDismiss,
-        title = newSessionTitle,
+        title = if (sessionMode == "companion") "创建 Agent 角色（长久陪伴）" else newSessionTitle,
         confirmText = createText,
         onConfirm = {
             val char = selectedCharacter
@@ -1450,7 +1455,8 @@ private fun CreateSessionDialog(
             } else {
                 CreateSessionRequest(
                     name = name.ifBlank { newSessionDefault },
-                    sessionMode = "character",
+                    sessionMode = if (sessionMode == "companion") "agent" else "character",
+                    companionMode = sessionMode == "companion",
                     characterId = char?.id,
                     systemPrompt = char?.systemPrompt?.takeIf { it.isNotBlank() },
                     firstMessage = firstMessage.ifBlank { char?.firstMessage },
@@ -1465,6 +1471,9 @@ private fun CreateSessionDialog(
             onCreate(req)
         },
         content = {
+            if (sessionMode == "companion") Text(
+                "只接受尚未用于聊天的全新角色。该角色固定一个主窗口，不能再创建第二个窗口或直接切回普通模式。已有角色进入、退出须先备份，再由外部 Agent 协助转换。\n采用当前窗口角色记忆与原话，不读写公共 Agent 记忆；旧窗口不会自动转换。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             when (sessionMode) {
                 "group" -> {
                     OutlinedTextField(

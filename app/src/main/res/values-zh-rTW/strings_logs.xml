@@ -225,6 +225,7 @@
     <string name="log_repo_session_autonamed">會話自動命名: %1$s -&gt; %2$s</string>
     <string name="log_repo_skill_extract_failed">Agent 技能沉澱失敗（不影響主流程）: %1$s</string>
     <string name="log_repo_state_cache_write_failed">狀態歷程快取寫入失敗: %1$s</string>
+    <string name="log_repo_oversize_row_repair_retry">訊息列超出 CursorWindow 限制，修復後重試: %1$s</string>
     <string name="log_repo_task_expired">任務「%1$s」上次執行點已過期，順延到 %2$s</string>
     <string name="log_repo_token_usage_corrupt">Token 用量記錄損壞，已備份並重建: %1$s</string>
     <string name="log_repo_token_usage_recovered">已從訊息記錄補回 %1$s 筆 Token 用量</string>
@@ -262,6 +263,7 @@
     <string name="log_svc_tool_message_persist_failed">工具訊息入庫失敗: %1$s</string>
     <string name="log_update_check_failed">檢查更新失敗: %1$s</string>
     <string name="log_update_download_failed">更新套件下載失敗: %1$s</string>
+    <string name="log_update_signature_unreadable">讀不到更新套件簽章，略過簽章比對，交由系統安裝時驗證</string>
     <string name="log_vm_task_failed">介面任務執行失敗: %1$s</string>
     <string name="log_widget_update_failed">桌面小工具更新失敗: %1$s</string>
 </resources>

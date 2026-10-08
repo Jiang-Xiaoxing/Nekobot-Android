@@ -532,6 +532,7 @@ fun NekobotNavGraph() {
                     onOpenStoryGraph = { id -> navController.navigate(Routes.storyGraph(id)) },
                     onOpenWenku8Login = { navController.navigate(Routes.WENKU_LOGIN) },
                     onOpenStickers = { navController.navigate(Routes.STICKERS) },
+                    onOpenBrowserSettings = { navController.navigate(Routes.BROWSER_SETTINGS) },
                     onJumpToLatest = {
                         val route = Routes.chat(sessionId)
                         navController.navigate(route) {
@@ -692,6 +693,7 @@ fun NekobotNavGraph() {
                 ExperienceArchiveScreen(
                     sessionId = entry.arguments?.getString("sessionId").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onLocateMemory = { messageId -> navController.navigate(Routes.chatLocation(entry.arguments?.getString("sessionId").orEmpty(), messageId, null)) { launchSingleTop = true } },
                     onOpenSource = { archiveId ->
                         navController.navigate(Routes.experienceSource(entry.arguments?.getString("sessionId").orEmpty(), archiveId)) { launchSingleTop = true }
                     }
