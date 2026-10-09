@@ -139,7 +139,7 @@ class FailoverCoordinator(
                 Regex("""https?://(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)""")
                     .containsMatchIn(url)
         }
-        val fallbackHint = if (hasLocalOrSelfHosted) {
+        val fallbackHint = if (hasLocalOrSelfHosted || purpose == "companion_conversion") {
             ""
         } else {
             "；可添加本地或自建模型作为离线备用"
@@ -218,6 +218,8 @@ class FailoverCoordinator(
 internal fun defaultFailoverTimeout(purpose: String): Duration = when (purpose) {
     "agent" -> 10.minutes
     "compression" -> 10.minutes
+    // 历史转换按批等待完整结果；模型显式设置的超时仍由 execute 优先采用。
+    "companion_conversion" -> 5.minutes
     "chat" -> 120.seconds
     "vision" -> 60.seconds
     "tts" -> 30.seconds
