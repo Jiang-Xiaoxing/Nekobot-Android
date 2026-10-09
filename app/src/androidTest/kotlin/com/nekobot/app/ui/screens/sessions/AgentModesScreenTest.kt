@@ -26,7 +26,11 @@ class AgentModesScreenTest {
     @Composable private fun Theme(content: @Composable () -> Unit) {
         val context = remember { context() }
         CompositionLocalProvider(LocalContext provides context, LocalConfiguration provides context.resources.configuration) {
-            NekobotTheme(darkTheme = false, content = content)
+            NekobotTheme(darkTheme = false) {
+                androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
+                    Box(Modifier.statusBarsPadding().navigationBarsPadding()) { content() }
+                }
+            }
         }
     }
     private fun capture(name: String) {
