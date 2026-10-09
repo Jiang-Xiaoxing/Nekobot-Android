@@ -1,0 +1,260 @@
+package com.nekobot.app.ui.screens.memory
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.nekobot.app.R
+import com.nekobot.app.data.local.CompanionMemoryOverview
+import com.nekobot.app.data.local.ai.CompanionImportPolicy
+import com.nekobot.app.data.local.ai.FusedCompanionPolicy
+import com.nekobot.app.data.local.ai.MemoryTags
+import com.nekobot.app.data.local.db.CompanionMemoryEntity
+
+// 经历可能由用户独自经历；只调整展示名称，不改变底层分类或转换规则。
+internal val memoryCategoryNames = FusedCompanionPolicy.categories + ("episode" to "经历档案")
+
+@Composable
+private fun memoryAccent(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+    Color(0xFFC3AEFF) else Color(0xFF7054C9)
+
+@Composable
+internal fun CompanionMemoryOverviewCard(
+    ownerName: String,
+    overview: CompanionMemoryOverview?,
+    memoryCount: Int,
+    pinnedTokens: Int,
+    loading: Boolean,
+    onRefresh: () -> Unit
+) {
+    var details by rememberSaveable(ownerName) { mutableStateOf(false) }
+    val accent = memoryAccent()
+    Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.12f))) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(painterResource(R.drawable.ic_agent_character_memory), null, Modifier.size(44.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(ownerName.ifBlank { "角色的独立记忆" }, style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("已保存 $memoryCount 条记忆", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onRefresh, enabled = !loading) {
+                    Icon(Icons.Filled.Refresh, "刷新状态", tint = accent)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MemoryMetric("已整理原话", overview?.processedMessages, Modifier.weight(1f))
+                MemoryMetric("未整理原话", overview?.pendingMessages, Modifier.weight(1f))
+            }
+            if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = accent)
+            overview?.error?.let {
+                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp)) {
+                    Text("整理遇到问题：$it", Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Row(Modifier.fillMaxWidth().clickable { details = !details }.heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Info, null, Modifier.size(16.dp), tint = accent)
+                Spacer(Modifier.width(6.dp))
+                Text("原话始终保留", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (details) "收起详情" else "整理详情", style = MaterialTheme.typography.labelMedium, color = accent)
+                Icon(if (details) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    if (details) "收起整理详情" else "展开整理详情", Modifier.size(20.dp), tint = accent)
+            }
+            if (details) {
+                Text("最近检索：${overview?.lastRetrieval ?: "尚未聊天"}\n未整理数量包含保留的近期原话，较早的内容达到整理量后由后台继续处理。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("每次聊天都提供的记忆：约 $pinnedTokens Token。通常预算约 1000，小上下文会缩减；超额时会提示调整。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoryMetric(label: String, count: Int?, modifier: Modifier) {
+    val accent = memoryAccent()
+    Surface(modifier, shape = RoundedCornerShape(14.dp), color = accent.copy(alpha = 0.07f)) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(count?.toString() ?: "—", style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold, color = accent)
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun CompanionMemoryFilters(
+    query: String, onQueryChange: (String) -> Unit,
+    category: String, onCategoryChange: (String) -> Unit,
+    counts: Map<String, Int>, total: Int
+) {
+    val accent = memoryAccent()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(value = query, onValueChange = onQueryChange, singleLine = true,
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+            placeholder = { Text("搜索记忆、主题或标签") },
+            leadingIcon = { Icon(Icons.Filled.Search, "搜索记忆") },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQueryChange("") }) {
+                Icon(Icons.Filled.Close, "清空搜索")
+            } },
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = accent,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (mapOf("" to "全部") + memoryCategoryNames).forEach { (key, label) ->
+                FilterChip(selected = category == key, onClick = { onCategoryChange(key) },
+                    label = { Text("$label ${if (key.isEmpty()) total else counts[key] ?: 0}") },
+                    shape = RoundedCornerShape(50), border = null,
+                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface,
+                        selectedContainerColor = accent.copy(alpha = 0.14f), selectedLabelColor = accent))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun CompanionMemoryCard(
+    memory: CompanionMemoryEntity, enabled: Boolean,
+    onSource: () -> Unit, onEdit: () -> Unit, onVersions: () -> Unit, onDelete: () -> Unit
+) {
+    val accent = memoryAccent()
+    var menu by remember(memory.id) { mutableStateOf(false) }
+    val tags = remember(memory.tagsJson) { MemoryTags.fromJson(memory.tagsJson) }
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, accent.copy(alpha = 0.10f))) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(memoryCategoryIcon(memory.category), null, Modifier.size(19.dp), tint = accent)
+                Spacer(Modifier.width(7.dp))
+                Text(memoryCategoryNames[memory.category] ?: memory.category, Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = accent)
+                MemoryStatusLabel(memory.status)
+                Box {
+                    IconButton(onClick = { menu = true }, enabled = enabled) { Icon(Icons.Filled.MoreHoriz, "更多记忆操作") }
+                    DropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("编辑记忆") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                            onClick = { menu = false; onEdit() })
+                        DropdownMenuItem(text = { Text("查看版本") }, leadingIcon = { Icon(Icons.Filled.History, null) },
+                            onClick = { menu = false; onVersions() })
+                        DropdownMenuItem(text = { Text("删除记忆", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Filled.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menu = false; onDelete() })
+                    }
+                }
+            }
+            SelectionContainer {
+                Text(memory.content, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+            }
+            if (!memory.eventDate.isNullOrBlank()) {
+                Text(memory.eventDate.orEmpty(), style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (memory.category == "episode") {
+                Text("发生日期未确定", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                tags.forEach { MemoryBadge(it) }
+            }
+            if (memory.alwaysProvide || memory.locked || memory.manual) FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (memory.alwaysProvide) MemoryBadge("每次聊天都提供", Icons.Filled.PushPin)
+                if (memory.locked) MemoryBadge("只允许我修改", Icons.Filled.Lock)
+                if (memory.manual) MemoryBadge("手动记忆", Icons.Filled.Edit)
+            }
+            if (memory.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED && !memory.manual) {
+                Text("迁入的旧记忆 · 原话来源未验证", color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelMedium)
+            }
+            memory.expiresAt?.let { Text("有效期至 $it", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onSource, enabled = enabled, contentPadding = PaddingValues(horizontal = 4.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = accent)) {
+                    Icon(Icons.Filled.FormatQuote, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("查看原话")
+                }
+                Spacer(Modifier.weight(1f))
+                Text("v${memory.version}", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoryBadge(label: String, icon: ImageVector? = null) {
+    Surface(shape = RoundedCornerShape(8.dp), color = memoryAccent().copy(alpha = 0.07f)) {
+        Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            icon?.let { Icon(it, null, Modifier.size(12.dp), tint = memoryAccent()); Spacer(Modifier.width(4.dp)) }
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MemoryStatusLabel(status: String) {
+    val color = if (status in setOf("conflict", "locked_conflict")) MaterialTheme.colorScheme.error else memoryAccent()
+    val label = when (status) {
+        "active" -> "有效"
+        "completed" -> "已完成"
+        "cancelled", "canceled" -> "已取消"
+        "conflict" -> "待核对"
+        "locked_conflict" -> "需你修改"
+        "retracted" -> "已撤回"
+        "deleted" -> "已删除"
+        "expired" -> "已过期"
+        "superseded" -> "历史版本"
+        else -> status
+    }
+    Text(label, style = MaterialTheme.typography.labelSmall, color = color)
+}
+
+private fun memoryCategoryIcon(category: String): ImageVector = when (category) {
+    "user_profile" -> Icons.Filled.PersonOutline
+    "character_profile" -> Icons.Filled.Face
+    "relationship" -> Icons.Filled.FavoriteBorder
+    "episode" -> Icons.AutoMirrored.Filled.MenuBook
+    "promise" -> Icons.Filled.EventAvailable
+    else -> Icons.AutoMirrored.Filled.HelpOutline
+}
+
+@Composable
+internal fun CompanionMemoryEmpty(filtered: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 36.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Image(painterResource(R.drawable.ic_agent_character_memory), null, Modifier.size(64.dp))
+        Text(if (filtered) "没有找到这段记忆" else "记忆会慢慢积累", style = MaterialTheme.typography.titleMedium)
+        Text(if (filtered) "换个关键词，或查看其他分类。" else "较早的聊天达到整理量后会自动保存，也可以点右上角添加。",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

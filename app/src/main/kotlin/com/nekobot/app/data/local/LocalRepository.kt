@@ -11461,16 +11461,16 @@ ${AiOutputLanguage.directive()}
         db.companionMemoryDao().scope(scope.id)?.error
     }
 
-    suspend fun companionMemoryStatus(sessionId: String): String = withContext(Dispatchers.IO) {
-        val session = sessionDao.getById(sessionId)?.takeIf { it.companionMode } ?: return@withContext ""
+    suspend fun companionMemoryOverview(sessionId: String): CompanionMemoryOverview = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)?.takeIf { it.companionMode }) {
+            "此入口仅管理当前 Agent 角色的独立记忆"
+        }
         val scope = CompanionMemoryStore(db).ensureScope(session)
         val pending = db.companionMemoryDao().pending(scope.id, Int.MAX_VALUE).size
         val materials = db.companionMemoryDao().contextMaterials(scope.id)
         val processed = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM companion_receipts WHERE scopeId = ?", arrayOf(scope.id))
             .use { it.moveToFirst(); it.getInt(0) }
-        "已整理 $processed 条 · 未整理 $pending 条（含保留的近期原话）\n" +
-            "最近检索：${materials.lastOrNull()?.retrieval ?: "尚未聊天"}\n" +
-            (scope.error?.let { "整理失败：$it" } ?: "后台按旧消息 Token 量自动整理；原话始终保留")
+        CompanionMemoryOverview(processed, pending, materials.lastOrNull()?.retrieval, scope.error)
     }
 
     suspend fun saveFusedMemory(sessionId: String, key: String?, content: String, category: String,
