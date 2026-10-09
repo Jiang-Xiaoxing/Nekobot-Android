@@ -28,7 +28,8 @@ internal class CompanionHistoryConversion(private val db: NekobotDatabase) {
         var done = eligible.count { it.id in receipts }.toLong()
         progress(done, total)
         val budgets = FusedCompanionPolicy.budgets(inputTokens)
-        val recent = FusedCompanionPolicy.recent(eligible, minOf(budgets.recent, inputTokens / 6))
+        // 参考只辅助排除近期矛盾；避免长篇近况淹没当前待整理的旧段。
+        val recent = FusedCompanionPolicy.recent(eligible, minOf(2000, inputTokens / 8))
         val units = FusedCompanionPolicy.turns(eligible).filter { unit -> unit.any { it.id !in receipts } }
         val batch = mutableListOf<LocalMessageEntity>()
         suspend fun flush() {

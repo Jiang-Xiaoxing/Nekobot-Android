@@ -44,6 +44,8 @@ class CompanionConversionAndroidTest {
                 assertEquals(1, db.sessionDao().count()) // 模型未完成时正式库没有半成品
                 assertFalse(material.contains("apiKey"))
                 val input = JsonParser.parseString(material).asJsonObject
+                assertEquals(CompanionConversionRules.outputReminder, input["output_contract"].asString)
+                assertFalse(input["reference"].asJsonArray.any { it.asJsonObject.has("id") })
                 assertTrue(input["legacy_reference"].toString().contains("飞机"))
                 val rows = input["target"].asJsonArray.map { it.asJsonObject }.filter { it["role"].asString == "user" }
                 Gson().toJson(mapOf("changes" to rows.map { draft(it["id"].asString, it["text"].asString, if(it["text"].asString.contains("蛋糕")) "episode" else "user_profile") }))
@@ -72,12 +74,17 @@ class CompanionConversionAndroidTest {
                 message(db, source, "u$i", "第${i}件事" + "原话".repeat(1100))
                 message(db, source, "a$i", "知道了", "assistant")
             }
+            message(db, source, "late-user", "较晚的原话只辅助判断，不能提前提取。")
             val service = CompanionTransferService(context, db); val preview = service.preview(source.id)
             var calls = 0
             var completedFirst: String? = null
             fails { service.execute(preview.jobId, "副本", CompanionConversionRequest("m", "测试模型", 14000, { _, raw ->
                 calls++
-                val row = JsonParser.parseString(raw).asJsonObject["target"].asJsonArray.first().asJsonObject
+                val material = JsonParser.parseString(raw).asJsonObject
+                assertTrue(material["reference"].asJsonArray.size() > 0)
+                assertFalse(material["reference"].asJsonArray.any { it.asJsonObject.has("id") })
+                assertEquals("target", material.keySet().filterNot { it == "repair_feedback" }.last())
+                val row = material["target"].asJsonArray.first().asJsonObject
                 if (calls == 1) { completedFirst = row["id"].asString; "{\"changes\":[]}" }
                 else Gson().toJson(mapOf("changes" to listOf(draft(row["id"].asString, "捏造的引用", "episode"))))
             })) }

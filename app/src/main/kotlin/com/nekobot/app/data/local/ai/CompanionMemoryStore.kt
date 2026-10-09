@@ -268,10 +268,16 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         }
         val existing = bounded(old)
         val legacyView = bounded(legacy).map { it + ("key" to legacyAliases[it["key"]]) }
-        fun rows(values: List<LocalMessageEntity>) = values.map { mapOf("id" to aliases.getValue(it.id), "role" to it.role,
-            "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content) }
-        val material = mapOf("target" to rows(target), "reference" to rows(reference),
-            "existing" to existing, "legacy_reference" to legacyView)
+        fun rows(values: List<LocalMessageEntity>, citeable: Boolean) = values.map {
+            val row = linkedMapOf<String, Any?>("role" to it.role,
+                "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content)
+            if (citeable) row["id"] = aliases.getValue(it.id)
+            row
+        }
+        // 待整理原话放在最后，并且只有它具有可引用编号。规则查看页包含同一份提醒。
+        val material = linkedMapOf("reference" to rows(reference, false), "legacy_reference" to legacyView,
+            "existing" to existing, "output_contract" to CompanionConversionRules.outputReminder,
+            "target" to rows(target, true))
         var feedback = ""
         repeat(3) { attempt ->
             val input = gson.toJson(if (feedback.isEmpty()) material else material + ("repair_feedback" to feedback))
