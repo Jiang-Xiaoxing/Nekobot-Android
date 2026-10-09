@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 已确认的心形记忆册：蓝紫渐变、淡粉爱心和少量光点。以原色显示，不套用单色 tint。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+
+    <!-- 浅紫底座与原有更多页图标保持相同尺寸、圆角比例。 -->
+    <path android:pathData="M16,0H48C56.84,0 64,7.16 64,16V48C64,56.84 56.84,64 48,64H16C7.16,64 0,56.84 0,48V16C0,7.16 7.16,0 16,0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="64" android:endY="64">
+                <item android:offset="0" android:color="#F3EFFF" />
+                <item android:offset="1" android:color="#EDE7FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 书封从左下方的蓝色过渡到右上方的柔紫色。 -->
+    <path android:pathData="M18,9H46C49.31,9 52,11.69 52,15V49C52,52.31 49.31,55 46,55H18C14.69,55 12,52.31 12,49V15C12,11.69 14.69,9 18,9Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="14" android:startY="52"
+                android:endX="50" android:endY="10">
+                <item android:offset="0" android:color="#2848D9" />
+                <item android:offset="0.52" android:color="#7B57F0" />
+                <item android:offset="1" android:color="#CB91F6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M18.3,9H18C14.69,9 12,11.69 12,15V49C12,52.31 14.69,55 18,55H18.3Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="12" android:startY="9"
+                android:endX="18.3" android:endY="55">
+                <item android:offset="0" android:color="#4735CF" />
+                <item android:offset="1" android:color="#293DBD" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 合拢书页，保留清楚的记忆册轮廓。 -->
+    <path android:fillColor="#FFF7EB"
+        android:pathData="M17.8,49H47.9C49,49 49.9,48.8 50.2,48.3V50.5C50.2,51.88 48.9,53 47.3,53H17.8C16.03,53 14.6,52.1 14.6,51C14.6,49.9 16.03,49 17.8,49Z" />
+
+    <!-- 爱心稍偏向书封中心，避开左侧书脊。 -->
+    <path android:pathData="M34,39.5C30.8,36.8 23.2,32.5 23.2,27C23.2,23.7 25.6,21.6 28.3,21.6C30.6,21.6 32.4,22.8 34,24.8C35.6,22.8 37.4,21.6 39.7,21.6C42.4,21.6 44.8,23.7 44.8,27C44.8,32.5 37.2,36.8 34,39.5Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="28" android:startY="22"
+                android:endX="40" android:endY="40">
+                <item android:offset="0" android:color="#FFE9F2" />
+                <item android:offset="1" android:color="#FFCCE6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 静态光点；不增加动效或遮挡爱心。 -->
+    <path android:fillColor="#EDE4FF" android:fillAlpha="0.95"
+        android:pathData="M22.6,14.5a0.45,0.45 0,1 0,0.9 0a0.45,0.45 0,1 0,-0.9 0M27.4,16.7a0.22,0.22 0,1 0,0.44 0a0.22,0.22 0,1 0,-0.44 0M42.1,16a0.22,0.22 0,1 0,0.44 0a0.22,0.22 0,1 0,-0.44 0M46.4,13.1a0.42,0.42 0,1 0,0.84 0a0.42,0.42 0,1 0,-0.84 0M49.1,21.5a0.24,0.24 0,1 0,0.48 0a0.24,0.24 0,1 0,-0.48 0M21.5,37a0.23,0.23 0,1 0,0.46 0a0.23,0.23 0,1 0,-0.46 0M47.8,43a0.42,0.42 0,1 0,0.84 0a0.42,0.42 0,1 0,-0.84 0" />
+</vector>

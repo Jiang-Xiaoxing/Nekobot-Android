@@ -2,6 +2,7 @@ package com.nekobot.app.ui.screens.more
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -125,11 +127,17 @@ fun MoreScreen(
                 if (appMode == AppMode.LOCAL) {
                     Spacer(Modifier.height(4.dp))
                     MoreRow(
-                        icon = Icons.Filled.AutoAwesome,
-                        tint = accentTertiary(),
                         title = stringResource(R.string.agent_character_memory_title),
                         desc = stringResource(R.string.agent_character_memory_desc),
-                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) }
+                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) },
+                        leadingIcon = {
+                            // 保留矢量内的渐变原色；行标题提供无障碍名称。
+                            Image(
+                                painter = painterResource(R.drawable.ic_agent_character_memory),
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -258,14 +266,7 @@ private fun MoreRow(
     desc: String,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    MoreRow(title = title, desc = desc, onClick = onClick, leadingIcon = {
         Box(
             modifier = Modifier
                 .size(40.dp)
@@ -275,6 +276,26 @@ private fun MoreRow(
         ) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         }
+    })
+}
+
+/** 自定义彩色图标与普通单色图标共用同一行布局和点击区域。 */
+@Composable
+private fun MoreRow(
+    title: String,
+    desc: String,
+    onClick: () -> Unit,
+    leadingIcon: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        leadingIcon()
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
