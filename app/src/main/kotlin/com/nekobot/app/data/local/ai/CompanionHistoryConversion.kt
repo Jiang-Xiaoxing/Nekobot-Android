@@ -20,6 +20,7 @@ internal class CompanionHistoryConversion(private val db: NekobotDatabase) {
         val blocked = legacy.filter { !CompanionImportPolicy.usable(it) || it.status in setOf("cancelled", "retracted") }
             .flatMap { dao.sources(it.id) }.map { it.messageId }.toSet()
         val eligible = history.filterNot { it.id in blocked }
+        val aliases = eligible.mapIndexed { index, row -> row.id to "m${index + 1}" }.toMap()
         val total = eligible.size.toLong()
         val receipts = db.openHelper.readableDatabase.query("SELECT messageId FROM companion_receipts WHERE scopeId=?", arrayOf(scope.id)).use { c ->
             buildSet { while (c.moveToNext()) add(c.getString(0)) }
@@ -34,7 +35,7 @@ internal class CompanionHistoryConversion(private val db: NekobotDatabase) {
             if (batch.isEmpty()) return
             coroutineContext.ensureActive()
             val ids = batch.map { it.id }.toSet()
-            store.convertBatch(session, batch.toList(), recent.filterNot { it.id in ids }, legacy, inputTokens, generate)
+            store.convertBatch(session, batch.toList(), recent.filterNot { it.id in ids }, legacy, aliases, inputTokens, generate)
             done += batch.count { it.id !in receipts }
             progress(done, total)
             batch.clear()

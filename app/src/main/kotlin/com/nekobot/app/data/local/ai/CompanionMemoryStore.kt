@@ -244,13 +244,14 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
 
     /** 转换只写任务的临时库；复用正常记忆的版本、保护及逐字来源校验。 */
     suspend fun convertBatch(session: LocalSessionEntity, target: List<LocalMessageEntity>,
-        reference: List<LocalMessageEntity>, legacy: List<CompanionMemoryEntity>, inputTokens: Int,
+        reference: List<LocalMessageEntity>, legacy: List<CompanionMemoryEntity>, aliases: Map<String, String>, inputTokens: Int,
         generate: suspend (String, String) -> String) {
         val scope = ensureScope(session)
         val query = target.joinToString(" ") { it.content }
         val limit = maxOf(128, inputTokens / 8)
         val old = validatedMemories(scope).filter { it.current || it.status in setOf("conflict", "locked_conflict") }
         val questions = dao.clarifications(scope.id).associateBy { it.factKey }
+        val legacyAliases = legacy.mapIndexed { index, item -> item.factKey to "legacy${index + 1}" }.toMap()
         fun bounded(rows: List<CompanionMemoryEntity>): List<Map<String, Any?>> {
             val result = mutableListOf<Map<String, Any?>>()
             for (m in rows.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked }
@@ -264,33 +265,65 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             return result
         }
         val existing = bounded(old)
-        val legacyView = bounded(legacy)
-        fun rows(values: List<LocalMessageEntity>) = values.map { mapOf("id" to it.id, "role" to it.role,
+        val legacyView = bounded(legacy).map { it + ("key" to legacyAliases[it["key"]]) }
+        fun rows(values: List<LocalMessageEntity>) = values.map { mapOf("id" to aliases.getValue(it.id), "role" to it.role,
             "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content) }
-        val material = gson.toJson(mapOf("target" to rows(target), "reference" to rows(reference),
-            "existing" to existing, "legacy_reference" to legacyView))
-        require(estimateLocalTextTokens(material) + estimateLocalTextTokens(CompanionConversionRules.prompt) <= inputTokens) {
-            "有一段完整聊天超过所选模型的容量，请在配置中选择更大上下文的模型后继续。已完成的部分保留。"
-        }
-        val drafts = parse(generate(CompanionConversionRules.prompt, material))
-        db.withTransaction {
-            require(active(scope)) { "转换资料已变化，本批结果没有导入" }
-            for (row in target + reference) require(db.messageDao().getById(row.id)?.let {
-                !it.deleted && it.sessionId == session.id && CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row)
-            } == true) { "转换原话已变化，本批结果没有导入" }
-            for (draft in drafts) {
-                require(draft.targetKey.isBlank() || existing.any { it["key"] == draft.targetKey }) { "转换结果引用了未提供的旧记忆" }
-                val oldReference = if (draft.legacyKey.isBlank()) null else legacy.singleOrNull { it.factKey == draft.legacyKey }.also {
-                    require(it != null && legacyView.any { row -> row["key"] == draft.legacyKey }) { "转换结果引用了未提供的旧记忆参考" }
-                    require(CompanionImportPolicy.usable(it!!) && it.status !in setOf("cancelled", "retracted")) { "转换结果试图恢复已失效的旧记忆" }
-                }
-                apply(scope, target, draft, fused = true)
-                if (oldReference?.expiresAt != null) dao.versions(scope.id, draft.targetKey.ifBlank { draft.key }).firstOrNull { it.current && !it.manual && !it.locked }?.let {
-                    dao.saveMemory(it.copy(expiresAt = oldReference.expiresAt))
-                }
+        val material = mapOf("target" to rows(target), "reference" to rows(reference),
+            "existing" to existing, "legacy_reference" to legacyView)
+        var feedback = ""
+        repeat(3) { attempt ->
+            val input = gson.toJson(if (feedback.isEmpty()) material else material + ("repair_feedback" to feedback))
+            require(estimateLocalTextTokens(input) + estimateLocalTextTokens(CompanionConversionRules.prompt) <= inputTokens) {
+                "有一段完整聊天超过所选模型的容量，请在配置中选择更大上下文的模型后继续。已完成的部分保留。"
             }
-            dao.saveReceipts(target.map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) })
-            dao.saveScope(scope.copy(revision = scope.revision + 1, error = null, updatedAt = Instant.now().toString()))
+            // 网络失败、取消或资料变化不属于格式补正，交给任务恢复处理，不能盲目重发。
+            val raw = generate(CompanionConversionRules.prompt, input)
+            try {
+                val drafts = try { parse(raw) } catch (failure: Exception) {
+                    throw CompanionConversionOutputException("需要包含 changes 数组的完整 JSON，所有条目按输出格式填写。", failure)
+                }
+                CompanionConversionValidation.check(drafts, target, aliases, existing.map { it["key"].toString() }.toSet())
+                db.withTransaction {
+                    require(active(scope)) { "转换资料已变化，本批结果没有导入" }
+                    for (row in target + reference) require(db.messageDao().getById(row.id)?.let {
+                        !it.deleted && it.sessionId == session.id && CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row)
+                    } == true) { "转换原话已变化，本批结果没有导入" }
+                    val availableKeys = existing.map { it["key"].toString() }.toMutableSet()
+                    val sourceIds = target.associate { aliases.getValue(it.id) to it.id }
+                    for (original in drafts) {
+                        var draft = original.copy(sourceId = requireNotNull(sourceIds[original.sourceId]) {
+                            "模型给出的原话编号不正确，本批没有导入。请重试或更换模型。"
+                        })
+                        val legacyTarget = legacy.singleOrNull { legacyAliases[it.factKey] == draft.targetKey }
+                        if (legacyTarget != null && legacyView.any { it["key"] == draft.targetKey } && draft.operation in setOf("update", "retract")) {
+                            draft = draft.copy(operation = "add", targetKey = "", legacyKey = if (draft.operation == "retract") "" else draft.targetKey)
+                        }
+                        require(draft.targetKey.isBlank() || draft.targetKey in availableKeys) { "转换结果引用了未提供的旧记忆" }
+                        val oldReference = if (draft.legacyKey.isBlank()) null else legacy.singleOrNull { legacyAliases[it.factKey] == draft.legacyKey }.also {
+                            require(it != null && legacyView.any { row -> row["key"] == draft.legacyKey }) { "转换结果引用了未提供的旧记忆参考" }
+                            require(CompanionImportPolicy.usable(it!!) && it.status !in setOf("cancelled", "retracted")) { "转换结果试图恢复已失效的旧记忆" }
+                        }
+                        // 历史约定可能第一次出现时就已完成，不要求模型伪造一次先前的新增操作。
+                        val key = draft.targetKey.ifBlank { draft.key }
+                        if (draft.operation in setOf("complete", "cancel") && dao.versions(scope.id, key).none { it.current }) {
+                            apply(scope, target, draft.copy(operation = "add"), fused = true)
+                        }
+                        try { apply(scope, target, draft, fused = true) } catch (failure: IllegalArgumentException) {
+                            throw CompanionConversionOutputException("条目 ${draft.key} 未通过记忆校验：${failure.message.orEmpty().take(160)}。请重新核对完整结果。", failure)
+                        }
+                        availableKeys += key
+                        if (oldReference?.expiresAt != null) dao.versions(scope.id, draft.targetKey.ifBlank { draft.key }).firstOrNull { it.current && !it.manual && !it.locked }?.let {
+                            dao.saveMemory(it.copy(expiresAt = oldReference.expiresAt))
+                        }
+                    }
+                    dao.saveReceipts(target.map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) })
+                    dao.saveScope(scope.copy(revision = scope.revision + 1, error = null, updatedAt = Instant.now().toString()))
+                }
+                return
+            } catch (failure: CompanionConversionOutputException) {
+                if (attempt == 2) throw IllegalArgumentException("模型经过补正仍未通过核对，本批没有导入。可以重试或换一个模型，已完成部分保留。\n${failure.message}", failure)
+                feedback = failure.message.orEmpty().take(1000)
+            }
         }
     }
 

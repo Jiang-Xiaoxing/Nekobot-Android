@@ -81,7 +81,7 @@ class CompanionConversionAndroidTest {
                 if (calls == 1) { completedFirst = row["id"].asString; "{\"changes\":[]}" }
                 else Gson().toJson(mapOf("changes" to listOf(draft(row["id"].asString, "捏造的引用", "episode"))))
             })) }
-            assertTrue(calls >= 2); assertEquals(1, db.sessionDao().count())
+            assertEquals(4, calls); assertEquals(1, db.sessionDao().count()) // 首批完成；失败批最多三次，不无限重试。
             var resumed = 0
             val restarted = CompanionTransferService(context, db)
             val target = restarted.execute(preview.jobId, "副本", CompanionConversionRequest("m2", "继续用的模型", 14000, { _, raw ->
@@ -118,6 +118,84 @@ class CompanionConversionAndroidTest {
             val store = CompanionMemoryStore(db)
             assertTrue(store.validatedMemories(store.ensureScope(target)).isEmpty())
             assertTrue(service.receipt(preview.jobId).contains("一起去了月球"))
+        } finally { db.close() }
+    }
+
+    @Test fun completedPromiseCanBeImportedWithoutInventingAnEarlierMemory() = runBlocking {
+        val db = database()
+        try {
+            val source = source(db); message(db, source, "m", "我们约好的照片已经整理完成了。")
+            val service = CompanionTransferService(context, db); val preview = service.preview(source.id)
+            val target = db.sessionDao().getById(service.execute(preview.jobId, "副本", CompanionConversionRequest("m", "模型", 14000, { _, raw ->
+                val row = JsonParser.parseString(raw).asJsonObject["target"].asJsonArray.single().asJsonObject
+                Gson().toJson(mapOf("changes" to listOf(draft(row["id"].asString, row["text"].asString, "promise") + ("operation" to "complete"))))
+            })))!!
+            val store = CompanionMemoryStore(db)
+            assertEquals("completed", store.validatedMemories(store.ensureScope(target)).single { it.current }.status)
+        } finally { db.close() }
+    }
+
+    @Test fun repairsInvalidFormatAndDateEvidenceBeforePublishingCompleteBatch() = runBlocking {
+        val db = database()
+        try {
+            val source = source(db); message(db, source, "u", "我喜欢茶。我们约好的照片已经整理完成了。")
+            val service = CompanionTransferService(context, db); val preview = service.preview(source.id)
+            var calls = 0
+            val target = db.sessionDao().getById(service.execute(preview.jobId, "副本", CompanionConversionRequest("m", "模型", 14000, { rules, raw ->
+                calls++
+                assertEquals(CompanionConversionRules.prompt, rules)
+                assertEquals(1, db.sessionDao().count())
+                val input = JsonParser.parseString(raw).asJsonObject
+                val row = input["target"].asJsonArray.single().asJsonObject
+                val first = draft(row["id"].asString, "我喜欢茶。", "user_profile")
+                val second = draft(row["id"].asString, "我们约好的照片已经整理完成了。", "promise") + ("operation" to "complete")
+                val changes = when(calls) {
+                    1 -> listOf(first - "operation", second + ("event_evidence" to "10月20日"))
+                    2 -> {
+                        assertTrue(input["repair_feedback"].asString.contains("operation"))
+                        assertTrue(input["repair_feedback"].asString.contains("event_evidence"))
+                        listOf(first, second + ("quote" to "不存在的原话"))
+                    }
+                    else -> {
+                        assertTrue(input["repair_feedback"].asString.contains("quote"))
+                        listOf(first, second)
+                    }
+                }
+                Gson().toJson(mapOf("changes" to changes))
+            })))!!
+            assertEquals(3, calls)
+            val store = CompanionMemoryStore(db); val scope = store.ensureScope(target)
+            val saved = store.validatedMemories(scope).filter { it.current }
+            assertEquals(2, saved.size)
+            assertTrue(saved.all { it.eventDate == null })
+            assertEquals("completed", saved.single { it.category == "promise" }.status)
+        } finally { db.close() }
+    }
+
+    @Test fun preservesManualProtectionAndDoesNotSendForgottenOrExpiredSources() = runBlocking {
+        val db = database()
+        try {
+            val normal = source(db)
+            val source = normal.copy(sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true)
+            db.sessionDao().update(source)
+            val store = CompanionMemoryStore(db); val old = store.ensureScope(source)
+            for ((id, text) in listOf("forgotten" to "已经要求遗忘的往事", "expired" to "限时活动暗号", "current" to "我喜欢茶")) message(db, source, id, text)
+            val expired = db.messageDao().getById("expired")!!
+            db.companionMemoryDao().saveMemory(CompanionMemoryEntity("expired-memory", old.id, "expired-key", 1, "fact", "玩家", "限时活动暗号", "active", createdAt = "old", updatedAt = "old", expiresAt = "2020-01-01"))
+            db.companionMemoryDao().saveSources(listOf(CompanionSourceEntity("expired-memory", expired.id, CompanionMemoryPolicy.fingerprint(expired), expired.content, "2026-10-01", "user")))
+            db.companionMemoryDao().saveForgotten(listOf(CompanionForgottenSourceEntity(old.id, "forgotten")))
+            db.companionMemoryDao().saveMemory(CompanionMemoryEntity("manual", old.id, "manual-key", 1, "fact", "玩家", "手动保护的记忆", "active", manual = true, locked = true, alwaysProvide = true, createdAt = "old", updatedAt = "old"))
+            val service = CompanionTransferService(context, db); val preview = service.preview(source.id)
+            val target = db.sessionDao().getById(service.execute(preview.jobId, "副本", CompanionConversionRequest("m", "模型", 14000, { _, raw ->
+                val input = JsonParser.parseString(raw).asJsonObject
+                assertFalse(input["target"].toString().contains("遗忘")); assertFalse(input["target"].toString().contains("限时活动"))
+                assertTrue(input["existing"].toString().contains("手动保护"))
+                "{\"changes\":[]}"
+            })))!!
+            val scope = store.ensureScope(target)
+            val saved = store.validatedMemories(scope).filter { it.current }
+            assertEquals(1, saved.size); assertTrue(saved.single().manual && saved.single().locked && saved.single().alwaysProvide)
+            assertEquals(1, db.companionMemoryDao().forgotten(scope.id).size)
         } finally { db.close() }
     }
 }
