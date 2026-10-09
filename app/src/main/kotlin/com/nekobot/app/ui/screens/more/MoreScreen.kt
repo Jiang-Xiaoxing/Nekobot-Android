@@ -52,6 +52,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.ui.components.GlassCard
+import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.ui.theme.accentSecondary
 import com.nekobot.app.ui.theme.accentSuccess
 import com.nekobot.app.ui.theme.accentTertiary
@@ -121,6 +122,16 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_role_memory_desc),
                     onClick = { onNavigate("memory") }
                 )
+                if (appMode == AppMode.LOCAL) {
+                    Spacer(Modifier.height(4.dp))
+                    MoreRow(
+                        icon = Icons.Filled.AutoAwesome,
+                        tint = accentTertiary(),
+                        title = stringResource(R.string.agent_character_memory_title),
+                        desc = stringResource(R.string.agent_character_memory_desc),
+                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) }
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 MoreRow(
                     icon = Icons.Filled.Bookmarks,

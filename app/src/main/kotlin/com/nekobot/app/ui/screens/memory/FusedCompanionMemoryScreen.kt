@@ -13,19 +13,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.R
 import com.nekobot.app.data.local.ai.FusedCompanionPolicy
 import com.nekobot.app.data.local.ai.MemoryTags
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import com.nekobot.app.data.local.db.CompanionSourceEntity
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, onLocate: (String) -> Unit) {
     val repo = remember { ServiceContainer.localRepository }
+    val dataSourceRevision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
+    val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var records by remember { mutableStateOf(emptyList<CompanionMemoryEntity>()) }
     var status by remember { mutableStateOf("正在读取整理状态…") }
@@ -38,24 +44,53 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
     var versions by remember { mutableStateOf<List<CompanionMemoryEntity>?>(null) }
     var sources by remember { mutableStateOf<List<CompanionSourceEntity>?>(null) }
     var deletion by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
+    var ready by remember { mutableStateOf(false) }
     val categories = FusedCompanionPolicy.categories
-    LaunchedEffect(sessionId, refresh) {
+    LaunchedEffect(sessionId, dataSourceRevision, appMode) {
+        records = emptyList()
+        versions = null
+        sources = null
+        editor = false
+        deletion = null
+        selected = null
+    }
+    LaunchedEffect(sessionId, refresh, dataSourceRevision, appMode) {
+        ready = false
         try {
-            check(repo === ServiceContainer.localRepository) { "资料库已切换，请重新打开记忆页" }
-            records = repo.listCompanionMemories(sessionId)
-            status = repo.companionMemoryStatus(sessionId)
-        } catch (failure: Exception) { error = failure.message }
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
+            check(repo.getSession(sessionId)?.companionMode == true) { "此入口仅管理当前 Agent 角色的独立记忆" }
+            val loadedRecords = repo.listCompanionMemories(sessionId)
+            val loadedStatus = repo.companionMemoryStatus(sessionId)
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
+            records = loadedRecords
+            status = loadedStatus
+            error = null
+            ready = true
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { records = emptyList(); status = ""; error = failure.message }
     }
     LaunchedEffect(sessionId) {
         repo.experienceSourceReader().changes().collect { refresh++ }
     }
     fun action(block: suspend () -> Unit) { scope.launch {
-        try { check(repo === ServiceContainer.localRepository) { "资料库已切换，请重新打开" }; block(); refresh++ }
-        catch (failure: Exception) { error = failure.message }
+        try {
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开" }
+            block()
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开" }
+            refresh++
+        }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            if (repo !== ServiceContainer.localRepository || !ServiceContainer.prefs.isLocalMode) {
+                records = emptyList(); versions = null; sources = null; editor = false; deletion = null; ready = false
+            }
+            error = failure.message
+        }
     } }
-    Scaffold(topBar = { TopAppBar(title = { Text("角色记忆 · 长久陪伴") }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.agent_character_memory_title)) }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-    }, actions = { IconButton(onClick = { selected = null; editor = true }) { Icon(Icons.Filled.Add, "新增记忆") } }) }) { padding ->
+    }, actions = { IconButton(enabled = ready && error == null && repo === ServiceContainer.localRepository,
+        onClick = { selected = null; editor = true }) { Icon(Icons.Filled.Add, "新增记忆") } }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("fused-memory-list"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Text(status, style = MaterialTheme.typography.bodySmall)
@@ -98,7 +133,7 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
         var type by remember(selected?.id) { mutableStateOf(selected?.category ?: "user_profile") }
         var pinned by remember(selected?.id) { mutableStateOf(selected?.alwaysProvide ?: false) }
         var onlyMe by remember(selected?.id) { mutableStateOf(selected?.locked ?: false) }
-        AlertDialog(onDismissRequest = { editor = false }, title = { Text("编辑角色记忆") }, text = {
+        AlertDialog(onDismissRequest = { editor = false }, title = { Text(stringResource(R.string.agent_character_memory_edit)) }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.horizontalScroll(rememberScrollState())) { categories.forEach { (key, name) ->
                     FilterChip(type == key, { type = key }, label = { Text(name) })

@@ -168,14 +168,66 @@ class FusedCompanionAndroidTest {
             val b=FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusMinutes(2))
             assertEquals(a,b.take(a.size))
-            assertFalse(b[b.size-2]["content"].toString().contains("当前日期及时段"))
+            assertEquals("晚上好", b.single { it["role"]=="assistant" }["content"])
+            assertTrue(b[1]["content"].toString().contains("发送日期：2026-10-08"))
+            assertEquals("你好", a.last()["content"])
+            assertTrue(b[b.size-2]["content"].toString().contains("本轮请求开始时间：2026-10-08 20:02（Asia/Shanghai，UTC+08:00）"))
             val store=CompanionMemoryStore(db)
             store.editFused(s,"diet","用户怕辣","user_profile",emptyList(),true,false)
             val c=FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusMinutes(3))
             assertTrue(c[c.size-2]["content"].toString().contains("用户怕辣"))
+            assertEquals(1,c.count { it["content"].toString().contains("<message_metadata>") })
             assertEquals(3,db.messageDao().listBySession("s").size) // Auxiliary text never becomes chat evidence.
             assertEquals(1,db.companionMemoryDao().contextMaterials(store.ensureScope(s).id).size)
+            val utc = now.plusMinutes(4).withZoneSameInstant(java.time.ZoneId.of("UTC"))
+            val d = FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
+                mapOf("role" to "user","content" to next.content),"",32000,4000,utc)
+            assertTrue(d[d.size-2]["content"].toString().contains("2026-10-08 12:04（UTC，UTC+00:00）"))
+            assertEquals("晚上好",d.single { it["role"]=="assistant" }["content"])
+        } finally { db.close() }
+    }
+
+    @Test fun unknownHistoryDateNeverInheritsKnownDateAndRawRepliesStayUnwrapped() = runBlocking<Unit> {
+        val db=db(); try {
+            val s=setup(db)
+            say(db,"known","旧日原话")
+            val unknown=say(db,"unknown","日期不明的原话","assistant").copy(createdAt="",timestamp="")
+            db.messageDao().upsert(unknown)
+            val current=say(db,"current","今天聊什么")
+            val history=db.messageDao().listBySession("s").filter { it.id!=current.id }
+            val payload=FusedCompanionContext(db).build(s,current.id,history,"ROLE",emptyList(),
+                mapOf("role" to "user","content" to current.content),"",32000,4000)
+            val index=payload.indexOfFirst { it["role"]=="assistant" }
+            assertTrue(payload[index-1]["content"].toString().contains("发送日期为 未知"))
+            assertEquals(unknown.content,payload[index]["content"])
+            assertEquals(unknown,db.messageDao().getById(unknown.id))
+        } finally { db.close() }
+    }
+
+    @Test fun oldAuxiliaryCacheIsRetiredAndLongGapAddsOnlyTheFreshClock() = runBlocking<Unit> {
+        val db=db(); try {
+            val s=setup(db); val store=CompanionMemoryStore(db)
+            store.editFused(s,"tea","喝茶不加糖","user_profile",emptyList(),true,false)
+            val first=say(db,"first","我们聊聊昨天的事")
+            val now=ZonedDateTime.parse("2026-10-08T23:59:00+08:00[Asia/Shanghai]")
+            FusedCompanionContext(db).build(s,first.id,emptyList(),"ROLE",emptyList(),
+                mapOf("role" to "user","content" to first.content),"",32000,4000,now)
+            val dao=db.companionMemoryDao(); val scope=store.ensureScope(s)
+            val saved=dao.contextMaterials(scope.id).single()
+            // Reproduce a pre-upgrade cache with its actual legacy configuration hash.
+            dao.saveContextMaterial(saved.copy(configuration=CompanionMemoryPolicy.digest("ROLE"+gson.toJson(emptyList<Any>())+32000+4000),
+                content="距上一条聊天消息约40分钟，不代表玩家一直离线。"))
+            say(db,"reply","你说，我听着","assistant")
+            val next=say(db,"next","昨天是几号？")
+            val payload=FusedCompanionContext(db).build(s,next.id,db.messageDao().listBySession("s").filter { it.id!=next.id },
+                "ROLE",emptyList(),mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusDays(2))
+            val json=gson.toJson(payload)
+            assertFalse(json.contains("距上一条")); assertFalse(json.contains("离线"))
+            assertTrue(json.contains("2026-10-10 23:59")); assertTrue(json.contains("喝茶不加糖"))
+            assertTrue(json.contains(first.content)); assertEquals(1,dao.contextMaterials(scope.id).size)
+            assertEquals(3,db.messageDao().listBySession("s").size)
+            assertEquals("喝茶不加糖",store.validatedMemories(scope).single().content)
         } finally { db.close() }
     }
 

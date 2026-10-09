@@ -5,8 +5,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.R
 import com.nekobot.app.data.local.ai.CompanionMemoryStore
 import com.nekobot.app.data.local.db.LocalSessionEntity
+import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.data.local.db.NekobotDatabase
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -24,14 +26,19 @@ class FusedCompanionMemoryScreenTest {
         try {
             runBlocking { db.sessionDao().upsert(session); CompanionMemoryStore(db).ensureScope(session) }
             compose.setContent { MaterialTheme { FusedCompanionMemoryScreen(id,{}, {}) } }
-            compose.onNodeWithText("角色记忆 · 长久陪伴").assertIsDisplayed()
+            compose.onNodeWithText(compose.activity.getString(R.string.agent_character_memory_title)).assertIsDisplayed()
+            compose.waitUntil(5000) { compose.onAllNodes(hasContentDescription("新增记忆") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("新增记忆").performClick()
             compose.onNodeWithText("记忆正文（最多 1500 字符）").performTextInput("难过时希望先被倾听")
+            // A database refresh from ongoing chat must not discard a user's unsaved edit.
+            runBlocking { db.messageDao().upsert(LocalMessageEntity("$id-message",id,"user","后台消息",timestamp="now",createdAt="now")) }
+            compose.waitForIdle()
+            compose.onNodeWithText(compose.activity.getString(R.string.agent_character_memory_edit)).assertIsDisplayed()
             compose.onNodeWithText("两个选项分别控制提供频率和修改权限，互不影响。").performScrollTo().assertIsDisplayed()
             compose.onAllNodes(isToggleable()).assertCountEquals(2)
             compose.onAllNodes(isToggleable())[0].performClick()
             compose.onNodeWithText("保存",useUnmergedTree=true).performClick()
-            compose.waitUntil(5000) { compose.onAllNodesWithText("编辑角色记忆").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(5000) { compose.onAllNodesWithText(compose.activity.getString(R.string.agent_character_memory_edit)).fetchSemanticsNodes().isEmpty() }
             runBlocking {
                 val store=CompanionMemoryStore(db); val fact=store.validatedMemories(store.ensureScope(session)).single()
                 assertTrue(fact.alwaysProvide); assertFalse(fact.locked); assertTrue(fact.manual)

@@ -1294,7 +1294,7 @@ fun SessionDetailScreen(
                                 style = MaterialTheme.typography.bodySmall)
                             Text(stringResource(R.string.companion_embedding_free_hint), style = MaterialTheme.typography.labelSmall)
                             OutlinedButton(onClick = { onOpenExperienceArchive(sessionId) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("角色记忆与整理状态")
+                                Text("Agent 角色记忆与整理状态")
                             }
                         }
                         // 仅对已绑定角色的 Agent 会话展示；默认关闭，保持既有 Agent 行为。

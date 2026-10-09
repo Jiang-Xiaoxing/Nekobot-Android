@@ -686,6 +686,22 @@ fun NekobotNavGraph() {
             composable(Routes.MEMORY) {
                 MemoryScreen(onBack = { navController.popBackStack() })
             }
+            composable(Routes.AGENT_CHARACTER_MEMORY) {
+                com.nekobot.app.ui.screens.memory.AgentCharacterMemoryDirectoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpen = { sessionId -> navController.navigate(Routes.agentCharacterMemory(sessionId)) }
+                )
+            }
+            composable(
+                route = Routes.AGENT_CHARACTER_MEMORY_DETAIL,
+                arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
+            ) { entry ->
+                val sessionId = entry.arguments?.getString("sessionId").orEmpty()
+                com.nekobot.app.ui.screens.memory.FusedCompanionMemoryScreen(
+                    sessionId, { navController.popBackStack() },
+                    { messageId -> navController.navigate(Routes.chatLocation(sessionId, messageId)) { launchSingleTop = true } }
+                )
+            }
             composable(
                 route = Routes.EXPERIENCE_ARCHIVE,
                 arguments = listOf(navArgument("sessionId") { type = NavType.StringType })

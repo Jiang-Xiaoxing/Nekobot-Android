@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_character_memory_title">Agent 角色记忆</string>
+    <string name="agent_character_memory_desc">独立管理 Agent 角色的画像、经历与约定</string>
+    <string name="agent_character_memory_help">选择一个 Agent 角色，查看它独立保存的记忆。</string>
+    <string name="agent_character_memory_empty">还没有 Agent 角色。可在会话页右上角“＋”创建 Agent 角色（长久陪伴）。</string>
+    <string name="agent_character_memory_local_only">此功能仅用于本地模式。</string>
+    <string name="agent_character_memory_open">查看记忆</string>
+    <string name="agent_character_memory_unnamed">未命名角色</string>
+    <string name="agent_character_memory_back">返回</string>
+    <string name="agent_character_memory_edit">编辑 Agent 角色记忆</string>
+</resources>

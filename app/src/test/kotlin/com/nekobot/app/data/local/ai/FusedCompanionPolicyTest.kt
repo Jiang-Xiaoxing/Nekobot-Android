@@ -31,11 +31,28 @@ class FusedCompanionPolicyTest {
         assertEquals(500, FusedCompanionPolicy.budgets(7000).pinned)
         assertEquals(1000, FusedCompanionPolicy.budgets(7000).trigger)
     }
-    @Test fun timeChangesOnlyWithPeriodDateOrTimezone() {
+    @Test fun requestClockHasMinutePrecisionAndExplicitTimezone() {
         val a = ZonedDateTime.parse("2026-10-08T20:00:01+08:00[Asia/Shanghai]")
-        assertEquals(FusedCompanionPolicy.timeKey(a), FusedCompanionPolicy.timeKey(a.plusMinutes(10)))
-        assertNotEquals(FusedCompanionPolicy.timeKey(a), FusedCompanionPolicy.timeKey(a.plusDays(1)))
-        assertFalse(FusedCompanionPolicy.timeKey(a).contains("20:00"))
+        assertEquals("2026-10-08 20:00（Asia/Shanghai，UTC+08:00）", FusedCompanionPolicy.timeKey(a))
+        assertEquals(FusedCompanionPolicy.timeKey(a), FusedCompanionPolicy.timeKey(a.plusSeconds(30)))
+        assertNotEquals(FusedCompanionPolicy.timeKey(a), FusedCompanionPolicy.timeKey(a.plusMinutes(1)))
+        assertTrue(FusedCompanionPolicy.timeKey(a.withHour(23).withMinute(59).plusMinutes(1)).startsWith("2026-10-09 00:00"))
+        assertEquals("2026-10-08 12:00（UTC，UTC+00:00）", FusedCompanionPolicy.timeKey(a.withZoneSameInstant(java.time.ZoneId.of("UTC"))))
+        val fold = ZonedDateTime.parse("2026-11-01T01:30:00-04:00[America/New_York]")
+        assertNotEquals(FusedCompanionPolicy.timeKey(fold), FusedCompanionPolicy.timeKey(fold.plusHours(1)))
+    }
+    @Test fun companionEnvironmentKeepsStablePrefixWhileOrdinaryAgentKeepsItsClock() {
+        val now = ZonedDateTime.parse("2026-10-08T20:00:01+08:00[Asia/Shanghai]")
+        fun prompt(time: ZonedDateTime, clock: Boolean, lang: String): String = PromptStack().apply {
+            addAgentEnvPrompt(time, "Test device", lang, includeClock = clock)
+        }.getItems().single().content
+        for (lang in listOf("zh", "zh-TW", "en", "ja", "ko")) {
+            assertEquals(prompt(now, false, lang), prompt(now.plusDays(1), false, lang))
+            assertFalse(prompt(now, false, lang).contains("2026-10-08"))
+            assertTrue(prompt(now, true, lang).contains("2026-10-08 20:00:01"))
+            assertTrue(prompt(now, false, lang).contains("get_date_time"))
+            assertTrue(prompt(now, false, lang).contains("Test device"))
+        }
     }
     @Test fun allMemoryToolAliasesAreScopedAndOtherDefinitionsAreUntouched() {
         val original = (FusedCompanionTools.readNames + FusedCompanionTools.writeNames + "write_file")

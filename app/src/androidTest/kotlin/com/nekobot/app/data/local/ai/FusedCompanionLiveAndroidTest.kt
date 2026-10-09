@@ -43,6 +43,52 @@ class FusedCompanionLiveAndroidTest {
             JsonParser.parseString(text.substringAfter("\r\n\r\n")).asJsonObject["content"].asString
         }
     }
+    @Test fun realModelUsesCurrentRequestClockAcrossMidnightAndIndependentMemories() = runBlocking<Unit> {
+        val endpoint=endpoint()
+        val context=ApplicationProvider.getApplicationContext<android.content.Context>()
+        val db=Room.inMemoryDatabaseBuilder(context,NekobotDatabase::class.java).build()
+        try {
+            FusedCompanionSchema.installTriggers(db.openHelper.writableDatabase)
+            val session=LocalSessionEntity("clock-s","Synthetic clock",characterId="clock-c",sessionMode="agent",
+                inheritCharacter=true,longConversationEnabled=true,companionMode=true,createdAt="now",updatedAt="now")
+            db.sessionDao().upsert(session)
+            val store=CompanionMemoryStore(db)
+            store.editFused(session,"tea","用户喝茶不加糖","user_profile",emptyList(),true,false)
+            store.editFused(session,"trip","用户说2026年10月1日独自去过杭州","episode",emptyList(),true,false)
+            val env=PromptStack().apply { addAgentEnvPrompt(includeClock=false) }.getItems().single().content
+            val system="你是温柔自然的陪伴角色，根据资料准确回应，不虚构共同经历。\n$env"
+            suspend fun ask(id:String,query:String,now:java.time.ZonedDateTime): String {
+                val history=db.messageDao().listBySession(session.id)
+                val row=LocalMessageEntity(id,session.id,"user",query,timestamp=now.toInstant().toString(),createdAt=now.toInstant().toString())
+                db.messageDao().upsert(row)
+                val messages=FusedCompanionContext(db).build(session,id,history,system,emptyList(),
+                    mapOf("role" to "user","content" to query),"",32000,4000,now)
+                val latest=messages[messages.size-2]["content"].toString()
+                assertTrue(latest.contains(FusedCompanionPolicy.timeKey(now)))
+                assertFalse(latest.contains("距上一条")); assertFalse(latest.contains("离线"))
+                val answer=call(endpoint,messages)
+                assertFalse("Software date labels must not be imitated: $answer",answer.contains("【历史消息日期："))
+                db.messageDao().upsert(row.copy(id="$id-answer",role="assistant",content=answer))
+                return answer
+            }
+            fun json(answer:String)=JsonParser.parseString(answer.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()).asJsonObject
+            val now=java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))
+            val current=json(ask("live-now","按本轮软件提供的时间回答，用JSON返回date(YYYY-MM-DD)、minute(HH:mm)、zone(时区名)、tea(我的喝茶习惯)、trip_date(杭州旅行日期)。",now))
+            assertEquals(now.toLocalDate().toString(),current["date"].asString)
+            assertEquals(now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),current["minute"].asString)
+            assertEquals("Asia/Shanghai",current["zone"].asString)
+            assertTrue(current["tea"].asString.contains("糖")); assertEquals("2026-10-01",current["trip_date"].asString)
+            val midnight=now.withHour(23).withMinute(59).withSecond(0)
+            val before=json(ask("before","只用JSON返回date(本轮请求日期，YYYY-MM-DD)和minute(本轮请求时分，HH:mm)。",midnight))
+            assertEquals(midnight.toLocalDate().toString(),before["date"].asString); assertEquals("23:59",before["minute"].asString)
+            val after=json(ask("after","还是只用JSON返回date(本轮请求日期，YYYY-MM-DD)和minute(本轮请求时分，HH:mm)。",midnight.plusMinutes(2)))
+            assertEquals(midnight.plusMinutes(2).toLocalDate().toString(),after["date"].asString); assertEquals("00:01",after["minute"].asString)
+            val lunch=ask("lunch","我刚吃完午饭，正在听喜欢的音乐，你陪我聊聊音乐吧。",midnight.plusDays(1).withHour(12).withMinute(0))
+            assertTrue(lunch.contains("音乐") || lunch.contains("歌"))
+            assertFalse(lunch.contains("吃饭了吗") || lunch.contains("该吃饭") || lunch.contains("去吃午饭"))
+            assertEquals(2,store.validatedMemories(store.ensureScope(session)).count { it.current })
+        } finally { db.close() }
+    }
     @Test fun realExtractionReferenceBoundaryCorrectionAndRecallAnswer() = runBlocking {
         val endpoint=endpoint()
         val context=ApplicationProvider.getApplicationContext<android.content.Context>()

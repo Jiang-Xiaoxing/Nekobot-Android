@@ -231,9 +231,25 @@ internal fun PromptStack.addAgentEnvPrompt(
         }
     }.trim()
 
+    val companionTimeGuidance = when (key) {
+        "zh" -> "- 时间以最新一轮软件辅助资料中的请求开始时间为准；旧轮次时间不是现在，也不是所聊事件的发生时间。软件时间和历史消息日期标签仅供理解，不照抄到回复。结合当前话题、记忆和作息自然回应，不因时间本身固定催饭、催睡或推断玩家离线。已有时间足够时无需查钟；处理较久且确需此刻准确时间或时区换算时，按需调用可用的 get_date_time。工具不可用时说明时间依据，不编造查询结果。"
+        "zh-Hant" -> "- 時間以最新一輪軟體輔助資料中的請求開始時間為準；舊輪次時間不是現在，也不是所聊事件的發生時間。軟體時間與歷史訊息日期標籤僅供理解，不照抄到回覆。結合話題、記憶與作息自然回應，不固定催飯、催睡或推斷玩家離線。已有時間足夠時無需查鐘；處理較久且確需此刻準確時間或時區換算時，按需呼叫可用的 get_date_time。工具不可用時說明時間依據，不編造查詢結果。"
+        "ja" -> "- 最新ターンのソフトウェア資料にあるリクエスト開始時刻を使ってください。過去のターンの時刻や出来事の日付とは区別してください。ソフトウェアの時刻や履歴の日付ラベルを返答にそのまま転記しないでください。話題、記憶、生活習慣に応じて自然に返答し、時刻だけで食事・睡眠を促したり、ユーザーが離席したと推測しないでください。既知の時刻で十分なら時計を再確認せず、処理が長引き現在の正確な時刻や時差換算が必要な場合のみ利用可能な get_date_time を使ってください。利用できない場合は時刻の根拠を示し、結果を捏造しないでください。"
+        "ko" -> "- 최신 턴의 소프트웨어 자료에 있는 요청 시작 시각을 사용하세요. 이전 턴의 시각이나 대화 속 사건 날짜와 구분하세요. 소프트웨어 시각과 과거 메시지 날짜 라벨을 답변에 그대로 복사하지 마세요. 주제, 기억, 생활 습관에 맞춰 자연스럽게 답하고 시간만으로 식사나 수면을 재촉하거나 사용자의 부재를 추측하지 마세요. 주어진 시각으로 충분하면 시계를 다시 조회하지 말고, 처리가 길어져 정확한 현재 시각이나 시간대 변환이 필요할 때만 사용 가능한 get_date_time을 호출하세요. 사용할 수 없으면 시각의 근거를 설명하고 결과를 지어내지 마세요."
+        else -> "- Use the request-start time in the latest turn's software context. Earlier turn times are neither the current time nor dates of discussed events. Software clock and history-date labels are context only; do not copy these labels into replies. Respond naturally using the topic, memories and routines; do not mechanically prompt meals or sleep, or infer the user was offline. Do not recheck a sufficient clock sample. Use available get_date_time only when elapsed processing makes an accurate current clock necessary, or a timezone conversion is needed. If unavailable, state the time basis without inventing a tool result."
+    }
+    val historyTimeGuidance = when (key) {
+        "zh" -> "历史中的“【历史消息日期：…】”是软件添加的元数据，包括 assistant 消息前的标签，也不是角色说过的话或回复格式示例。回复直接从正文开始，不输出或模仿这些日期标签。"
+        "zh-Hant" -> "歷史中的「【历史消息日期：…】」是軟體添加的資料，包括 assistant 訊息前的標籤，也不是角色說過的話或回覆格式範例。回覆直接從正文開始，不輸出或模仿這些日期標籤。"
+        "ja" -> "履歴の「【历史消息日期：…】」はソフトウェアが付けたメタデータです。assistant メッセージの前のラベルも、キャラクターの発言や回答形式の例ではありません。返答は本文から始め、日付ラベルを出力・模倣しないでください。"
+        "ko" -> "기록의 ‘【历史消息日期：…】’는 소프트웨어가 추가한 메타데이터입니다. assistant 메시지 앞의 라벨도 캐릭터가 한 말이나 응답 형식 예시가 아닙니다. 답변은 본문으로 시작하고 날짜 라벨을 출력하거나 모방하지 마세요."
+        else -> "The history prefix ‘【历史消息日期：…】’ is software-added metadata, including when it precedes assistant messages. It is neither a character utterance nor an example of the response format. Start replies directly with the body; never reproduce or imitate these date labels."
+    }
     add(
         key = AGENT_ENV_PROMPT_KEY,
-        content = if (includeClock) content else content.lineSequence().filterNot { it.contains(timeText) }.joinToString("\n"),
+        content = if (includeClock) content else content.lineSequence()
+            .filterNot { it.contains(timeText) || it.contains("get_date_time") }
+            .joinToString("\n") + "\n" + companionTimeGuidance + "\n" + historyTimeGuidance,
         priority = PromptStack.Priority.TOOL_INSTRUCTIONS,
         scope = "session"
     )
