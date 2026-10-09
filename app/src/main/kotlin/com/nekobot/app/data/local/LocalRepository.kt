@@ -1615,8 +1615,9 @@ class LocalRepository(
                     inputTokens = usage["prompt_tokens"] ?: usage["input_tokens"] ?: 0,
                     outputTokens = usage["completion_tokens"] ?: usage["output_tokens"] ?: 0,
                     timestamp = nowIsoTimestamp(), source = "companion_conversion", purpose = TokenStatsManager.PURPOSE_UTILITY)
-                execution.value.content.takeIf { it.isNotBlank() } ?: error("模型没有返回转换结果。已完成部分保留，请重试或更换模型。")
+                requireCompanionConversionContent(execution.value)
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (blocked: CompanionConversionBlockedException) { throw blocked }
             catch (error: Exception) {
                 val detail = error.message.orEmpty().let { if (model.apiKey.isNotBlank()) it.replace(model.apiKey, "[已隐藏]") else it }
                 throw CompanionConversionCallException(detail.take(1000))

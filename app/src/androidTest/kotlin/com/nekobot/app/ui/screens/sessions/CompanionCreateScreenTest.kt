@@ -150,4 +150,15 @@ class CompanionCreateScreenTest {
         compose.onNodeWithTag("conversion_rules_scroll").performScrollToNode(hasText(com.nekobot.app.data.local.ai.CompanionConversionRules.format))
         compose.onNodeWithText(com.nekobot.app.data.local.ai.CompanionConversionRules.format).assertExists()
     }
+
+    @Test fun providerRefusalShowsReadableReasonAndKeepsTechnicalCodeCollapsed() {
+        val failure = CompanionConversionBlockedException("content_filter")
+        compose.setContent { TestTheme(darkTheme = false) { content(CompanionCreateState(error = failure.message, details = failure.technicalDetail)) } }
+        compose.onNodeWithTag("companion_content").performScrollToNode(hasText(failure.message!!))
+        compose.onNodeWithText(failure.message!!).assertIsDisplayed()
+        compose.onNodeWithText(failure.technicalDetail).assertDoesNotExist()
+        capture("conversion-provider-refusal")
+        compose.onNodeWithText(text(R.string.companion_technical_details)).performScrollTo().performClick()
+        compose.onNodeWithText(failure.technicalDetail).assertExists()
+    }
 }
