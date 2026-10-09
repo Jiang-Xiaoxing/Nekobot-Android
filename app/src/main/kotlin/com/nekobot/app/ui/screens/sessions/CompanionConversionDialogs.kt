@@ -57,7 +57,10 @@ internal fun CompanionConversionRulesSheet(onDismiss: () -> Unit) {
                 item { Text(stringResource(R.string.companion_conversion_rules_hint), style = MaterialTheme.typography.bodyMedium) }
                 item { SelectionContainer { Text(CompanionConversionRules.explanation, style = MaterialTheme.typography.bodyLarge) } }
                 item { TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("conversion_rule_format")) { Text(stringResource(R.string.companion_conversion_output_format)) } }
-                if (expanded) item { SelectionContainer { Text(CompanionConversionRules.format, style = MaterialTheme.typography.bodyMedium) } }
+                if (expanded) {
+                    item { SelectionContainer { Text(CompanionConversionRules.format, style = MaterialTheme.typography.bodyMedium) } }
+                    item { SelectionContainer { Text(CompanionConversionRules.outputReminder, style = MaterialTheme.typography.bodyMedium) } }
+                }
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(CompanionConversionRules.prompt)); copied = true }) {

@@ -149,6 +149,8 @@ class CompanionCreateScreenTest {
         compose.onNodeWithTag("conversion_rule_format").performClick()
         compose.onNodeWithTag("conversion_rules_scroll").performScrollToNode(hasText(com.nekobot.app.data.local.ai.CompanionConversionRules.format))
         compose.onNodeWithText(com.nekobot.app.data.local.ai.CompanionConversionRules.format).assertExists()
+        compose.onNodeWithTag("conversion_rules_scroll").performScrollToNode(hasText(com.nekobot.app.data.local.ai.CompanionConversionRules.outputReminder))
+        compose.onNodeWithText(com.nekobot.app.data.local.ai.CompanionConversionRules.outputReminder).assertExists()
     }
 
     @Test fun providerRefusalShowsReadableReasonAndKeepsTechnicalCodeCollapsed() {
