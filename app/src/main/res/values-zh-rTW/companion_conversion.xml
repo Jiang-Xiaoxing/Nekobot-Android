@@ -1,0 +1,18 @@
+<resources>
+    <string name="companion_conversion_configure">設定</string>
+    <string name="companion_conversion_start">轉換</string>
+    <string name="companion_conversion_no_model">先選擇轉換用的模型</string>
+    <string name="companion_conversion_intro">將這段聊天整理成 Agent 角色的獨立記憶。完成後自動匯入新副本，原資料保留。</string>
+    <string name="companion_conversion_service_notice">聊天與舊記憶參考會傳送給所選服務商，費用依其標準計費。資料較多時需要一些時間；停止後可以繼續。</string>
+    <string name="companion_conversion_rules">轉換規則</string>
+    <string name="companion_conversion_model_title">選擇轉換模型</string>
+    <string name="companion_conversion_model_hint">使用已設定的一般聊天模型。這裡只選擇轉換用的模型，不影響日常聊天。</string>
+    <string name="companion_conversion_empty_models">尚無可用的聊天模型。先新增服務商與模型，再回來選擇。</string>
+    <string name="companion_conversion_manage_models">新增或管理模型</string>
+    <string name="companion_conversion_rule_version">規則版本：%1$s</string>
+    <string name="companion_conversion_rules_hint">這是實際傳送給模型的規則。下方也可以查看輸出格式，或複製完整內容。</string>
+    <string name="companion_conversion_output_format">查看模型輸出格式</string>
+    <string name="companion_conversion_copy_rules">複製完整規則</string>
+    <string name="companion_conversion_copied">已複製</string>
+    <string name="companion_conversion_stopped">轉換已停止。已完成的部分會保留，點擊轉換即可繼續。</string>
+</resources>

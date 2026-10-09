@@ -39,7 +39,8 @@ internal data class CompanionCreateState(
     val eligibility: CompanionEligibility? = null, val busy: Boolean = false,
     val preview: CompanionTransferPreview? = null, val progress: CompanionTransferProgress? = null,
     val error: String? = null, val details: String? = null, val completed: String? = null,
-    val records: List<CompanionTransferJobEntity> = emptyList()
+    val records: List<CompanionTransferJobEntity> = emptyList(),
+    val models: List<CompanionConversionModel> = emptyList(), val conversionModelId: String? = null
 )
 
 internal class CompanionCreateViewModel : ViewModel() {
@@ -53,20 +54,22 @@ internal class CompanionCreateViewModel : ViewModel() {
         state = state.copy(busy = true, error = null, details = null)
         operation = viewModelScope.launch {
             try { active(); block(); active() }
-            catch (_: CancellationException) { state = state.copy(progress = null) }
+            catch (_: CancellationException) { state = state.copy(progress = null,
+                error = if (state.preview != null) ServiceContainer.getString(R.string.companion_conversion_stopped) else null) }
             catch (failure: Exception) {
                 val readable = when (failure) {
                     is CompanionCreationException -> ServiceContainer.getString(failure.messageRes)
                     is IllegalArgumentException, is IllegalStateException -> failure.message ?: ServiceContainer.getString(R.string.companion_operation_failed)
                     else -> ServiceContainer.getString(R.string.companion_operation_failed)
                 }
-                state = state.copy(error = readable, details = failure.toString(), progress = null)
+                state = state.copy(error = readable, details = (failure as? CompanionConversionCallException)?.technicalDetail ?: failure.toString(), progress = null)
             } finally { state = state.copy(busy = false) }
         }
     }
     fun reload() = launch {
         val characters = repo.listCharacters()
-        state = state.copy(characters = characters, records = repo.companionTransferRecords())
+        state = state.copy(characters = characters, records = repo.companionTransferRecords(),
+            models = repo.companionConversionModels(), conversionModelId = repo.selectedCompanionConversionModel())
     }
     fun select(id: String) = launch {
         state = state.copy(selectedId = id, eligibility = null, preview = null, completed = null)
@@ -93,11 +96,16 @@ internal class CompanionCreateViewModel : ViewModel() {
     }
     fun transfer(name: String) = launch {
         val preview = requireNotNull(state.preview)
-        val target = repo.executeCompanionTransfer(preview.jobId, name) { progress ->
+        val target = repo.convertCompanionTransfer(preview.jobId, name, requireNotNull(state.conversionModelId)) { progress ->
             // IO 回调切回 ViewModel 主协程，避免跨线程写入 Compose 状态。
             viewModelScope.launch { state = state.copy(progress = progress) }
         }
         state = state.copy(completed = target, progress = null, records = repo.companionTransferRecords())
+    }
+    fun selectModel(id: String) {
+        if (state.busy || state.models.none { it.id == id }) return
+        repo.selectCompanionConversionModel(id)
+        state = state.copy(conversionModelId = id)
     }
     fun cancel() { operation?.cancel() }
     fun backToSelection() { state = state.copy(preview = null, completed = null, progress = null, error = null, details = null) }
@@ -106,7 +114,7 @@ internal class CompanionCreateViewModel : ViewModel() {
 }
 
 @Composable
-internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit, onNewCharacter: () -> Unit) {
+internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit, onNewCharacter: () -> Unit, onModelSettings: () -> Unit = {}) {
     val vm: CompanionCreateViewModel = viewModel()
     val revision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
@@ -115,13 +123,19 @@ internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit,
     val scope = rememberCoroutineScope()
     var receipt by remember { mutableStateOf<String?>(null) }
     var backupToDelete by remember { mutableStateOf<String?>(null) }
+    var configuration by rememberSaveable { mutableStateOf(false) }
+    var rules by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(revision, appMode) { if (revision != initialRevision || !ServiceContainer.prefs.isLocalMode) { vm.cancel(); onBack() } }
     CompanionCreateContent(vm.state, onBack = { vm.cancel(); onBack() }, onSelect = vm::select,
         onPreview = vm::preview, onCreate = { name, greeting -> vm.create(name, greeting, onOpen) },
         onTransfer = vm::transfer, onOpen = onOpen, onCancel = vm::cancel, onNewCharacter = onNewCharacter,
         onBackToSelection = vm::backToSelection, onRestore = vm::restore,
         onReceipt = { id -> scope.launch { receipt = runCatching { vm.receipt(id) }.getOrElse { it.message.orEmpty() } } },
-        onDeleteBackup = { backupToDelete = it })
+        onDeleteBackup = { backupToDelete = it }, onConfigure = { configuration = true }, onRules = { rules = true })
+    if (configuration) CompanionConversionModelPicker(vm.state.models, vm.state.conversionModelId,
+        onSelect = { vm.selectModel(it); configuration = false }, onDismiss = { configuration = false },
+        onManage = { configuration = false; onModelSettings() })
+    if (rules) CompanionConversionRulesSheet { rules = false }
     receipt?.let { body -> AlertDialog(onDismissRequest = { receipt = null },
         title = { Text(stringResource(R.string.companion_transfer_record)) },
         text = { LazyColumn { item { androidx.compose.foundation.text.selection.SelectionContainer { Text(body) } } } },
@@ -139,7 +153,7 @@ internal fun CompanionCreateContent(
     onPreview: (String) -> Unit, onCreate: (String, String) -> Unit, onTransfer: (String) -> Unit,
     onOpen: (String) -> Unit, onCancel: () -> Unit, onNewCharacter: () -> Unit,
     onBackToSelection: () -> Unit, onRestore: (String) -> Unit, onReceipt: (String) -> Unit,
-    onDeleteBackup: (String) -> Unit
+    onDeleteBackup: (String) -> Unit, onConfigure: () -> Unit = {}, onRules: () -> Unit = {}
 ) {
     var picker by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -152,6 +166,7 @@ internal fun CompanionCreateContent(
     val existing = (state.eligibility as? CompanionEligibility.Existing)?.sessionId
     val completed = state.completed ?: state.preview?.completedSessionId
     val candidates = (state.eligibility as? CompanionEligibility.Used)?.candidates.orEmpty()
+    val conversionModel = state.models.firstOrNull { it.id == state.conversionModelId }
     val back = { if (state.busy) onCancel() else if (state.preview != null) onBackToSelection() else onBack() }
     BackHandler(onBack = back)
     Scaffold(
@@ -159,8 +174,18 @@ internal fun CompanionCreateContent(
         topBar = { TopAppBar(title = { Text(stringResource(if (state.preview != null) R.string.companion_transfer_title else R.string.companion_create_title), style = MaterialTheme.typography.titleLarge) },
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back)) } }) },
         bottomBar = { Surface(tonalElevation = 2.dp) { Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            if (state.preview != null && completed == null) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(conversionModel?.name ?: stringResource(R.string.companion_conversion_no_model),
+                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    TextButton(onClick = onConfigure, enabled = !state.busy, modifier = Modifier.testTag("companion_configure")) {
+                        Text(stringResource(R.string.companion_conversion_configure))
+                    }
+                }
+            }
             Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("companion_primary"),
-                enabled = !state.busy && (completed != null || existing != null || state.preview?.let { it.missingAttachments.isEmpty() && name.isNotBlank() } == true ||
+                enabled = !state.busy && (completed != null || existing != null || state.preview?.let { conversionModel != null && it.missingAttachments.isEmpty() && name.isNotBlank() } == true ||
                     state.preview == null && (state.eligibility == CompanionEligibility.Available || candidates.isNotEmpty())),
                 onClick = { when {
                     completed != null -> onOpen(completed)
@@ -172,7 +197,7 @@ internal fun CompanionCreateContent(
                 Text(stringResource(when {
                     completed != null -> R.string.companion_open_new
                     state.busy -> R.string.companion_processing
-                    state.preview != null -> R.string.companion_backup_transfer
+                    state.preview != null -> R.string.companion_conversion_start
                     existing != null -> R.string.companion_open_existing
                     candidates.isNotEmpty() -> R.string.companion_select_session
                     else -> R.string.companion_create_title
@@ -224,7 +249,11 @@ internal fun CompanionCreateContent(
                 item { TextButton(onClick = onNewCharacter, enabled = !state.busy) { Text(stringResource(R.string.companion_new_character)) } }
             } else {
                 val preview = state.preview
-                item { Text(if (completed != null) stringResource(R.string.companion_complete_hint) else stringResource(R.string.companion_preview_hint), style = MaterialTheme.typography.bodyLarge) }
+                item { Text(if (completed != null) stringResource(R.string.companion_complete_hint) else stringResource(R.string.companion_conversion_intro), style = MaterialTheme.typography.bodyLarge) }
+                if (completed == null) item {
+                    Text(stringResource(R.string.companion_conversion_service_notice), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onRules, modifier = Modifier.testTag("companion_rules")) { Text(stringResource(R.string.companion_conversion_rules)) }
+                }
                 item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("companion_copy_name"), enabled = !state.busy && completed == null, label = { Text(stringResource(R.string.companion_copy_name)) }) }
                 item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(preview.sourceName, style = MaterialTheme.typography.titleMedium)

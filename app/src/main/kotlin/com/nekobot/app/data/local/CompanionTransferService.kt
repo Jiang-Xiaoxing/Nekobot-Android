@@ -38,14 +38,14 @@ internal class CompanionTransferService(
     private val files = CompanionTransferFiles(context)
     private val base get() = File(context.filesDir, "companion_transfers/${transferHash(db.dbName).take(24)}").canonicalFile
 
-    suspend fun preview(sourceId: String): CompanionTransferPreview = withContext(Dispatchers.IO) { lock.withLock {
+    suspend fun preview(sourceId: String, forConversion: Boolean = false): CompanionTransferPreview = withContext(Dispatchers.IO) { lock.withLock {
         guard(listOf(sourceId))
         val jobId = UUID.randomUUID().toString()
         val directory = File(base, jobId)
         val snapshot = db.withTransaction { CompanionTransferSnapshot(db).write(sourceId, directory) }
         guard(snapshot.sessionIds)
         val media = files.inspect(directory, snapshot)
-        val fingerprint = transferHash(snapshot.fingerprint + gson.toJson(media))
+        val fingerprint = transferHash(snapshot.fingerprint + gson.toJson(media) + if (forConversion) ":ai:${CompanionConversionRules.version}" else "")
         val existing = dao.find(db.dbName, sourceId, fingerprint)
         if (existing != null) {
             removeOwnedDirectory(directory)

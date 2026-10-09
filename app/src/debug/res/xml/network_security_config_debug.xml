@@ -6,4 +6,10 @@
             <certificates src="user" />
         </trust-anchors>
     </base-config>
+    <!-- 与正式版保持一致，仅允许回环地址，供本机接口和转换自动化测试使用。 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">::1</domain>
+    </domain-config>
 </network-security-config>

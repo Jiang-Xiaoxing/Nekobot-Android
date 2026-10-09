@@ -68,6 +68,11 @@ class PrefsManager(context: Context) {
     private val securePrefs = SecurePreferenceStore(context)
     private val gson = Gson()
 
+    fun companionConversionModel(profile: String): String? = prefs.getString("companion_conversion_model:$profile", null)
+    fun setCompanionConversionModel(profile: String, id: String) {
+        prefs.edit().putString("companion_conversion_model:$profile", id).apply()
+    }
+
     var serverUrl: String
         get() = normalizeServerUrl(prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER) ?: DEFAULT_SERVER)
         set(value) {

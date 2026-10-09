@@ -698,7 +698,8 @@ fun NekobotNavGraph() {
                     onOpen = { sessionId -> navController.navigate(Routes.chat(sessionId)) {
                         popUpTo(Routes.COMPANION_CREATE) { inclusive = true }
                     } },
-                    onNewCharacter = { navController.navigate(Routes.characterDetail("new")) }
+                    onNewCharacter = { navController.navigate(Routes.characterDetail("new")) },
+                    onModelSettings = { navController.navigate(Routes.LOCAL_AI_MODELS) }
                 )
             }
             composable(

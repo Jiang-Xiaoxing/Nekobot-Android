@@ -27,6 +27,7 @@ import java.util.Locale
 class CompanionCreateScreenTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val character = CharacterPreset(id = "c", name = "姜晚星")
+    private val conversionModel = CompanionConversionModel("test-model", "我配置的模型", "测试服务商", "chat-model")
     private fun chineseContext() = compose.activity.createConfigurationContext(Configuration(compose.activity.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
     private fun text(id: Int) = chineseContext().getString(id)
     @Composable private fun TestTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
@@ -82,7 +83,8 @@ class CompanionCreateScreenTest {
         compose.setContent { TestTheme(darkTheme = true) {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
-                Box(Modifier.width(340.dp).fillMaxHeight()) { content(CompanionCreateState(preview = preview), onTransfer = { name = it }) }
+                Box(Modifier.width(340.dp).fillMaxHeight()) { content(CompanionCreateState(preview = preview,
+                    models = listOf(conversionModel), conversionModelId = conversionModel.id), onTransfer = { name = it }) }
             }
         } }
         compose.onNodeWithTag("companion_primary").assertIsDisplayed()
@@ -119,5 +121,33 @@ class CompanionCreateScreenTest {
         capture("companion-transfer-complete")
         compose.onNodeWithTag("companion_primary").performClick()
         assertEquals("target", opened)
+    }
+
+    @Test fun conversionNeedsExplicitModelAndRuleViewerShowsActualPrompt() {
+        val preview = CompanionTransferPreview("j", "晚星（Agent）", "旧会话", 1200, 0, 24, 0, emptyList(), 0, emptyList(), 0, 100)
+        var state by mutableStateOf(CompanionCreateState(preview = preview, models = listOf(conversionModel)))
+        var configuration by mutableStateOf(false)
+        var rules by mutableStateOf(false)
+        compose.setContent { TestTheme(darkTheme = false) {
+            CompanionCreateContent(state, {}, {}, {}, {_,_->}, {}, {}, {}, {}, {}, {}, {}, {},
+                onConfigure = { configuration = true }, onRules = { rules = true })
+            if (configuration) CompanionConversionModelPicker(state.models, state.conversionModelId,
+                { state = state.copy(conversionModelId = it); configuration = false }, { configuration = false }, {})
+            if (rules) CompanionConversionRulesSheet { rules = false }
+        } }
+        compose.onNodeWithTag("companion_primary").assertIsNotEnabled()
+        compose.onNodeWithTag("companion_configure").performClick()
+        compose.onNodeWithTag("conversion_model_test-model").assertIsDisplayed()
+        capture("conversion-model-picker")
+        compose.onNodeWithTag("conversion_model_test-model").performClick()
+        compose.onNodeWithTag("companion_primary").assertIsEnabled()
+        capture("conversion-ready")
+        compose.onNodeWithTag("companion_rules").performScrollTo().performClick()
+        compose.onNodeWithText(com.nekobot.app.data.local.ai.CompanionConversionRules.explanation).assertExists()
+        capture("conversion-rules")
+        compose.onNodeWithTag("conversion_rules_scroll").performScrollToNode(hasTestTag("conversion_rule_format"))
+        compose.onNodeWithTag("conversion_rule_format").performClick()
+        compose.onNodeWithTag("conversion_rules_scroll").performScrollToNode(hasText(com.nekobot.app.data.local.ai.CompanionConversionRules.format))
+        compose.onNodeWithText(com.nekobot.app.data.local.ai.CompanionConversionRules.format).assertExists()
     }
 }
