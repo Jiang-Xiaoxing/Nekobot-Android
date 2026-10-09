@@ -9,6 +9,7 @@ data class SessionOverview(
     val total: Int = 0,
     val characterSessions: Int = 0,
     val agentSessions: Int = 0,
+    val agentCharacterSessions: Int = 0,
     val pinned: Int = 0,
     val favorite: Int = 0,
     val archived: Int = 0
@@ -60,6 +61,7 @@ internal fun formatSessionListDate(value: String?): String? {
 val QUICK_SESSION_FILTERS = listOf(
     SessionFilter.CHARACTER_SESSIONS,
     SessionFilter.AGENT_SESSIONS,
+    SessionFilter.AGENT_CHARACTERS,
     SessionFilter.FAVORITE,
     SessionFilter.ARCHIVED
 )
@@ -68,6 +70,7 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
     var total = 0
     var characterSessions = 0
     var agentSessions = 0
+    var agentCharacterSessions = 0
     var pinned = 0
     var favorite = 0
     var archived = 0
@@ -76,6 +79,7 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
         total++
         if (session.archived != true) {
             when {
+                session.isAgentCharacterSession() -> agentCharacterSessions++
                 session.isAgentSession() -> agentSessions++
                 session.isCharacterSession() -> characterSessions++
             }
@@ -88,6 +92,7 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
         total = total,
         characterSessions = characterSessions,
         agentSessions = agentSessions,
+        agentCharacterSessions = agentCharacterSessions,
         pinned = pinned,
         favorite = favorite,
         archived = archived
@@ -96,6 +101,9 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
 
 internal fun Session.isAgentSession(): Boolean =
     sessionMode.equals("agent", ignoreCase = true)
+
+internal fun Session.isAgentCharacterSession(): Boolean =
+    isAgentSession() && companionMode == true
 
 internal fun Session.isCharacterSession(): Boolean =
     sessionMode.isNullOrBlank() || sessionMode.equals("character", ignoreCase = true)

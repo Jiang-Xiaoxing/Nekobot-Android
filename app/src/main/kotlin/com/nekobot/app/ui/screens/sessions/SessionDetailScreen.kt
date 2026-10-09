@@ -786,7 +786,8 @@ fun SessionDetailScreen(
     sessionId: String,
     onBack: () -> Unit,
     onDeleted: () -> Unit = onBack,
-    onOpenExperienceArchive: (String) -> Unit = {}
+    onOpenExperienceArchive: (String) -> Unit = {},
+    onCreateAgentCharacter: () -> Unit = {}
 ) {
     val vm: SessionDetailViewModel = viewModel(key = "session_detail_$sessionId")
     val session by vm.session.collectAsStateWithLifecycle()
@@ -803,7 +804,6 @@ fun SessionDetailScreen(
     val plotOutline by vm.plotOutline.collectAsStateWithLifecycle()
     val userPersona by vm.userPersona.collectAsStateWithLifecycle()
     val inheritCharacter by vm.inheritCharacter.collectAsStateWithLifecycle()
-    val inheritCharacterGreeting by vm.inheritCharacterGreeting.collectAsStateWithLifecycle()
     val longConversationEnabled by vm.longConversationEnabled.collectAsStateWithLifecycle()
     val delayReplyEnabled by vm.delayReplyEnabled.collectAsStateWithLifecycle()
     val delayReplyDelaySeconds by vm.delayReplyDelaySeconds.collectAsStateWithLifecycle()
@@ -840,10 +840,6 @@ fun SessionDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showBindCharacterDialog by remember { mutableStateOf(false) }
-    var showLongConversationConfirm by remember { mutableStateOf(false) }
-    var longConversationCost by remember(sessionId) {
-        mutableStateOf<com.nekobot.app.data.local.ExperienceBackfillInfo?>(null)
-    }
     var selectedPromptStackItem by remember { mutableStateOf<PromptStackItem?>(null) }
 
     LaunchedEffect(toast) {
@@ -906,16 +902,6 @@ fun SessionDetailScreen(
     val scenarioLabel = stringResource(R.string.sessions_detail_scenario)
     val groupCharactersLabel = stringResource(R.string.sessions_detail_group_characters)
     val changeCharacterLabel = stringResource(R.string.sessions_detail_change_character)
-    val inheritCharacterTitle = stringResource(R.string.sessions_detail_inherit_character)
-    val inheritCharacterDesc = stringResource(R.string.sessions_detail_inherit_character_desc)
-    val inheritCharacterOn = stringResource(R.string.sessions_detail_inherit_character_on)
-    val inheritCharacterOff = stringResource(R.string.sessions_detail_inherit_character_off)
-    val inheritGreetingOn = stringResource(R.string.sessions_detail_inherit_greeting_on)
-    val inheritGreetingOff = stringResource(R.string.sessions_detail_inherit_greeting_off)
-    val longConversationTitle = stringResource(R.string.sessions_detail_long_conversation)
-    val longConversationDesc = stringResource(R.string.sessions_detail_long_conversation_desc)
-    val longConversationOn = stringResource(R.string.sessions_detail_long_conversation_on)
-    val longConversationOff = stringResource(R.string.sessions_detail_long_conversation_off)
     val delayReplyTitle = stringResource(R.string.sessions_detail_delay_reply)
     val delayReplyDesc = stringResource(R.string.sessions_detail_delay_reply_desc)
     val delayReplyOn = stringResource(R.string.sessions_detail_delay_reply_on)
@@ -996,11 +982,6 @@ fun SessionDetailScreen(
 
     LaunchedEffect(sessionId) {
         vm.init(sessionId)
-        if (com.nekobot.app.ServiceContainer.prefs.isLocalMode) {
-            longConversationCost = runCatching {
-                com.nekobot.app.ServiceContainer.localRepository.experienceBackfillInfo(sessionId)
-            }.getOrNull()
-        }
     }
 
     Scaffold(
@@ -1287,99 +1268,14 @@ fun SessionDetailScreen(
                             }
                         }
 
-                        // === 4.2 Agent 会话：继承完整角色能力 ===
-                        if (s.companionMode == true) GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = "Agent 角色（长久陪伴）")
-                            Text("固定单窗口，自动整理角色记忆，保留近期原话。转换为普通模式须备份后由外部 Agent 协助，不能直接切换或换绑角色。",
-                                style = MaterialTheme.typography.bodySmall)
-                            Text(stringResource(R.string.companion_embedding_free_hint), style = MaterialTheme.typography.labelSmall)
-                            OutlinedButton(onClick = { onOpenExperienceArchive(sessionId) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Agent 角色记忆与整理状态")
-                            }
-                        }
-                        // 仅对已绑定角色的 Agent 会话展示；默认关闭，保持既有 Agent 行为。
-                        // 该能力依赖本地角色运行时，因此只在本地模式提供。
-                        if (
-                            com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
-                            s.sessionMode.equals("agent", ignoreCase = true) &&
-                            !s.characterId.isNullOrBlank() && s.companionMode != true
-                        ) {
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = inheritCharacterTitle)
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    inheritCharacterDesc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                ToggleChipRow(
-                                    label = if (inheritCharacter) inheritCharacterOn else inheritCharacterOff,
-                                    selected = inheritCharacter,
-                                    onClick = {
-                                        val next = !inheritCharacter
-                                        vm.inheritCharacter.value = next
-                                        if (!next) vm.delayReplyEnabled.value = false
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (inheritCharacter) {
-                                    Spacer(Modifier.height(8.dp))
-                                    ToggleChipRow(
-                                        label = if (inheritCharacterGreeting) inheritGreetingOn else inheritGreetingOff,
-                                        selected = inheritCharacterGreeting,
-                                        onClick = {
-                                            vm.inheritCharacterGreeting.value = !inheritCharacterGreeting
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(Modifier.height(12.dp))
-                                    SectionHeader(title = longConversationTitle)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        longConversationDesc,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    ToggleChipRow(
-                                        label = if (longConversationEnabled) longConversationOn else longConversationOff,
-                                        selected = longConversationEnabled,
-                                        onClick = {
-                                            if (longConversationEnabled) vm.longConversationEnabled.value = false
-                                            else showLongConversationConfirm = true
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    if (longConversationEnabled) {
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(
-                                            stringResource(R.string.companion_hybrid_hint),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            stringResource(R.string.companion_embedding_free_hint),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.clickable {
-                                                uriHandler.openUri("https://cloud.siliconflow.cn/me/models?types=embedding")
-                                            }
-                                        )
-                                        Spacer(Modifier.height(8.dp))
-                                        OutlinedButton(
-                                            onClick = { onOpenExperienceArchive(sessionId) },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Icon(Icons.Filled.Book, contentDescription = null)
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(stringResource(R.string.sessions_detail_experience_archives))
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        AgentModeDetailsCard(
+                            companion = s.companionMode == true,
+                            legacy = com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
+                                s.sessionMode.equals("agent", ignoreCase = true) &&
+                                (inheritCharacter || longConversationEnabled),
+                            onOpenMemories = { onOpenExperienceArchive(sessionId) },
+                            onCreateAgentCharacter = onCreateAgentCharacter
+                        )
 
                         // === 4.3 延迟回复 ===
                         // 只在本地普通角色会话，以及继承完整角色能力的本地 Agent 会话中提供。
@@ -1866,28 +1762,6 @@ fun SessionDetailScreen(
                 showDeleteDialog = false
                 vm.delete(onDeleted)
             }
-        )
-    }
-
-    if (showLongConversationConfirm) {
-        NekoDialog(
-            onDismiss = { showLongConversationConfirm = false },
-            title = stringResource(R.string.sessions_long_conversation_cost_title),
-            message = stringResource(
-                R.string.sessions_long_conversation_cost_notice,
-                longConversationCost?.modelName ?: stringResource(R.string.experience_backfill_unknown),
-                longConversationCost?.inputPricePerMillionUsd?.toString()
-                    ?: stringResource(R.string.experience_backfill_unknown),
-                longConversationCost?.outputPricePerMillionUsd?.toString()
-                    ?: stringResource(R.string.experience_backfill_unknown)
-            ) + "\n\n" + stringResource(R.string.sessions_long_conversation_mode_risk),
-            confirmText = stringResource(R.string.sessions_long_conversation_cost_confirm),
-            cancelText = stringResource(R.string.common_cancel),
-            onConfirm = {
-                vm.longConversationEnabled.value = true
-                showLongConversationConfirm = false
-            },
-            onCancel = { showLongConversationConfirm = false }
         )
     }
 

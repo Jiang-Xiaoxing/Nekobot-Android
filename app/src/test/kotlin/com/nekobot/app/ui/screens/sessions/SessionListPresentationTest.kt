@@ -34,16 +34,30 @@ class SessionListPresentationTest {
     }
 
     @Test
-    fun quickSessionFilters_exposesTheFourPersistentShortcutsInDisplayOrder() {
+    fun quickSessionFilters_exposesIndependentAgentCharacters() {
         assertEquals(
             listOf(
                 SessionFilter.CHARACTER_SESSIONS,
                 SessionFilter.AGENT_SESSIONS,
+                SessionFilter.AGENT_CHARACTERS,
                 SessionFilter.FAVORITE,
                 SessionFilter.ARCHIVED
             ),
             QUICK_SESSION_FILTERS
         )
+    }
+
+    @Test
+    fun agentCharacterCountsDoNotMixWithLegacyAgentAndExcludeArchives() {
+        val sessions = listOf(
+            Session(id = "ordinary", sessionMode = "agent"),
+            Session(id = "legacy", sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true),
+            Session(id = "companion", sessionMode = "agent", companionMode = true),
+            Session(id = "archived", sessionMode = "agent", companionMode = true, archived = true),
+            Session(id = "automatic", sessionMode = "agent", companionMode = true, isArchive = true)
+        )
+        assertEquals(SessionOverview(total = 4, agentSessions = 2, agentCharacterSessions = 1, archived = 1), buildSessionOverview(sessions))
+        assertEquals(listOf("companion", "archived", "automatic"), sessions.filter(Session::isAgentCharacterSession).map { it.id })
     }
 
     @Test

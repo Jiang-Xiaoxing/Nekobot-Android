@@ -154,6 +154,7 @@ enum class SessionFilter(val labelResId: Int) {
     ALL(R.string.sessions_recent),
     CHARACTER_SESSIONS(R.string.sessions_filter_character_sessions),
     AGENT_SESSIONS(R.string.sessions_filter_agent_sessions),
+    AGENT_CHARACTERS(R.string.sessions_filter_agent_characters),
     UNARCHIVED(R.string.sessions_filter_unarchived),
     ARCHIVED(R.string.sessions_filter_archived),
     FAVORITE(R.string.sessions_filter_favorite),
@@ -957,7 +958,7 @@ private fun SessionCountBadge(count: Int) {
  * 已选中的卡片再次点按会恢复到默认「最近会话」筛选。
  */
 @Composable
-private fun SessionStatFilters(
+internal fun SessionStatFilters(
     overview: SessionOverview,
     selected: SessionFilter,
     onToggle: (SessionFilter) -> Unit
@@ -969,6 +970,7 @@ private fun SessionStatFilters(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -985,6 +987,13 @@ private fun SessionStatFilters(
             icon = Icons.Filled.DashboardCustomize,
             selected = selected == SessionFilter.AGENT_SESSIONS,
             onClick = { onToggle(SessionFilter.AGENT_SESSIONS) }
+        )
+        StatFilterCard(
+            label = stringResource(R.string.sessions_filter_agent_characters),
+            value = overview.agentCharacterSessions,
+            icon = Icons.Filled.Person,
+            selected = selected == SessionFilter.AGENT_CHARACTERS,
+            onClick = { onToggle(SessionFilter.AGENT_CHARACTERS) }
         )
         StatFilterCard(
             label = favoriteLabel,
@@ -1004,7 +1013,7 @@ private fun SessionStatFilters(
 }
 
 @Composable
-private fun RowScope.StatFilterCard(
+private fun StatFilterCard(
     label: String,
     value: Int,
     icon: ImageVector,
@@ -1021,7 +1030,7 @@ private fun RowScope.StatFilterCard(
         BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
     } else null
     Surface(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.widthIn(min = 92.dp),
         shape = RoundedCornerShape(14.dp),
         color = containerColor,
         border = borderStroke
@@ -1034,7 +1043,7 @@ private fun RowScope.StatFilterCard(
                     indication = null,
                     onClick = onClick
                 )
-                .padding(vertical = 9.dp),
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
@@ -2217,7 +2226,7 @@ class SessionsViewModel : BaseViewModel() {
             .filter { it.isArchive != true }
             .let { sessions ->
                 when {
-                    f == SessionFilter.CHARACTER_SESSIONS || f == SessionFilter.AGENT_SESSIONS -> {
+                    f in setOf(SessionFilter.CHARACTER_SESSIONS, SessionFilter.AGENT_SESSIONS, SessionFilter.AGENT_CHARACTERS) -> {
                         sessions.filter { it.archived != true }
                     }
                     f == SessionFilter.ALL && !includeArchived -> {
@@ -2700,7 +2709,8 @@ class SessionsViewModel : BaseViewModel() {
         return when (f) {
             SessionFilter.ALL -> all
             SessionFilter.CHARACTER_SESSIONS -> all.filter(Session::isCharacterSession)
-            SessionFilter.AGENT_SESSIONS -> all.filter(Session::isAgentSession)
+            SessionFilter.AGENT_SESSIONS -> all.filter { it.isAgentSession() && !it.isAgentCharacterSession() }
+            SessionFilter.AGENT_CHARACTERS -> all.filter(Session::isAgentCharacterSession)
             SessionFilter.UNARCHIVED -> all.filter { it.archived != true }
             SessionFilter.ARCHIVED -> all.filter { it.archived == true }
             SessionFilter.FAVORITE -> all.filter { it.favorite == true }

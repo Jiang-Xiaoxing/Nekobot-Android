@@ -514,7 +514,8 @@ fun NekobotNavGraph() {
                             launchSingleTop = true
                         }
                     },
-                    onOpenExperienceArchive = { id -> navController.navigate(Routes.experienceArchive(id)) }
+                    onOpenExperienceArchive = { id -> navController.navigate(Routes.experienceArchive(id)) },
+                    onCreateAgentCharacter = { navController.navigate(Routes.COMPANION_CREATE) }
                 )
             }
             composable(
