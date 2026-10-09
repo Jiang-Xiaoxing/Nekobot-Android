@@ -1587,22 +1587,26 @@ class LocalRepository(
     internal suspend fun companionConversionModels(): List<CompanionConversionModel> = aiModelDao.listAll()
         .filter { it.enabled && it.purpose in setOf("chat", "compression") }.map { model ->
             CompanionConversionModel(model.id, model.name, model.provider?.takeIf { it.isNotBlank() }
-                ?: runCatching { java.net.URI(model.baseUrl).host }.getOrNull().orEmpty(), model.model)
+                ?: runCatching { java.net.URI(model.baseUrl).host }.getOrNull().orEmpty(), model.model,
+                model.failoverTimeout.takeIf { it > 0 } ?: com.nekobot.app.data.local.ai.defaultFailoverTimeout("companion_conversion").inWholeSeconds.toInt())
         }
     internal fun selectedCompanionConversionModel() = ServiceContainer.prefs.companionConversionModel(db.dbName)
     internal fun selectCompanionConversionModel(id: String) = ServiceContainer.prefs.setCompanionConversionModel(db.dbName, id)
+    internal suspend fun companionConversionErrorReports(jobId: String) = companionTransfer.errorReports(jobId)
 
     internal suspend fun convertCompanionTransfer(jobId: String, name: String, modelId: String,
         progress: (CompanionTransferProgress) -> Unit): String {
         val model = aiModelDao.getById(modelId)?.takeIf { it.enabled && it.purpose in setOf("chat", "compression") }
             ?: error("请选择可用的聊天模型，或在配置中添加服务商。")
-        val runtime = model.copy(maxTokens = model.maxTokens ?: 4096, stopSequences = null)
-        val inputTokens = ((model.maxContextLength ?: 32768) - (runtime.maxTokens ?: 4096) - 512).coerceAtMost(64000)
-        require(inputTokens >= 6000) { "所选模型可用上下文太小，请调整模型容量或选择更大上下文的模型。" }
-        val sourceId = requireNotNull(db.companionTransferDao().get(jobId)).sourceSessionId
-        return companionTransfer.execute(jobId, name, CompanionConversionRequest(model.id, "${model.name} (${model.model})", inputTokens, { system, material ->
-            val messages = listOf(mapOf<String, Any>("role" to "system", "content" to system), mapOf<String, Any>("role" to "user", "content" to material))
-            try {
+        val diagnostics = CompanionConversionDiagnostics(jobId, model, appContext)
+        try {
+            val runtime = model.copy(maxTokens = model.maxTokens ?: 4096, stopSequences = null)
+            val inputTokens = ((model.maxContextLength ?: 32768) - (runtime.maxTokens ?: 4096) - 512).coerceAtMost(64000)
+            require(inputTokens >= 6000) { "所选模型可用上下文太小，请调整模型容量或选择更大上下文的模型。" }
+            val sourceId = requireNotNull(db.companionTransferDao().get(jobId)).sourceSessionId
+            return companionTransfer.execute(jobId, name, CompanionConversionRequest(model.id, "${model.name} (${model.model})", inputTokens, { system, material ->
+                val messages = listOf(mapOf<String, Any>("role" to "system", "content" to system), mapOf<String, Any>("role" to "user", "content" to material))
+                diagnostics.request(system, material)
                 // 只调用用户选定的一项，不让聊天路由或其他服务商接管转换资料。
                 val execution = failoverCoordinator.execute(models = listOf(runtime), purpose = "companion_conversion",
                     requiredContextTokens = estimateLocalMessagesTokens(messages)) { chosen ->
@@ -1610,19 +1614,27 @@ class LocalRepository(
                         result.error?.let { throw FailoverHttpException(result.statusCode, it) }
                     }
                 }
+                diagnostics.response(execution.value.finishReason)
                 val usage = execution.value.usage
                 appendTokenUsageRecord(sessionId = sourceId, model = model.name, actualModel = model.model,
                     inputTokens = usage["prompt_tokens"] ?: usage["input_tokens"] ?: 0,
                     outputTokens = usage["completion_tokens"] ?: usage["output_tokens"] ?: 0,
                     timestamp = nowIsoTimestamp(), source = "companion_conversion", purpose = TokenStatsManager.PURPOSE_UTILITY)
                 requireCompanionConversionContent(execution.value)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (blocked: CompanionConversionBlockedException) { throw blocked }
-            catch (error: Exception) {
-                val detail = error.message.orEmpty().let { if (model.apiKey.isNotBlank()) it.replace(model.apiKey, "[已隐藏]") else it }
-                throw CompanionConversionCallException(detail.take(1000))
+            }), progress = { value -> diagnostics.progress(value); progress(value) })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            val failure = diagnostics.describe(error)
+            var report = diagnostics.report(error, failure)
+            // 写报告失败不能覆盖真正的转换错误；当前页面仍可复制完整诊断。
+            if (!runCatching { companionTransfer.saveErrorReport(jobId, report) }.getOrDefault(false)) {
+                report += "\n本机保存报告失败，请在离开本页前复制。"
             }
-        }), progress)
+            val exposed = if (error is CompanionConversionBlockedException) error
+                else CompanionConversionCallException(report, failure.message)
+            exposed.diagnosticReport = report
+            throw exposed
+        }
     }
 
     suspend fun createSession(req: CreateSessionRequest): Session = withContext(Dispatchers.IO) {

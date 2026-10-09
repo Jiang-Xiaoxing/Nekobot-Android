@@ -15,4 +15,10 @@
     <string name="companion_conversion_copy_rules">Copy complete rules</string>
     <string name="companion_conversion_copied">Copied</string>
     <string name="companion_conversion_stopped">Conversion stopped. Completed batches are saved. Tap Convert to continue.</string>
+    <string name="companion_conversion_copy_error_report">Copy error report</string>
+    <string name="companion_conversion_view_report">View error report</string>
+    <string name="companion_conversion_hide_report">Hide error report</string>
+    <string name="companion_conversion_previous_errors">Previous error reports</string>
+    <string name="companion_conversion_report_hint">Share with a developer or AI for troubleshooting. No API keys or chat text are included. The latest 5 errors stay with this conversion record on your device.</string>
+    <string name="companion_conversion_wait_limit">Wait limit per batch: %1$d seconds</string>
 </resources>

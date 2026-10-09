@@ -39,6 +39,7 @@ internal data class CompanionCreateState(
     val eligibility: CompanionEligibility? = null, val busy: Boolean = false,
     val preview: CompanionTransferPreview? = null, val progress: CompanionTransferProgress? = null,
     val error: String? = null, val details: String? = null, val completed: String? = null,
+    val errorReport: String? = null,
     val records: List<CompanionTransferJobEntity> = emptyList(),
     val models: List<CompanionConversionModel> = emptyList(), val conversionModelId: String? = null
 )
@@ -49,9 +50,10 @@ internal class CompanionCreateViewModel : ViewModel() {
     private var operation: Job? = null
     init { reload() }
     private fun active() { check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { ServiceContainer.getString(R.string.companion_profile_changed) } }
-    private fun launch(block: suspend () -> Unit) {
+    private fun launch(clearError: Boolean = true, block: suspend () -> Unit) {
         if (state.busy) return
-        state = state.copy(busy = true, error = null, details = null)
+        state = if (clearError) state.copy(busy = true, error = null, details = null, errorReport = null)
+            else state.copy(busy = true)
         operation = viewModelScope.launch {
             try { active(); block(); active() }
             catch (_: CancellationException) { state = state.copy(progress = null,
@@ -62,11 +64,13 @@ internal class CompanionCreateViewModel : ViewModel() {
                     is IllegalArgumentException, is IllegalStateException -> failure.message ?: ServiceContainer.getString(R.string.companion_operation_failed)
                     else -> ServiceContainer.getString(R.string.companion_operation_failed)
                 }
-                state = state.copy(error = readable, details = (failure as? CompanionConversionCallException)?.technicalDetail ?: failure.toString(), progress = null)
+                state = state.copy(error = readable, details = (failure as? CompanionConversionCallException)?.technicalDetail ?: failure.toString(),
+                    errorReport = (failure as? CompanionConversionCallException)?.diagnosticReport, progress = null,
+                    records = runCatching { repo.companionTransferRecords() }.getOrDefault(state.records))
             } finally { state = state.copy(busy = false) }
         }
     }
-    fun reload() = launch {
+    fun reload() = launch(clearError = false) {
         val characters = repo.listCharacters()
         state = state.copy(characters = characters, records = repo.companionTransferRecords(),
             models = repo.companionConversionModels(), conversionModelId = repo.selectedCompanionConversionModel())
@@ -76,11 +80,13 @@ internal class CompanionCreateViewModel : ViewModel() {
         state = state.copy(eligibility = repo.companionCreationEligibility(id))
     }
     fun preview(sourceId: String) = launch {
-        state = state.copy(preview = repo.previewCompanionTransfer(sourceId))
+        val preview = repo.previewCompanionTransfer(sourceId)
+        state = state.copy(preview = preview, errorReport = repo.companionConversionErrorReports(preview.jobId))
     }
     fun restore(jobId: String) = launch {
         val preview = repo.companionTransferPreview(jobId)
-        state = state.copy(preview = preview, completed = preview.completedSessionId)
+        state = state.copy(preview = preview, completed = preview.completedSessionId,
+            errorReport = repo.companionConversionErrorReports(jobId))
     }
     fun create(name: String, greeting: String, open: (String) -> Unit) = launch {
         val result = ServiceContainer.unified.createSession(CreateSessionRequest(
@@ -108,7 +114,7 @@ internal class CompanionCreateViewModel : ViewModel() {
         state = state.copy(conversionModelId = id)
     }
     fun cancel() { operation?.cancel() }
-    fun backToSelection() { state = state.copy(preview = null, completed = null, progress = null, error = null, details = null) }
+    fun backToSelection() { state = state.copy(preview = null, completed = null, progress = null, error = null, details = null, errorReport = null) }
     fun deleteBackup(jobId: String) = launch { repo.deleteCompanionTransferBackup(jobId); state = state.copy(records = repo.companionTransferRecords()) }
     suspend fun receipt(jobId: String): String { active(); return repo.companionTransferReceipt(jobId) }
 }
@@ -183,6 +189,9 @@ internal fun CompanionCreateContent(
                         Text(stringResource(R.string.companion_conversion_configure))
                     }
                 }
+                conversionModel?.let { model -> Text(stringResource(R.string.companion_conversion_wait_limit, model.timeoutSeconds),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)) }
             }
             Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("companion_primary"),
                 enabled = !state.busy && (completed != null || existing != null || state.preview?.let { conversionModel != null && it.missingAttachments.isEmpty() && name.isNotBlank() } == true ||
@@ -275,10 +284,19 @@ internal fun CompanionCreateContent(
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
-                        if (state.details != null) { TextButton(onClick = { details = !details }) { Text(stringResource(R.string.companion_technical_details)) }; if (details) Text(state.details, style = MaterialTheme.typography.bodySmall) }
+                        if (state.errorReport != null) CompanionConversionErrorReport(state.errorReport)
+                        else if (state.details != null) { TextButton(onClick = { details = !details }) { Text(stringResource(R.string.companion_technical_details)) }; if (details) Text(state.details, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             } }
+            if (state.error == null && state.errorReport != null) item {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(stringResource(R.string.companion_conversion_previous_errors), style = MaterialTheme.typography.titleSmall)
+                        CompanionConversionErrorReport(state.errorReport)
+                    }
+                }
+            }
             if (state.preview == null && state.records.isNotEmpty()) {
                 item { HorizontalDivider(); Text(stringResource(R.string.companion_transfer_records), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp)) }
                 items(state.records, key = { it.id }) { job ->

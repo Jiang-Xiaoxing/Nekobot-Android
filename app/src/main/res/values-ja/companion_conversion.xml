@@ -15,4 +15,10 @@
     <string name="companion_conversion_copy_rules">ルール全体をコピー</string>
     <string name="companion_conversion_copied">コピーしました</string>
     <string name="companion_conversion_stopped">変換を停止しました。完了した部分は保存されています。変換をタップすると再開できます。</string>
+    <string name="companion_conversion_copy_error_report">エラーレポートをコピー</string>
+    <string name="companion_conversion_view_report">エラーレポートを表示</string>
+    <string name="companion_conversion_hide_report">エラーレポートを閉じる</string>
+    <string name="companion_conversion_previous_errors">過去のエラーレポート</string>
+    <string name="companion_conversion_report_hint">開発者や AI に共有して調査できます。API キーや会話本文は含みません。直近 5 件をこの変換記録とともに端末に保存します。</string>
+    <string name="companion_conversion_wait_limit">バッチごとの待機上限：%1$d 秒</string>
 </resources>

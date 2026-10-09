@@ -15,4 +15,10 @@
     <string name="companion_conversion_copy_rules">전체 규칙 복사</string>
     <string name="companion_conversion_copied">복사됨</string>
     <string name="companion_conversion_stopped">변환이 중지되었습니다. 완료된 부분은 저장됩니다. 변환을 눌러 계속하세요.</string>
+    <string name="companion_conversion_copy_error_report">오류 보고서 복사</string>
+    <string name="companion_conversion_view_report">오류 보고서 보기</string>
+    <string name="companion_conversion_hide_report">오류 보고서 접기</string>
+    <string name="companion_conversion_previous_errors">이전 오류 보고서</string>
+    <string name="companion_conversion_report_hint">개발자나 AI에게 공유해 원인을 확인할 수 있습니다. API 키와 대화 본문은 포함하지 않습니다. 최근 오류 5개를 이 변환 기록과 함께 기기에 저장합니다.</string>
+    <string name="companion_conversion_wait_limit">배치별 대기 한도: %1$d초</string>
 </resources>

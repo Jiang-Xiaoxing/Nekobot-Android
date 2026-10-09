@@ -1,10 +1,14 @@
 package com.nekobot.app.data.local
 
 /** UI 只接收展示字段，不把密钥或完整模型配置留在页面状态。 */
-internal data class CompanionConversionModel(val id: String, val name: String, val provider: String, val model: String)
+internal data class CompanionConversionModel(val id: String, val name: String, val provider: String, val model: String,
+    val timeoutSeconds: Int = 300)
 
 internal open class CompanionConversionCallException(val technicalDetail: String,
-    message: String = "模型调用未完成。请检查所选服务商的配置与余额后继续，已完成的部分保留。") : IllegalStateException(message)
+    message: String = "模型调用未完成，已完成部分保留。请查看错误报告后继续。") : IllegalStateException(message) {
+    var diagnosticReport: String? = null
+        internal set
+}
 
 internal class CompanionConversionBlockedException(reason: String) : CompanionConversionCallException(
     "服务商返回 finish_reason=$reason",

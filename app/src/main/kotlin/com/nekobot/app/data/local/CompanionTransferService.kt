@@ -138,6 +138,51 @@ internal class CompanionTransferService(
 
     suspend fun records(): List<CompanionTransferJobEntity> = withContext(Dispatchers.IO) { dao.list(db.dbName) }
 
+    /** 与本次备份一起保留最近五次脱敏错误；不混入含有旧记忆正文的迁入回执。 */
+    suspend fun saveErrorReport(jobId: String, report: String) = withContext(Dispatchers.IO) {
+        val file = errorReportFile(jobId) ?: return@withContext false
+        val reports = readErrorReports(file)
+        val stream = file.startWrite()
+        try {
+            stream.write(gson.toJson((listOf(report.take(10_000)) + reports).take(5)).toByteArray(Charsets.UTF_8))
+            file.finishWrite(stream)
+            true
+        } catch (error: Exception) {
+            file.failWrite(stream)
+            throw error
+        }
+    }
+
+    suspend fun errorReports(jobId: String): String? = withContext(Dispatchers.IO) {
+        guard(emptyList())
+        errorReportFile(jobId)?.let { readErrorReports(it) }?.takeIf { it.isNotEmpty() }
+            ?.joinToString("\n\n──────── 较早的错误报告 ────────\n\n")
+    }
+
+    private suspend fun errorReportFile(jobId: String): android.util.AtomicFile? {
+        val job = dao.get(jobId) ?: return null
+        require(job.profile == db.dbName) { "资料库已切换，请重新打开记录" }
+        if (job.phase == "backup_deleted") return null
+        val directory = ownedDirectory(job.directory)
+        if (!directory.isDirectory) return null
+        return android.util.AtomicFile(File(directory, "conversion-errors.json"))
+    }
+
+    private fun readErrorReports(file: android.util.AtomicFile): List<String> = runCatching {
+        file.openRead().use { input ->
+            // 报告有长度及数量上限，损坏文件也不无限读取。
+            val bytes = ByteArray(256 * 1024 + 1)
+            var count = 0
+            while (count < bytes.size) {
+                val read = input.read(bytes, count, bytes.size - count)
+                if (read < 0) break
+                count += read
+            }
+            require(count <= 256 * 1024)
+            gson.fromJson(String(bytes, 0, count, Charsets.UTF_8), Array<String>::class.java).toList().take(5)
+        }
+    }.getOrDefault(emptyList())
+
     suspend fun savedPreview(jobId: String): CompanionTransferPreview = withContext(Dispatchers.IO) {
         guard(emptyList())
         toPreview(requireNotNull(dao.get(jobId)) { "迁入记录不存在" })

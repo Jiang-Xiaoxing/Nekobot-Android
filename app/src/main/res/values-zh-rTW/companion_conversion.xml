@@ -15,4 +15,10 @@
     <string name="companion_conversion_copy_rules">複製完整規則</string>
     <string name="companion_conversion_copied">已複製</string>
     <string name="companion_conversion_stopped">轉換已停止。已完成的部分會保留，點擊轉換即可繼續。</string>
+    <string name="companion_conversion_copy_error_report">複製錯誤報告</string>
+    <string name="companion_conversion_view_report">查看錯誤報告</string>
+    <string name="companion_conversion_hide_report">收起錯誤報告</string>
+    <string name="companion_conversion_previous_errors">歷史錯誤報告</string>
+    <string name="companion_conversion_report_hint">可傳給開發者或 AI 排查。報告不含金鑰和聊天正文；最近 5 次錯誤隨轉換記錄儲存在本機。</string>
+    <string name="companion_conversion_wait_limit">每批等待上限：%1$d 秒</string>
 </resources>
