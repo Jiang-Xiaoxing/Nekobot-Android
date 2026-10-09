@@ -576,14 +576,12 @@ class PortableDataArchiveManager(private val context: Context) {
         preserveExistingSecrets: Boolean,
         rewriteMediaReferences: Boolean
     ): Int {
-        val root = JsonParser.parseString(String(raw, StandardCharsets.UTF_8)).asJsonObject
-        val tables = root.getAsJsonObject("tables") ?: throw IllegalArgumentException("类别数据格式无效")
         var restored = 0
         category.tables.forEach { table ->
-            val rows = tables.getAsJsonArray(table) ?: return@forEach
             val allowedColumns = tableColumns(database, table)
-            rows.forEach { element ->
-                val row = element.asJsonObject
+            val primaryKeys = tablePrimaryKeys(database, table)
+            // 保留父表先于子表的恢复顺序；逐行解析，避免六万条聊天同时展开为 JSON 树。
+            forEachPortableRow(raw, table) { row ->
                 val values = ContentValues()
                 row.entrySet().forEach { (column, value) ->
                     if (column in allowedColumns) {
@@ -597,7 +595,7 @@ class PortableDataArchiveManager(private val context: Context) {
                     preserveSecretsFromExistingRow(database, table, values)
                 }
                 if (values.size() > 0) {
-                    mergeRow(database, table, values)
+                    mergeRow(database, table, values, primaryKeys)
                     restored++
                 }
             }
@@ -609,10 +607,10 @@ class PortableDataArchiveManager(private val context: Context) {
      * 先插入、冲突后原位更新，避免 SQLite REPLACE 删除父行并触发级联删除，
      * 从而保留归档之外、但属于同一会话或世界书的现有子记录。
      */
-    private fun mergeRow(database: NekobotDatabase, table: String, values: ContentValues) {
+    private fun mergeRow(database: NekobotDatabase, table: String, values: ContentValues,
+        primaryKeys: List<String> = tablePrimaryKeys(database, table)) {
         val writable = database.openHelper.writableDatabase
         val safeTable = safeName(table)
-        val primaryKeys = tablePrimaryKeys(database, safeTable)
         require(primaryKeys.isNotEmpty() && primaryKeys.all(values::containsKey)) {
             "归档中的 $safeTable 记录缺少主键"
         }
