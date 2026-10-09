@@ -16,7 +16,7 @@ internal data class CompanionDraft(
     val content: String, val sourceId: String, val quote: String,
     val eventEvidence: String = "", val tags: List<String> = emptyList(),
     val targetKey: String = "", val conflictId: String = "", val question: String = "",
-    val category: String = "user_profile"
+    val category: String = "user_profile", val legacyKey: String = ""
 )
 
 /** No singleton data cache: every read and commit is bound to this exact Room instance and scope. */
@@ -242,6 +242,58 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         semanticSearch.index(scope, validatedMemories(scope).filter { it.current }.map(::searchItem))
     }
 
+    /** 转换只写任务的临时库；复用正常记忆的版本、保护及逐字来源校验。 */
+    suspend fun convertBatch(session: LocalSessionEntity, target: List<LocalMessageEntity>,
+        reference: List<LocalMessageEntity>, legacy: List<CompanionMemoryEntity>, inputTokens: Int,
+        generate: suspend (String, String) -> String) {
+        val scope = ensureScope(session)
+        val query = target.joinToString(" ") { it.content }
+        val limit = maxOf(128, inputTokens / 8)
+        val old = validatedMemories(scope).filter { it.current || it.status in setOf("conflict", "locked_conflict") }
+        val questions = dao.clarifications(scope.id).associateBy { it.factKey }
+        fun bounded(rows: List<CompanionMemoryEntity>): List<Map<String, Any?>> {
+            val result = mutableListOf<Map<String, Any?>>()
+            for (m in rows.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked }
+                .thenByDescending { CompanionMemoryPolicy.score(query, it.content) })) {
+                val q = questions[m.factKey]
+                val row = mapOf("key" to m.factKey, "category" to m.category, "content" to m.content,
+                    "status" to m.status, "locked" to m.locked, "expires_at" to m.expiresAt,
+                    "conflict_id" to q?.memoryId, "question_id" to q?.questionMessageId, "question" to q?.question)
+                if (estimateLocalTextTokens(gson.toJson(result + row)) <= limit) result += row
+            }
+            return result
+        }
+        val existing = bounded(old)
+        val legacyView = bounded(legacy)
+        fun rows(values: List<LocalMessageEntity>) = values.map { mapOf("id" to it.id, "role" to it.role,
+            "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content) }
+        val material = gson.toJson(mapOf("target" to rows(target), "reference" to rows(reference),
+            "existing" to existing, "legacy_reference" to legacyView))
+        require(estimateLocalTextTokens(material) + estimateLocalTextTokens(CompanionConversionRules.prompt) <= inputTokens) {
+            "有一段完整聊天超过所选模型的容量，请在配置中选择更大上下文的模型后继续。已完成的部分保留。"
+        }
+        val drafts = parse(generate(CompanionConversionRules.prompt, material))
+        db.withTransaction {
+            require(active(scope)) { "转换资料已变化，本批结果没有导入" }
+            for (row in target + reference) require(db.messageDao().getById(row.id)?.let {
+                !it.deleted && it.sessionId == session.id && CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row)
+            } == true) { "转换原话已变化，本批结果没有导入" }
+            for (draft in drafts) {
+                require(draft.targetKey.isBlank() || existing.any { it["key"] == draft.targetKey }) { "转换结果引用了未提供的旧记忆" }
+                val oldReference = if (draft.legacyKey.isBlank()) null else legacy.singleOrNull { it.factKey == draft.legacyKey }.also {
+                    require(it != null && legacyView.any { row -> row["key"] == draft.legacyKey }) { "转换结果引用了未提供的旧记忆参考" }
+                    require(CompanionImportPolicy.usable(it!!) && it.status !in setOf("cancelled", "retracted")) { "转换结果试图恢复已失效的旧记忆" }
+                }
+                apply(scope, target, draft, fused = true)
+                if (oldReference?.expiresAt != null) dao.versions(scope.id, draft.targetKey.ifBlank { draft.key }).firstOrNull { it.current && !it.manual && !it.locked }?.let {
+                    dao.saveMemory(it.copy(expiresAt = oldReference.expiresAt))
+                }
+            }
+            dao.saveReceipts(target.map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) })
+            dao.saveScope(scope.copy(revision = scope.revision + 1, error = null, updatedAt = Instant.now().toString()))
+        }
+    }
+
     suspend fun fusedTool(session: LocalSessionEntity, name: String, args: Map<String, Any>, sourceId: String): Map<String, Any> {
         require(session.usesFusedCompanionMemory())
         val scope = ensureScope(session)
@@ -352,7 +404,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             CompanionDraft(text("key"), text("operation"), text("kind"), text("subject"), text("content"),
                 text("source_id"), text("quote"), text("event_evidence"),
                 item["tags"]?.takeIf { value -> value.isJsonArray }?.asJsonArray?.map { tag -> tag.asString }.orEmpty(),
-                text("target_key"), text("conflict_id"), text("question"), text("category").ifBlank { "user_profile" })
+                text("target_key"), text("conflict_id"), text("question"), text("category").ifBlank { "user_profile" }, text("legacy_key"))
         }
     }
 

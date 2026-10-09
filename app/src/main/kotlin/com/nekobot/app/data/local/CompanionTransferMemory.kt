@@ -10,7 +10,7 @@ import java.time.Instant
 internal data class TransferMemorySelection(val accepted: Int, val skipped: Map<String, Int>)
 
 /** 只写新范围的独立正文；旧路径和旧 ID 留在备份，不参与运行时召回。 */
-internal class CompanionTransferMemory(private val db: NekobotDatabase) {
+internal class CompanionTransferMemory(private val db: NekobotDatabase, private val sourceDb: NekobotDatabase = db) {
     fun exclusion(row: JsonObject, snapshot: TransferSnapshot): String? {
         if (row.text("target_id") != "local-user") return "无法确认属于当前用户"
         if (listOf("conversation_id", "source_session_id").mapNotNull { row.text(it)?.takeIf(String::isNotBlank) }.any { it !in snapshot.sessionIds }) return "属于其他会话"
@@ -49,7 +49,7 @@ internal class CompanionTransferMemory(private val db: NekobotDatabase) {
             if (sources.isNotEmpty()) evidenceValid = true
             val newSources = mutableListOf<CompanionSourceEntity>()
             for (source in sources) {
-                val originalMessage = source.text("messageId")?.let { db.messageDao().getById(it) }
+                val originalMessage = source.text("messageId")?.let { sourceDb.messageDao().getById(it) }
                 val newMessage = source.text("messageId")?.let { db.messageDao().getById(id("message", it)) }
                 val quote = rewrite(source, originalMessage?.sessionId ?: snapshot.sourceId).text("quote").orEmpty()
                 if (originalMessage == null || newMessage == null || originalMessage.sessionId !in snapshot.sessionIds ||

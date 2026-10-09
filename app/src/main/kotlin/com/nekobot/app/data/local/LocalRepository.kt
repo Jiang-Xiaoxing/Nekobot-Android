@@ -1579,7 +1579,7 @@ class LocalRepository(
     internal suspend fun previewCompanionTransfer(sourceId: String) = companionTransfer.preview(sourceId)
     internal suspend fun companionTransferPreview(jobId: String) = companionTransfer.savedPreview(jobId)
     internal suspend fun executeCompanionTransfer(jobId: String, name: String, progress: (CompanionTransferProgress) -> Unit) =
-        companionTransfer.execute(jobId, name, progress)
+        companionTransfer.execute(jobId, name, progress = progress)
     internal suspend fun companionTransferRecords() = companionTransfer.records()
     internal suspend fun companionTransferReceipt(jobId: String) = companionTransfer.receipt(jobId)
     internal suspend fun deleteCompanionTransferBackup(jobId: String) = companionTransfer.deleteBackup(jobId)

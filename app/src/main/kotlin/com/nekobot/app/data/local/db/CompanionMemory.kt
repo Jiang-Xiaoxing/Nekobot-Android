@@ -141,6 +141,8 @@ interface CompanionMemoryDao {
     suspend fun unarchived(scopeId: String, limit: Int = 512): List<LocalMessageEntity>
     @Query("SELECT * FROM companion_memories WHERE scopeId = :scopeId AND valid = 1 ORDER BY factKey, version DESC")
     suspend fun memories(scopeId: String): List<CompanionMemoryEntity>
+    @Query("SELECT * FROM companion_memories WHERE scopeId=:scopeId AND provenance='conversion_reference' ORDER BY factKey")
+    suspend fun conversionReferences(scopeId: String): List<CompanionMemoryEntity>
     @Query("SELECT * FROM companion_memories WHERE scopeId = :scopeId AND factKey = :key ORDER BY version DESC")
     suspend fun versions(scopeId: String, key: String): List<CompanionMemoryEntity>
     @Query("SELECT * FROM companion_sources WHERE memoryId = :id ORDER BY spokenDate, (SELECT rowid FROM local_messages WHERE id = messageId)")

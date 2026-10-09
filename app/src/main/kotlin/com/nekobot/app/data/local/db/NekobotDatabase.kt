@@ -110,6 +110,12 @@ abstract class NekobotDatabase : RoomDatabase() {
         private set
 
     companion object {
+        /** 转换临时库不加入资料库实例表；逻辑归属与最终库一致，才能保持来源 ID。 */
+        internal fun conversionStage(context: Context, file: java.io.File, profile: String): NekobotDatabase {
+            val path = file.canonicalFile
+            require(path.name == "conversion.db" && path.toPath().startsWith(java.io.File(context.filesDir, "companion_transfers").canonicalFile.toPath()))
+            return Room.databaseBuilder(context, NekobotDatabase::class.java, path.path).build().also { it.dbName = profile }
+        }
         private const val TAG = "NekobotDatabase"
         /**
          * v1 → v2：local_sessions 新增 custom_prompts 列。

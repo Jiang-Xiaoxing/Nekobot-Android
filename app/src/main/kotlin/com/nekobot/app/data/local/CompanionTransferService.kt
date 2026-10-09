@@ -24,7 +24,7 @@ internal data class CompanionTransferPreview(
 )
 internal data class CompanionTransferProgress(val phase: String, val processed: Long = 0, val total: Long = 0)
 internal data class CompanionTransferReport(val snapshot: TransferSnapshot, val files: TransferFiles,
-    val memory: TransferMemorySelection, val sourceName: String)
+    val memory: TransferMemorySelection, val sourceName: String, val conversion: CompanionConversionRecord? = null)
 
 /** 不调用模型，不改变原角色。文件先验证，数据库和成功回执在同一事务内提交。 */
 internal class CompanionTransferService(
@@ -61,7 +61,8 @@ internal class CompanionTransferService(
         toPreview(job)
     } }
 
-    suspend fun execute(jobId: String, name: String, progress: (CompanionTransferProgress) -> Unit = {}): String = withContext(Dispatchers.IO) { lock.withLock {
+    suspend fun execute(jobId: String, name: String, conversion: CompanionConversionRequest? = null,
+        progress: (CompanionTransferProgress) -> Unit = {}): String = withContext(Dispatchers.IO) { lock.withLock {
         var job = requireNotNull(dao.get(jobId)) { "迁入记录不存在，请重新预览" }
         require(job.profile == db.dbName) { "资料库已切换，请重新预览" }
         if (job.phase == "complete" || job.phase == "backup_deleted") {
@@ -69,21 +70,46 @@ internal class CompanionTransferService(
             return@withLock job.targetSessionId
         }
         require(name.isNotBlank()) { "请填写新角色名称" }
-        val report = gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
+        var report = gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
+        require(report.conversion == null || conversion != null) { "这是未完成的模型转换，请选择转换模型后继续" }
+        if (conversion != null) {
+            require(report.conversion?.rules.let { it == null || it == CompanionConversionRules.version }) { "转换规则已更新，请重新预览后转换" }
+            report = report.copy(conversion = CompanionConversionRecord(CompanionConversionRules.version,
+                (report.conversion?.models.orEmpty() + conversion.modelName).distinct()))
+            job = job.copy(reportJson = gson.toJson(report))
+        }
         val directory = ownedDirectory(job.directory)
         val targetDirectory = File(context.filesDir, "workspace/${job.targetSessionId}").canonicalFile
         require(targetDirectory.parentFile == File(context.filesDir, "workspace").canonicalFile)
         guard(report.snapshot.sessionIds)
         report.snapshot.verify(directory)
         require(report.files.missing.isEmpty()) { "有附件无法读取，请修复后重新预览" }
-        val required = toPreview(job).requiredBytes
+        val required = toPreview(job).requiredBytes * if (conversion == null) 1 else 3
         require(StatFs(context.filesDir.path).availableBytes > required + 16L * 1024 * 1024) { "存储空间不足，请腾出空间后重试" }
+        var stage: CompanionConversionStage? = null
         try {
             job = job.copy(targetName = name.trim(), phase = "backup", updatedAt = Instant.now().toString())
             dao.save(job); progress(CompanionTransferProgress("正在校验备份")); checkpoint("backup")
             files.backup(report.files, directory, targetDirectory)
             report.snapshot.verify(directory)
             checkpoint("files")
+            if (conversion != null) {
+                // 调用模型前先检查原资料，完成后还会在最终事务中再次检查。
+                val current = db.withTransaction { CompanionTransferSnapshot(db).write(job.sourceSessionId, File(directory, "recheck")) }
+                require(current.fingerprint == report.snapshot.fingerprint) { "原会话或记忆已变化，请返回并重新预览" }
+                job = job.copy(phase = "converting"); dao.save(job)
+                stage = CompanionConversionStage(context, directory, db.dbName)
+                stage.prepare(job) { staging ->
+                    CompanionTransferService(context, staging).copyRows(job, report, directory, targetDirectory, progress, sourceDb = db)
+                }
+                stage.run(job, conversion.copy(generate = { system, material ->
+                    guard(report.snapshot.sessionIds)
+                    conversion.generate(system, material).also { guard(report.snapshot.sessionIds) }
+                }), progress)
+                report = report.copy(conversion = report.conversion!!.copy(memories = stage.count(job)))
+                job = job.copy(reportJson = gson.toJson(report))
+                checkpoint("converted")
+            }
             job = job.copy(phase = "copying"); dao.save(job)
             db.withTransaction {
                 coroutineContext.ensureActive()
@@ -94,6 +120,7 @@ internal class CompanionTransferService(
                 require(current.fingerprint == report.snapshot.fingerprint) { "原会话或记忆已变化，请返回并重新预览" }
                 checkpoint("verified")
                 copyRows(job, report, directory, targetDirectory, progress)
+                stage?.importInto(db, job)
                 checkpoint("before_commit")
                 dao.save(job.copy(phase = "complete", updatedAt = Instant.now().toString()))
             }
@@ -106,7 +133,7 @@ internal class CompanionTransferService(
                 if (db.isOpen && dao.get(job.id)?.phase != "complete") dao.save(job.copy(phase = if (error is CancellationException) "cancelled" else "failed"))
             }
             throw error
-        }
+        } finally { stage?.close() }
     } }
 
     suspend fun records(): List<CompanionTransferJobEntity> = withContext(Dispatchers.IO) { dao.list(db.dbName) }
@@ -128,7 +155,13 @@ internal class CompanionTransferService(
             if(job.phase in setOf("complete", "backup_deleted")) {
                 appendLine("原话与附件备份已按 SHA-256 校验；记忆正文已独立保存。")
             } else appendLine("本次操作尚未完成，不能视为副本已交付。")
-            appendLine("迁入不调用模型。")
+            if (report.conversion == null) appendLine("这是一份旧版复制记录，没有使用模型重新整理历史。")
+            else {
+                appendLine("转换模型：${report.conversion.models.joinToString("、")}")
+                appendLine("转换规则：${report.conversion.rules}")
+                if (job.phase in setOf("complete", "backup_deleted")) appendLine("整理后有效记忆：${report.conversion.memories} 条。已核对原话编号与逐字引用；语义内容可在角色记忆中查看。")
+                else appendLine("已完成批次保存在本次转换备份中，点击转换可继续。")
+            }
             appendLine("归档来源分组：${report.snapshot.sessionIds.size} 个；原话合并到新主会话并保留原始时间与顺序。")
             appendLine("本机记录编号：${job.id}")
             if(job.phase == "backup_deleted") appendLine("本次备份已由用户删除，新会话内容不受影响。")
@@ -136,7 +169,7 @@ internal class CompanionTransferService(
                 val directory = ownedDirectory(job.directory)
                 appendLine("\n需要核对的旧摘要（未作为事实注入）：")
                 for (row in transferRows(directory, "local_character_memories")) {
-                    if (CompanionTransferMemory(db).exclusion(row, report.snapshot) != null) appendLine("${row.text("title").orEmpty()}\n${row.text("content").orEmpty()}\n")
+                    if (report.conversion != null || CompanionTransferMemory(db).exclusion(row, report.snapshot) != null) appendLine("${row.text("title").orEmpty()}\n${row.text("content").orEmpty()}\n")
                 }
                 for (row in transferRows(directory, "local_experience_archives")) appendLine("${row.text("source_started_at")} — ${row.text("source_ended_at")}\n${row.text("summary").orEmpty()}\n")
             }
@@ -163,13 +196,13 @@ internal class CompanionTransferService(
             report.snapshot.counts.getValue("local_messages"), report.snapshot.counts.getValue("local_message_variants"),
             report.memory.accepted + report.snapshot.counts.getValue("companion_memories").toInt(),
             report.snapshot.excludedMemories + report.memory.skipped.values.sum(),
-            report.memory.skipped.map { "${it.key}：${it.value} 条" } + listOf("旧记忆没有逐字证据时标注为来源未验证", "状态来自所选会话，原角色及原会话保留", "迁入不调用模型，不自动重新整理全部历史"),
+            report.memory.skipped.map { "${it.key}：${it.value} 条" } + listOf("依据原话重新整理记忆，旧自动记忆只作参考", "状态来自所选会话，原角色及原会话保留"),
             report.files.assets.size, report.files.missing, report.files.remote, rawBytes * 3 + report.files.bytes * 2,
             job.targetSessionId.takeIf { job.phase in setOf("complete", "backup_deleted") })
     }
 
     private suspend fun copyRows(job: CompanionTransferJobEntity, report: CompanionTransferReport,
-        directory: File, targetDirectory: File, progress: (CompanionTransferProgress) -> Unit) {
+        directory: File, targetDirectory: File, progress: (CompanionTransferProgress) -> Unit, sourceDb: NekobotDatabase = db) {
         val sql = db.openHelper.writableDatabase
         val snapshot = report.snapshot
         fun id(type: String, old: String) = UUID.nameUUIDFromBytes("${job.id}\u0000$type\u0000$old".toByteArray()).toString()
@@ -177,7 +210,7 @@ internal class CompanionTransferService(
         val character = rewrite(transferRows(directory, "local_characters").single())
         character.addProperty("id", job.targetCharacterId); character.addProperty("name", job.targetName)
         sql.insertTransfer("local_characters", character)
-        val original = requireNotNull(db.sessionDao().getById(job.sourceSessionId))
+        val original = requireNotNull(sourceDb.sessionDao().getById(job.sourceSessionId))
         val sessionMedia = rewrite(transferRows(directory, "local_sessions").first { it.text("id") == original.id })
         FusedCompanionSchema.installTriggers(sql)
         val target = original.copy(id = job.targetSessionId, name = job.targetName,
@@ -225,7 +258,7 @@ internal class CompanionTransferService(
         }
         copyState(directory, target, snapshot, ::id)
         progress(CompanionTransferProgress("正在复制独立记忆"))
-        CompanionTransferMemory(db).copy(directory, snapshot, target, ::id, ::rewrite)
+        CompanionTransferMemory(db, sourceDb).copy(directory, snapshot, target, ::id, ::rewrite)
         sql.query("SELECT COUNT(*) FROM local_messages WHERE session_id=?", arrayOf(target.id)).use {
             require(it.moveToFirst() && it.getLong(0) == snapshot.counts.getValue("local_messages")) { "原话数量校验失败" }
         }
