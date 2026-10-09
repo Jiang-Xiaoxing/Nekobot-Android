@@ -29,26 +29,26 @@ class FusedCompanionMemoryScreenTest {
             compose.onNodeWithText(compose.activity.getString(R.string.agent_character_memory_title)).assertIsDisplayed()
             compose.waitUntil(5000) { compose.onAllNodes(hasContentDescription("新增记忆") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("新增记忆").performClick()
-            compose.onNodeWithText("记忆正文（最多 1500 字符）").performTextInput("难过时希望先被倾听")
+            compose.onNodeWithText("记忆正文").performTextInput("难过时希望先被倾听")
             // A database refresh from ongoing chat must not discard a user's unsaved edit.
             runBlocking { db.messageDao().upsert(LocalMessageEntity("$id-message",id,"user","后台消息",timestamp="now",createdAt="now")) }
             compose.waitForIdle()
-            compose.onNodeWithText(compose.activity.getString(R.string.agent_character_memory_edit)).assertIsDisplayed()
-            compose.onNodeWithText("两个选项分别控制提供频率和修改权限，互不影响。").performScrollTo().assertIsDisplayed()
-            compose.onAllNodes(isToggleable()).assertCountEquals(2)
-            compose.onAllNodes(isToggleable())[0].performClick()
-            compose.onNodeWithText("保存",useUnmergedTree=true).performClick()
-            compose.waitUntil(5000) { compose.onAllNodesWithText(compose.activity.getString(R.string.agent_character_memory_edit)).fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("添加一条记忆").assertIsDisplayed()
+            compose.onNode(hasText("只允许我修改") and isToggleable()).performScrollTo().assertIsDisplayed()
+            compose.onNode(hasText("每次聊天都提供") and isToggleable()).performScrollTo().performClick()
+            compose.onNodeWithText("保存记忆",useUnmergedTree=true).performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("添加一条记忆").fetchSemanticsNodes().isEmpty() }
             runBlocking {
                 val store=CompanionMemoryStore(db); val fact=store.validatedMemories(store.ensureScope(session)).single()
                 assertTrue(fact.alwaysProvide); assertFalse(fact.locked); assertTrue(fact.manual)
             }
             // The database save completes before the asynchronous list refresh is drawn.
             compose.waitUntil(5000) { compose.onAllNodesWithText("难过时希望先被倾听").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithTag("fused-memory-list").performScrollToNode(hasText("版本"))
-            compose.onNodeWithText("版本").performClick()
-            compose.waitUntil(5000) { compose.onAllNodesWithText("记忆版本").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("记忆版本").assertIsDisplayed()
+            compose.onNodeWithTag("fused-memory-list").performScrollToNode(hasContentDescription("更多记忆操作"))
+            compose.onNodeWithContentDescription("更多记忆操作").performClick()
+            compose.onNodeWithText("修改记录").performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("当前内容").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("修改记录").assertIsDisplayed()
         } finally { runBlocking { db.sessionDao().deleteById(id) } }
     }
 
@@ -69,8 +69,8 @@ class FusedCompanionMemoryScreenTest {
             compose.waitUntil(5000) { compose.onAllNodesWithText("喜欢茉莉茶").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("fused-memory-list").performScrollToNode(hasText("查看原话"))
             compose.onNodeWithText("查看原话").performClick()
-            compose.waitUntil(5000) { compose.onAllNodesWithText("这条记忆从旧资料迁入，尚无已核验的聊天原话来源。").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("这条记忆由玩家手动记录，没有聊天原话来源。").assertDoesNotExist()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("这条记忆来自旧资料，原话来源还没有核验。").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("这条记忆由你手动填写，没有附带聊天来源。").assertDoesNotExist()
         } finally { runBlocking { db.sessionDao().deleteById(id) } }
     }
 }

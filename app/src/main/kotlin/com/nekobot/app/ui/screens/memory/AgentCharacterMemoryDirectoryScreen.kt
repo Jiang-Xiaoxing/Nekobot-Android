@@ -110,7 +110,7 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
                                 Surface(shape = RoundedCornerShape(15.dp)) {
                                     Box(Modifier.size(52.dp).background(Brush.linearGradient(listOf(Color(0xFF5265CC), Color(0xFF9A68CE)))),
                                         contentAlignment = Alignment.Center) {
-                                        Text(name.take(1), color = Color.White, style = MaterialTheme.typography.titleLarge,
+                                        Text(name.substring(0, name.offsetByCodePoints(0, 1)), color = Color.White, style = MaterialTheme.typography.titleLarge,
                                             fontWeight = FontWeight.SemiBold)
                                     }
                                 }

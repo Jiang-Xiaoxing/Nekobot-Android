@@ -112,7 +112,7 @@ internal fun CompanionMemoryOverviewCard(
                 verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Info, null, Modifier.size(16.dp), tint = accent)
                 Spacer(Modifier.width(6.dp))
-                Text(if (overview == null) "正在读取整理情况" else
+                Text(if (overview == null) { if (loading) "正在读取整理情况" else "整理情况暂不可用" } else
                     "已整理 ${overview.processedMessages} · 未整理 ${overview.pendingMessages}",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
