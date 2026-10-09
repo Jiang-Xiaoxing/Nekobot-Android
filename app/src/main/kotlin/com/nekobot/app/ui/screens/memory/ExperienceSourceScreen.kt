@@ -1,6 +1,6 @@
 package com.nekobot.app.ui.screens.memory
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,7 +28,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -42,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +61,8 @@ import com.nekobot.app.ui.components.EmptyState
 import com.nekobot.app.ui.components.ErrorBanner
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
+import com.nekobot.app.ui.components.chatBubbleAppearance
+import com.nekobot.app.ui.components.chatBubbleShape
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -600,28 +602,30 @@ private fun SourceTurnCard(
 private fun SourceMessageBubble(message: LocalMessageEntity, isUser: Boolean) {
     var expanded by rememberSaveable(message.id, message.content) { mutableStateOf(false) }
     var overflows by remember(message.id, message.content) { mutableStateOf(false) }
+    val appearance = chatBubbleAppearance(ServiceContainer.prefs.themeColorOverride)
+    val shape = chatBubbleShape(isUser)
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.TopEnd else Alignment.TopStart) {
-        Surface(
-            modifier = Modifier.widthIn(max = maxWidth * 0.9f).testTag("source-bubble:${message.id}"),
-            shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp,
-                bottomStart = if (isUser) 14.dp else 5.dp, bottomEnd = if (isUser) 5.dp else 14.dp),
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        Column(
+            modifier = Modifier.widthIn(max = minOf(280.dp, maxWidth * 0.9f))
+                .testTag("source-bubble:${message.id}")
+                .then(if (isUser) Modifier.shadow(2.dp, shape, clip = false) else Modifier)
+                .then(if (isUser) Modifier.background(appearance.userBrush, shape)
+                    else Modifier.background(appearance.assistantColor, shape).border(1.dp, appearance.assistantBorder, shape))
+                .padding(horizontal = 14.dp, vertical = 9.dp)
         ) {
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                SelectionContainer {
-                    Text(message.content.ifBlank { stringResource(R.string.experience_source_no_text) },
-                        modifier = Modifier.testTag("source-message:${message.id}"),
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis,
-                        onTextLayout = { result -> if (!expanded) overflows = result.hasVisualOverflow })
-                }
-                if (overflows) {
-                    TextButton(onClick = { expanded = !expanded },
-                        modifier = Modifier.testTag("source-expand:${message.id}"), contentPadding = PaddingValues(0.dp)) {
-                        Text(stringResource(if (expanded) R.string.experience_source_original_collapse else R.string.experience_source_original_expand))
-                    }
+            SelectionContainer {
+                Text(message.content.ifBlank { stringResource(R.string.experience_source_no_text) },
+                    modifier = Modifier.testTag("source-message:${message.id}"),
+                    color = appearance.textColor(isUser),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { result -> if (!expanded) overflows = result.hasVisualOverflow })
+            }
+            if (overflows) {
+                TextButton(onClick = { expanded = !expanded },
+                    modifier = Modifier.testTag("source-expand:${message.id}"), contentPadding = PaddingValues(0.dp)) {
+                    Text(stringResource(if (expanded) R.string.experience_source_original_collapse else R.string.experience_source_original_expand),
+                        color = appearance.textColor(isUser))
                 }
             }
         }

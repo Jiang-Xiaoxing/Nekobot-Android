@@ -251,6 +251,10 @@ import com.nekobot.app.ui.adaptive.liveRegion
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.aiBubbleBorderColor
+import com.nekobot.app.ui.components.aiBubbleContainerColor
+import com.nekobot.app.ui.components.chatBubbleAppearance
+import com.nekobot.app.ui.components.chatBubbleShape
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.NekoDialog
@@ -2663,18 +2667,12 @@ private fun MessageBubble(
     val commandCapsuleBrush = commandCapsule?.let {
         Brush.linearGradient(listOf(it.kind.startColor, it.kind.endColor))
     }
-    // 用户气泡基色：若设置了主题色覆盖则跟随主题，否则使用默认紫色
-    val userBubble = ServiceContainer.prefs.themeColorOverride?.let { parseHexColor(it) }
-        ?: if (isSystemInDarkTheme()) BubbleUser else BubbleUserLight
-    // 用户气泡：基色 → 加深色的对角渐变，营造立体感
-    val userBrush = Brush.linearGradient(
-        colors = listOf(userBubble, deepenColor(userBubble))
-    )
-    // AI 气泡：半透明玻璃质感容器 + 发丝边框
-    val aiContainer = aiBubbleContainerColor()
-    val aiBorder = aiBubbleBorderColor()
-    // 文字颜色：用户气泡始终白色；AI 气泡跟随主题（尊重字体颜色覆盖）
-    val textColor = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+    val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.themeColorOverride)
+    val userBubble = bubbleAppearance.userColor
+    val userBrush = bubbleAppearance.userBrush
+    val aiContainer = bubbleAppearance.assistantColor
+    val aiBorder = bubbleAppearance.assistantBorder
+    val textColor = bubbleAppearance.textColor(isUser)
     // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
     val linkColor = if (isUser) linkColorOnBubble(userBubble) else accentLink()
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -2936,12 +2934,7 @@ private fun MessageBubble(
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
                     val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
-                    val segShape = RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = if (isUser) 20.dp else if (isLast) 20.dp else 6.dp,
-                        bottomEnd = if (isUser) if (isLast) 6.dp else 20.dp else 20.dp
-                    )
+                    val segShape = chatBubbleShape(isUser, isLast)
                     Box(
                         modifier = Modifier
                             .then(if (!isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
@@ -5521,32 +5514,6 @@ private fun ChatAvatar(
             fallback()
         }
     }
-}
-
-/** AI 气泡容器色：深色为半透明玻璃质感，浅色为纯白卡片。 */
-@Composable
-private fun aiBubbleContainerColor(): Color =
-    if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
-    else MaterialTheme.colorScheme.surface
-
-/** AI 气泡发丝边框色。 */
-@Composable
-private fun aiBubbleBorderColor(): Color =
-    MaterialTheme.colorScheme.onSurface.copy(alpha = if (isSystemInDarkTheme()) 0.08f else 0.05f)
-
-/** 将颜色调深（降低明度、略提饱和度），用于用户气泡渐变末端。 */
-private fun deepenColor(color: Color, factor: Float = 0.78f): Color {
-    val argb = color.toArgb()
-    val hsv = FloatArray(3)
-    android.graphics.Color.RGBToHSV(
-        (argb shr 16) and 0xFF,
-        (argb shr 8) and 0xFF,
-        argb and 0xFF,
-        hsv
-    )
-    hsv[1] = (hsv[1] * 1.06f).coerceAtMost(1f)
-    hsv[2] = (hsv[2] * factor).coerceIn(0f, 1f)
-    return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
 /** 日期分隔条：居中胶囊样式，在跨天消息之间插入。 */
