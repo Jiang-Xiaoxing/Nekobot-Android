@@ -254,8 +254,10 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         val legacyAliases = legacy.mapIndexed { index, item -> item.factKey to "legacy${index + 1}" }.toMap()
         fun bounded(rows: List<CompanionMemoryEntity>): List<Map<String, Any?>> {
             val result = mutableListOf<Map<String, Any?>>()
+            // 比较器会反复访问同一条目；大包转换时每个候选只计算一次相关度。
+            val scores = rows.associate { it.id to CompanionMemoryPolicy.score(query, it.content) }
             for (m in rows.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked }
-                .thenByDescending { CompanionMemoryPolicy.score(query, it.content) })) {
+                .thenByDescending { scores.getValue(it.id) })) {
                 val q = questions[m.factKey]
                 val row = mapOf("key" to m.factKey, "category" to m.category, "content" to m.content,
                     "status" to m.status, "locked" to m.locked, "expires_at" to m.expiresAt,
