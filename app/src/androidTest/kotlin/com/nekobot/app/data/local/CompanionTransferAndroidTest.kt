@@ -158,4 +158,35 @@ class CompanionTransferAndroidTest {
             assertEquals(1, db.sessionDao().count()); assertEquals("preview", service.records().single().phase)
         } finally { db.close() }
     }
+
+    @Test fun cancelledDiskJobSurvivesDatabaseReopenAndLostSuccessCallbackDoesNotDuplicate() = runBlocking {
+        val file = "transfer-restart-${UUID.randomUUID()}.db"
+        fun open() = Room.databaseBuilder(context, NekobotDatabase::class.java, file).build()
+        var db = open()
+        try {
+            val source = setup(db); db.messageDao().upsert(message(source, "disk-message", "重启后仍然完整"))
+            val interrupted = CompanionTransferService(context, db, checkpoint = {
+                if (it == "before_commit") throw kotlinx.coroutines.CancellationException("测试取消")
+            })
+            val preview = interrupted.preview(source.id)
+            try { interrupted.execute(preview.jobId, "独立副本"); fail("Expected cancellation") }
+            catch (_: kotlinx.coroutines.CancellationException) { }
+            assertEquals(1, db.sessionDao().count())
+            assertEquals("cancelled", db.companionTransferDao().get(preview.jobId)!!.phase)
+            db.close(); db = open()
+            val resumed = CompanionTransferService(context, db, checkpoint = {
+                if (it == "after_commit") throw IllegalArgumentException("测试丢失界面通知")
+            })
+            failure { resumed.execute(preview.jobId, "独立副本") }
+            db.close(); db = open()
+            val service = CompanionTransferService(context, db)
+            val saved = service.savedPreview(preview.jobId)
+            val target = service.execute(preview.jobId, "独立副本")
+            assertEquals(saved.completedSessionId, target); assertEquals(2, db.sessionDao().count())
+            assertEquals("重启后仍然完整", db.messageDao().listBySession(target).single().content)
+            service.deleteBackup(preview.jobId)
+            assertEquals(target, service.execute(preview.jobId, "独立副本"))
+            assertTrue(service.receipt(preview.jobId).contains("已由用户删除"))
+        } finally { db.close(); context.deleteDatabase(file) }
+    }
 }

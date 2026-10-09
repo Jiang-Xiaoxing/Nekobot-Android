@@ -20,6 +20,55 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class PortableDataArchiveManagerTest {
+    @Test fun transferredHistoryAndUnverifiedExpirySurvivePortableRestoreWithoutHistoricalReprocessing() = runBlocking {
+        var db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+        val character = "transfer-portable-${UUID.randomUUID()}"
+        val source = LocalSessionEntity(mergeSessionId, "迁入备份测试", characterId = character, createdAt = "old", updatedAt = "old")
+        var targetId: String? = null
+        var targetCharacter: String? = null
+        var jobId: String? = null
+        try {
+            db.characterDao().upsert(com.nekobot.app.data.local.db.LocalCharacterEntity(character, "旧角色", createdAt = "old", updatedAt = "old"))
+            db.sessionDao().upsert(source)
+            db.messageDao().upsert(LocalMessageEntity("$mergeSessionId-raw", source.id, "user", "原有聊天", timestamp = "2026-01-01", createdAt = "2026-01-01"))
+            val memory = com.nekobot.app.data.local.db.LocalCharacterMemoryEntity("$mergeSessionId-fact", character, "local-user", "long", "user_persona", "饮食", "", "喜欢茉莉茶", 5, createdAt = "old")
+            db.memoryDao().upsert(memory)
+            db.memoryDao().upsert(memory.copy(id = "$mergeSessionId-expired", content = "已经过期的安排", expiresAt = "2000-01-01T00:00:00Z"))
+            val service = CompanionTransferService(context, db)
+            val preview = service.preview(source.id); jobId = preview.jobId
+            targetId = service.execute(preview.jobId, "迁入副本")
+            val target = requireNotNull(db.sessionDao().getById(targetId)); targetCharacter = target.characterId
+            val output = ByteArrayOutputStream()
+            manager.export(setOf(PortableDataCategory.CONVERSATIONS, PortableDataCategory.CHARACTERS), "", output, "test")
+            db.sessionDao().deleteById(target.id)
+            db.openHelper.writableDatabase.execSQL("DELETE FROM companion_transfer_jobs WHERE id=?", arrayOf(preview.jobId))
+            manager.import(ByteArrayInputStream(output.toByteArray()), "", setOf(PortableDataCategory.CONVERSATIONS, PortableDataCategory.CHARACTERS))
+            db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+            assertEquals(null, db.companionTransferDao().get(preview.jobId))
+            val restored = requireNotNull(db.sessionDao().getById(target.id))
+            val store = com.nekobot.app.data.local.ai.CompanionMemoryStore(db)
+            val scope = store.ensureScope(restored)
+            val fact = store.validatedMemories(scope).single()
+            assertEquals("喜欢茉莉茶", fact.content)
+            assertEquals("imported_unverified", fact.provenance)
+            assertFalse(fact.manual)
+            assertTrue(db.companionMemoryDao().pending(scope.id).isEmpty())
+            assertEquals(0, store.process(restored, { _, _ -> error("不得重新整理迁入历史") }, 24000))
+            db.messageDao().upsert(LocalMessageEntity("$mergeSessionId-new", target.id, "user", "备份后的新聊天", timestamp = "2026-10-09", createdAt = "2026-10-09"))
+            manager.import(ByteArrayInputStream(output.toByteArray()), "", setOf(PortableDataCategory.CONVERSATIONS, PortableDataCategory.CHARACTERS))
+            db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+            assertEquals(listOf("$mergeSessionId-new"), db.companionMemoryDao().pending(scope.id).map { it.id })
+            val expired = db.companionMemoryDao().memories(scope.id).single { it.content == "已经过期的安排" }
+            assertEquals("2000-01-01T00:00:00Z", expired.expiresAt)
+        } finally {
+            db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+            targetId?.let { db.sessionDao().deleteById(it) }
+            targetCharacter?.let { db.characterDao().deleteById(it) }
+            db.characterDao().deleteById(character)
+            jobId?.let { db.openHelper.writableDatabase.execSQL("DELETE FROM companion_transfer_jobs WHERE id=?", arrayOf(it)) }
+        }
+    }
+
     @Test fun fusedModeBackupRestoresOwnershipFactsSourcesAndProgressWithoutRequestCache() = runBlocking {
         val db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
         val characterId = "fused-portable-${UUID.randomUUID()}"
