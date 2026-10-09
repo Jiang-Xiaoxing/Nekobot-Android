@@ -161,8 +161,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -318,6 +320,7 @@ fun ChatScreen(
     val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedMessageIds.collectAsStateWithLifecycle()
     val execConfirmation by viewModel.execConfirmation.collectAsStateWithLifecycle()
+    var subagentControlTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val askUserQuestion by viewModel.askUserQuestion.collectAsStateWithLifecycle()
     val pluginInstallConfirmation by viewModel.pluginInstallConfirmation.collectAsStateWithLifecycle()
     val hookNotifications by viewModel.hookNotifications.collectAsStateWithLifecycle()
@@ -1427,7 +1430,15 @@ fun ChatScreen(
                                             },
                                             onStepClick = { target ->
                                                 stepDetailTarget = target
-                                            }
+                                            },
+                                            onResumeSubagent = viewModel::resumeSubagentFromCard,
+                                            onPauseSubagent = { taskId ->
+                                                subagentControlTarget = "pause" to taskId
+                                            },
+                                            onKillSubagent = { taskId ->
+                                                subagentControlTarget = "kill" to taskId
+                                            },
+                                            onRetrySubagent = viewModel::retrySubagentFromCard
                                         )
                                     }
                                 }
@@ -1814,6 +1825,32 @@ fun ChatScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+
+    subagentControlTarget?.let { (action, taskId) ->
+        val pause = action == "pause"
+        NekoDialog(
+            onDismiss = { subagentControlTarget = null },
+            title = stringResource(
+                if (pause) R.string.chat_subagent_pause_confirm_title
+                else R.string.chat_subagent_kill_confirm_title
+            ),
+            message = stringResource(
+                if (pause) R.string.chat_subagent_pause_confirm_message
+                else R.string.chat_subagent_kill_confirm_message
+            ),
+            confirmText = stringResource(
+                if (pause) R.string.chat_subagent_pause_action
+                else R.string.chat_subagent_kill_action
+            ),
+            onConfirm = {
+                subagentControlTarget = null
+                if (pause) viewModel.pauseSubagentFromCard(taskId)
+                else viewModel.killSubagentFromCard(taskId)
+            },
+            cancelText = stringResource(R.string.common_cancel),
+            onCancel = { subagentControlTarget = null }
+        )
     }
 
     // ask_user_question：AI 向用户发起结构化提问，回答作为工具结果回传
@@ -3557,15 +3594,27 @@ private fun ProgressCard(
     shape: Shape = RoundedCornerShape(14.dp),
     showBottomDivider: Boolean = false,
     onExpandedChange: (Boolean) -> Unit,
-    onStepClick: (StepDetailTarget) -> Unit = {}
+    onStepClick: (StepDetailTarget) -> Unit = {},
+    onResumeSubagent: ((String) -> Unit)? = null,
+    onPauseSubagent: ((String) -> Unit)? = null,
+    onKillSubagent: ((String) -> Unit)? = null,
+    onRetrySubagent: ((String) -> Unit)? = null
 ) {
     val progress = card.progress?.coerceIn(0, 100)
-    val hasError = card.steps.any { it.status.equals("error", ignoreCase = true) }
+    val hasError = when (card.subagentStatus) {
+        "running", "outputting", "succeeded" -> false
+        "interrupted", "failed", "killed" -> true
+        else -> card.steps.any { it.status.equals("error", ignoreCase = true) }
+    }
     val statusColor = if (hasError) {
         MaterialTheme.colorScheme.error
     } else {
         MaterialTheme.colorScheme.primary
     }
+    val canExpand = card.steps.isNotEmpty() ||
+        !card.subagentPrompt.isNullOrBlank() ||
+        !card.subagentResult.isNullOrBlank() ||
+        card.subagentStatus != null
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -3635,7 +3684,7 @@ private fun ProgressCard(
                     color = statusColor
                 )
             }
-            if (card.steps.isNotEmpty()) {
+            if (canExpand) {
                 Icon(
                     imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
@@ -3675,45 +3724,97 @@ private fun ProgressCard(
             GitDiffSummarySection(summary = gitSummary)
         }
 
-        // 步骤列表（可折叠）
-        if (expanded && card.steps.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                thickness = 0.5.dp
-            )
-            Spacer(Modifier.height(6.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                card.steps.forEachIndexed { index, step ->
-                    when {
-                        // git_diff 步骤的内容已在卡片头部的摘要区展示，避免重复
-                        step.type.equals("git_diff", ignoreCase = true) -> Unit
-                        // 中间回复：按真实执行顺序穿插在步骤之间，完整正文内联展示；
-                        // 无头部、不截断、不点开详情弹窗
-                        step.type.equals("agent_text", ignoreCase = true) -> {
-                            MarkdownText(
-                                text = step.text.orEmpty(),
-                                style = MaterialTheme.typography.bodySmall,
-                                chatMode = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // 与步骤行正文对齐（20dp 图标 + 8dp 间距），上下留出呼吸空间
-                                    .padding(start = 28.dp, top = 6.dp, bottom = 6.dp)
-                            )
-                        }
-                        else -> ProgressStepRow(
-                            step = step,
-                            onOpenDetail = {
-                                onStepClick(
-                                    StepDetailTarget(
-                                        cardId = card.id,
-                                        stepIndex = index,
-                                        stepType = step.type,
-                                        stepName = step.name
-                                    )
+        val subagentActions = buildList<Pair<Int, (String) -> Unit>> {
+            when {
+                card.subagentStatus == "interrupted" ->
+                    onResumeSubagent?.let { add(R.string.chat_subagent_resume_action to it) }
+                (card.subagentStatus == "running" || card.subagentStatus == "outputting") &&
+                    card.subagentBackground -> {
+                    onPauseSubagent?.let { add(R.string.chat_subagent_pause_action to it) }
+                    onKillSubagent?.let { add(R.string.chat_subagent_kill_action to it) }
+                }
+                card.subagentStatus == "failed" || card.subagentStatus == "killed" ->
+                    onRetrySubagent?.let { add(R.string.chat_subagent_retry_action to it) }
+            }
+        }
+
+        if (expanded) {
+            card.subagentPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
+                SubagentTextDisclosure(
+                    cardId = card.id,
+                    title = stringResource(R.string.chat_subagent_prompt_label),
+                    text = prompt
+                )
+            }
+
+            // 步骤列表
+            if (card.steps.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                    thickness = 0.5.dp
+                )
+                Spacer(Modifier.height(6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    card.steps.forEachIndexed { index, step ->
+                        when {
+                            // git_diff 步骤的内容已在卡片头部的摘要区展示，避免重复
+                            step.type.equals("git_diff", ignoreCase = true) -> Unit
+                            // 中间回复：按真实执行顺序穿插在步骤之间，完整正文内联展示；
+                            // 无头部、不截断、不点开详情弹窗
+                            step.type.equals("agent_text", ignoreCase = true) -> {
+                                MarkdownText(
+                                    text = step.text.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    chatMode = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        // 与步骤行正文对齐（20dp 图标 + 8dp 间距），上下留出呼吸空间
+                                        .padding(start = 28.dp, top = 6.dp, bottom = 6.dp)
                                 )
                             }
-                        )
+                            else -> ProgressStepRow(
+                                step = step,
+                                onOpenDetail = {
+                                    onStepClick(
+                                        StepDetailTarget(
+                                            cardId = card.id,
+                                            stepIndex = index,
+                                            stepType = step.type,
+                                            stepName = step.name
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            card.subagentResult?.takeIf { it.isNotBlank() }?.let { result ->
+                SubagentTextDisclosure(
+                    cardId = card.id,
+                    title = stringResource(R.string.chat_subagent_result_label),
+                    text = result
+                )
+            }
+
+            if (subagentActions.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    subagentActions.forEach { (labelRes, action) ->
+                        androidx.compose.material3.TextButton(
+                            onClick = { action(card.id) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 8.dp,
+                                vertical = 2.dp
+                            )
+                        ) {
+                            Text(stringResource(labelRes))
+                        }
                     }
                 }
             }
@@ -4911,23 +5012,64 @@ private fun StepResultListItem(index: Int, item: StepResultNode) {
 /** 嵌套值渲染：左侧竖线标识层级，内容递归渲染，逐层自然缩进。 */
 @Composable
 private fun StepResultNested(value: StepResultNode) {
-    Row(
+    val guideColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-    ) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .background(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                    shape = RoundedCornerShape(1.dp)
+            .drawBehind {
+                val x = 1.dp.toPx()
+                drawLine(
+                    color = guideColor,
+                    start = Offset(x, 0f),
+                    end = Offset(x, size.height),
+                    strokeWidth = 2.dp.toPx()
                 )
-        )
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            StepResultNodeView(value)
+            }
+            .padding(start = 10.dp)
+    ) {
+        StepResultNodeView(value)
+    }
+}
+
+@Composable
+private fun SubagentTextDisclosure(cardId: String, title: String, text: String) {
+    var sectionExpanded by remember(cardId, title) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { sectionExpanded = !sectionExpanded }
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (sectionExpanded) Icons.Filled.KeyboardArrowUp
+                else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        if (sectionExpanded) {
+            MarkdownText(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                chatMode = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+            )
         }
     }
 }

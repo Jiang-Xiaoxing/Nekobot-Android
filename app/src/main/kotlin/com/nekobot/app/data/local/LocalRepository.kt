@@ -173,6 +173,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -396,6 +397,10 @@ class LocalRepository(
     private val aiClient: LocalAiClient = LocalAiClient(),
     private val appContext: android.content.Context? = null
 ) {
+    /** 子代理后台任务属于当前档案仓库生命周期，切档/关闭时统一停止。 */
+    private val subagentScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
     private val gson = Gson()
     private val workspaceRepository = LocalWorkspaceRepository(appContext)
     /** 每个仓库实例唯一；同名 profile 覆盖重建后，旧协程也无法通过 active 检查。 */
@@ -891,6 +896,27 @@ class LocalRepository(
     }
 
     init {
+        com.nekobot.app.data.local.ai.SubagentTaskStore.bind(db.localSubagentTaskDao())
+        com.nekobot.app.data.local.ai.SubagentTaskStore.all()
+            .filter { it.status == com.nekobot.app.data.local.ai.SubagentTaskStatus.INTERRUPTED }
+            .forEach { task ->
+                persistAgentProgressCard(
+                    sessionId = task.sessionId,
+                    card = ThinkingCard(
+                        id = task.id,
+                        content = "⏸ 子代理已中断: ${task.description}",
+                        steps = task.steps,
+                        isComplete = true,
+                        isAgent = true,
+                        timestamp = nowIsoStatic(),
+                        parentMessageId = task.parentMessageId,
+                        subagentStatus = "interrupted",
+                        subagentBackground = task.runInBackground,
+                        subagentPrompt = task.prompt,
+                        subagentResult = task.result.takeIf { it.isNotBlank() }
+                    )
+                )
+            }
         aiClient.setOAuthCredentialResolver(oauthManager::resolveCredential)
         appContext?.let { context ->
             LocalPlotStoryStore.activateProfile(db.dbName, plotStoryOwner) {
@@ -902,6 +928,7 @@ class LocalRepository(
         }
         // 后台任务通知 → 会话唤醒：仓库实例重建（切库）时新实例覆盖旧钩子。
         AgentNoticeBus.onNoticePublished = { sessionId -> onAgentNoticePublished(sessionId) }
+        com.nekobot.app.data.local.ai.SubagentTaskStore.wakePendingNotices()
     }
 
     /** 将本地故事图整体持久化，保证重启应用后节点、边和当前分支仍可恢复。 */
@@ -1574,6 +1601,13 @@ class LocalRepository(
             if (entity.companionMode) CompanionMemoryStore(db).ensureScope(entity)
         }
 
+        // 新建本地 Agent 会话可沿用 Agent 设置中的默认 YOLO 状态。
+        if (req.sessionMode.equals("agent", ignoreCase = true) &&
+            ServiceContainer.prefs.agentDefaultYoloEnabled
+        ) {
+            localExecAuthorizationManager.enableYolo(id)
+        }
+
         // 成就触发：会话数量
         kotlin.runCatching {
             reportAchievementProgress(
@@ -2156,6 +2190,7 @@ class LocalRepository(
 
     suspend fun deleteSession(id: String) = withContext(Dispatchers.IO) {
         activeExperienceBackfills[id]?.cancel()
+        com.nekobot.app.data.local.ai.SubagentTaskStore.clearSession(id)
         // 先清理该会话的剧情选项缓存（不影响 token 用量）
         appContext?.let { context ->
             LocalPlotStoryStore.runIfActiveProfile(db.dbName, plotStoryOwner) {
@@ -6498,22 +6533,24 @@ class LocalRepository(
     private suspend fun tryWakeSessionForNotices(sessionId: String) {
         if (activeGenerations.containsKey(sessionId)) return
         if (!wakeUpLocks.add(sessionId)) return
+        var retryPendingAfterWake = true
         try {
             // 拿到锁后复查：另一个唤醒运行可能刚启动，或用户消息抢先开跑了。
             if (activeGenerations.containsKey(sessionId)) return
             if (!AgentNoticeBus.hasPending(sessionId)) return
             val session = sessionDao.getById(sessionId) ?: return
             if (session.archived || !session.sessionMode.equals("agent", ignoreCase = true)) return
-            runAgentWakeUpTurn(session)
+            retryPendingAfterWake = runAgentWakeUpTurn(session)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            retryPendingAfterWake = false
             LocalLogger.w(TAG, R.string.log_repo_wake_failed, sessionId, e.message)
         } finally {
             wakeUpLocks.remove(sessionId)
         }
         // 锁已释放：若本轮运行期间又有通知到达（未被本轮消费），再唤醒一次继续处理。
-        if (AgentNoticeBus.hasPending(sessionId)) {
+        if (retryPendingAfterWake && AgentNoticeBus.hasPending(sessionId)) {
             onAgentNoticePublished(sessionId)
         }
     }
@@ -6530,18 +6567,21 @@ class LocalRepository(
      * 失败或被停止时把通知放回队列（不再次自动唤醒，避免空转），等用户下次发消息时
      * 由循环内注入通道送达。
      */
-    private suspend fun runAgentWakeUpTurn(session: LocalSessionEntity) {
+    private suspend fun runAgentWakeUpTurn(session: LocalSessionEntity): Boolean {
         val sessionId = session.id
-        val notices = AgentNoticeBus.drain(sessionId)
-        if (notices.isEmpty()) return
-        val wakeMessage = buildAgentWakeUpMessage(notices)
-        if (wakeMessage.isBlank()) return
+        val notices = AgentNoticeBus.drainForWake(sessionId)
+        if (notices.isEmpty()) return true
+        val wakeMessage = buildAgentWakeUpMessage(notices.map { it.content })
+        if (wakeMessage.isBlank()) {
+            AgentNoticeBus.requeue(notices)
+            return false
+        }
         try {
             val model = getRoutedModel(sessionId, wakeMessage)
             if (model == null) {
                 // 没有可用模型：放回通知但不重试唤醒。
-                AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
-                return
+                AgentNoticeBus.requeue(notices)
+                return false
             }
             var failure: String? = null
             chatWithPipeline(
@@ -6562,14 +6602,18 @@ class LocalRepository(
             }
             if (failure != null) {
                 LocalLogger.w(TAG, R.string.log_repo_wake_run_failed, sessionId, failure)
-                AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+                AgentNoticeBus.requeue(notices)
+                return false
             }
+            AgentNoticeBus.acknowledge(notices)
+            return true
         } catch (e: CancellationException) {
-            AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+            AgentNoticeBus.requeue(notices)
             throw e
         } catch (e: Exception) {
             LocalLogger.w(TAG, R.string.log_repo_wake_run_error, sessionId, e.message)
-            AgentNoticeBus.publish(sessionId, wakeMessage, wakeIfIdle = false)
+            AgentNoticeBus.requeue(notices)
+            return false
         }
     }
 
@@ -6597,6 +6641,9 @@ class LocalRepository(
             .onFailure { error ->
                 LocalLogger.w(TAG, R.string.log_repo_close_pause_skip, error.message, throwable = error)
             }
+        runCatching { com.nekobot.app.data.local.ai.SubagentTaskStore.closeRepository() }
+            .onFailure { error -> LocalLogger.w(TAG, R.string.log_repo_close_pause_skip, error.message, throwable = error) }
+        subagentScope.cancel()
         localMcpRuntime.close()
         localBrowserTools.values.forEach(LocalBrowserTool::close)
         localBrowserTools.clear()
@@ -6646,7 +6693,8 @@ class LocalRepository(
             skillStorage = localSkillStorage,
             sessionToolFilter = { definitions -> filterDefinitionsForSession(sessionId, definitions) },
             recallReader = recallReader,
-            isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(sessionId, toolName) }
+            isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(sessionId, toolName) },
+            backgroundTaskScope = subagentScope
         )
         val disabledKeys = session.disabledPromptKeys
             ?.split(",")
@@ -6984,7 +7032,7 @@ class LocalRepository(
             session.sessionMode.equals("agent", ignoreCase = true) &&
             userMessage.trim().equals("/yolo", ignoreCase = true)
         ) {
-            localExecAuthorizationManager.enableYolo(sessionId)
+            enableYoloAndResolvePending(sessionId)
             val reply = addAssistantMessage(
                 sessionId = sessionId,
                 content = "已开启 YOLO 模式：本会话内命令无需授权即可执行，高风险黑名单命令仍会被阻止。",
@@ -7330,7 +7378,8 @@ class LocalRepository(
                 _agentWakeEvents.tryEmit(reattachWakeUpSession(sessionId, event))
             },
             recallReader = recallReader,
-            isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(sessionId, toolName) }
+            isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(sessionId, toolName) },
+            backgroundTaskScope = subagentScope
         )
 
         // 5. 构建上下文（含会话级配置：剧情模式、禁用注入项、自动状态间隔等）
@@ -7924,7 +7973,8 @@ class LocalRepository(
                 pluginInstallConfirmationEmitter = { request -> emitPluginInstallConfirmation(request) },
                 sessionToolFilter = { definitions -> filterDefinitionsForSession(session.id, definitions) },
                 recallReader = recallReader,
-                isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(session.id, toolName) }
+                isSessionToolEnabled = { toolName -> sessionToolRegistry.isToolEnabled(session.id, toolName) },
+                backgroundTaskScope = subagentScope
             )
 
             val metadata = buildMap<String, Any> {
@@ -8085,8 +8135,75 @@ class LocalRepository(
         localExecAuthorizationManager.isYoloEnabled(sessionId)
 
     fun setYoloEnabled(sessionId: String, enabled: Boolean) {
-        if (enabled) localExecAuthorizationManager.enableYolo(sessionId)
+        if (enabled) enableYoloAndResolvePending(sessionId)
         else localExecAuthorizationManager.disableYolo(sessionId)
+    }
+
+    private fun enableYoloAndResolvePending(sessionId: String) {
+        localExecAuthorizationManager.enableYolo(sessionId).forEach { requestId ->
+            com.nekobot.app.data.local.ai.AgentAttentionCenter
+                .resolveExecAuthorization(sessionId, requestId)
+        }
+    }
+
+    /** 从进度卡片直接暂停后台子代理，并保存中断状态与卡片。 */
+    suspend fun pauseSubagentTask(sessionId: String, taskId: String): Boolean {
+        val task = com.nekobot.app.data.local.ai.SubagentTaskStore.get(taskId) ?: return false
+        if (task.sessionId != sessionId || !task.runInBackground) return false
+        val interrupted = com.nekobot.app.data.local.ai.SubagentTaskStore.interruptIfActive(
+            taskId,
+            "已由用户从任务卡暂停；恢复时先核查正在执行的工具结果。"
+        ) ?: return false
+        // 即使运行句柄刚好在状态更新前自然退出，中断状态也已原子写入；join 只负责等待清理。
+        com.nekobot.app.data.local.ai.SubagentRunRegistry.cancelAndJoin(taskId)
+        val latest = com.nekobot.app.data.local.ai.SubagentTaskStore.get(taskId) ?: interrupted
+        emitSubagentControlCard(latest)
+        return latest.status == com.nekobot.app.data.local.ai.SubagentTaskStatus.INTERRUPTED
+    }
+
+    /** 从进度卡片直接终止后台子代理。 */
+    suspend fun killSubagentTask(sessionId: String, taskId: String): Boolean {
+        val task = com.nekobot.app.data.local.ai.SubagentTaskStore.get(taskId) ?: return false
+        if (task.sessionId != sessionId || !task.runInBackground || !task.isActive) return false
+        if (!com.nekobot.app.data.local.ai.SubagentRunRegistry.cancelAndJoin(taskId)) return false
+        var latest = com.nekobot.app.data.local.ai.SubagentTaskStore.get(taskId) ?: return false
+        if (latest.isActive) {
+            com.nekobot.app.data.local.ai.SubagentTaskStore.update(
+                id = taskId,
+                status = com.nekobot.app.data.local.ai.SubagentTaskStatus.KILLED,
+                error = "已由用户从任务卡终止"
+            )
+            latest = com.nekobot.app.data.local.ai.SubagentTaskStore.get(taskId) ?: latest
+        }
+        if (latest.status != com.nekobot.app.data.local.ai.SubagentTaskStatus.KILLED) return false
+        runCatching {
+            com.nekobot.app.data.local.ai.forwardUndeliveredSubagentTaskNotices(latest)
+        }
+        emitSubagentControlCard(latest)
+        return true
+    }
+
+    private fun emitSubagentControlCard(task: com.nekobot.app.data.local.ai.SubagentTask) {
+        val label = when (task.status) {
+            com.nekobot.app.data.local.ai.SubagentTaskStatus.INTERRUPTED -> "⏸ 子代理已暂停"
+            com.nekobot.app.data.local.ai.SubagentTaskStatus.KILLED -> "⏹ 子代理已终止"
+            else -> "子代理状态已更新"
+        }
+        val card = ThinkingCard(
+            id = task.id,
+            content = "$label: ${task.description}",
+            steps = task.steps,
+            isComplete = !task.isActive,
+            isAgent = true,
+            timestamp = nowIsoStatic(),
+            parentMessageId = task.parentMessageId,
+            subagentStatus = task.status.name.lowercase(),
+            subagentBackground = task.runInBackground,
+            subagentPrompt = task.prompt,
+            subagentResult = task.result.takeIf { it.isNotBlank() }
+        )
+        persistAgentProgressCard(task.sessionId, card)
+        _agentWakeEvents.tryEmit(RealtimeEvent.ThinkingCardUpdate(card, task.sessionId))
     }
 
     // ==================== 会话 Agent 工具集选择 ====================
@@ -8292,7 +8409,8 @@ class LocalRepository(
             authorization = authorization
         )
         if (resolved) {
-            com.nekobot.app.data.local.ai.AgentAttentionCenter.resolveExecAuthorization(sessionId)
+            com.nekobot.app.data.local.ai.AgentAttentionCenter
+                .resolveExecAuthorization(sessionId, requestId)
         }
         return resolved
     }

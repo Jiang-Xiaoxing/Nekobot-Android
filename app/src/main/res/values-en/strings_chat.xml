@@ -778,4 +778,19 @@
     <string name="chat_queue_enqueued">Message queued</string>
     <string name="chat_queue_injecting">Will be sent to the AI before the next tool call</string>
     <string name="chat_queue_sent_now">Sent immediately</string>
+    <string name="chat_subagent_resume_action">Resume subagent</string>
+    <string name="chat_subagent_resume_prompt">Resume subagent task %1$s. First call subagent_get to review its progress. If any tool call is unknown, use read-only tools to verify its outcome; stop and report if it cannot be verified. If the task still matches the current goal, call subagent_resume(task_id=%1$s).</string>
+<string name="chat_subagent_pause_action">Pause</string>
+<string name="chat_subagent_kill_action">Terminate</string>
+<string name="chat_subagent_prompt_label">Task prompt</string>
+<string name="chat_subagent_result_label">Final output</string>
+<string name="chat_subagent_pause_confirm_title">Pause subagent?</string>
+<string name="chat_subagent_pause_confirm_message">Current progress will be saved so you can resume later.</string>
+<string name="chat_subagent_kill_confirm_title">Terminate subagent?</string>
+<string name="chat_subagent_kill_confirm_message">The task will stop. Its saved progress will remain available.</string>
+<string name="chat_subagent_pause_done">Subagent paused</string>
+<string name="chat_subagent_kill_done">Subagent terminated</string>
+<string name="chat_subagent_control_unavailable">The subagent state changed. Refresh and try again.</string>
+<string name="chat_subagent_retry_action">Retry</string>
+    <string name="chat_subagent_retry_prompt">First confirm subagent task %1$s still matches the current goal, then call subagent_retry(task_id=%1$s) to create a retry task and follow its result.</string>
 </resources>

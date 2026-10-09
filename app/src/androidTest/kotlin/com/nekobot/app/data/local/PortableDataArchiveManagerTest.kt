@@ -59,7 +59,6 @@ class PortableDataArchiveManagerTest {
     @Before
     fun setUp() {
         manager = PortableDataArchiveManager(context)
-        workspaceRoot = File(context.filesDir, "workspace/portable-test")
         memoryFile = com.nekobot.app.data.local.ai.GlobalAgentMemoryStore.memoryFileFor(
             context,
             com.nekobot.app.ServiceContainer.prefs.activeDbName
@@ -67,6 +66,7 @@ class PortableDataArchiveManagerTest {
         originalMemory = memoryFile.takeIf(File::isFile)?.readBytes()
         originalRecentSessionsIncludeArchived = com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived
         mergeSessionId = "portable-merge-${UUID.randomUUID()}"
+        workspaceRoot = File(context.filesDir, "workspace/$mergeSessionId")
         workspaceRoot.deleteRecursively()
         workspaceRoot.mkdirs()
         memoryFile.parentFile?.mkdirs()
@@ -87,6 +87,9 @@ class PortableDataArchiveManagerTest {
 
     @Test
     fun encryptedArchiveCanPreviewAndSelectivelyRestoreFiles() = runBlocking {
+        // v0.8.3 exports only workspaces belonging to this profile's sessions.
+        val db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+        db.sessionDao().upsert(LocalSessionEntity(mergeSessionId, "Portable files", createdAt = "now", updatedAt = "now"))
         File(workspaceRoot, "notes/todo.txt").apply {
             parentFile?.mkdirs()
             writeText("portable workspace")

@@ -190,11 +190,12 @@ internal fun isMemorizableCommand(command: String): Boolean {
     }
 }
 
-/** Shell 展开、重定向或控制符会让静态指纹无法代表真实执行内容，禁止「始终允许」。 */
+/** Shell 展开、重定向或后台执行会让静态指纹无法代表真实执行内容，禁止「始终允许」。 */
 private fun containsDynamicShellSyntax(command: String): Boolean {
     if ('$' in command || '`' in command) return true
     var quote: Char? = null
     var escaped = false
+    var skipPairedAmpersand = false
     for (index in command.indices) {
         val char = command[index]
         if (escaped) {
@@ -214,7 +215,19 @@ private fun containsDynamicShellSyntax(command: String): Boolean {
             quote = char
             continue
         }
-        if (char in ";|&><(){}*?~\r\n") return true
+        if (char == '&') {
+            if (skipPairedAmpersand) {
+                skipPairedAmpersand = false
+                continue
+            }
+            // 简单的 && 链会逐段生成独立授权指纹；单独的 & 仍表示后台执行，拒绝记忆。
+            if (command.getOrNull(index + 1) == '&') {
+                skipPairedAmpersand = true
+                continue
+            }
+            return true
+        }
+        if (char in ";|><(){}*?~\r\n") return true
     }
     return false
 }
@@ -387,6 +400,7 @@ class LocalExecAuthorizationManager(
         val mainCommand: String,
         val authorizationKeys: Set<String>,
         val memorizable: Boolean,
+        val yoloExempt: Boolean,
         val decision: CompletableDeferred<ExecAuthorization>
     )
 
@@ -394,8 +408,18 @@ class LocalExecAuthorizationManager(
     private val alwaysAllowed = ConcurrentHashMap<String, MutableSet<String>>()
     private val yoloSessions = ConcurrentHashMap.newKeySet<String>()
 
-    fun enableYolo(sessionId: String) {
+    /** 开启 YOLO 并立即放行该会话中已挂起、且允许 YOLO 跳过的请求。 */
+    fun enableYolo(sessionId: String): List<String> {
         yoloSessions.add(sessionId)
+        return pending.entries.mapNotNull { (requestId, request) ->
+            if (request.sessionId == sessionId && !request.yoloExempt &&
+                request.decision.complete(ExecAuthorization.Once)
+            ) {
+                requestId
+            } else {
+                null
+            }
+        }
     }
 
     fun disableYolo(sessionId: String) {
@@ -497,7 +521,14 @@ class LocalExecAuthorizationManager(
 
         val requestId = UUID.randomUUID().toString()
         val decision = CompletableDeferred<ExecAuthorization>()
-        pending[requestId] = Pending(sessionId, mainCommand, authorizationKeys, memorizable, decision)
+        pending[requestId] = Pending(
+            sessionId = sessionId,
+            mainCommand = mainCommand,
+            authorizationKeys = authorizationKeys,
+            memorizable = memorizable,
+            yoloExempt = yoloExempt,
+            decision = decision
+        )
         onRequest(
             ExecConfirmationRequest(
                 requestId = requestId,
@@ -524,13 +555,14 @@ class LocalExecAuthorizationManager(
     ): Boolean {
         val request = pending[requestId] ?: return false
         if (request.sessionId != sessionId) return false
+        if (!request.decision.complete(authorization)) return false
         // 不可记忆的请求不允许写入「始终允许」记忆，即使 UI 传了 Always。
         if (authorization == ExecAuthorization.Always && request.memorizable) {
             val keys = allowedKeySet(sessionId)
             keys.addAll(request.authorizationKeys)
             runCatching { savePersistedRules?.invoke(sessionId, keys.toSet()) }
         }
-        return request.decision.complete(authorization)
+        return true
     }
 
     /** 停止生成时拒绝该会话全部待确认命令，立即解除同步等待。 */

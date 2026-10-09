@@ -138,7 +138,10 @@ class FusedCompanionLiveAndroidTest {
                 val x=it.asJsonObject; x["category"]?.asString=="episode" && x["operation"]?.asString in listOf("add","update") &&
                     x["content"]?.asString.orEmpty().contains("海边") })
             for (change in changes) {
-                val fields=gson.fromJson(change,Map::class.java).entries.associate { it.key.toString() to requireNotNull(it.value) }
+                // Production extraction treats null optional fields as absent (parseDrafts.text).
+                val fields=gson.fromJson(change,Map::class.java).entries.mapNotNull { entry ->
+                    entry.value?.let { entry.key.toString() to it }
+                }.toMap()
                 store.fusedTool(session,"agent_memory_update",fields,change.asJsonObject["source_id"].asString)
             }
             facts=store.validatedMemories(store.ensureScope(session)).filter { it.current }

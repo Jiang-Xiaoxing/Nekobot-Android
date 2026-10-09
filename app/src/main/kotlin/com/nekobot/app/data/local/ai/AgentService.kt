@@ -111,6 +111,7 @@ private val requiredToolArguments = mapOf(
     "web_fetch" to setOf("url"),
     "shell_job" to setOf("action"),
     "subagent_get" to setOf("task_id"),
+    "subagent_pause" to setOf("task_id"),
     "subagent_kill" to setOf("task_id"),
     "exec_command" to setOf("command"),
     "file_read" to setOf("path"),
@@ -386,6 +387,8 @@ data class ToolLoopSession(
      * 返回的内容会按顺序以 user 消息插入下一轮模型上下文。
      */
     val pendingUserMessages: () -> List<String> = { emptyList() },
+    /** 子代理将待注入通知同时写入其可恢复协议历史；主会话排队消息已单独持久化。 */
+    val persistPendingUserMessages: Boolean = false,
     /**
      * 每轮模型调用前检查的输入 token 预算；0 表示不做循环内上下文管理。
      * 与"轮次之间"的自动压缩互补：长任务往往在一轮内就堆满上下文。
@@ -1025,6 +1028,7 @@ suspend fun runToolCallLoop(
     hooks: ToolLoopHooks? = null,
     shouldStop: () -> Boolean = { false },
     pendingUserMessages: () -> List<String> = { emptyList() },
+    persistPendingUserMessages: Boolean = false,
     /** 本轮允许的输入 token 预算（0 表示不做循环内上下文管理）。 */
     contextBudgetTokens: () -> Int = { 0 },
     /** 输出预留比例：预算中留给模型回复的部分（默认 20%）。 */
@@ -1074,10 +1078,7 @@ suspend fun runToolCallLoop(
     fun appendMessage(message: MutableMap<String, Any>, persist: Boolean = true) {
         toolMessages.add(message)
         if (persist) {
-            runCatching { hooks?.onToolMessageAppended?.invoke(message) }
-                .onFailure { error ->
-                    com.nekobot.app.data.local.LocalLogger.w("AgentService", R.string.log_svc_tool_message_persist_failed, error.message)
-                }
+            hooks?.onToolMessageAppended?.invoke(message)
         }
     }
 
@@ -1092,8 +1093,11 @@ suspend fun runToolCallLoop(
             .filter(String::isNotBlank)
         if (injectedUserMessages.isNotEmpty()) {
             for (content in injectedUserMessages) {
-                // 排队消息已在 chatWithPipeline 里持久化为会话用户消息，这里不再重复落库。
-                appendMessage(mutableMapOf("role" to "user", "content" to content), persist = false)
+                // 主会话排队消息已单独持久化；子代理完成通知则需写进该任务的恢复上下文。
+                appendMessage(
+                    mutableMapOf("role" to "user", "content" to content),
+                    persist = persistPendingUserMessages
+                )
             }
         }
 
@@ -1354,6 +1358,7 @@ suspend fun runToolLoopSession(session: ToolLoopSession): ToolExecutionResult {
         hooks = session.hooks,
         shouldStop = session.shouldStop,
         pendingUserMessages = session.pendingUserMessages,
+        persistPendingUserMessages = session.persistPendingUserMessages,
         contextBudgetTokens = session.contextBudgetTokens,
         preserveConversation = session.preserveConversation
     )

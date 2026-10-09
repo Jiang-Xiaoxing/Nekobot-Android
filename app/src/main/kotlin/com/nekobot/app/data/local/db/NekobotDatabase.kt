@@ -21,6 +21,10 @@ import com.nekobot.app.data.local.LocalLogger
         LocalMessageImageEntity::class,
         LocalAgentRunEntity::class,
         LocalAgentToolMessageEntity::class,
+        LocalSubagentTaskEntity::class,
+        LocalSubagentMessageEntity::class,
+        LocalSubagentToolCallEntity::class,
+        LocalAgentNoticeEntity::class,
         LocalCharacterEntity::class,
         LocalWorldBookEntity::class,
         LocalWorldBookEntryEntity::class,
@@ -59,7 +63,7 @@ import com.nekobot.app.data.local.LocalLogger
         CompanionOwnerEntity::class,
         CompanionContextMaterialEntity::class
     ],
-    version = 51,
+    version = 52,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
@@ -70,6 +74,7 @@ abstract class NekobotDatabase : RoomDatabase() {
     abstract fun messageImageDao(): MessageImageDao
     abstract fun agentRunDao(): AgentRunDao
     abstract fun agentToolMessageDao(): AgentToolMessageDao
+    abstract fun localSubagentTaskDao(): LocalSubagentTaskDao
     abstract fun characterDao(): CharacterDao
     abstract fun worldBookDao(): WorldBookDao
     abstract fun aiModelDao(): AiModelDao
@@ -1106,6 +1111,11 @@ abstract class NekobotDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = FusedCompanionSchema.migrate(db)
         }
 
+        /** Personal v51 → v52: add upstream v0.8.3 subagent persistence without changing existing memory. */
+        val MIGRATION_51_52 = object : Migration(51, 52) {
+            override fun migrate(db: SupportSQLiteDatabase) = SubagentSchema.create(db)
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
@@ -1118,7 +1128,8 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37,
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
-            MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51
+            MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52
         )
 
         fun get(context: Context): NekobotDatabase =

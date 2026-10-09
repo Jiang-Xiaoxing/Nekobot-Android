@@ -21,12 +21,16 @@ import com.nekobot.app.data.model.ThinkingCard
 import com.nekobot.app.data.model.ReasoningEffort
 import com.nekobot.app.data.remote.RealtimeEvent
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import com.nekobot.app.R
 
 /** 本轮实际交给模型的工具名；执行时再次与会话当前权限取交集。 */
 internal const val SESSION_ALLOWED_TOOL_NAMES_CONTEXT_KEY = "_session_allowed_tool_names"
+private const val SUBAGENT_RETRY_SOURCE_TASK_CONTEXT_KEY = "_subagent_retry_source_task_id"
 
 /**
  * 本地模式 PipelineCallbacks 实现。
@@ -162,7 +166,8 @@ internal class LocalPipelineCallbacks(
      * 子代理进度卡片持久化回调：按卡片 id 合并写进委派轮的用户消息，
      * 退出会话重进后卡片仍在。为空时卡片只做实时展示，不落库。
      */
-    private val onSubagentThinkingCard: ((card: com.nekobot.app.data.model.ThinkingCard) -> Unit)? = null
+    private val onSubagentThinkingCard: ((card: com.nekobot.app.data.model.ThinkingCard) -> Unit)? = null,
+    private val backgroundTaskScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : PipelineCallbacks() {
 
     companion object {
@@ -2052,7 +2057,34 @@ internal class LocalPipelineCallbacks(
         when (toolName) {
             TOOL_SUBAGENT_LIST -> return listSubagentTasks()
             TOOL_SUBAGENT_GET -> return getSubagentTask(args)
+            TOOL_SUBAGENT_RESUME -> return resumeSubagentTask(args, maxToolIterations)
+            TOOL_SUBAGENT_PAUSE -> return pauseSubagentTask(args)
             TOOL_SUBAGENT_KILL -> return killSubagentTask(args)
+            TOOL_SUBAGENT_RETRY -> {
+                val id = args["task_id"]?.toString()?.trim().orEmpty()
+                if (id.isBlank()) return mapOf("success" to false, "error" to "task_id 不能为空")
+                val source = SubagentTaskStore.get(id)
+                if (source == null || source.sessionId != session.id) {
+                    return mapOf("success" to false, "error" to "子代理任务不存在或不属于当前会话: $id")
+                }
+                if (source.status != SubagentTaskStatus.FAILED && source.status != SubagentTaskStatus.KILLED) {
+                    return mapOf(
+                        "success" to false,
+                        "task_id" to id,
+                        "status" to source.status.name.lowercase(),
+                        "error" to "只有失败或已终止任务可以重试；中断任务请使用 subagent_resume。"
+                    )
+                }
+                return executeSubagentTool(
+                    TOOL_SUBAGENT,
+                    mapOf(
+                        "description" to source.description,
+                        "prompt" to source.prompt,
+                        "run_in_background" to source.runInBackground
+                    ),
+                    toolContext + (SUBAGENT_RETRY_SOURCE_TASK_CONTEXT_KEY to id)
+                )
+            }
             TOOL_SUBAGENT -> {
                 // Subagent 功能关闭时直接拒绝，避免无谓的模型往返。
                 val guard = SubagentRunner.guardDepth(parentDepth + 1, maxDepth)
@@ -2065,6 +2097,44 @@ internal class LocalPipelineCallbacks(
                 val runInBackground = args["run_in_background"] as? Boolean
                     ?: com.nekobot.app.ServiceContainer.prefs.subagentDefaultBackground
 
+                val parentToolCallId = (toolContext[AGENT_TOOL_CALL_ID_CONTEXT_KEY] as? String)
+                    ?.takeIf(String::isNotBlank)
+                val sourceTaskId = (toolContext[SUBAGENT_RETRY_SOURCE_TASK_CONTEXT_KEY] as? String)
+                    ?.takeIf(String::isNotBlank)
+                val requestKey = subagentRequestKey(
+                    parentTaskId = ownerTaskId,
+                    parentToolCallId = parentToolCallId,
+                    description = description,
+                    prompt = prompt
+                )
+                SubagentTaskStore.findByRequestKey(session.id, requestKey)?.let { existing ->
+                    return when (existing.status) {
+                        SubagentTaskStatus.INTERRUPTED -> resumeSubagentTask(
+                            mapOf("task_id" to existing.id), maxToolIterations
+                        )
+                        SubagentTaskStatus.RUNNING, SubagentTaskStatus.OUTPUTTING -> mapOf(
+                            "success" to true,
+                            "task_id" to existing.id,
+                            "status" to existing.status.name.lowercase(),
+                            "background" to true,
+                            "instruction" to "该委派调用已登记，任务仍在运行；不要重复创建，稍后用 subagent_get 查询。"
+                        )
+                        SubagentTaskStatus.SUCCEEDED -> mapOf(
+                            "success" to true,
+                            "task_id" to existing.id,
+                            "status" to "succeeded",
+                            "result" to existing.result.take(AgentToolLimits.toolOutputChars()),
+                            "instruction" to "这是同一委派调用已保存的结果，请直接继续处理。"
+                        )
+                        SubagentTaskStatus.FAILED, SubagentTaskStatus.KILLED -> mapOf(
+                            "success" to false,
+                            "task_id" to existing.id,
+                            "status" to existing.status.name.lowercase(),
+                            "error" to (existing.error ?: "同一委派任务已结束")
+                        )
+                    }
+                }
+
                 if (runInBackground && !SubagentConcurrency.tryAcquire()) {
                     return mapOf(
                         "success" to false,
@@ -2076,11 +2146,16 @@ internal class LocalPipelineCallbacks(
                 // 登记任务（标题/在途追踪）。
                 val task = SubagentTaskStore.register(
                     sessionId = session.id,
-                    parentRunId = parentMessageId ?: "",
+                    parentRunId = agentRunId ?: "",
                     description = description.ifBlank { "子代理任务" },
                     prompt = prompt,
                     depth = parentDepth + 1,
-                    parentTaskId = ownerTaskId
+                    parentTaskId = ownerTaskId,
+                    runInBackground = runInBackground,
+                    parentMessageId = parentMessageId,
+                    parentToolCallId = parentToolCallId,
+                    requestKey = requestKey,
+                    sourceTaskId = sourceTaskId
                 )
 
                 if (runInBackground) {
@@ -2116,11 +2191,14 @@ internal class LocalPipelineCallbacks(
                     put("status", t.status.name.lowercase())
                     put("depth", t.depth)
                     t.parentTaskId?.let { put("parent_task_id", it) }
+                    t.sourceTaskId?.let { put("source_task_id", it) }
                     put("tool_calls", t.toolCalls)
                     if (t.isActive) {
                         put("activity", subagentActivityText(t))
                     } else if (t.status == SubagentTaskStatus.FAILED) {
                         put("error", (t.error ?: "子代理执行失败").take(200))
+                    } else if (t.status == SubagentTaskStatus.INTERRUPTED) {
+                        put("recovery", "原任务指令和已保存的模型上下文可恢复。若仍符合用户目标，请调用 subagent_resume(task_id)；结果未知的工具会先要求核查，不会自动重放。")
                     }
                 }
             },
@@ -2135,6 +2213,8 @@ internal class LocalPipelineCallbacks(
         if (t == null || t.sessionId != session.id) {
             return mapOf("success" to false, "error" to "子代理任务不存在或不属于当前会话: $id")
         }
+        val toolCalls = SubagentTaskStore.toolCallSnapshots(id)
+        val hasUnknownToolCalls = toolCalls.any { it["status"] == "unknown" }
         if (t.isActive) {
             val outputting = t.status == SubagentTaskStatus.OUTPUTTING
             return mapOf(
@@ -2145,6 +2225,7 @@ internal class LocalPipelineCallbacks(
                 "elapsed_seconds" to ((System.currentTimeMillis() - (t.startedAt ?: t.createdAt)) / 1000)
                     .coerceAtLeast(0),
                 "tools_used" to t.steps.count { it.type == "tool" || it.type == "tool_done" },
+                "tool_calls" to toolCalls,
                 "instruction" to if (outputting) {
                     "子代理工具调用已结束，正在输出最终结果，通常数十秒内完成。" +
                         "请不要执行 sleep 等长时间等待，也不要连续轮询；" +
@@ -2156,12 +2237,31 @@ internal class LocalPipelineCallbacks(
                 }
             )
         }
+        if (t.status == SubagentTaskStatus.INTERRUPTED) {
+            return mapOf(
+                "success" to false,
+                "task_id" to id,
+                "status" to "interrupted",
+                "model" to t.modelUsed,
+                "tool_calls" to t.toolCalls,
+                "tool_call_records" to toolCalls,
+                "review_required" to hasUnknownToolCalls,
+                "todos" to t.todos.map { mapOf("content" to it.content, "status" to it.status) },
+                "recovery_reason" to if (hasUnknownToolCalls) {
+                    "任务已中断，存在执行结果未知的工具。先查看 tool_call_records 中 status=unknown 的调用，并用只读工具核查外部状态；确认已完成或未执行后再决定恢复，不要直接重放。"
+                } else {
+                    "任务已中断，已保存的工具结果可复用。可调用 subagent_resume 从检查点继续。"
+                },
+                "error" to (t.error ?: "任务已中断")
+            )
+        }
         return mapOf(
             "success" to (t.status == SubagentTaskStatus.SUCCEEDED),
             "task_id" to id,
             "status" to t.status.name.lowercase(),
             "model" to t.modelUsed,
             "tool_calls" to t.toolCalls,
+            "tool_call_records" to toolCalls,
             if (t.status == SubagentTaskStatus.SUCCEEDED) {
                 "result" to t.result.take(AgentToolLimits.toolOutputChars())
             } else "error" to (t.error ?: "子代理执行失败")
@@ -2177,6 +2277,119 @@ internal class LocalPipelineCallbacks(
             "tool" -> "正在执行工具: ${last.name ?: "tool"}"
             "ai_thinking", "thinking" -> "正在思考 / 生成中"
             else -> "正在执行: ${last.name ?: "步骤"}"
+        }
+    }
+
+    /** 同一父工具调用在主 Agent 恢复时复用原子任务，避免重新创建重复子代理。 */
+    private fun subagentRequestKey(
+        parentTaskId: String?,
+        parentToolCallId: String?,
+        description: String,
+        prompt: String
+    ): String {
+        val parentRun = agentRunId.orEmpty().ifBlank { session.id }
+        val callIdentity = parentToolCallId?.takeIf(String::isNotBlank)
+            ?: "$description\u0000$prompt"
+        val source = listOf(session.id, parentRun, parentTaskId.orEmpty(), parentMessageId.orEmpty(), callIdentity)
+            .joinToString("\u0000")
+        return java.util.UUID.nameUUIDFromBytes(source.toByteArray(Charsets.UTF_8)).toString()
+    }
+
+    /** 恢复已中断的子代理：原任务上下文从 Room 检查点重建，未完成工具不会直接重放。 */
+    private suspend fun resumeSubagentTask(
+        args: Map<String, Any>,
+        maxToolIterations: Int
+    ): Map<String, Any> {
+        val id = args["task_id"]?.toString()?.trim().orEmpty()
+        if (id.isBlank()) return mapOf("success" to false, "error" to "task_id 不能为空")
+        val task = SubagentTaskStore.get(id)
+        if (task == null || task.sessionId != session.id) {
+            return mapOf("success" to false, "error" to "子代理任务不存在或不属于当前会话: $id")
+        }
+        if (task.status != SubagentTaskStatus.INTERRUPTED) {
+            return mapOf(
+                "success" to false,
+                "task_id" to id,
+                "status" to task.status.name.lowercase(),
+                "error" to "只有已中断的任务可以恢复。"
+            )
+        }
+        val (maxDepth, _) = subagentPolicy()
+        if (maxDepth <= 0 || task.depth > maxDepth) {
+            return mapOf("success" to false, "task_id" to id, "error" to "当前子代理策略不允许恢复该深度的任务。")
+        }
+        if (task.toolCalls >= maxToolIterations) {
+            return mapOf(
+                "success" to false,
+                "task_id" to id,
+                "error" to "任务已达到当前子代理工具轮次上限；请提高上限后再恢复。"
+            )
+        }
+
+        if (task.runInBackground && !SubagentConcurrency.tryAcquire()) {
+            return mapOf(
+                "success" to false,
+                "task_id" to id,
+                "error" to "后台子代理并发已达上限，请稍后再恢复。"
+            )
+        }
+        val resumed = SubagentTaskStore.beginResume(id)
+        if (resumed == null) {
+            if (task.runInBackground) SubagentConcurrency.release()
+            return mapOf("success" to false, "task_id" to id, "error" to "任务状态已变化，请刷新任务列表。")
+        }
+        val restoredMessages = buildSubagentResumeMessages(resumed)
+        val remainingIterations = maxToolIterations - resumed.toolCalls
+        if (resumed.runInBackground) {
+            launchSubagentInBackground(
+                taskId = id,
+                task = resumed,
+                prompt = resumed.prompt,
+                maxToolIterations = remainingIterations,
+                restoredMessages = restoredMessages
+            )
+            return mapOf(
+                "success" to true,
+                "task_id" to id,
+                "status" to "running",
+                "background" to true,
+                "instruction" to "已从已保存的上下文恢复后台子代理。未知结果的工具会先核查，不会直接重放；任务完成后仍会通知父会话。"
+            )
+        }
+        return runSubagentForeground(
+            taskId = id,
+            task = resumed,
+            prompt = resumed.prompt,
+            maxToolIterations = remainingIterations,
+            restoredMessages = restoredMessages
+        )
+    }
+
+    /** 旧版本只保存了进度卡与待办时，将这些可见进度作为一次恢复补充消息。 */
+    private fun buildSubagentResumeMessages(task: SubagentTask): List<Map<String, Any>> {
+        val saved = SubagentTaskStore.prepareConversationForResume(task.id)
+        if (saved.isNotEmpty()) return saved
+        val summary = buildString {
+            appendLine("这是从已中断的子代理任务恢复的补充上下文。继续前先核对当前状态，勿假设旧工具仍在运行。")
+            if (task.todos.isNotEmpty()) {
+                appendLine("已保存待办：")
+                task.todos.forEach { appendLine("- [${it.status}] ${it.content}") }
+            }
+            val toolSteps = task.steps.filter { it.type == "tool" || it.type == "tool_done" }.takeLast(20)
+            if (toolSteps.isNotEmpty()) {
+                appendLine("已保存工具进度摘要：")
+                toolSteps.forEach { step ->
+                    append("- ").append(step.name ?: "tool")
+                    step.detail?.takeIf(String::isNotBlank)?.let { append(": ").append(it.take(600)) }
+                    step.fullResult?.toString()?.takeIf(String::isNotBlank)?.let { append("；结果摘要: ").append(it.take(800)) }
+                    appendLine()
+                }
+            }
+        }.trim()
+        return if (task.todos.isEmpty() && task.steps.none { it.type == "tool" || it.type == "tool_done" }) {
+            emptyList()
+        } else {
+            listOf(mapOf("role" to "user", "content" to summary))
         }
     }
 
@@ -2214,21 +2427,69 @@ internal class LocalPipelineCallbacks(
         )
     }
 
+    /** subagent_pause：保存上下文并暂停本会话中正在运行的后台子代理。 */
+    private suspend fun pauseSubagentTask(args: Map<String, Any>): Map<String, Any> {
+        val id = args["task_id"]?.toString()?.trim().orEmpty()
+        if (id.isBlank()) return mapOf("success" to false, "error" to "task_id 不能为空")
+        val task = SubagentTaskStore.get(id)
+        if (task == null || task.sessionId != session.id) {
+            return mapOf("success" to false, "error" to "子代理任务不存在或不属于当前会话: $id")
+        }
+        if (!SubagentRunRegistry.isRunning(id)) {
+            return mapOf(
+                "success" to false,
+                "task_id" to id,
+                "status" to (SubagentTaskStore.get(id)?.status ?: task.status).name.lowercase(),
+                "error" to "该任务当前不在后台运行（可能已结束，或正在前台执行），未做任何操作。"
+            )
+        }
+        val interrupted = SubagentTaskStore.interruptIfActive(id, "已被主代理暂停；恢复时先核查正在执行的工具结果。")
+            ?: return mapOf(
+                "success" to false,
+                "task_id" to id,
+                "status" to (SubagentTaskStore.get(id)?.status ?: task.status).name.lowercase(),
+                "error" to "任务已在暂停前结束，状态未更改。"
+            )
+
+        // 等待 finally 释放并发额度及前台服务保活槽位后，再确认卡片为暂停态。
+        SubagentRunRegistry.cancelAndJoin(id)
+        val card = com.nekobot.app.data.model.ThinkingCard(
+            id = id,
+            content = "⏸ 子代理已暂停: ${interrupted.description}",
+            steps = interrupted.steps,
+            isComplete = true,
+            isAgent = true,
+            timestamp = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
+            parentMessageId = interrupted.parentMessageId ?: parentMessageId,
+            subagentStatus = "interrupted",
+            subagentBackground = interrupted.runInBackground,
+            subagentPrompt = interrupted.prompt,
+            subagentResult = interrupted.result.takeIf { it.isNotBlank() }
+        )
+        emitSubagentCardEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
+        runCatching { onSubagentThinkingCard?.invoke(card) }
+        return mapOf(
+            "success" to true,
+            "task_id" to id,
+            "status" to "interrupted",
+            "instruction" to "子代理已暂停，完整对话和进度已保存。若仍需完成该任务，之后调用 subagent_resume(task_id) 继续。"
+        )
+    }
+
     /** 后台运行：登记后的任务在独立协程执行，不阻塞父 Agent 的工具循环。 */
     private fun launchSubagentInBackground(
         taskId: String,
         task: SubagentTask,
         prompt: String,
-        maxToolIterations: Int
+        maxToolIterations: Int,
+        restoredMessages: List<Map<String, Any>> = emptyList()
     ) {
         // 后台任务可能在父会话生成结束后才完成：用独立槽位保活前台服务，
         // 避免进程在任务运行期间被回收（父会话自己的槽位由 chatWithPipeline 管理，互不干扰）。
         com.nekobot.app.ServiceContainer.appContext?.let { context ->
             runCatching { com.nekobot.app.service.AgentForegroundService.acquireBackgroundTask(context, session.id) }
         }
-        val job = kotlinx.coroutines.GlobalScope.launch(
-            kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-        ) {
+        val job = backgroundTaskScope.launch {
             try {
                 // 背景执行不沿用父线程的生成控制器停止信号；使用独立的停止守卫。
                 val controller = LocalGenerationController()
@@ -2246,7 +2507,9 @@ internal class LocalPipelineCallbacks(
                     maxToolIterations = maxToolIterations,
                     shouldStop = controller::isStopped,
                     onProgress = buildSubagentProgressEmitter(taskId, task.description),
-                    contextBudgetTokens = activeModel.maxContextLength ?: 0
+                    contextBudgetTokens = activeModel.maxContextLength ?: 0,
+                    restoredMessages = restoredMessages,
+                    initialSteps = task.steps
                 )
                 SubagentTaskStore.update(
                     id = taskId,
@@ -2254,8 +2517,11 @@ internal class LocalPipelineCallbacks(
                     result = result.content,
                     error = result.error,
                     modelUsed = result.modelName,
-                    toolCalls = result.toolCalls
+                    toolCalls = task.toolCalls + result.toolCalls
                 )
+                if (result.status == SubagentTaskStatus.SUCCEEDED) {
+                    SubagentTaskNoticeBus.acknowledgeConsumed(taskId)
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 SubagentTaskStore.update(id = taskId, status = SubagentTaskStatus.KILLED, error = "已取消")
             } catch (e: Exception) {
@@ -2271,8 +2537,11 @@ internal class LocalPipelineCallbacks(
                 }
                 runCatching {
                     val latest = SubagentTaskStore.get(task.id) ?: task
-                    forwardUndeliveredSubagentTaskNotices(latest)
-                    routeSubagentCompletionNotice(session.id, latest)
+                    emitSubagentStatusCard(latest)
+                    if (latest.status != SubagentTaskStatus.INTERRUPTED) {
+                        forwardUndeliveredSubagentTaskNotices(latest)
+                        routeSubagentCompletionNotice(session.id, latest)
+                    }
                 }
             }
         }
@@ -2297,7 +2566,8 @@ internal class LocalPipelineCallbacks(
         taskId: String,
         task: SubagentTask,
         prompt: String,
-        maxToolIterations: Int
+        maxToolIterations: Int,
+        restoredMessages: List<Map<String, Any>> = emptyList()
     ): Map<String, Any> {
         return try {
             val result = SubagentRunner.runForeground(
@@ -2313,7 +2583,10 @@ internal class LocalPipelineCallbacks(
                 maxToolIterations = maxToolIterations,
                 shouldStop = { generationController.isStopped },
                 onProgress = buildSubagentProgressEmitter(taskId, task.description),
-                contextBudgetTokens = activeModel.maxContextLength ?: 0
+                contextBudgetTokens = activeModel.maxContextLength ?: 0,
+                restoredMessages = restoredMessages,
+                initialSteps = task.steps,
+                stoppedStatus = SubagentTaskStatus.INTERRUPTED
             )
             SubagentTaskStore.update(
                 id = taskId,
@@ -2321,8 +2594,12 @@ internal class LocalPipelineCallbacks(
                 result = result.content,
                 error = result.error,
                 modelUsed = result.modelName,
-                toolCalls = result.toolCalls
+                toolCalls = task.toolCalls + result.toolCalls
             )
+            emitSubagentStatusCard(SubagentTaskStore.get(taskId) ?: task)
+            if (result.status == SubagentTaskStatus.SUCCEEDED) {
+                SubagentTaskNoticeBus.acknowledgeConsumed(taskId)
+            }
             // 前台子代理同样可能委派过后台子任务：进入终态后把未消费的子任务通知向上转发。
             runCatching {
                 forwardUndeliveredSubagentTaskNotices(SubagentTaskStore.get(taskId) ?: task)
@@ -2334,7 +2611,11 @@ internal class LocalPipelineCallbacks(
                 "model" to result.modelName,
                 "tool_calls" to result.toolCalls,
                 "result" to result.content.take(AgentToolLimits.toolOutputChars()),
-                "instruction" to "子代理执行完成。请基于 result 向用户汇报结论。"
+                "instruction" to when (result.status) {
+                    SubagentTaskStatus.INTERRUPTED -> "子代理已中断，原上下文已保存；如果当前目标仍需要完成，请调用 subagent_resume(task_id) 继续。"
+                    SubagentTaskStatus.SUCCEEDED -> "子代理执行完成。请基于 result 向用户汇报结论。"
+                    else -> "子代理未成功完成。请结合已保存的进度判断下一步。"
+                }
             )
         } finally {
             Unit
@@ -2353,6 +2634,7 @@ internal class LocalPipelineCallbacks(
         return { header, isComplete, steps ->
             // 同步到任务存储，供 subagent_get 查询。
             SubagentTaskStore.update(id = taskId, steps = steps)
+            val task = SubagentTaskStore.get(taskId)
             val card = com.nekobot.app.data.model.ThinkingCard(
                 id = taskId,
                 content = header,
@@ -2360,7 +2642,11 @@ internal class LocalPipelineCallbacks(
                 isComplete = isComplete,
                 isAgent = true,
                 timestamp = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
-                parentMessageId = parentMessageId
+                parentMessageId = task?.parentMessageId ?: parentMessageId,
+                subagentStatus = task?.status?.name?.lowercase() ?: "running",
+                subagentBackground = task?.runInBackground == true,
+                subagentPrompt = task?.prompt,
+                subagentResult = task?.result?.takeIf { it.isNotBlank() }
             )
             emitSubagentCardEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
             runCatching { onSubagentThinkingCard?.invoke(card) }
@@ -2393,7 +2679,39 @@ internal class LocalPipelineCallbacks(
             isComplete = false,
             isAgent = true,
             timestamp = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
-            parentMessageId = parentMessageId
+            parentMessageId = task.parentMessageId ?: parentMessageId,
+            subagentStatus = task.status.name.lowercase(),
+            subagentBackground = task.runInBackground,
+            subagentPrompt = task.prompt,
+            subagentResult = task.result.takeIf { it.isNotBlank() }
+        )
+        emitSubagentCardEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
+        runCatching { onSubagentThinkingCard?.invoke(card) }
+    }
+
+    /** 子代理终态更新后刷新原任务卡，避免恢复后的错误步骤继续主导图标。 */
+    private fun emitSubagentStatusCard(task: SubagentTask) {
+        val status = task.status
+        val label = when (status) {
+            SubagentTaskStatus.SUCCEEDED -> "✅ 子代理已完成"
+            SubagentTaskStatus.FAILED -> "⚠ 子代理执行失败"
+            SubagentTaskStatus.KILLED -> "⏹ 子代理已终止"
+            SubagentTaskStatus.INTERRUPTED -> "⏸ 子代理已中断"
+            SubagentTaskStatus.OUTPUTTING -> "子代理输出结果中"
+            SubagentTaskStatus.RUNNING -> "子代理执行中"
+        }
+        val card = com.nekobot.app.data.model.ThinkingCard(
+            id = task.id,
+            content = "$label: ${task.description}",
+            steps = task.steps,
+            isComplete = !task.isActive,
+            isAgent = true,
+            timestamp = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
+            parentMessageId = task.parentMessageId ?: parentMessageId,
+            subagentStatus = status.name.lowercase(),
+            subagentBackground = task.runInBackground,
+            subagentPrompt = task.prompt,
+            subagentResult = task.result.takeIf { it.isNotBlank() }
         )
         emitSubagentCardEvent(RealtimeEvent.ThinkingCardUpdate(card, session.id))
         runCatching { onSubagentThinkingCard?.invoke(card) }
@@ -2519,6 +2837,9 @@ internal class LocalPipelineCallbacks(
                     )
                     ownerTaskId?.takeIf { it.isNotBlank() }?.let {
                         put(SUBAGENT_TASK_CONTEXT_KEY, it)
+                    }
+                    (toolCall["id"] as? String)?.takeIf(String::isNotBlank)?.let {
+                        put(AGENT_TOOL_CALL_ID_CONTEXT_KEY, it)
                     }
                 }
                 executeTool(name, callArgs, context)

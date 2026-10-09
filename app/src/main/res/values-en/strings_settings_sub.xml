@@ -212,6 +212,7 @@
     <string name="webdav_sync_pull_button">Sync pull</string>
     <string name="webdav_sync_confirm_title">Restore local data from WebDAV</string>
     <string name="webdav_sync_confirm_message">The remote backup will replace the current local database, token usage, and achievements. A temporary rollback copy will be kept during restoration. Continue?</string>
+    <string name="webdav_restore_preview_summary">Backup overview: format v%1$d, %2$d records, %3$d files, %4$d data categories. Created: %5$s.</string>
     <!-- ViewModel toasts -->
     <string name="webdav_config_saved">Config saved</string>
     <string name="webdav_connection_success">Connection successful</string>
@@ -293,6 +294,8 @@
     <string name="agent_settings_group_runtime">Runtime Limits</string>
     <string name="agent_settings_max_tool_calls">Max Tool Calls</string>
     <string name="agent_settings_max_tool_calls_desc">Maximum tool calls allowed in a single Agent turn (1–1000, default %1$d)</string>
+    <string name="agent_settings_default_yolo">Enable YOLO by default for new sessions</string>
+    <string name="agent_settings_default_yolo_desc">Automatically enable it for new local Agent sessions; high-risk actions and actions requiring explicit confirmation remain blocked</string>
     <string name="agent_settings_overlay">Agent overlay</string>
     <string name="agent_settings_overlay_desc">Show AI thinking and tool names above other apps while Android tools run (excluded from screenshots)</string>
     <string name="agent_settings_overlay_permission_desc">Show AI thinking and tool names while Android tools run; overlay permission required</string>

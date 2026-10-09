@@ -530,6 +530,13 @@ class UnifiedRepository(
         if (isLocal) local.setYoloEnabled(sessionId, enabled)
     }
 
+    /** 从本地子代理进度卡片直接暂停或终止后台任务。 */
+    suspend fun pauseSubagentTask(sessionId: String, taskId: String): Boolean =
+        isLocal && local.pauseSubagentTask(sessionId, taskId)
+
+    suspend fun killSubagentTask(sessionId: String, taskId: String): Boolean =
+        isLocal && local.killSubagentTask(sessionId, taskId)
+
     /** 会话 Agent 工具集选择；仅本地模式有效。 */
 
     /** 工具大类目录：id → 包含的工具 id 列表。 */
@@ -2353,6 +2360,14 @@ class UnifiedRepository(
             remote.webDavSync(req)
         }
 
+    suspend fun webDavPreviewSync(req: WebDavBackupRequest): Resource<JsonElement> =
+        if (isLocal) {
+            runCatching { Resource.Success<JsonElement>(localWebDav.previewSync(req)) }
+                .getOrElse { Resource.Error(it.message ?: "WebDAV 备份预览失败") }
+        } else {
+            Resource.Error("WebDAV 内容预览仅支持本地模式")
+        }
+
     suspend fun webDavIncrementalSync(req: WebDavBackupRequest): Resource<JsonElement> =
         if (isLocal) {
             runCatching { Resource.Success<JsonElement>(localWebDav.incrementalSync(req)) }
@@ -2368,6 +2383,17 @@ class UnifiedRepository(
         } else {
             Resource.Error("WebDAV 增量历史仅支持本地模式")
         }
+
+    suspend fun webDavResolveIncrementalConflict(
+        conflictCopyKey: String,
+        req: WebDavBackupRequest
+    ): Resource<JsonElement> = if (isLocal) {
+        runCatching {
+            Resource.Success<JsonElement>(localWebDav.resolveIncrementalConflict(conflictCopyKey, req))
+        }.getOrElse { Resource.Error(it.message ?: "解决 WebDAV 同步冲突失败") }
+    } else {
+        Resource.Error("WebDAV 增量冲突处理仅支持本地模式")
+    }
 
     suspend fun webDavRestoreIncrementalRevision(
         revision: Long,
