@@ -1581,8 +1581,10 @@ class LocalRepository(
     internal suspend fun executeCompanionTransfer(jobId: String, name: String, progress: (CompanionTransferProgress) -> Unit) =
         companionTransfer.execute(jobId, name, progress = progress)
     internal suspend fun companionTransferRecords() = companionTransfer.records()
+    internal suspend fun companionTransferRecordInfo(jobs: List<com.nekobot.app.data.local.db.CompanionTransferJobEntity>) = companionTransfer.recordInfo(jobs)
     internal suspend fun companionTransferReceipt(jobId: String) = companionTransfer.receipt(jobId)
     internal suspend fun deleteCompanionTransferBackup(jobId: String) = companionTransfer.deleteBackup(jobId)
+    internal suspend fun deleteCompanionTransferRecord(jobId: String) = companionTransfer.deleteRecord(jobId)
 
     internal suspend fun companionConversionModels(): List<CompanionConversionModel> = aiModelDao.listAll()
         .filter { it.enabled && it.purpose in setOf("chat", "compression") }.map { model ->

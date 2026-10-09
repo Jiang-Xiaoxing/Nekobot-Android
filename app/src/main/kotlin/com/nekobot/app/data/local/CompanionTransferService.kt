@@ -23,6 +23,7 @@ internal data class CompanionTransferPreview(
     val completedSessionId: String? = null
 )
 internal data class CompanionTransferProgress(val phase: String, val processed: Long = 0, val total: Long = 0)
+internal data class CompanionTransferRecordInfo(val total: Long?, val processed: Long?)
 internal data class CompanionTransferReport(val snapshot: TransferSnapshot, val files: TransferFiles,
     val memory: TransferMemorySelection, val sourceName: String, val conversion: CompanionConversionRecord? = null)
 
@@ -65,6 +66,7 @@ internal class CompanionTransferService(
         progress: (CompanionTransferProgress) -> Unit = {}): String = withContext(Dispatchers.IO) { lock.withLock {
         var job = requireNotNull(dao.get(jobId)) { "迁入记录不存在，请重新预览" }
         require(job.profile == db.dbName) { "资料库已切换，请重新预览" }
+        require(!job.phase.startsWith("deleting")) { "这条记录正在清理，请返回列表完成删除后再转换" }
         if (job.phase == "complete" || job.phase == "backup_deleted") {
             require(db.sessionDao().getById(job.targetSessionId) != null) { "这次迁入的会话已被删除，请从迁入记录核对" }
             return@withLock job.targetSessionId
@@ -138,9 +140,40 @@ internal class CompanionTransferService(
 
     suspend fun records(): List<CompanionTransferJobEntity> = withContext(Dispatchers.IO) { dao.list(db.dbName) }
 
+    /** 读取实际批次回执，兼容尚未加入错误报告功能时创建的旧任务；不启动模型或迁移临时库。 */
+    suspend fun recordInfo(jobs: List<CompanionTransferJobEntity>): Map<String, CompanionTransferRecordInfo> = withContext(Dispatchers.IO) {
+        guard(emptyList())
+        if (!lock.tryLock()) return@withContext emptyMap()
+        try {
+            jobs.filter { it.profile == db.dbName }.associate { job ->
+                val total = runCatching { gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
+                    .snapshot.counts.getValue("local_messages") }.getOrNull()
+                val processed = runCatching {
+                    when {
+                        job.phase.startsWith("deleting") -> null
+                        job.phase in setOf("complete", "backup_deleted") -> null
+                        job.phase == "preview" -> 0L
+                        else -> {
+                            val stage = File(ownedDirectory(job.directory), "conversion.db")
+                            if (!stage.isFile) null else android.database.sqlite.SQLiteDatabase.openDatabase(
+                                stage.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY or
+                                    android.database.sqlite.SQLiteDatabase.NO_LOCALIZED_COLLATORS).use { staging ->
+                                staging.rawQuery("SELECT COUNT(*) FROM companion_receipts r JOIN companion_scopes s ON s.id=r.scopeId WHERE s.sessionId=? AND s.characterId=?",
+                                    arrayOf(job.targetSessionId, job.targetCharacterId)).use { cursor ->
+                                    if (cursor.moveToFirst()) cursor.getLong(0) else null
+                                }
+                            }
+                        }
+                    }
+                }.getOrNull()
+                job.id to CompanionTransferRecordInfo(total, processed)
+            }
+        } finally { lock.unlock() }
+    }
+
     /** 与本次备份一起保留最近五次脱敏错误；不混入含有旧记忆正文的迁入回执。 */
-    suspend fun saveErrorReport(jobId: String, report: String) = withContext(Dispatchers.IO) {
-        val file = errorReportFile(jobId) ?: return@withContext false
+    suspend fun saveErrorReport(jobId: String, report: String) = withContext(Dispatchers.IO) { lock.withLock {
+        val file = errorReportFile(jobId) ?: return@withLock false
         val reports = readErrorReports(file)
         val stream = file.startWrite()
         try {
@@ -151,7 +184,7 @@ internal class CompanionTransferService(
             file.failWrite(stream)
             throw error
         }
-    }
+    } }
 
     suspend fun errorReports(jobId: String): String? = withContext(Dispatchers.IO) {
         guard(emptyList())
@@ -162,7 +195,7 @@ internal class CompanionTransferService(
     private suspend fun errorReportFile(jobId: String): android.util.AtomicFile? {
         val job = dao.get(jobId) ?: return null
         require(job.profile == db.dbName) { "资料库已切换，请重新打开记录" }
-        if (job.phase == "backup_deleted") return null
+        if (job.phase == "backup_deleted" || job.phase.startsWith("deleting")) return null
         val directory = ownedDirectory(job.directory)
         if (!directory.isDirectory) return null
         return android.util.AtomicFile(File(directory, "conversion-errors.json"))
@@ -234,7 +267,36 @@ internal class CompanionTransferService(
         dao.save(job.copy(phase = "backup_deleted"))
     } }
 
+    /** 只清理指定作业。先留删除标记，清理成功再删记录；中途退出或清理失败可重试。 */
+    suspend fun deleteRecord(jobId: String) = withContext(Dispatchers.IO) {
+        check(lock.tryLock()) { "有迁入或转换正在处理，请先停止后再删除记录" }
+        try {
+            guard(emptyList())
+            val job = dao.get(jobId) ?: return@withContext
+            require(job.profile == db.dbName) { "资料库已切换，请重新打开记录" }
+            val directory = ownedDirectory(job.directory)
+            require(directory.name == job.id) { "本次备份目录归属无法确认，未删除记录" }
+            val completed = job.phase in setOf("complete", "backup_deleted", "deleting_complete")
+            // 目标是本作业生成的 UUID；原会话和已有正式副本的目录绝不清理。
+            val workspace = File(context.filesDir, "workspace").canonicalFile
+            require(runCatching { UUID.fromString(job.targetSessionId) }.isSuccess && job.targetSessionId != job.sourceSessionId) {
+                "本次临时附件目录归属无法确认，未删除记录"
+            }
+            val target = File(workspace, job.targetSessionId).canonicalFile
+            require(target.parentFile == workspace && target.name == job.targetSessionId) { "临时附件目录校验失败，未删除记录" }
+            val hasTarget = db.sessionDao().getById(job.targetSessionId) != null || db.characterDao().getById(job.targetCharacterId) != null
+            withContext(NonCancellable) {
+                dao.save(job.copy(phase = if (completed || hasTarget) "deleting_complete" else "deleting",
+                    updatedAt = Instant.now().toString()))
+                if (!completed && !hasTarget) removeTransferTree(target)
+                removeOwnedDirectory(directory)
+                dao.delete(job.id, db.dbName)
+            }
+        } finally { lock.unlock() }
+    }
+
     private fun toPreview(job: CompanionTransferJobEntity): CompanionTransferPreview {
+        require(!job.phase.startsWith("deleting")) { "这条记录尚未清理完，请在列表点击删除后重新创建" }
         val report = gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
         val rawBytes = ownedDirectory(job.directory).listFiles()?.filter { it.extension == "jsonl" }?.sumOf { it.length() } ?: 0
         return CompanionTransferPreview(job.id, job.targetName, report.sourceName,
@@ -344,6 +406,22 @@ internal class CompanionTransferService(
     private fun ownedDirectory(path: String): File = File(path).canonicalFile.also {
         require(it.parentFile == base && runCatching { UUID.fromString(it.name) }.isSuccess) { "迁入目录校验失败" }
     }
-    private fun removeOwnedDirectory(directory: File) { check(!directory.exists() || ownedDirectory(directory.path).deleteRecursively()) { "无法清理本次迁入备份" } }
+    private fun removeOwnedDirectory(directory: File) = removeTransferTree(ownedDirectory(directory.path))
+
+    /** 调用前已核对目录归属。默认不跟随内部符号链接，防止越界清理。 */
+    private fun removeTransferTree(directory: File) {
+        if (!directory.exists()) return
+        java.nio.file.Files.walkFileTree(directory.toPath(), object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+            override fun visitFile(file: java.nio.file.Path, attrs: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult {
+                java.nio.file.Files.delete(file)
+                return java.nio.file.FileVisitResult.CONTINUE
+            }
+            override fun postVisitDirectory(dir: java.nio.file.Path, failure: java.io.IOException?): java.nio.file.FileVisitResult {
+                if (failure != null) throw failure
+                java.nio.file.Files.delete(dir)
+                return java.nio.file.FileVisitResult.CONTINUE
+            }
+        })
+    }
     companion object { private val lock = Mutex() }
 }

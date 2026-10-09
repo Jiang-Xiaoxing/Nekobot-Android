@@ -29,6 +29,8 @@ interface CompanionTransferDao {
     @Query("SELECT * FROM companion_transfer_jobs WHERE profile=:profile ORDER BY createdAt DESC")
     suspend fun list(profile: String): List<CompanionTransferJobEntity>
     @Upsert suspend fun save(job: CompanionTransferJobEntity)
+    @Query("DELETE FROM companion_transfer_jobs WHERE id=:id AND profile=:profile")
+    suspend fun delete(id: String, profile: String)
 }
 
 internal object CompanionTransferSchema {

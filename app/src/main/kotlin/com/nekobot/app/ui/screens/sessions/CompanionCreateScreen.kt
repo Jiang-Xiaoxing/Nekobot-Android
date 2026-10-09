@@ -41,6 +41,7 @@ internal data class CompanionCreateState(
     val error: String? = null, val details: String? = null, val completed: String? = null,
     val errorReport: String? = null,
     val records: List<CompanionTransferJobEntity> = emptyList(),
+    val recordInfo: Map<String, CompanionTransferRecordInfo> = emptyMap(),
     val models: List<CompanionConversionModel> = emptyList(), val conversionModelId: String? = null
 )
 
@@ -64,16 +65,21 @@ internal class CompanionCreateViewModel : ViewModel() {
                     is IllegalArgumentException, is IllegalStateException -> failure.message ?: ServiceContainer.getString(R.string.companion_operation_failed)
                     else -> ServiceContainer.getString(R.string.companion_operation_failed)
                 }
+                runCatching { reloadRecords() }
                 state = state.copy(error = readable, details = (failure as? CompanionConversionCallException)?.technicalDetail ?: failure.toString(),
-                    errorReport = (failure as? CompanionConversionCallException)?.diagnosticReport, progress = null,
-                    records = runCatching { repo.companionTransferRecords() }.getOrDefault(state.records))
+                    errorReport = (failure as? CompanionConversionCallException)?.diagnosticReport, progress = null)
             } finally { state = state.copy(busy = false) }
         }
     }
     fun reload() = launch(clearError = false) {
         val characters = repo.listCharacters()
-        state = state.copy(characters = characters, records = repo.companionTransferRecords(),
+        reloadRecords()
+        state = state.copy(characters = characters,
             models = repo.companionConversionModels(), conversionModelId = repo.selectedCompanionConversionModel())
+    }
+    private suspend fun reloadRecords() {
+        val records = repo.companionTransferRecords()
+        state = state.copy(records = records, recordInfo = repo.companionTransferRecordInfo(records))
     }
     fun select(id: String) = launch {
         state = state.copy(selectedId = id, eligibility = null, preview = null, completed = null)
@@ -106,7 +112,8 @@ internal class CompanionCreateViewModel : ViewModel() {
             // IO 回调切回 ViewModel 主协程，避免跨线程写入 Compose 状态。
             viewModelScope.launch { state = state.copy(progress = progress) }
         }
-        state = state.copy(completed = target, progress = null, records = repo.companionTransferRecords())
+        state = state.copy(completed = target, progress = null)
+        reloadRecords()
     }
     fun selectModel(id: String) {
         if (state.busy || state.models.none { it.id == id }) return
@@ -115,7 +122,12 @@ internal class CompanionCreateViewModel : ViewModel() {
     }
     fun cancel() { operation?.cancel() }
     fun backToSelection() { state = state.copy(preview = null, completed = null, progress = null, error = null, details = null, errorReport = null) }
-    fun deleteBackup(jobId: String) = launch { repo.deleteCompanionTransferBackup(jobId); state = state.copy(records = repo.companionTransferRecords()) }
+    fun deleteBackup(jobId: String) = launch { repo.deleteCompanionTransferBackup(jobId); reloadRecords() }
+    fun deleteRecord(jobId: String) = launch {
+        repo.deleteCompanionTransferRecord(jobId)
+        if (state.preview?.jobId == jobId) backToSelection()
+        reloadRecords()
+    }
     suspend fun receipt(jobId: String): String { active(); return repo.companionTransferReceipt(jobId) }
 }
 
@@ -129,6 +141,7 @@ internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit,
     val scope = rememberCoroutineScope()
     var receipt by remember { mutableStateOf<String?>(null) }
     var backupToDelete by remember { mutableStateOf<String?>(null) }
+    var recordToDelete by remember { mutableStateOf<CompanionTransferJobEntity?>(null) }
     var configuration by rememberSaveable { mutableStateOf(false) }
     var rules by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(revision, appMode) { if (revision != initialRevision || !ServiceContainer.prefs.isLocalMode) { vm.cancel(); onBack() } }
@@ -137,7 +150,8 @@ internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit,
         onTransfer = vm::transfer, onOpen = onOpen, onCancel = vm::cancel, onNewCharacter = onNewCharacter,
         onBackToSelection = vm::backToSelection, onRestore = vm::restore,
         onReceipt = { id -> scope.launch { receipt = runCatching { vm.receipt(id) }.getOrElse { it.message.orEmpty() } } },
-        onDeleteBackup = { backupToDelete = it }, onConfigure = { configuration = true }, onRules = { rules = true })
+        onDeleteBackup = { backupToDelete = it }, onConfigure = { configuration = true }, onRules = { rules = true },
+        onDeleteRecord = { id -> recordToDelete = vm.state.records.firstOrNull { it.id == id } })
     if (configuration) CompanionConversionModelPicker(vm.state.models, vm.state.conversionModelId,
         onSelect = { vm.selectModel(it); configuration = false }, onDismiss = { configuration = false },
         onManage = { configuration = false; onModelSettings() })
@@ -150,6 +164,8 @@ internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit,
         title = { Text(stringResource(R.string.companion_delete_backup)) }, text = { Text(stringResource(R.string.companion_delete_backup_hint)) },
         confirmButton = { TextButton(onClick = { backupToDelete = null; vm.deleteBackup(id) }) { Text(stringResource(R.string.common_delete)) } },
         dismissButton = { TextButton(onClick = { backupToDelete = null }) { Text(stringResource(R.string.common_cancel)) } }) }
+    recordToDelete?.let { job -> CompanionTransferDeleteDialog(job, vm.state.recordInfo[job.id],
+        onDismiss = { recordToDelete = null }, onConfirm = { recordToDelete = null; vm.deleteRecord(job.id) }) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -159,7 +175,8 @@ internal fun CompanionCreateContent(
     onPreview: (String) -> Unit, onCreate: (String, String) -> Unit, onTransfer: (String) -> Unit,
     onOpen: (String) -> Unit, onCancel: () -> Unit, onNewCharacter: () -> Unit,
     onBackToSelection: () -> Unit, onRestore: (String) -> Unit, onReceipt: (String) -> Unit,
-    onDeleteBackup: (String) -> Unit, onConfigure: () -> Unit = {}, onRules: () -> Unit = {}
+    onDeleteBackup: (String) -> Unit, onConfigure: () -> Unit = {}, onRules: () -> Unit = {},
+    onDeleteRecord: (String) -> Unit = {}
 ) {
     var picker by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -300,11 +317,9 @@ internal fun CompanionCreateContent(
             if (state.preview == null && state.records.isNotEmpty()) {
                 item { HorizontalDivider(); Text(stringResource(R.string.companion_transfer_records), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp)) }
                 items(state.records, key = { it.id }) { job ->
-                    Column {
-                        TextButton(onClick = { onRestore(job.id) }, enabled = !state.busy) { Text(job.targetName + " · " + stringResource(if (job.phase in setOf("complete", "backup_deleted")) R.string.companion_completed else R.string.companion_resume)) }
-                        Row { TextButton(onClick = { onReceipt(job.id) }) { Text(stringResource(R.string.companion_transfer_record)) }
-                            if(job.phase == "complete") TextButton(onClick = { onDeleteBackup(job.id) }, enabled = !state.busy) { Text(stringResource(R.string.companion_delete_backup)) } }
-                    }
+                    CompanionTransferRecordCard(job, state.recordInfo[job.id], enabled = !state.busy,
+                        onRestore = { onRestore(job.id) }, onReceipt = { onReceipt(job.id) },
+                        onDeleteBackup = { onDeleteBackup(job.id) }, onDelete = { onDeleteRecord(job.id) })
                 }
             }
         }
