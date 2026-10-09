@@ -16,6 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -33,8 +34,48 @@ import com.nekobot.app.data.local.db.CompanionMemoryEntity
 internal val memoryCategoryNames = FusedCompanionPolicy.categories + ("episode" to "经历档案")
 
 @Composable
-private fun memoryAccent(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+internal fun memoryAccent(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
     Color(0xFFC3AEFF) else Color(0xFF7054C9)
+
+/** 只在独立记忆入口内应用，不覆盖其他页面的用户主题。 */
+@Composable
+internal fun CompanionMemoryTheme(content: @Composable () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val accent = memoryAccent()
+    MaterialTheme(colorScheme = colors.copy(primary = accent,
+        onPrimary = if (colors.surface.luminance() < 0.5f) Color(0xFF261842) else Color.White,
+        primaryContainer = lerp(colors.surface, accent, 0.12f), onPrimaryContainer = colors.onSurface,
+        background = lerp(colors.surface, accent, 0.035f)), content = content)
+}
+
+@Composable
+internal fun CompanionMemoryIntro(title: String, description: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Image(painterResource(R.drawable.ic_agent_character_memory), null, Modifier.size(60.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+internal fun CompanionMemoryNotice(title: String, message: String, onRetry: (() -> Unit)? = null) {
+    var details by remember(message) { mutableStateOf(false) }
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.errorContainer) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onErrorContainer)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { details = !details }) { Text(if (details) "收起原因" else "查看原因") }
+                Spacer(Modifier.weight(1f))
+                onRetry?.let { TextButton(onClick = it) { Text("重新读取") } }
+            }
+            if (details) SelectionContainer { Text(message, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer) }
+        }
+    }
+}
 
 @Composable
 internal fun CompanionMemoryOverviewCard(
@@ -49,7 +90,7 @@ internal fun CompanionMemoryOverviewCard(
     val accent = memoryAccent()
     Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.12f))) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(painterResource(R.drawable.ic_agent_character_memory), null, Modifier.size(44.dp))
                 Spacer(Modifier.width(12.dp))
@@ -63,45 +104,28 @@ internal fun CompanionMemoryOverviewCard(
                     Icon(Icons.Filled.Refresh, "刷新状态", tint = accent)
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MemoryMetric("已整理原话", overview?.processedMessages, Modifier.weight(1f))
-                MemoryMetric("未整理原话", overview?.pendingMessages, Modifier.weight(1f))
-            }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = accent)
             overview?.error?.let {
-                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp)) {
-                    Text("整理遇到问题：$it", Modifier.padding(12.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
-                }
+                CompanionMemoryNotice("有一部分记忆尚未整理完成", it)
             }
             Row(Modifier.fillMaxWidth().clickable { details = !details }.heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Info, null, Modifier.size(16.dp), tint = accent)
                 Spacer(Modifier.width(6.dp))
-                Text("原话始终保留", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                Text(if (overview == null) "正在读取整理情况" else
+                    "已整理 ${overview.processedMessages} · 未整理 ${overview.pendingMessages}",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (details) "收起详情" else "整理详情", style = MaterialTheme.typography.labelMedium, color = accent)
                 Icon(if (details) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     if (details) "收起整理详情" else "展开整理详情", Modifier.size(20.dp), tint = accent)
             }
             if (details) {
-                Text("最近检索：${overview?.lastRetrieval ?: "尚未聊天"}\n未整理数量包含保留的近期原话，较早的内容达到整理量后由后台继续处理。",
+                Text("原话始终保留。未整理数量包含保留的近期原话，较早的内容达到整理量后由后台继续处理。\n最近检索：${overview?.lastRetrieval ?: "尚未聊天"}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("每次聊天都提供的记忆：约 $pinnedTokens Token。通常预算约 1000，小上下文会缩减；超额时会提示调整。",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        }
-    }
-}
-
-@Composable
-private fun MemoryMetric(label: String, count: Int?, modifier: Modifier) {
-    val accent = memoryAccent()
-    Surface(modifier, shape = RoundedCornerShape(14.dp), color = accent.copy(alpha = 0.07f)) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text(count?.toString() ?: "—", style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold, color = accent)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -161,7 +185,7 @@ internal fun CompanionMemoryCard(
                     DropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("编辑记忆") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
                             onClick = { menu = false; onEdit() })
-                        DropdownMenuItem(text = { Text("查看版本") }, leadingIcon = { Icon(Icons.Filled.History, null) },
+                        DropdownMenuItem(text = { Text("修改记录") }, leadingIcon = { Icon(Icons.Filled.History, null) },
                             onClick = { menu = false; onVersions() })
                         DropdownMenuItem(text = { Text("删除记忆", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Filled.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
@@ -203,9 +227,6 @@ internal fun CompanionMemoryCard(
                     Spacer(Modifier.width(6.dp))
                     Text("查看原话")
                 }
-                Spacer(Modifier.weight(1f))
-                Text("v${memory.version}", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

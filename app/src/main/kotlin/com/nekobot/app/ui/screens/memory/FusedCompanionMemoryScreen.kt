@@ -28,9 +28,14 @@ import com.nekobot.app.data.local.db.CompanionSourceEntity
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, onLocate: (String) -> Unit) {
+    CompanionMemoryTheme { CompanionMemoryDetail(sessionId, onBack, onLocate) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocate: (String) -> Unit) {
     val repo = remember { ServiceContainer.localRepository }
     val dataSourceRevision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
@@ -118,7 +123,7 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
                     loading = !ready && error == null, onRefresh = { refresh++ })
             }
             error?.let { message -> item("error") {
-                com.nekobot.app.ui.components.ErrorBanner(message = message, onRetry = { refresh++ })
+                CompanionMemoryNotice("记忆暂时无法读取", message) { refresh++ }
             } }
             item("filters") {
                 CompanionMemoryFilters(query, { query = it }, category, { category = it },
@@ -168,8 +173,8 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
             editor = false
         } }) { Text("保存") } }, dismissButton = { TextButton(onClick = { editor = false }) { Text("取消") } })
     }
-    versions?.let { rows -> AlertDialog(onDismissRequest = { versions = null }, title = { Text("记忆版本") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState())) { rows.forEach { Text("v${it.version} · ${if (it.current) "当前" else "历史"}\n${it.content.ifBlank { "已删除" }}\n") } }
+    versions?.let { rows -> AlertDialog(onDismissRequest = { versions = null }, title = { Text("修改记录") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState())) { rows.forEach { Text("${if (it.current) "当前内容" else "以前的内容"}\n${it.content.ifBlank { "已删除" }}\n") } }
     }, confirmButton = { TextButton(onClick = { versions = null }) { Text("关闭") } }) }
     sources?.let { rows -> AlertDialog(onDismissRequest = { sources = null }, title = { Text("来源原话") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
