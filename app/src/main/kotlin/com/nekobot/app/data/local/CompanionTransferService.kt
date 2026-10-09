@@ -1,0 +1,239 @@
+package com.nekobot.app.data.local
+
+import android.content.Context
+import android.os.StatFs
+import androidx.room.withTransaction
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.nekobot.app.data.local.ai.*
+import com.nekobot.app.data.local.db.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.File
+import java.time.Instant
+import java.util.UUID
+import kotlin.coroutines.coroutineContext
+
+internal data class CompanionTransferPreview(
+    val jobId: String, val name: String, val sourceName: String, val messages: Long, val variants: Long,
+    val memories: Int, val skippedMemories: Long, val reviewNotes: List<String>, val attachments: Int,
+    val missingAttachments: List<String>, val remoteAttachments: Int, val requiredBytes: Long,
+    val completedSessionId: String? = null
+)
+internal data class CompanionTransferProgress(val phase: String, val processed: Long = 0, val total: Long = 0)
+internal data class CompanionTransferReport(val snapshot: TransferSnapshot, val files: TransferFiles,
+    val memory: TransferMemorySelection, val sourceName: String)
+
+/** 不调用模型，不改变原角色。文件先验证，数据库和成功回执在同一事务内提交。 */
+internal class CompanionTransferService(
+    private val context: Context,
+    private val db: NekobotDatabase,
+    private val guard: suspend (List<String>) -> Unit = {},
+    private val checkpoint: (String) -> Unit = {}
+) {
+    private val gson = Gson()
+    private val dao = db.companionTransferDao()
+    private val files = CompanionTransferFiles(context)
+    private val base get() = File(context.filesDir, "companion_transfers/${transferHash(db.dbName).take(24)}").canonicalFile
+
+    suspend fun preview(sourceId: String): CompanionTransferPreview = withContext(Dispatchers.IO) { lock.withLock {
+        guard(listOf(sourceId))
+        val jobId = UUID.randomUUID().toString()
+        val directory = File(base, jobId)
+        val snapshot = db.withTransaction { CompanionTransferSnapshot(db).write(sourceId, directory) }
+        guard(snapshot.sessionIds)
+        val media = files.inspect(directory, snapshot)
+        val fingerprint = transferHash(snapshot.fingerprint + gson.toJson(media))
+        val existing = dao.find(db.dbName, sourceId, fingerprint)
+        if (existing != null) {
+            removeOwnedDirectory(directory)
+            return@withLock toPreview(existing)
+        }
+        val memory = CompanionTransferMemory(db).selection(directory, snapshot)
+        val name = "${snapshot.characterName}（Agent）"
+        val report = CompanionTransferReport(snapshot, media, memory, db.sessionDao().getById(sourceId)?.name.orEmpty())
+        val now = Instant.now().toString()
+        val job = CompanionTransferJobEntity(jobId, db.dbName, sourceId, fingerprint,
+            UUID.randomUUID().toString(), UUID.randomUUID().toString(), name, "preview", directory.path, gson.toJson(report), now, now)
+        dao.save(job)
+        toPreview(job)
+    } }
+
+    suspend fun execute(jobId: String, name: String, progress: (CompanionTransferProgress) -> Unit = {}): String = withContext(Dispatchers.IO) { lock.withLock {
+        var job = requireNotNull(dao.get(jobId)) { "迁入记录不存在，请重新预览" }
+        require(job.profile == db.dbName) { "资料库已切换，请重新预览" }
+        if (job.phase == "complete" || job.phase == "backup_deleted") {
+            require(db.sessionDao().getById(job.targetSessionId) != null) { "这次迁入的会话已被删除，请从迁入记录核对" }
+            return@withLock job.targetSessionId
+        }
+        require(name.isNotBlank()) { "请填写新角色名称" }
+        val report = gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
+        val directory = ownedDirectory(job.directory)
+        val targetDirectory = File(context.filesDir, "workspace/${job.targetSessionId}").canonicalFile
+        require(targetDirectory.parentFile == File(context.filesDir, "workspace").canonicalFile)
+        guard(report.snapshot.sessionIds)
+        report.snapshot.verify(directory)
+        require(report.files.missing.isEmpty()) { "有附件无法读取，请修复后重新预览" }
+        val required = toPreview(job).requiredBytes
+        require(StatFs(context.filesDir.path).availableBytes > required + 16L * 1024 * 1024) { "存储空间不足，请腾出空间后重试" }
+        try {
+            job = job.copy(targetName = name.trim(), phase = "backup", updatedAt = Instant.now().toString())
+            dao.save(job); progress(CompanionTransferProgress("正在校验备份")); checkpoint("backup")
+            files.backup(report.files, directory, targetDirectory)
+            report.snapshot.verify(directory)
+            checkpoint("files")
+            job = job.copy(phase = "copying"); dao.save(job)
+            db.withTransaction {
+                coroutineContext.ensureActive()
+                guard(report.snapshot.sessionIds)
+                // 在写事务中重新扫描来源；与预览不同则完全不提交。
+                val recheck = File(directory, "recheck")
+                val current = CompanionTransferSnapshot(db).write(job.sourceSessionId, recheck)
+                require(current.fingerprint == report.snapshot.fingerprint) { "原会话或记忆已变化，请返回并重新预览" }
+                checkpoint("verified")
+                copyRows(job, report, directory, targetDirectory, progress)
+                checkpoint("before_commit")
+                dao.save(job.copy(phase = "complete", updatedAt = Instant.now().toString()))
+            }
+            checkpoint("after_commit")
+            progress(CompanionTransferProgress("迁入完成", report.snapshot.counts.getValue("local_messages"), report.snapshot.counts.getValue("local_messages")))
+            job.targetSessionId
+        } catch (error: Exception) {
+            // 成功事务回执已存在时即使界面中断也保留成功，重试返回同一目标。
+            withContext(NonCancellable) {
+                if (db.isOpen && dao.get(job.id)?.phase != "complete") dao.save(job.copy(phase = if (error is CancellationException) "cancelled" else "failed"))
+            }
+            throw error
+        }
+    } }
+
+    suspend fun records(): List<CompanionTransferJobEntity> = withContext(Dispatchers.IO) { dao.list(db.dbName) }
+
+    suspend fun cancel(jobId: String) = withContext(Dispatchers.IO) { lock.withLock {
+        val job = requireNotNull(dao.get(jobId))
+        require(job.phase !in setOf("complete", "backup_deleted")) { "已完成的迁入不能取消，可在会话列表管理副本" }
+        dao.save(job.copy(phase = "cancelled"))
+    } }
+
+    suspend fun deleteBackup(jobId: String) = withContext(Dispatchers.IO) { lock.withLock {
+        val job = requireNotNull(dao.get(jobId))
+        require(job.phase in setOf("complete", "backup_deleted")) { "未完成的迁入需要备份恢复，不能删除备份" }
+        removeOwnedDirectory(ownedDirectory(job.directory))
+        dao.save(job.copy(phase = "backup_deleted"))
+    } }
+
+    private fun toPreview(job: CompanionTransferJobEntity): CompanionTransferPreview {
+        val report = gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
+        val rawBytes = ownedDirectory(job.directory).listFiles()?.filter { it.extension == "jsonl" }?.sumOf { it.length() } ?: 0
+        return CompanionTransferPreview(job.id, job.targetName, report.sourceName,
+            report.snapshot.counts.getValue("local_messages"), report.snapshot.counts.getValue("local_message_variants"),
+            report.memory.accepted + report.snapshot.counts.getValue("companion_memories").toInt(),
+            report.snapshot.excludedMemories + report.memory.skipped.values.sum(),
+            report.memory.skipped.map { "${it.key}：${it.value} 条" } + listOf("旧记忆没有逐字证据时标注为来源未验证", "状态来自所选会话，原角色及原会话保留", "迁入不调用模型，不自动重新整理全部历史"),
+            report.files.assets.size, report.files.missing, report.files.remote, rawBytes * 3 + report.files.bytes * 2,
+            job.targetSessionId.takeIf { job.phase in setOf("complete", "backup_deleted") })
+    }
+
+    private suspend fun copyRows(job: CompanionTransferJobEntity, report: CompanionTransferReport,
+        directory: File, targetDirectory: File, progress: (CompanionTransferProgress) -> Unit) {
+        val sql = db.openHelper.writableDatabase
+        val snapshot = report.snapshot
+        fun id(type: String, old: String) = UUID.nameUUIDFromBytes("${job.id}\u0000$type\u0000$old".toByteArray()).toString()
+        fun rewrite(row: JsonObject, session: String = snapshot.sourceId) = files.rewrite(row, session, report.files, targetDirectory)
+        val character = rewrite(transferRows(directory, "local_characters").single())
+        character.addProperty("id", job.targetCharacterId); character.addProperty("name", job.targetName)
+        sql.insertTransfer("local_characters", character)
+        val original = requireNotNull(db.sessionDao().getById(job.sourceSessionId))
+        val sessionMedia = rewrite(transferRows(directory, "local_sessions").first { it.text("id") == original.id })
+        FusedCompanionSchema.installTriggers(sql)
+        val target = original.copy(id = job.targetSessionId, name = job.targetName,
+            characterId = job.targetCharacterId, characterName = job.targetName,
+            characterAvatar = character.text("avatar"), portrait = character.text("portrait"),
+            senderAvatar = sessionMedia.text("sender_avatar"),
+            firstMessage = null, archiveSessionId = null, sessionMode = "agent", companionMode = true,
+            inheritCharacter = true, inheritCharacterGreeting = false, longConversationEnabled = true,
+            longConversationTailUntilId = null, groupId = null, characterIds = null, groupConfig = null,
+            groupActiveSpeaker = null, groupTurnCount = 0,
+            agentTodos = null, agentGoal = null, agentSpec = null, proactiveChat = null,
+            isPublic = false, shareConfig = null, promptStackDebug = null, composedSystemPrompt = null,
+            plotMode = false, archived = false, pinned = false, messageCount = snapshot.counts.getValue("local_messages").toInt(),
+            createdAt = Instant.now().toString(), updatedAt = Instant.now().toString())
+        db.sessionDao().upsert(target)
+        var copied = 0L
+        for (sourceRow in transferRows(directory, "local_messages")) {
+            coroutineContext.ensureActive()
+            val row = rewrite(sourceRow, requireNotNull(sourceRow.text("session_id")))
+            row.addProperty("id", id("message", requireNotNull(row.text("id"))))
+            row.addProperty("session_id", target.id); row.add("routing_decision_id", com.google.gson.JsonNull.INSTANCE)
+            sql.insertTransfer("local_messages", row)
+            copied++
+            if (copied % 256 == 0L) progress(CompanionTransferProgress("正在复制原话", copied, snapshot.counts.getValue("local_messages")))
+        }
+        for (table in listOf("local_message_variants", "local_message_images")) for (sourceRow in transferRows(directory, table)) {
+            coroutineContext.ensureActive()
+            val row = rewrite(sourceRow, requireNotNull(sourceRow.text("session_id")))
+            row.addProperty("id", id(table, requireNotNull(row.text("id"))))
+            row.addProperty("session_id", target.id)
+            val messageId = id("message", requireNotNull(row.text("message_id")))
+            require(db.messageDao().getById(messageId) != null) { "附件或候选回复的原话已缺失" }
+            row.addProperty("message_id", messageId)
+            if (table == "local_message_images" && row.text("status") in setOf("queued", "running")) {
+                row.addProperty("status", "failed"); row.addProperty("error_message", "旧生成任务未迁入执行，可在新会话重新发起")
+            }
+            sql.insertTransfer(table, row)
+        }
+        for (table in listOf("local_world_books", "local_world_book_entries")) for (sourceRow in transferRows(directory, table)) {
+            val row = rewrite(sourceRow)
+            row.addProperty("id", id(table, requireNotNull(row.text("id"))))
+            if (table == "local_world_books") row.addProperty("character_id", target.characterId)
+            else row.addProperty("book_id", id("local_world_books", requireNotNull(row.text("book_id"))))
+            sql.insertTransfer(table, row)
+        }
+        copyState(directory, target, snapshot, ::id)
+        progress(CompanionTransferProgress("正在复制独立记忆"))
+        CompanionTransferMemory(db).copy(directory, snapshot, target, ::id, ::rewrite)
+        sql.query("SELECT COUNT(*) FROM local_messages WHERE session_id=?", arrayOf(target.id)).use {
+            require(it.moveToFirst() && it.getLong(0) == snapshot.counts.getValue("local_messages")) { "原话数量校验失败" }
+        }
+        db.sessionDao().update(target.copy(messageCount = db.messageDao().countBySession(target.id)))
+        sql.query("PRAGMA foreign_key_check").use { require(!it.moveToFirst()) { "副本引用校验失败，未提交迁入" } }
+    }
+
+    private suspend fun copyState(directory: File, target: LocalSessionEntity, snapshot: TransferSnapshot, id: (String, String) -> String) {
+        val sql = db.openHelper.writableDatabase
+        val snapshots = transferRows(directory, "local_state_snapshots").filter { it.text("character_id") == snapshot.characterId }.toList()
+        for (old in snapshots) {
+            val row = old.deepCopy()
+            row.addProperty("id", id("state", requireNotNull(row.text("id"))))
+            row.addProperty("session_id", target.id); row.addProperty("character_id", target.characterId)
+            row.addProperty("target_id", sessionRelationshipTargetId(target.id)); sql.insertTransfer("local_state_snapshots", row)
+        }
+        val latest = snapshots.filter { it.text("session_id") == snapshot.sourceId }.maxByOrNull { it.text("timestamp").orEmpty() }
+        val relationship = latest?.let { row -> RelationshipState(characterId = target.characterId!!, targetId = sessionRelationshipTargetId(target.id),
+            affection = row.get("affection").asInt, trust = row.get("trust").asInt, familiarity = row.get("familiarity").asInt,
+            dependency = row.get("dependency").asInt, security = row.get("security").asInt, jealousy = row.get("jealousy").asInt,
+            updatedAt = row.text("timestamp").orEmpty()) }
+            ?: transferRows(directory, "local_relationship_states").firstOrNull { it.text("target_id") == "session:${snapshot.sourceId}" }?.let {
+                RelationshipState.fromJson(it.text("data_json").orEmpty()).copy(characterId = target.characterId!!, targetId = sessionRelationshipTargetId(target.id))
+            }
+        val selectedState = relationship ?: relationshipStateFromInitial(target.characterId!!, sessionRelationshipTargetId(target.id),
+            LocalProfileRepository(db.characterDao()).getById(target.characterId)?.initialState.orEmpty(), Instant.now().toString())
+        db.relationshipDao().upsert(LocalRelationshipStateEntity(UUID.randomUUID().toString(),
+            target.characterId!!, sessionRelationshipTargetId(target.id), selectedState.toJson(), selectedState.updatedAt))
+        transferRows(directory, "local_character_states").firstOrNull { it.text("scope_id") == snapshot.sourceId }?.let { row ->
+            row.addProperty("id", id("character-state", requireNotNull(row.text("id"))))
+            row.addProperty("character_id", target.characterId); row.addProperty("scope_id", target.id)
+            val data = JsonParser.parseString(row.text("data_json")).asJsonObject
+            data.addProperty("character_id", target.characterId); data.addProperty("scope_id", target.id)
+            row.addProperty("data_json", data.toString()); sql.insertTransfer("local_character_states", row)
+        }
+    }
+
+    private fun ownedDirectory(path: String): File = File(path).canonicalFile.also {
+        require(it.parentFile == base && runCatching { UUID.fromString(it.name) }.isSuccess) { "迁入目录校验失败" }
+    }
+    private fun removeOwnedDirectory(directory: File) { check(!directory.exists() || ownedDirectory(directory.path).deleteRecursively()) { "无法清理本次迁入备份" } }
+    companion object { private val lock = Mutex() }
+}
