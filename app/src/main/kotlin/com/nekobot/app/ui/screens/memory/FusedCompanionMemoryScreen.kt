@@ -116,6 +116,10 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
                     Text("v${memory.version} · ${when (memory.status) { "active" -> "有效"; "completed" -> "已完成"; "conflict" -> "待核对"; "locked_conflict" -> "需玩家修改"; else -> memory.status }} · ${memory.eventDate.orEmpty()}", style = MaterialTheme.typography.labelSmall)
                     Text(MemoryTags.fromJson(memory.tagsJson).joinToString(" · "), style = MaterialTheme.typography.labelSmall)
                     if (memory.alwaysProvide) Text("每次聊天都提供", style = MaterialTheme.typography.labelSmall)
+                    if (memory.provenance == com.nekobot.app.data.local.ai.CompanionImportPolicy.IMPORTED_UNVERIFIED && !memory.manual) {
+                        Text("迁入的旧记忆 · 原话来源未验证", style = MaterialTheme.typography.labelSmall)
+                    }
+                    memory.expiresAt?.let { Text("有效期至 $it", style = MaterialTheme.typography.labelSmall) }
                     if (memory.locked) Text("只允许我修改：AI 不会自动改写这条记忆", style = MaterialTheme.typography.labelSmall)
                     Row(Modifier.horizontalScroll(rememberScrollState())) {
                         TextButton(onClick = { selected = memory; editor = true }) { Text("编辑") }

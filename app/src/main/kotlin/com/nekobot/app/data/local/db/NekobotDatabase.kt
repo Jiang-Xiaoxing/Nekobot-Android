@@ -61,12 +61,14 @@ import com.nekobot.app.data.local.LocalLogger
         CompanionVectorEntity::class,
         CompanionClarificationEntity::class,
         CompanionOwnerEntity::class,
-        CompanionContextMaterialEntity::class
+        CompanionContextMaterialEntity::class,
+        CompanionTransferJobEntity::class
     ],
-    version = 52,
+    version = 53,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
+    abstract fun companionTransferDao(): CompanionTransferDao
     abstract fun companionMemoryDao(): CompanionMemoryDao
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
@@ -1116,6 +1118,10 @@ abstract class NekobotDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = SubagentSchema.create(db)
         }
 
+        val MIGRATION_52_53 = object : Migration(52, 53) {
+            override fun migrate(db: SupportSQLiteDatabase) = CompanionTransferSchema.migrate(db)
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
@@ -1129,7 +1135,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53
         )
 
         fun get(context: Context): NekobotDatabase =

@@ -252,7 +252,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 .sortedByDescending { CompanionMemoryPolicy.score(query, searchItem(it).text) }.take(24)
             return mapOf("success" to true, "scope" to "当前长久陪伴窗口", "memories" to facts.map {
                 mapOf("key" to it.factKey, "id" to it.id, "category" to it.category, "content" to it.content,
-                    "status" to it.status, "only_user_can_edit" to it.locked)
+                    "status" to it.status, "only_user_can_edit" to it.locked,
+                    "evidence" to CompanionImportPolicy.evidence(it), "expires_at" to it.expiresAt)
             })
         }
         val row = db.messageDao().getById(sourceId)?.takeIf { it.sessionId == session.id && !it.deleted && it.role == "user" }
@@ -279,6 +280,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         fun view(rows: List<CompanionMemoryEntity>) = gson.toJson(rows.map { mapOf("id" to it.id,
             "key" to it.factKey, "category" to it.category, "content" to it.content, "status" to it.status,
             "event_date" to it.eventDate, "tags" to MemoryTags.fromJson(it.tagsJson),
+            "evidence" to CompanionImportPolicy.evidence(it), "expires_at" to it.expiresAt,
             "source_message_ids" to sourceAnchors[it.id]?.take(3)) })
         val coreCandidates = validatedMemories(scope, all.filter { it.alwaysProvide || it.kind == "core" })
         for (fact in coreCandidates) sourceAnchors[fact.id] = dao.sourceAnchorIds(fact.id)
@@ -334,7 +336,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             factKey = factKey, version = version, kind = old?.kind ?: if (category == "episode") "episode" else "fact",
             subject = old?.subject ?: "玩家手动记录", content = content.trim(), status = "active",
             category = category, tagsJson = MemoryTags.toJson(tags), alwaysProvide = alwaysProvide,
-            locked = onlyMe, manual = true, createdAt = old?.createdAt ?: now, updatedAt = now))
+            locked = onlyMe, manual = true, createdAt = old?.createdAt ?: now, updatedAt = now,
+            expiresAt = old?.expiresAt))
         old?.let { previous -> dao.saveSources(dao.sources(previous.id).map { it.copy(memoryId = newId) }) }
         dao.saveScope(scope.copy(revision = scope.revision + 1))
     }
@@ -505,7 +508,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             tagsJson = MemoryTags.toJson(MemoryTags.normalizeGenerated(draft.tags)), current = !isConflict,
             category = if (fused) old?.category ?: draft.category else "user_profile",
             alwaysProvide = old?.alwaysProvide ?: false,
-            createdAt = previousConflict?.createdAt.takeIf { isConflict } ?: now, updatedAt = now
+            createdAt = previousConflict?.createdAt.takeIf { isConflict } ?: now, updatedAt = now,
+            expiresAt = old?.expiresAt
         )
         if (!isConflict) {
             dao.retire(scope.id, target)
@@ -557,7 +561,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
     suspend fun validatedMemories(scope: CompanionScopeEntity,
         candidates: List<CompanionMemoryEntity>? = null): List<CompanionMemoryEntity> {
         if (!active(scope)) return emptyList()
-        val memories = candidates ?: dao.memories(scope.id)
+        val memories = (candidates ?: dao.memories(scope.id)).filter { CompanionImportPolicy.usable(it) }
         if (memories.isEmpty()) return emptyList()
         val present = HashSet<String>()
         val invalid = HashSet<String>()
@@ -578,7 +582,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         // Source edits invalidate scope.revision through the database triggers. A concurrent
         // edit must not expose a mixture of the pre-edit facts and post-edit source scan.
         if (!active(scope)) return emptyList()
-        return memories.filter { it.manual || (it.id in present && it.id !in invalid) }
+        return memories.filter { it.manual || (it.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED && it.id !in present) || (it.id in present && it.id !in invalid) }
     }
 
     suspend fun lock(session: LocalSessionEntity, key: String, locked: Boolean) = db.withTransaction {

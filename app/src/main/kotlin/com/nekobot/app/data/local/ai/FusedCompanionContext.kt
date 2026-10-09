@@ -13,7 +13,9 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val store = CompanionMemoryStore(db)
         val dao = db.companionMemoryDao()
         val scope = store.ensureScope(session)
-        val configuration = CompanionMemoryPolicy.digest(FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id)
+        // 到期后连同历史辅助资料一起重建，避免旧缓存继续带入已经过期的记忆。
+        val expired = dao.memories(scope.id).filterNot { CompanionImportPolicy.usable(it, now.toInstant()) }.map { it.id }.sorted()
+        val configuration = CompanionMemoryPolicy.digest(FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + expired)
         val available = maxContext - outputReserve - estimateLocalTextTokens(system) - estimateLocalTextTokens(Gson().toJson(tools)) - 256
         val budgets = FusedCompanionPolicy.budgets(available)
         val (recall, mode) = store.fusedRecall(session, currentMessage["content"].toString(), budgets)
