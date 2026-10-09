@@ -1562,12 +1562,16 @@ class LocalRepository(
         runCatching { LocalLinuxSandboxCoordinator.resetRootfs(context) }.getOrNull()
     }
 
+    suspend fun companionCreationEligibility(characterId: String?): CompanionEligibility = withContext(Dispatchers.IO) {
+        db.withTransaction { CompanionCreation(db).eligibility(characterId) }
+    }
+
     suspend fun createSession(req: CreateSessionRequest): Session = withContext(Dispatchers.IO) {
         val now = nowIso()
         val id = UUID.randomUUID().toString()
         val character = req.characterId?.let { characterDao.getById(it) }
-        require(!req.companionMode || (character != null && req.sessionMode.equals("agent", true))) {
-            "Agent 角色（长久陪伴）需要选择全新角色"
+        if (req.companionMode && (character == null || !req.sessionMode.equals("agent", true))) {
+            throw CompanionCreationException(CompanionEligibility.MissingCharacter)
         }
         val isGroup = req.sessionMode.equals("group", ignoreCase = true)
         val groupCharacterIds = req.characterIds.orEmpty().filter { it.isNotBlank() }.distinct()
@@ -1597,6 +1601,16 @@ class LocalRepository(
         )
         db.withTransaction {
             com.nekobot.app.data.local.db.FusedCompanionSchema.installTriggers(db.openHelper.writableDatabase)
+            if (req.companionMode) {
+                CompanionCreation(db).requireNew(req.characterId)
+            } else {
+                // 普通角色与群聊入口同样不能绕过 Agent 角色的独占归属。
+                (groupCharacterIds + listOfNotNull(req.characterId)).distinct().forEach { characterId ->
+                    db.companionMemoryDao().owner(characterId)?.let {
+                        throw CompanionCreationException(CompanionCreation(db).eligibility(characterId))
+                    }
+                }
+            }
             sessionDao.upsert(entity)
             if (entity.companionMode) CompanionMemoryStore(db).ensureScope(entity)
         }

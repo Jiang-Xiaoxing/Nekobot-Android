@@ -165,7 +165,14 @@ class UnifiedRepository(
         if (isLocal) Resource.Success(local.listSessions()) else remote.listSessions()
 
     suspend fun createSession(req: CreateSessionRequest): Resource<Session> =
-        if (isLocal) Resource.Success(local.createSession(req)) else remote.createSession(req)
+        if (isLocal) {
+            try { Resource.Success(local.createSession(req)) }
+            catch (e: com.nekobot.app.data.local.CompanionCreationException) {
+                Resource.Error(ServiceContainer.getString(e.messageRes))
+            }
+        } else remote.createSession(req)
+
+    suspend fun companionCreationEligibility(characterId: String?) = local.companionCreationEligibility(characterId)
 
     suspend fun getSession(id: String): Resource<Session> =
         if (isLocal) {

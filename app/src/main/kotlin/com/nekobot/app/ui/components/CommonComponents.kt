@@ -422,7 +422,7 @@ fun EmptyState(title: String, hint: String? = null, icon: @Composable (() -> Uni
 }
 
 @Composable
-fun ErrorBanner(message: String, onRetry: (() -> Unit)? = null) {
+fun ErrorBanner(message: String, onRetry: (() -> Unit)? = null, onDismiss: (() -> Unit)? = null) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 16,
@@ -437,6 +437,9 @@ fun ErrorBanner(message: String, onRetry: (() -> Unit)? = null) {
             )
             if (onRetry != null) {
                 TextButton(onClick = onRetry) { Text(stringResource(R.string.common_retry), color = MaterialTheme.colorScheme.primary) }
+            }
+            if (onDismiss != null) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
             }
         }
     }

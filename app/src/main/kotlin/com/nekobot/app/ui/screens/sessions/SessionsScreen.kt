@@ -816,7 +816,7 @@ fun SessionsScreen(
                     ) {
                         ErrorBanner(
                             message = errorMsg,
-                            onRetry = { viewModel.clearError() }
+                            onDismiss = { viewModel.clearError() }
                         )
                     }
                 }

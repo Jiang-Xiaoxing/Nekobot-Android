@@ -20,6 +20,9 @@ interface SessionDao {
     @Query("SELECT * FROM local_sessions ORDER BY updated_at DESC")
     suspend fun listAll(): List<LocalSessionEntity>
 
+    @Query("SELECT * FROM local_sessions WHERE character_id = :characterId OR instr(COALESCE(character_ids,''), '\"' || :characterId || '\"') > 0 ORDER BY updated_at DESC")
+    suspend fun listForCompanionEligibility(characterId: String): List<LocalSessionEntity>
+
     @Query("SELECT COUNT(*) FROM local_sessions")
     suspend fun count(): Int
 
