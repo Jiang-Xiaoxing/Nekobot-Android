@@ -43,6 +43,7 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
     var selected by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var versions by remember { mutableStateOf<List<CompanionMemoryEntity>?>(null) }
     var sources by remember { mutableStateOf<List<CompanionSourceEntity>?>(null) }
+    var sourceMemory by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var deletion by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var ready by remember { mutableStateOf(false) }
     val categories = FusedCompanionPolicy.categories
@@ -50,6 +51,7 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
         records = emptyList()
         versions = null
         sources = null
+        sourceMemory = null
         editor = false
         deletion = null
         selected = null
@@ -124,7 +126,7 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
                     Row(Modifier.horizontalScroll(rememberScrollState())) {
                         TextButton(onClick = { selected = memory; editor = true }) { Text("编辑") }
                         TextButton(onClick = { action { versions = repo.fusedMemoryVersions(sessionId, memory.factKey) } }) { Text("版本") }
-                        TextButton(onClick = { action { sources = repo.fusedMemorySources(sessionId, memory.id) } }) { Text("查看原话") }
+                        TextButton(onClick = { action { sources = repo.fusedMemorySources(sessionId, memory.id); sourceMemory = memory } }) { Text("查看原话") }
                         TextButton(onClick = { deletion = memory }) { Text("删除") }
                     }
                 } }
@@ -158,7 +160,11 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
     }, confirmButton = { TextButton(onClick = { versions = null }) { Text("关闭") } }) }
     sources?.let { rows -> AlertDialog(onDismissRequest = { sources = null }, title = { Text("来源原话") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            if (rows.isEmpty()) Text("这条记忆由玩家手动记录，没有聊天原话来源。")
+            if (rows.isEmpty()) Text(when {
+                sourceMemory?.manual == true -> "这条记忆由玩家手动记录，没有聊天原话来源。"
+                sourceMemory?.provenance == com.nekobot.app.data.local.ai.CompanionImportPolicy.IMPORTED_UNVERIFIED -> "这条记忆从旧资料迁入，尚无已核验的聊天原话来源。"
+                else -> "没有可核验的聊天原话来源，请核对这条记忆。"
+            })
             rows.forEach { source -> Text("${source.spokenDate.orEmpty()} · ${source.role}\n${source.quote}")
                 TextButton(onClick = { sources = null; onLocate(source.messageId) }) { Text("定位到聊天原文") } }
         }

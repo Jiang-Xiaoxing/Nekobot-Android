@@ -43,10 +43,34 @@ class FusedCompanionMemoryScreenTest {
                 val store=CompanionMemoryStore(db); val fact=store.validatedMemories(store.ensureScope(session)).single()
                 assertTrue(fact.alwaysProvide); assertFalse(fact.locked); assertTrue(fact.manual)
             }
+            // The database save completes before the asynchronous list refresh is drawn.
+            compose.waitUntil(5000) { compose.onAllNodesWithText("难过时希望先被倾听").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("fused-memory-list").performScrollToNode(hasText("版本"))
             compose.onNodeWithText("版本").performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithText("记忆版本").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("记忆版本").assertIsDisplayed()
+        } finally { runBlocking { db.sessionDao().deleteById(id) } }
+    }
+
+    @Test fun importedUnverifiedMemorySourceIsNotLabelledAsManualEntry() {
+        val id = "imported-ui-${UUID.randomUUID()}"
+        val db = NekobotDatabase.get(compose.activity, ServiceContainer.prefs.activeDbName)
+        val session = LocalSessionEntity(id, "来源说明测试", characterId = "$id-character", sessionMode = "agent",
+            inheritCharacter = true, longConversationEnabled = true, companionMode = true, createdAt = "now", updatedAt = "now")
+        try {
+            runBlocking {
+                db.sessionDao().upsert(session)
+                val scope = CompanionMemoryStore(db).ensureScope(session)
+                db.companionMemoryDao().saveMemory(com.nekobot.app.data.local.db.CompanionMemoryEntity(
+                    "$id-memory", scope.id, "tea", 1, "fact", "玩家", "喜欢茉莉茶", "active",
+                    provenance = "imported_unverified", createdAt = "old", updatedAt = "old"))
+            }
+            compose.setContent { MaterialTheme { FusedCompanionMemoryScreen(id, {}, {}) } }
+            compose.waitUntil(5000) { compose.onAllNodesWithText("喜欢茉莉茶").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("fused-memory-list").performScrollToNode(hasText("查看原话"))
+            compose.onNodeWithText("查看原话").performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("这条记忆从旧资料迁入，尚无已核验的聊天原话来源。").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("这条记忆由玩家手动记录，没有聊天原话来源。").assertDoesNotExist()
         } finally { runBlocking { db.sessionDao().deleteById(id) } }
     }
 }
