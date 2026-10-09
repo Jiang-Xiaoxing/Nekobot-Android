@@ -111,6 +111,38 @@ internal class CompanionTransferService(
 
     suspend fun records(): List<CompanionTransferJobEntity> = withContext(Dispatchers.IO) { dao.list(db.dbName) }
 
+    suspend fun savedPreview(jobId: String): CompanionTransferPreview = withContext(Dispatchers.IO) {
+        guard(emptyList())
+        toPreview(requireNotNull(dao.get(jobId)) { "迁入记录不存在" })
+    }
+
+    suspend fun receipt(jobId: String): String = withContext(Dispatchers.IO) {
+        guard(emptyList())
+        val job = requireNotNull(dao.get(jobId)) { "迁入记录不存在" }
+        val report = gson.fromJson(job.reportJson, CompanionTransferReport::class.java)
+        buildString {
+            appendLine("${job.targetName}\n原会话：${report.sourceName}")
+            appendLine("${if(job.phase in setOf("complete", "backup_deleted")) "已完成" else "尚未完成，可继续处理"} · ${job.createdAt}")
+            appendLine("原话 ${report.snapshot.counts["local_messages"]} 条，候选 ${report.snapshot.counts["local_message_variants"]} 条")
+            appendLine("本地附件 ${report.files.assets.size} 个。")
+            if(job.phase in setOf("complete", "backup_deleted")) {
+                appendLine("原话与附件备份已按 SHA-256 校验；记忆正文已独立保存。")
+            } else appendLine("本次操作尚未完成，不能视为副本已交付。")
+            appendLine("迁入不调用模型。")
+            appendLine("归档来源分组：${report.snapshot.sessionIds.size} 个；原话合并到新主会话并保留原始时间与顺序。")
+            appendLine("本机记录编号：${job.id}")
+            if(job.phase == "backup_deleted") appendLine("本次备份已由用户删除，新会话内容不受影响。")
+            else {
+                val directory = ownedDirectory(job.directory)
+                appendLine("\n需要核对的旧摘要（未作为事实注入）：")
+                for (row in transferRows(directory, "local_character_memories")) {
+                    if (CompanionTransferMemory(db).exclusion(row, report.snapshot) != null) appendLine("${row.text("title").orEmpty()}\n${row.text("content").orEmpty()}\n")
+                }
+                for (row in transferRows(directory, "local_experience_archives")) appendLine("${row.text("source_started_at")} — ${row.text("source_ended_at")}\n${row.text("summary").orEmpty()}\n")
+            }
+        }
+    }
+
     suspend fun cancel(jobId: String) = withContext(Dispatchers.IO) { lock.withLock {
         val job = requireNotNull(dao.get(jobId))
         require(job.phase !in setOf("complete", "backup_deleted")) { "已完成的迁入不能取消，可在会话列表管理副本" }

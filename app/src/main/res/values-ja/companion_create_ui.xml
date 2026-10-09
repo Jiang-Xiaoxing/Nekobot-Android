@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="companion_create_title">Agent キャラクターを作成</string>
+  <string name="companion_create_intro">独立した記憶を持ち、専用の会話で寄り添います。</string>
+  <string name="companion_profile_changed">データベースが切り替わりました。このページを開き直してください。</string>
+  <string name="companion_operation_failed">操作は完了していません。元のデータは保持されています。詳細を確認するか、もう一度プレビューしてください。</string>
+  <string name="companion_transfer_title">Agent キャラクターへ移行</string>
+  <string name="companion_transfer_record">移行記録を見る</string>
+  <string name="companion_transfer_records">移行記録</string>
+  <string name="companion_delete_backup">このバックアップを削除</string>
+  <string name="companion_delete_backup_hint">今回のバックアップと確認用の旧要約のみを削除します。新しい会話、独立した記憶、添付ファイルは残ります。バックアップの内容は閲覧できなくなります。</string>
+  <string name="companion_open_new">新しい会話を開く</string>
+  <string name="companion_processing">処理中…</string>
+  <string name="companion_backup_transfer">バックアップして移行</string>
+  <string name="companion_open_existing">既存の会話を開く</string>
+  <string name="companion_select_session">移行する会話を選択</string>
+  <string name="companion_choose_character">キャラクターを選択</string>
+  <string name="companion_available">未使用・作成できます</string>
+  <string name="companion_has_main">Agent のメイン会話があります</string>
+  <string name="companion_has_sessions">既存の会話から独立したコピーを作成できます</string>
+  <string name="companion_reserved">メイン会話との関連付けが残っています</string>
+  <string name="companion_select_hint">選択後に使用状況を確認します</string>
+  <string name="companion_change">変更</string>
+  <string name="companion_group_unsupported">グループ会話、またはキャラクターを継承しない Agent 会話で使われています。この種類はまだ移行できません。別のキャラクターを選択してください。</string>
+  <string name="companion_copy_hint">新しいキャラクターと会話のコピーを作成します。元の会話は残ります。</string>
+  <string name="companion_session_messages">メッセージ %1$d 件 · タップして確認</string>
+  <string name="companion_less_settings">追加設定を閉じる</string>
+  <string name="companion_more_settings">追加設定</string>
+  <string name="companion_optional_name">会話名（任意）</string>
+  <string name="companion_optional_greeting">最初の挨拶（任意）</string>
+  <string name="companion_initial_state">初期状態はキャラクターカードの設定を使います。</string>
+  <string name="companion_new_character">キャラクターカードを作成</string>
+  <string name="companion_complete_hint">独立したコピーを作成しました。元のキャラクターと会話は保持されています。</string>
+  <string name="companion_preview_hint">移行するデータを確認してください。移行前に端末内へバックアップします。</string>
+  <string name="companion_copy_name">新しいキャラクターと会話の名前</string>
+  <string name="companion_preview_counts">原文 %1$d 件 · 候補返信 %2$d 件\n記憶 %3$d 件 · ローカル添付 %4$d 件</string>
+  <string name="companion_preview_space">追加で約 %1$s MB の空き容量が必要です</string>
+  <string name="companion_skipped_count">旧記憶 %1$d 件は自動移行しません。要約は確認用の記録に残し、他の会話やユーザーの内容は除外します。</string>
+  <string name="companion_remote_count">外部アドレス %1$d 件はそのまま保持します。引き続き元のアドレスへのアクセスが必要です。</string>
+  <string name="companion_technical_details">技術的な詳細</string>
+  <string name="companion_completed">完了</string>
+  <string name="companion_resume">続ける</string>
+  <string name="companion_search_character">キャラクター名を検索</string>
+</resources>

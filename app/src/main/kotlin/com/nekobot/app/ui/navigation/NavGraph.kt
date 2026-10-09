@@ -692,6 +692,15 @@ fun NekobotNavGraph() {
                     onOpen = { sessionId -> navController.navigate(Routes.agentCharacterMemory(sessionId)) }
                 )
             }
+            composable(Routes.COMPANION_CREATE) {
+                com.nekobot.app.ui.screens.sessions.CompanionCreateScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpen = { sessionId -> navController.navigate(Routes.chat(sessionId)) {
+                        popUpTo(Routes.COMPANION_CREATE) { inclusive = true }
+                    } },
+                    onNewCharacter = { navController.navigate(Routes.characterDetail("new")) }
+                )
+            }
             composable(
                 route = Routes.AGENT_CHARACTER_MEMORY_DETAIL,
                 arguments = listOf(navArgument("sessionId") { type = NavType.StringType })

@@ -57,6 +57,7 @@ object Routes {
     const val STATE_HISTORY = "state_history"
     const val MEMORY = "memory"
     const val AGENT_CHARACTER_MEMORY = "agent_character_memory"
+    const val COMPANION_CREATE = "companion_create"
     const val AGENT_CHARACTER_MEMORY_DETAIL = "agent_character_memory/{sessionId}"
     fun agentCharacterMemory(sessionId: String) = "agent_character_memory/${android.net.Uri.encode(sessionId)}"
     const val EXPERIENCE_ARCHIVE = "experience_archive/{sessionId}"

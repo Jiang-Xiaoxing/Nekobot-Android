@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="companion_create_title">建立 Agent 角色</string>
+  <string name="companion_create_intro">擁有獨立記憶，固定在一個對話中陪伴你。</string>
+  <string name="companion_profile_changed">資料庫已切換，請重新開啟建立頁面。</string>
+  <string name="companion_operation_failed">這次操作沒有完成。原資料保留，請查看詳情或重新預覽後再試。</string>
+  <string name="companion_transfer_title">遷入 Agent 角色</string>
+  <string name="companion_transfer_record">查看遷入紀錄</string>
+  <string name="companion_transfer_records">遷入紀錄</string>
+  <string name="companion_delete_backup">刪除這次備份</string>
+  <string name="companion_delete_backup_hint">只刪除本次遷入保留的備份與舊摘要核對資料，新對話、獨立記憶和附件仍保留。刪除後不能再查看備份內容。</string>
+  <string name="companion_open_new">進入新對話</string>
+  <string name="companion_processing">正在處理…</string>
+  <string name="companion_backup_transfer">備份並遷入</string>
+  <string name="companion_open_existing">開啟既有對話</string>
+  <string name="companion_select_session">選擇對話遷入</string>
+  <string name="companion_choose_character">選擇角色</string>
+  <string name="companion_available">尚未使用，可以建立</string>
+  <string name="companion_has_main">已有 Agent 主對話</string>
+  <string name="companion_has_sessions">已有對話，可以建立獨立副本</string>
+  <string name="companion_reserved">已保留主對話歸屬</string>
+  <string name="companion_select_hint">選擇後會檢查角色的使用情況</string>
+  <string name="companion_change">更換</string>
+  <string name="companion_group_unsupported">這個角色已用於群聊或未繼承角色的 Agent 對話，暫不支援遷入。請選擇其他角色。</string>
+  <string name="companion_copy_hint">遷入會建立新的角色和對話副本，原對話保留。</string>
+  <string name="companion_session_messages">%1$d 則訊息 · 點擊預覽</string>
+  <string name="companion_less_settings">收起更多設定</string>
+  <string name="companion_more_settings">更多設定</string>
+  <string name="companion_optional_name">對話名稱（選填）</string>
+  <string name="companion_optional_greeting">開場白（選填）</string>
+  <string name="companion_initial_state">初始狀態使用角色卡中的設定。</string>
+  <string name="companion_new_character">新增角色卡</string>
+  <string name="companion_complete_hint">獨立副本已建立。原角色和原對話保留，可以開始新聊天了。</string>
+  <string name="companion_preview_hint">確認要帶入的資料。遷入前會在本機保留一份備份。</string>
+  <string name="companion_copy_name">新角色與對話名稱</string>
+  <string name="companion_preview_counts">%1$d 則原話　·　%2$d 則候選回覆\n%3$d 則記憶　·　%4$d 個本機附件</string>
+  <string name="companion_preview_space">預計需要額外空間約 %1$s MB</string>
+  <string name="companion_skipped_count">%1$d 則舊記憶未自動帶入：摘要留在紀錄中供核對，其他對話或使用者的內容排除。</string>
+  <string name="companion_remote_count">%1$d 個遠端位址將保留，仍需原位址可存取。</string>
+  <string name="companion_technical_details">技術詳情</string>
+  <string name="companion_completed">已完成</string>
+  <string name="companion_resume">繼續處理</string>
+  <string name="companion_search_character">搜尋角色名稱</string>
+</resources>

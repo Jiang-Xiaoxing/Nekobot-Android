@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="companion_create_title">Agent 캐릭터 만들기</string>
+  <string name="companion_create_intro">독립된 기억을 가지고 하나의 전용 대화에서 함께합니다.</string>
+  <string name="companion_profile_changed">데이터베이스가 변경되었습니다. 이 페이지를 다시 열어 주세요.</string>
+  <string name="companion_operation_failed">작업이 완료되지 않았습니다. 원본은 유지됩니다. 상세 내용을 확인하거나 다시 미리 보기를 실행하세요.</string>
+  <string name="companion_transfer_title">Agent 캐릭터로 가져오기</string>
+  <string name="companion_transfer_record">가져오기 기록 보기</string>
+  <string name="companion_transfer_records">가져오기 기록</string>
+  <string name="companion_delete_backup">이 백업 삭제</string>
+  <string name="companion_delete_backup_hint">이번 백업과 확인용 이전 요약만 삭제합니다. 새 대화, 독립된 기억 및 첨부 파일은 유지됩니다. 삭제 후 백업 내용을 볼 수 없습니다.</string>
+  <string name="companion_open_new">새 대화 열기</string>
+  <string name="companion_processing">처리 중…</string>
+  <string name="companion_backup_transfer">백업 후 가져오기</string>
+  <string name="companion_open_existing">기존 대화 열기</string>
+  <string name="companion_select_session">가져올 대화 선택</string>
+  <string name="companion_choose_character">캐릭터 선택</string>
+  <string name="companion_available">사용되지 않아 생성할 수 있습니다</string>
+  <string name="companion_has_main">Agent 주 대화가 이미 있습니다</string>
+  <string name="companion_has_sessions">기존 대화의 독립된 사본을 만들 수 있습니다</string>
+  <string name="companion_reserved">주 대화 연결이 유지되어 있습니다</string>
+  <string name="companion_select_hint">선택하면 캐릭터 사용 상태를 확인합니다</string>
+  <string name="companion_change">변경</string>
+  <string name="companion_group_unsupported">그룹 대화 또는 캐릭터를 상속하지 않는 Agent 대화에서 사용된 캐릭터입니다. 아직 가져오기를 지원하지 않으므로 다른 캐릭터를 선택하세요.</string>
+  <string name="companion_copy_hint">새 캐릭터와 대화 사본을 만듭니다. 원래 대화는 유지됩니다.</string>
+  <string name="companion_session_messages">메시지 %1$d개 · 눌러서 미리 보기</string>
+  <string name="companion_less_settings">추가 설정 접기</string>
+  <string name="companion_more_settings">추가 설정</string>
+  <string name="companion_optional_name">대화 이름(선택)</string>
+  <string name="companion_optional_greeting">첫 인사(선택)</string>
+  <string name="companion_initial_state">초기 상태는 캐릭터 카드 설정을 사용합니다.</string>
+  <string name="companion_new_character">캐릭터 카드 만들기</string>
+  <string name="companion_complete_hint">독립된 사본이 만들어졌습니다. 원래 캐릭터와 대화는 유지됩니다.</string>
+  <string name="companion_preview_hint">가져올 데이터를 확인하세요. 가져오기 전에 기기에 백업을 저장합니다.</string>
+  <string name="companion_copy_name">새 캐릭터 및 대화 이름</string>
+  <string name="companion_preview_counts">원문 %1$d개 · 대체 답변 %2$d개\n기억 %3$d개 · 로컬 첨부 %4$d개</string>
+  <string name="companion_preview_space">약 %1$s MB의 추가 공간이 필요합니다</string>
+  <string name="companion_skipped_count">이전 기억 %1$d개는 자동으로 가져오지 않습니다. 요약은 확인용 기록에 남기며 다른 대화나 사용자의 내용은 제외합니다.</string>
+  <string name="companion_remote_count">외부 주소 %1$d개는 유지됩니다. 원래 주소에 계속 접근할 수 있어야 합니다.</string>
+  <string name="companion_technical_details">기술 상세 정보</string>
+  <string name="companion_completed">완료</string>
+  <string name="companion_resume">계속하기</string>
+  <string name="companion_search_character">캐릭터 이름 검색</string>
+</resources>

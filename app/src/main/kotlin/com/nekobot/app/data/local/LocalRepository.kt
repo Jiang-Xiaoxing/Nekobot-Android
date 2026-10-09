@@ -1566,6 +1566,24 @@ class LocalRepository(
         db.withTransaction { CompanionCreation(db).eligibility(characterId) }
     }
 
+    private val companionTransfer by lazy {
+        CompanionTransferService(requireNotNull(appContext), db, guard = { sessions ->
+            check(this === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode && db.isOpen) {
+                "资料库已切换，请重新打开迁入页面"
+            }
+            check(sessions.none { id -> activeGenerations.containsKey(id) || companionExtractionJobs.any { (key, job) ->
+                key.startsWith("${db.dbName}:$id:") && job.isActive
+            } }) { "原会话正在回复或整理记忆，请结束后重新预览" }
+        })
+    }
+    internal suspend fun previewCompanionTransfer(sourceId: String) = companionTransfer.preview(sourceId)
+    internal suspend fun companionTransferPreview(jobId: String) = companionTransfer.savedPreview(jobId)
+    internal suspend fun executeCompanionTransfer(jobId: String, name: String, progress: (CompanionTransferProgress) -> Unit) =
+        companionTransfer.execute(jobId, name, progress)
+    internal suspend fun companionTransferRecords() = companionTransfer.records()
+    internal suspend fun companionTransferReceipt(jobId: String) = companionTransfer.receipt(jobId)
+    internal suspend fun deleteCompanionTransferBackup(jobId: String) = companionTransfer.deleteBackup(jobId)
+
     suspend fun createSession(req: CreateSessionRequest): Session = withContext(Dispatchers.IO) {
         val now = nowIso()
         val id = UUID.randomUUID().toString()
@@ -1630,18 +1648,18 @@ class LocalRepository(
             )
         }
 
-        if (character != null && req.sessionMode.equals("character", ignoreCase = true)) {
+        if (character != null && (req.companionMode || req.sessionMode.equals("character", ignoreCase = true))) {
             initializeSessionRelationship(
                 characterId = character.id,
                 sessionId = id,
-                source = req.relationshipStateSource
+                source = if (req.companionMode) RELATIONSHIP_STATE_SOURCE_INITIAL else req.relationshipStateSource
             )
         }
 
         // 角色会话：若角色有 firstMessage，自动插入一条 assistant 消息到数据库
         // （agent 模式不插入，agent 会话由用户主动发起）
         val firstMsg = req.firstMessage ?: character?.firstMessage ?: character?.greeting
-        if (!firstMsg.isNullOrBlank() && !req.sessionMode.equals("agent", ignoreCase = true)) {
+        if (!firstMsg.isNullOrBlank() && (req.companionMode || !req.sessionMode.equals("agent", ignoreCase = true))) {
             val msgId = UUID.randomUUID().toString()
             messageDao.upsert(
                 LocalMessageEntity(

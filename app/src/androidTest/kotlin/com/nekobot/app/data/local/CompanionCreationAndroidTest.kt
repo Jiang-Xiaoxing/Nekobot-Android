@@ -61,4 +61,19 @@ class CompanionCreationAndroidTest {
             assertEquals(CompanionEligibility.ReservedCharacter, CompanionCreation(db).eligibility("c"))
         } finally { db.close() }
     }
+
+    @Test fun freshCompanionUsesCardStateAndInsertsOneGreetingWhileOrdinaryAgentStaysUnchanged() = runBlocking {
+        val db = database()
+        try {
+            db.characterDao().upsert(LocalCharacterEntity("c", "角色", state = "{\"affection\":72}", firstMessage = "角色卡开场白", createdAt = "now", updatedAt = "now"))
+            val repo = LocalRepository(db, appContext = ApplicationProvider.getApplicationContext())
+            val created = repo.createSession(com.nekobot.app.data.model.CreateSessionRequest(characterId = "c", sessionMode = "agent", companionMode = true, firstMessage = "自定义开场白"))
+            assertEquals(listOf("自定义开场白"), db.messageDao().listBySession(requireNotNull(created.id)).map { it.content })
+            val relationship = db.relationshipDao().get("c", "session:${created.id}")!!
+            assertEquals(72, com.nekobot.app.data.local.ai.RelationshipState.fromJson(relationship.dataJson).affection)
+            db.characterDao().upsert(LocalCharacterEntity("ordinary", "普通", firstMessage = "普通开场白", createdAt = "now", updatedAt = "now"))
+            val agent = repo.createSession(com.nekobot.app.data.model.CreateSessionRequest(characterId = "ordinary", sessionMode = "agent"))
+            assertTrue(db.messageDao().listBySession(requireNotNull(agent.id)).isEmpty())
+        } finally { db.close() }
+    }
 }
