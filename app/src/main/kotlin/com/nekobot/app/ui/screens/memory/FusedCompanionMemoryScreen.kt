@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +41,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var records by remember { mutableStateOf(emptyList<CompanionMemoryEntity>()) }
     var overview by remember { mutableStateOf<CompanionMemoryOverview?>(null) }
     var ownerName by remember { mutableStateOf("") }
+    var ownerAvatar by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var actionError by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -53,11 +55,14 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var sourceMemory by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var deletion by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var ready by remember { mutableStateOf(false) }
+    var recallSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var recallSettings by remember { mutableStateOf(repo.companionRecallSettings(sessionId)) }
     val categories = memoryCategoryNames
     LaunchedEffect(sessionId, dataSourceRevision, appMode) {
         records = emptyList()
         overview = null
         ownerName = ""
+        ownerAvatar = null
         versions = null
         sources = null
         sourceMemory = null
@@ -65,6 +70,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         deletion = null
         selected = null
         actionError = null
+        recallSettingsOpen = false
     }
     LaunchedEffect(sessionId, refresh, dataSourceRevision, appMode) {
         ready = false
@@ -79,6 +85,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             records = loadedRecords
             overview = loadedOverview
             ownerName = session.characterName?.takeIf { it.isNotBlank() } ?: session.name.orEmpty()
+            ownerAvatar = session.portrait?.takeIf(String::isNotBlank) ?: session.characterAvatar
             error = null
             ready = true
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -115,10 +122,23 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val shown = visibleRecords.filter { (category.isEmpty() || it.category == category) &&
         (query.isBlank() || "${it.content} ${it.tagsJson} ${it.factKey}".contains(query, true)) }
     val editable = ready && !busy && error == null && repo === ServiceContainer.localRepository
+    if (recallSettingsOpen) {
+        CompanionRecallSettingsScreen(sessionId, ownerName, ownerAvatar, recallSettings, busy, actionError,
+            onBack = { recallSettingsOpen = false; actionError = null }, onSave = { rounds, tokens -> action {
+                repo.saveCompanionRecallSettings(sessionId, rounds, tokens)
+                recallSettings = repo.companionRecallSettings(sessionId)
+                recallSettingsOpen = false
+            } })
+        return
+    }
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.agent_character_memory_title),
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-    }, actions = { IconButton(enabled = editable,
+    }, actions = {
+        IconButton(enabled = editable, onClick = { recallSettings = repo.companionRecallSettings(sessionId); actionError = null; recallSettingsOpen = true }) {
+            Icon(Icons.Filled.Tune, "回查设置")
+        }
+        IconButton(enabled = editable,
         onClick = { selected = null; actionError = null; editor = true }) { Icon(Icons.Filled.Add, "新增记忆") } }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("fused-memory-list"),
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

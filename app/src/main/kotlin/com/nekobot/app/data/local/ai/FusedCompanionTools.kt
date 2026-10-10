@@ -7,6 +7,7 @@ internal object FusedCompanionTools {
         val function = definition["function"] as? Map<*, *> ?: definition
         val name = function["name"] as? String
         when (name) {
+            "agent_recall_search" -> buildAgentRecallToolDefinitions(currentOnly = true).first()
             in readNames -> tool(requireNotNull(name), "检索当前长久陪伴窗口的角色记忆。不会读取公共 Agent 记忆。", mapOf("query" to text("问题或主题，空则读取当前记录")), emptyList())
             in writeNames -> tool(requireNotNull(name), "根据本轮玩家原话维护当前窗口角色记忆。不能操作公共记忆或修改人工保护项。更新须引用真实旧 key。撤销旧错误使用 retract。",
                 mapOf("key" to text("稳定主题键"), "target_key" to text("要维护的已有主题键，新增时为空"),

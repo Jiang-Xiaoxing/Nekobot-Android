@@ -68,6 +68,33 @@ class PrefsManager(context: Context) {
     private val securePrefs = SecurePreferenceStore(context)
     private val gson = Gson()
 
+    private fun companionRecallKey(profile: String, session: String) =
+        "companion_recall:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest("$profile\n$session")
+
+    internal fun companionRecallSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRecallSettings {
+        val key = companionRecallKey(profile, session)
+        return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 3000))
+    }
+
+    internal fun saveCompanionRecallSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRecallSettings) {
+        require(value.valid()) { "回查轮数须为1至100，资料上限须为256至64000 Token" }
+        val key = companionRecallKey(profile, session)
+        check(prefs.edit().putInt("$key:rounds", value.rounds).putInt("$key:tokens", value.tokens).commit()) { "回查设置保存失败，请重试" }
+    }
+
+    internal fun companionRecallUsage(profile: String, session: String, turn: String): String? =
+        prefs.getString(companionRecallKey(profile, session) + ":turn:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn), null)
+
+    internal fun saveCompanionRecallUsage(profile: String, session: String, turn: String, value: String) {
+        check(prefs.edit().putString(companionRecallKey(profile, session) + ":turn:" +
+            com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn), value).commit()) { "回查用量保存失败，已停止本次读取" }
+    }
+
+    internal fun clearCompanionRecallSession(profile: String, session: String) {
+        val prefix = companionRecallKey(profile, session) + ":"
+        prefs.edit().apply { prefs.all.keys.filter { it.startsWith(prefix) }.forEach(::remove) }.apply()
+    }
+
     fun companionConversionModel(profile: String): String? = prefs.getString("companion_conversion_model:$profile", null)
     fun setCompanionConversionModel(profile: String, id: String) {
         prefs.edit().putString("companion_conversion_model:$profile", id).apply()

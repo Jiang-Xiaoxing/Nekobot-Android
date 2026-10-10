@@ -35,7 +35,9 @@ internal class LocalAgentRecallReader(private val db: NekobotDatabase) : AgentRe
         val store = CompanionMemoryStore(db)
         val scope = store.ensureScope(session)
         val forgotten = db.companionMemoryDao().forgotten(scope.id).toSet()
-        val facts = store.validatedMemories(scope)
+        val facts = store.validatedMemories(scope).let { facts ->
+            if (session.companionMode) facts.sortedByDescending { it.current } else facts
+        }
         for (query in queries) {
             if (session.usesCompanionMemory()) {
                 facts.filter { CompanionMemoryPolicy.score(query, it.content + it.factKey + it.tagsJson + it.eventDate) > 0.04f }
@@ -51,7 +53,8 @@ internal class LocalAgentRecallReader(private val db: NekobotDatabase) : AgentRe
                             startMessageId = sources.firstOrNull()?.messageId,
                             endMessageId = sources.lastOrNull()?.messageId,
                             startedAt = sources.firstOrNull()?.spokenDate,
-                            endedAt = sources.lastOrNull()?.spokenDate
+                            endedAt = sources.lastOrNull()?.spokenDate,
+                            current = memory.current
                         )
                     }
             }

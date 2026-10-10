@@ -1593,6 +1593,12 @@ class LocalRepository(
                 model.failoverTimeout.takeIf { it > 0 } ?: com.nekobot.app.data.local.ai.defaultFailoverTimeout("companion_conversion").inWholeSeconds.toInt())
         }
     internal fun selectedCompanionConversionModel() = ServiceContainer.prefs.companionConversionModel(db.dbName)
+    internal fun companionRecallSettings(sessionId: String) = ServiceContainer.prefs.companionRecallSettings(db.dbName, sessionId)
+    internal suspend fun saveCompanionRecallSettings(sessionId: String, rounds: Int, tokens: Int) = withContext(Dispatchers.IO) {
+        require(sessionDao.getById(sessionId)?.companionMode == true) { "请在单会话角色中设置回查额度" }
+        ServiceContainer.prefs.saveCompanionRecallSettings(db.dbName, sessionId,
+            com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens))
+    }
     internal fun selectCompanionConversionModel(id: String) = ServiceContainer.prefs.setCompanionConversionModel(db.dbName, id)
     internal suspend fun companionConversionErrorReports(jobId: String) = companionTransfer.errorReports(jobId)
 
@@ -2303,6 +2309,7 @@ class LocalRepository(
         ServiceContainer.prefs.clearAgentSkillNotice(id)
         // 自动长期记忆的会话级提示同理（记忆内容本身是跨会话共享的，不在这里删除）。
         ServiceContainer.prefs.clearAgentMemoryNotice(id)
+        ServiceContainer.prefs.clearCompanionRecallSession(db.dbName, id)
     }
 
     /**

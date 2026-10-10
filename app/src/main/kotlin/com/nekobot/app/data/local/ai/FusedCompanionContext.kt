@@ -80,10 +80,14 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
                 else datesById[msg.id]?.let { add(auxiliaryMessage(it)) }
                 @Suppress("UNCHECKED_CAST")
                 val sent = saved?.userPayload?.takeIf { it.isNotEmpty() }?.let { Gson().fromJson(it, Map::class.java) as Map<String, Any> }
-                add(sent ?: mapOf("role" to msg.role, "content" to msg.content))
+                val outgoing = sent ?: mapOf("role" to msg.role, "content" to msg.content)
+                // 本地身份标记在发给服务商前移除；正文不完全一致时宁可重读，也不能误判仍可见。
+                add(outgoing + (CompanionRecallBudget.SOURCE_META to mapOf("id" to msg.id,
+                    "revision" to CompanionMemoryPolicy.digest(msg.content))))
             }
             add(auxiliaryMessage(auxiliary))
-            add(userPayload)
+            add(userPayload + (CompanionRecallBudget.SOURCE_META to mapOf("id" to raw.id,
+                "revision" to CompanionMemoryPolicy.digest(raw.content))))
         }
     }
 

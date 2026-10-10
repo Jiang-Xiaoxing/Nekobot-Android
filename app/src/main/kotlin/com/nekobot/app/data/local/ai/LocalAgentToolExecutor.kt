@@ -406,7 +406,7 @@ internal class LocalAgentToolExecutor(
         )
     }
     private val recallTool by lazy {
-        recallReader?.let { AgentRecallToolHandler(sessionId, it) }
+        recallReader?.let { AgentRecallToolHandler(sessionId, it, currentOnly = isolateCompanionMemory) }
     }
 
     suspend fun execute(toolName: String, args: Map<String, Any>): Map<String, Any> {
