@@ -95,6 +95,14 @@ class PrefsManager(context: Context) {
         prefs.edit().apply { prefs.all.keys.filter { it.startsWith(prefix) }.forEach(::remove) }.apply()
     }
 
+    internal fun companionRequestSnapshot(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRequestSnapshot? =
+        runCatching { gson.fromJson(prefs.getString(companionRecallKey(profile, session) + ":request", null),
+            com.nekobot.app.data.local.ai.CompanionRequestSnapshot::class.java) }.getOrNull()
+
+    internal fun saveCompanionRequestSnapshot(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRequestSnapshot) {
+        prefs.edit().putString(companionRecallKey(profile, session) + ":request", gson.toJson(value)).apply()
+    }
+
     fun companionConversionModel(profile: String): String? = prefs.getString("companion_conversion_model:$profile", null)
     fun setCompanionConversionModel(profile: String, id: String) {
         prefs.edit().putString("companion_conversion_model:$profile", id).apply()
@@ -1262,6 +1270,13 @@ class PrefsManager(context: Context) {
         }
 
     /** 获取对应会话类型的全局思考强度；Agent 与角色会话互不影响。 */
+    fun companionReasoningEffort(profile: String, sessionId: String): com.nekobot.app.data.model.ReasoningEffort =
+        com.nekobot.app.data.model.ReasoningEffort.fromValue(prefs.getString(companionRecallKey(profile, sessionId) + ":reasoning",
+            getReasoningEffort(true).wireValue))
+    fun setCompanionReasoningEffort(profile: String, sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) {
+        prefs.edit().putString(companionRecallKey(profile, sessionId) + ":reasoning", value.wireValue).apply()
+    }
+
     fun getReasoningEffort(isAgentSession: Boolean): com.nekobot.app.data.model.ReasoningEffort =
         com.nekobot.app.data.model.ReasoningEffort.fromValue(
             prefs.getString(

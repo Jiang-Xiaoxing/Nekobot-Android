@@ -1,9 +1,18 @@
 package com.nekobot.app.data.local.ai
 
 internal object FusedCompanionTools {
+    // 陪伴模式的能力边界，不依赖界面隐藏，也不改写玩家原有工具开关。
+    val allowedNames = setOf(
+        "agent_memory_read", "agent_memory_update", "agent_recall_search", "agent_history_search", "agent_history_read",
+        "get_date_time", "get_weather", "search_web", "web_fetch",
+        "understand_image", "read_image", "generate_image", "list_stickers", "send_sticker", "view_sticker",
+        "workspace_list_files", "workspace_read_file", "workspace_parse_file", "workspace_extract_epub", "workspace_file_info"
+    )
     val readNames = setOf("agent_memory_read", "db_list_memories")
     val writeNames = setOf("agent_memory_update", "db_save_memory", "db_delete_memory")
-    fun definitions(original: List<Map<String, Any>>): List<Map<String, Any>> = original.map { definition ->
+    fun definitions(original: List<Map<String, Any>>): List<Map<String, Any>> = original.filter {
+        toolNameOf(it) in allowedNames
+    }.map { definition ->
         val function = definition["function"] as? Map<*, *> ?: definition
         val name = function["name"] as? String
         when (name) {

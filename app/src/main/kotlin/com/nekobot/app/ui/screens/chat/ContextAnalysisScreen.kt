@@ -67,7 +67,10 @@ private data class ContextAnalysisData(
     /** 本会话缓存命中统计：命中率与命中/输入 token 明细。 */
     val cacheStats: SessionCacheStats = SessionCacheStats(),
     /** 参与占比统计的压缩摘要原文（Agent 会话的压缩窗口内），供点击查看。 */
-    val summaries: List<Message> = emptyList()
+    val summaries: List<Message> = emptyList(),
+    val companion: Boolean = false,
+    val sentAt: Long? = null,
+    val reportedInput: Int? = null
 )
 
 private data class ContextAnalysisUiState(
@@ -116,7 +119,7 @@ fun ContextAnalysisScreen(
                 } else {
                     null
                 }
-                val liveBreakdown = live?.breakdown?.takeIf { !it.isEmpty }
+                val liveBreakdown = live?.breakdown?.takeIf { live.companionSnapshotMode || !it.isEmpty }
                 // 与占比统计同一窗口取摘要原文：占比里的「压缩摘要」条目对应这几条消息
                 val summaries = if (isAgentSession) {
                     messages.agentContextWindow().filter(Message::isAgentContextSummary)
@@ -128,9 +131,12 @@ fun ContextAnalysisScreen(
                         breakdown = liveBreakdown ?: fallbackContextUsageBreakdown(session, messages),
                         usedTokens = live?.totalTokens
                             ?: ServiceContainer.unified.sessionContextTokenUsage(sessionId),
-                        maxTokens = ServiceContainer.unified.getActiveContextLength(),
+                        maxTokens = live?.maxContext ?: ServiceContainer.unified.getActiveContextLength(),
                         cacheStats = ServiceContainer.unified.sessionCacheStats(sessionId),
-                        summaries = summaries
+                        summaries = summaries,
+                        companion = live?.companionSnapshotMode == true,
+                        sentAt = live?.sentAt,
+                        reportedInput = live?.reportedInput
                     )
                 )
             }
@@ -209,7 +215,14 @@ fun ContextAnalysisScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    item { ContextCapacityCard(data.usedTokens, data.maxTokens) }
+                    item { ContextCapacityCard(data.usedTokens, data.maxTokens,
+                        if (data.companion) "上次实际发送 · 分类估算" else null) }
+                    if (data.companion) item {
+                        Text(if (data.sentAt == null) "还没有新版请求记录。完成一次聊天后，这里会显示实际发送内容的分类估算。"
+                            else "请求时间：${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(data.sentAt))}\n" +
+                                (data.reportedInput?.let { "服务商返回输入用量：$it Token" } ?: "服务商未返回本次输入用量"),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     item { ContextCacheHitRateCard(data.cacheStats) }
                     item {
                         Column {
@@ -220,7 +233,8 @@ fun ContextAnalysisScreen(
                             )
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                stringResource(R.string.chat_context_analysis_basis),
+                                if (data.companion) "按上次完成的模型请求分类估算；包含该请求实际带入的资料。图片与服务商分词可能产生额外差异，不代表下一次请求。"
+                                else stringResource(R.string.chat_context_analysis_basis),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -262,7 +276,7 @@ fun ContextAnalysisScreen(
 }
 
 @Composable
-private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?) {
+private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?, title: String? = null) {
     val progress = maxTokens
         ?.takeIf { it > 0 }
         ?.let { (usedTokens.toFloat() / it).coerceIn(0f, 1f) }
@@ -295,7 +309,7 @@ private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?) {
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.chat_context_analysis_current),
+                    title ?: stringResource(R.string.chat_context_analysis_current),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )

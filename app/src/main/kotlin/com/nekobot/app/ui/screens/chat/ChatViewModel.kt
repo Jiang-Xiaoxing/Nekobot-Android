@@ -1100,7 +1100,7 @@ class ChatViewModel : BaseViewModel() {
                 // 检查是否需要发送通知（用户不在聊天界面时）
                 trySendNotification(streamingContent.toString())
                 // 如果剧情模式开启，显示骨架并加载新剧情选项
-                if (_session.value?.plotMode == true) {
+                if ((_session.value?.companionMode != true && _session.value?.plotMode == true)) {
                     _plotChoices.value = emptyList()
                     _plotChoicesLoading.value = true
                     if (isLocalMode) {
@@ -1158,7 +1158,7 @@ class ChatViewModel : BaseViewModel() {
                 // 这里补一次 DB 刷新，候选下标与进度卡片才会立刻正确。
                 finishVariantRegenerate(alreadyReloaded = false)
                 // 非流式回复也需刷新剧情选项
-                if (_session.value?.plotMode == true) {
+                if ((_session.value?.companionMode != true && _session.value?.plotMode == true)) {
                     _plotChoices.value = emptyList()
                     _plotChoicesLoading.value = true
                     ServiceContainer.applicationScope.launch {
@@ -1456,7 +1456,7 @@ class ChatViewModel : BaseViewModel() {
                 // 会话模式就绪后重试一次：进入会话时可能已有排队的待发送消息
                 maybeAutoSendQueuedMessage()
                 // 剧情模式：立即标记加载中，避免输入框先出现再消失的滑动动画
-                if (it?.plotMode == true) {
+                if ((it?.companionMode != true && it?.plotMode == true)) {
                     _plotChoicesLoading.value = true
                     ServiceContainer.applicationScope.launch {
                         if (isLocalMode) loadLocalPlotChoices() else loadPlotChoices()
@@ -3017,7 +3017,7 @@ class ChatViewModel : BaseViewModel() {
         generationStopRequested = false
         _sending.value = true
         // 如果剧情模式开启，清除旧选项并显示骨架（仅服务器模式）
-        if (!isLocalMode && _session.value?.plotMode == true) {
+        if (!isLocalMode && (_session.value?.companionMode != true && _session.value?.plotMode == true)) {
             _plotChoices.value = emptyList()
             _plotChoicesLoading.value = true
         }
@@ -3560,8 +3560,9 @@ class ChatViewModel : BaseViewModel() {
      * 避免 plotToggle API 要求会话已加载到 server.sessions 内存字典的限制。
      */
     fun togglePlotMode() {
+        if (_session.value?.companionMode == true) return
         val sid = currentSessionId.ifBlank { return }
-        val current = _session.value?.plotMode == true
+        val current = (_session.value?.companionMode != true && _session.value?.plotMode == true)
         // 乐观更新：先翻转 UI 状态，再调用 API；API 失败时回滚并 Toast 提示
         _session.value = _session.value?.copy(plotMode = !current)
         if (current) {
@@ -3609,7 +3610,7 @@ class ChatViewModel : BaseViewModel() {
      */
     fun togglePlotRealTimeSync() {
         val sid = currentSessionId.ifBlank { return }
-        if (_session.value?.plotMode != true) return
+        if (_session.value?.companionMode == true || _session.value?.plotMode != true) return
         val current = _session.value?.plotRealTimeSync == true
         // 乐观更新：先翻转 UI，再调用 API；API 失败回滚
         _session.value = _session.value?.copy(plotRealTimeSync = !current)
@@ -4102,7 +4103,7 @@ class ChatViewModel : BaseViewModel() {
                 try {
                     val repo = com.nekobot.app.ServiceContainer.localRepository
                     val session = repo.getSession(currentSessionId)
-                    if (session?.plotMode == true) {
+                    if ((session?.companionMode != true && session?.plotMode == true)) {
                         // 调用本地重新生成（复用 LocalRepository 的 regeneratePlotChoices）
                         val flow = repo.regeneratePlotChoicesLocal(currentSessionId)
                         flow.collect { event ->

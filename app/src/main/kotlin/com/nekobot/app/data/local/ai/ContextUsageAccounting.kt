@@ -22,7 +22,10 @@ enum class ContextUsagePart {
     USER_MESSAGES,
     ASSISTANT_MESSAGES,
     TOOL_TRAJECTORY,
-    OTHER_MESSAGES
+    OTHER_MESSAGES,
+    CORE_MEMORY,
+    RECALLED_MEMORY,
+    AUXILIARY_CONTEXT
 }
 
 data class ContextUsagePartTokens(

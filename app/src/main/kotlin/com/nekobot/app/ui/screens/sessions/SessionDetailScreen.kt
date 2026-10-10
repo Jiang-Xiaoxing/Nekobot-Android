@@ -1161,7 +1161,7 @@ fun SessionDetailScreen(
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text("高级设置", style = MaterialTheme.typography.titleSmall)
-                                        Text("剧情、状态与调试信息", style = MaterialTheme.typography.bodySmall,
+                                        Text("模型与调试信息", style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Icon(Icons.Filled.ChevronRight, null)
@@ -1427,6 +1427,7 @@ fun SessionDetailScreen(
                                 }
                             }
 
+                            if (!singleSessionRole) {
                             // === 5. 角色运行时状态 ===
                             s.characterRuntimeSnapshot?.takeIf { it.isJsonObject }?.asJsonObject?.let { snap ->
                                 GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -1583,6 +1584,7 @@ fun SessionDetailScreen(
                                 }
                             }
 
+                            }
                         }
 
                         if (showMain) {
@@ -1796,6 +1798,25 @@ fun SessionDetailScreen(
                         }
 
                         if (showAdvanced) {
+                            if (singleSessionRole) {
+                                var effort by remember(sessionId) { mutableStateOf(com.nekobot.app.ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }
+                                var effortMenu by remember { mutableStateOf(false) }
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = "思考强度")
+                                    Text("只影响这个会话，模型需要支持对应选项。", style = MaterialTheme.typography.bodySmall)
+                                    Box {
+                                        OutlinedButton(onClick = { effortMenu = true }) { Text(effort.displayName) }
+                                        DropdownMenu(expanded = effortMenu, onDismissRequest = { effortMenu = false }) {
+                                            com.nekobot.app.data.model.ReasoningEffort.entries.forEach { option ->
+                                                DropdownMenuItem(text = { Text(option.displayName) }, onClick = {
+                                                    com.nekobot.app.ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
+                                                    effort = option; effortMenu = false
+                                                })
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             // === 7. 只读元信息 ===
                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                 SectionHeader(title = metaTitle)

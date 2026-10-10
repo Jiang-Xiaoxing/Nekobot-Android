@@ -1586,6 +1586,10 @@ class LocalRepository(
     internal suspend fun deleteCompanionTransferBackup(jobId: String) = companionTransfer.deleteBackup(jobId)
     internal suspend fun deleteCompanionTransferRecord(jobId: String) = companionTransfer.deleteRecord(jobId)
 
+    internal fun companionReasoningEffort(sessionId: String) = ServiceContainer.prefs.companionReasoningEffort(db.dbName, sessionId)
+    internal fun setCompanionReasoningEffort(sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) =
+        ServiceContainer.prefs.setCompanionReasoningEffort(db.dbName, sessionId, value)
+
     internal suspend fun companionConversionModels(): List<CompanionConversionModel> = aiModelDao.listAll()
         .filter { it.enabled && it.purpose in setOf("chat", "compression") }.map { model ->
             CompanionConversionModel(model.id, model.name, model.provider?.takeIf { it.isNotBlank() }
@@ -2545,7 +2549,7 @@ class LocalRepository(
      * 已绑定角色且未归档。
      */
     private fun lifeSimEligible(session: LocalSessionEntity): Boolean =
-        session.plotMode &&
+        !session.companionMode && session.plotMode &&
             session.plotRealTimeSync &&
             !session.archived &&
             (!session.sessionMode.equals("agent", ignoreCase = true) || session.inheritCharacter) &&
@@ -5925,6 +5929,7 @@ class LocalRepository(
     }
 
     suspend fun clearMessages(sessionId: String) = withContext(Dispatchers.IO) {
+        require(sessionDao.getById(sessionId)?.companionMode != true) { "单会话角色不提供清空聊天功能" }
         activeExperienceBackfills[sessionId]?.cancel()
         val lock = experienceBackfillLocks.getOrPut(sessionId) { Mutex() }
         lock.withLock {
@@ -6842,7 +6847,7 @@ class LocalRepository(
             userId = "local-user",
             metadata = buildMap {
                 put("session_mode", session.sessionMode)
-                if (session.plotMode) put("plot_mode", true)
+                if (!session.companionMode && !session.companionMode && session.plotMode) put("plot_mode", true)
                 if (session.plotRealTimeSync) put("plot_realtime_sync", true)
                 if (session.inheritCharacter) put(META_INHERIT_CHARACTER, true)
                 put("auto_state_interval", session.autoStateInterval)
@@ -6854,14 +6859,14 @@ class LocalRepository(
         val ctx = com.nekobot.app.data.local.ai.PipelineContext(chatRequest)
         ctx.metadata["session_mode"] = session.sessionMode
         if (session.inheritCharacter) ctx.metadata[META_INHERIT_CHARACTER] = true
-        if (session.plotMode) ctx.metadata["plot_mode"] = true
+        if (!session.companionMode && !session.companionMode && session.plotMode) ctx.metadata["plot_mode"] = true
         if (session.plotRealTimeSync) ctx.metadata["plot_realtime_sync"] = true
         ctx.metadata["auto_state_interval"] = session.autoStateInterval
         if (disabledKeys.isNotEmpty()) ctx.metadata["disabled_prompt_keys"] = disabledKeys
         session.senderName?.takeIf { it.isNotBlank() }?.let { ctx.metadata["sender_name"] = it }
         session.userPersona?.takeIf { !session.companionMode && it.isNotBlank() }?.let { ctx.metadata["user_persona"] = it }
 
-        if (session.sessionMode.equals("agent", ignoreCase = true)) {
+        if (!session.companionMode && session.sessionMode.equals("agent", ignoreCase = true)) {
             val promptLanguage = appContext?.let {
                 LocaleHelper.getEffectiveLocale(it, ServiceContainer.prefs.language).language
             } ?: Locale.getDefault().language
@@ -7507,7 +7512,7 @@ class LocalRepository(
             askUserQuestionEmitter = { request -> emitAskUserQuestion(request) },
             pluginInstallConfirmationManager = pluginInstallConfirmationManager,
             pluginInstallConfirmationEmitter = { request -> emitPluginInstallConfirmation(request) },
-            mcpToolDefinitions = prepareMcpAgentTools(),
+            mcpToolDefinitions = if (session.companionMode) emptyList() else prepareMcpAgentTools(),
             sessionToolFilter = { definitions -> filterDefinitionsForSession(sessionId, definitions) },
             // 父运行结束后，后台子代理的进度卡片经唤醒事件流继续送达聊天界面。
             backgroundEventForwarder = { event ->
@@ -7530,7 +7535,7 @@ class LocalRepository(
             attachments = attachments,
             metadata = buildMap {
                 put("session_mode", session.sessionMode)
-                if (session.plotMode) put("plot_mode", true)
+                if (!session.companionMode && !session.companionMode && session.plotMode) put("plot_mode", true)
                 if (session.plotRealTimeSync) put("plot_realtime_sync", true)
                 if (session.inheritCharacter) put(META_INHERIT_CHARACTER, true)
                 put("auto_state_interval", session.autoStateInterval)
@@ -7548,7 +7553,7 @@ class LocalRepository(
         ctx.metadata["session_mode"] = session.sessionMode
         if (session.inheritCharacter) ctx.metadata[META_INHERIT_CHARACTER] = true
         ctx.metadata.putAll(internalMetadata)
-        if (session.sessionMode.equals("agent", ignoreCase = true)) {
+        if (!session.companionMode && session.sessionMode.equals("agent", ignoreCase = true)) {
             val promptLanguage = appContext?.let {
                 LocaleHelper.getEffectiveLocale(it, ServiceContainer.prefs.language).language
             } ?: Locale.getDefault().language
@@ -7614,7 +7619,7 @@ class LocalRepository(
         var currentPlotNode: com.nekobot.app.data.local.ai.PlotNode? = null
 
         // 标记剧情模式（管线层使用）
-        if (session.plotMode) {
+        if (!session.companionMode && !session.companionMode && session.plotMode) {
             ctx.metadata["plot_mode"] = true
         }
         // 禁用列表也同步到 ctx.metadata（供 phasePrepareContext 的管线栈使用）
@@ -7672,7 +7677,7 @@ class LocalRepository(
                         val tools = if (allowTools && session.sessionMode.equals("agent", ignoreCase = true)) {
                             buildSessionAgentToolDefinitions(
                                 sessionId = sessionId,
-                                mcpTools = prepareMcpAgentTools(),
+                                mcpTools = if (session.companionMode) emptyList() else prepareMcpAgentTools(),
                                 recallEnabled = session.longConversationEnabled && session.inheritCharacter
                             )
                         } else {
@@ -7779,7 +7784,7 @@ class LocalRepository(
             // 导致故事地图始终为空或无法形成边。
             if (
                 !generationController.isStopped &&
-                session.plotMode &&
+                !session.companionMode && session.plotMode &&
                 character != null &&
                 ctx.finalContent.isNotBlank()
             ) {
@@ -7853,7 +7858,7 @@ class LocalRepository(
             }
 
             // Phase 6: 剧情模式 → 生成选项
-            if (!generationController.isStopped && session.plotMode) {
+            if (!generationController.isStopped && !session.companionMode && session.plotMode) {
                 try {
                     val plotGen = com.nekobot.app.data.local.ai.PlotChoiceGenerator(
                         aiClient = aiClient,
@@ -8617,7 +8622,7 @@ class LocalRepository(
                     emit(RealtimeEvent.Error("会话不存在"))
                     return@flow
                 }
-            if (!session.plotMode) {
+            if (session.companionMode || !session.plotMode) {
                 emit(RealtimeEvent.Error("未开启剧情模式"))
                 return@flow
             }
@@ -10688,6 +10693,13 @@ ${AiOutputLanguage.directive()}
         val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
         val run = agentRunDao.getBySession(sessionId)
 
+        if (session?.companionMode == true) {
+            val snapshot = ServiceContainer.prefs.companionRequestSnapshot(db.dbName, sessionId)
+            return@withContext AgentLiveContextUsage(snapshot?.breakdown ?: ContextUsageBreakdown(emptyList()),
+                run?.stage, run?.lastToolName, run?.completedToolCalls ?: 0,
+                run?.status == AgentRunStatus.RUNNING, companionSnapshotMode = true,
+                sentAt = snapshot?.sentAt, reportedInput = snapshot?.reportedInput, maxContext = snapshot?.maxContext)
+        }
         val durableToolHistory = if (isAgentSession) loadDurableToolHistory(sessionId) else emptyList()
         val toolDefinitions = if (isAgentSession) sessionAgentToolDefinitions(sessionId) else emptyList()
         val breakdown = buildContextUsageBreakdown(
@@ -13946,7 +13958,11 @@ data class AgentLiveContextUsage(
     val stage: String?,
     val lastToolName: String?,
     val completedToolCalls: Int,
-    val hasActiveRun: Boolean
+    val hasActiveRun: Boolean,
+    val companionSnapshotMode: Boolean = false,
+    val sentAt: Long? = null,
+    val reportedInput: Int? = null,
+    val maxContext: Int? = null
 ) {
     /** 计入系统提示词、工具定义与工具轨迹后的总用量。 */
     val totalTokens: Long get() = breakdown.totalTokens.toLong()

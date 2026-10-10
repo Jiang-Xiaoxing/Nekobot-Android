@@ -1109,7 +1109,9 @@ internal class LocalPipelineCallbacks(
             val recallRequest = recallGuard()?.let { guard -> kotlinx.coroutines.runBlocking {
                 guard.prepare("main", messages, tools, activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
             } }
-            val requestMessages = recallRequest?.messages ?: messages
+            val accountingMessages = recallRequest?.messages ?: messages
+            val requestMessages = accountingMessages.map(CompanionRequestUsage::clean)
+            val requestStartedAt = System.currentTimeMillis()
             val requestTools = recallRequest?.tools ?: tools
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
@@ -1183,6 +1185,12 @@ internal class LocalPipelineCallbacks(
                 throw RuntimeException(result.error)
             }
 
+            if (session.companionMode && db.isOpen) {
+                val used = modelQueue.firstOrNull { it.id == result.usedModelId } ?: activeModel
+                com.nekobot.app.ServiceContainer.prefs.saveCompanionRequestSnapshot(db.dbName, session.id,
+                    CompanionRequestUsage.snapshot(accountingMessages, requestTools, used.maxContextLength ?: 32000,
+                        result.usage, requestStartedAt))
+            }
             // 模型调用完成 → 触发 model.after_call hook
             triggerModelAfterCallHook(ctx, result.usedModelName ?: activeModel.name)
 
@@ -1217,7 +1225,8 @@ internal class LocalPipelineCallbacks(
 
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
-            val requestMessages = messages.map { it - CompanionRecallBudget.SOURCE_META }
+            val requestMessages = messages.map(CompanionRequestUsage::clean)
+            val requestStartedAt = System.currentTimeMillis()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
                 activeModel.maxTokens?.let { put("max_tokens", it) }
@@ -1280,6 +1289,11 @@ internal class LocalPipelineCallbacks(
                 streamRelay.flush()
             }
             streamError?.let { throw RuntimeException(it) }
+            if (session.companionMode && db.isOpen) {
+                val used = modelQueue.firstOrNull { it.model == usedActualModel } ?: activeModel
+                com.nekobot.app.ServiceContainer.prefs.saveCompanionRequestSnapshot(db.dbName, session.id,
+                    CompanionRequestUsage.snapshot(messages, emptyList(), used.maxContextLength ?: 32000, usage, requestStartedAt))
+            }
             val chunks = buildList<Map<String, Any>> {
                 if (fullReasoning.isNotEmpty()) {
                     add(mapOf("thinking_content" to fullReasoning.toString(), "_relayed" to true))
@@ -1739,6 +1753,9 @@ internal class LocalPipelineCallbacks(
         args: Map<String, Any>,
         toolContext: Map<String, Any>
     ): Map<String, Any> {
+        if (session.companionMode && toolName !in FusedCompanionTools.allowedNames) {
+            return mapOf("success" to false, "error" to "此工具不属于单会话角色的陪伴能力")
+        }
         val owner = toolContext[SUBAGENT_TASK_CONTEXT_KEY] as? String
         val guard = recallGuard(owner)
         if (guard != null && toolName in CompanionRecallBudget.readNames) {

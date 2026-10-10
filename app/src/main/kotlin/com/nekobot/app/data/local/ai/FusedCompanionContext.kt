@@ -93,7 +93,7 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
 
     // Most chat APIs only offer user/assistant/system roles; the explicit wrapper preserves
     // provenance without promoting dynamic retrieved text into the system instruction prefix.
-    private fun auxiliaryMessage(text: String): Map<String, Any> = mapOf("role" to "user", "content" to text)
+    private fun auxiliaryMessage(text: String): Map<String, Any> = CompanionRequestUsage.auxiliary(text)
     // Dates remain available, but never masquerade as the assistant's own response format.
     private fun historyMetadata(rows: List<LocalMessageEntity>, cachedIds: Set<String>): Map<String, String> {
         var previousDay: java.time.LocalDate? = null

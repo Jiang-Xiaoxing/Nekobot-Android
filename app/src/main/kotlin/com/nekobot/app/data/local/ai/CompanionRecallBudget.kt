@@ -66,7 +66,7 @@ internal class CompanionRecallBudget(
         val outbound = messages.map { it - SOURCE_META }
         // 与工具循环的 20% 输出预留一致，避免读完后又被循环的总上下文检查拒绝。
         val inputLimit = minOf(maxContext - outputReserve, (maxContext * 0.8).toInt())
-        val room = (inputLimit - estimateLocalMessagesTokens(outbound) -
+        val room = (inputLimit - estimateLocalMessagesTokens(outbound.map(CompanionRequestUsage::clean)) -
             estimateLocalTextTokens(gson.toJson(tools)) - 512).coerceAtLeast(0)
         requests[actor] = Request(UUID.randomUUID().toString(), visible, room)
         val exhausted = state.rounds >= state.settings.rounds || state.settings.tokens - state.tokens < MIN_RESULT_TOKENS || room < MIN_RESULT_TOKENS

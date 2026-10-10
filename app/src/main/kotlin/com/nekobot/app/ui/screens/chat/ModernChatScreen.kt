@@ -50,6 +50,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -776,8 +778,6 @@ private fun ModernChatComposer(
         onDelayInputContentChanged(input.isNotBlank())
     }
     val companionChat = session?.companionMode == true
-    var companionSettingsPage by remember(sessionId) { mutableStateOf(0) }
-    LaunchedEffect(showCompanionSettings) { if (showCompanionSettings) companionSettingsPage = 0 }
     var panelExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 表情包选择面板开关
     var stickerPickerOpen by remember { mutableStateOf(false) }
@@ -1180,7 +1180,7 @@ private fun ModernChatComposer(
                 if (isAgentSession) {
                     val liveUsage = ServiceContainer.unified.agentLiveContextUsage(sessionId)
                     // 服务端模式没有本地工具信息，构成回退为按消息估算
-                    val liveBreakdown = liveUsage.breakdown.takeIf { !it.isEmpty }
+                    val liveBreakdown = liveUsage.breakdown.takeIf { liveUsage.companionSnapshotMode || !it.isEmpty }
                     usedTokens = if (liveBreakdown != null) {
                         liveUsage.totalTokens
                     } else {
@@ -1256,7 +1256,7 @@ private fun ModernChatComposer(
                 .navigationBarsPadding()
                 .imePadding()
         ) {
-            if (plotChoicesLoading || plotChoices.isNotEmpty()) {
+            if (!companionChat && (plotChoicesLoading || plotChoices.isNotEmpty())) {
                 ModernPlotChoices(
                     loading = plotChoicesLoading,
                     choices = plotChoices,
@@ -1355,63 +1355,25 @@ private fun ModernChatComposer(
                 }
             }
             if (companionChat && showCompanionSettings) {
-                CompanionChatSheet(
-                    title = stringResource(if (companionSettingsPage == 0) R.string.companion_chat_settings
-                        else R.string.companion_chat_tools),
-                    onDismiss = onDismissCompanionSettings,
-                    onBack = if (companionSettingsPage > 0) ({ companionSettingsPage-- }) else null,
-                    scrollable = companionSettingsPage != 2
-                ) {
-                    when (companionSettingsPage) {
-                        0 -> {
-                            CompanionSettingsRow(stringResource(R.string.companion_chat_details), Icons.Filled.Person) {
-                                onDismissCompanionSettings(); onOpenCompanionDetail()
-                            }
-                            CompanionSettingsRow(stringResource(R.string.companion_chat_search), Icons.Filled.Search) {
-                                onDismissCompanionSettings(); showSearch = true
-                            }
-                            CompanionSettingsRow(stringResource(R.string.companion_chat_favorites), Icons.Filled.Star) {
-                                onDismissCompanionSettings(); showFavorites = true
-                            }
-                            CompanionSettingsRow(stringResource(R.string.chat_jump_to_latest), Icons.Filled.KeyboardDoubleArrowDown) {
-                                onDismissCompanionSettings(); onJumpToLatest()
-                            }
-                            HorizontalDivider(Modifier.padding(horizontal = 20.dp))
-                            CompanionSettingsRow(stringResource(R.string.companion_chat_tools), Icons.Filled.Settings,
-                                subtitle = stringResource(R.string.companion_chat_tools_hint)) { companionSettingsPage = 1 }
-                            Spacer(Modifier.height(32.dp))
-                            CompanionSettingsRow(stringResource(R.string.companion_chat_clear), Icons.Filled.Delete,
-                                enabled = !replyBusy && !sessionGenerating && messageCount > 0, destructive = true) {
-                                onDismissCompanionSettings(); showClearConfirm = true
-                            }
+                CompanionChatSheet(title = stringResource(R.string.companion_chat_settings),
+                    onDismiss = onDismissCompanionSettings) {
+                    CompanionSettingsRow(stringResource(R.string.companion_chat_details), Icons.Filled.Person) {
+                        onDismissCompanionSettings(); onOpenCompanionDetail()
+                    }
+                    CompanionSettingsRow(stringResource(R.string.companion_chat_search), Icons.Filled.Search) {
+                        onDismissCompanionSettings(); showSearch = true
+                    }
+                    CompanionSettingsRow(stringResource(R.string.companion_chat_favorites), Icons.Filled.Star) {
+                        onDismissCompanionSettings(); showFavorites = true
+                    }
+                    CompanionSettingsRow("聊天用量", Icons.Filled.Info,
+                        subtitle = "查看上次请求带入了哪些内容") {
+                        onDismissCompanionSettings(); onOpenContextAnalysis()
+                    }
+                    if (!session?.archiveSessionId.isNullOrBlank()) {
+                        CompanionSettingsRow(stringResource(R.string.chat_view_archive), Icons.Filled.Folder) {
+                            onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.VIEW_ARCHIVE)
                         }
-                        1 -> {
-                            CompanionSettingsRow(stringResource(R.string.companion_chat_more_tools), Icons.Filled.Settings) {
-                                companionSettingsPage = 2
-                            }
-                            CompanionSettingsRow(stringResource(R.string.chat_browser), Icons.Filled.Public,
-                                subtitle = stringResource(R.string.companion_chat_browser_hint)) {
-                                onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.BROWSER)
-                            }
-                            if (ServiceContainer.prefs.isLocalMode) {
-                                CompanionSettingsRow(stringResource(R.string.chat_sandbox_terminal), Icons.Filled.Terminal,
-                                    subtitle = stringResource(R.string.companion_chat_terminal_hint)) {
-                                    onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.TERMINAL)
-                                }
-                            }
-                            CompanionSettingsRow(stringResource(R.string.chat_story_graph), Icons.Filled.AccountTree) {
-                                onDismissCompanionSettings(); onOpenCompanionStory()
-                            }
-                            if (!session?.archiveSessionId.isNullOrBlank()) {
-                                CompanionSettingsRow(stringResource(R.string.chat_extract_archive), Icons.Filled.Folder) {
-                                    onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.RESTORE_ARCHIVE)
-                                }
-                                CompanionSettingsRow(stringResource(R.string.chat_view_archive), Icons.Filled.Folder) {
-                                    onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.VIEW_ARCHIVE)
-                                }
-                            }
-                        }
-                        else -> actionPanel()
                     }
                 }
             }
@@ -1454,7 +1416,7 @@ private fun ModernChatComposer(
                                 pendingPlotChoiceId = null
                                 pendingAttachments = emptyList()
                                 closePanel()
-                                onSend(text, choiceId, attachments, reasoningEffort)
+                                onSend(text, null, attachments, ServiceContainer.localRepository.companionReasoningEffort(sessionId))
                             }
                         )
                         AnimatedVisibility(visible = panelExpanded) {
@@ -1794,6 +1756,7 @@ private fun ModernChatComposer(
 
     if (showSearch) {
         ModernSearchDialog(
+            allowRoleFilter = companionChat,
             messages = messages,
             query = searchQuery,
             onQueryChange = { searchQuery = it },
@@ -3257,17 +3220,19 @@ private fun ModernMessageListDialog(
 
 @Composable
 private fun ModernSearchDialog(
+    allowRoleFilter: Boolean = false,
     messages: List<Message>,
     query: String,
     onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onResultClick: (Message) -> Unit
 ) {
-    val results = remember(query, messages) {
+    var onlyMine by remember { mutableStateOf(false) }
+    val results = remember(query, messages, onlyMine) {
         val normalized = query.trim().lowercase()
-        if (normalized.isBlank()) emptyList()
+        if (normalized.isBlank() && !onlyMine) emptyList()
         else messages.filter {
-            it.role != "system" && it.displayContent.lowercase().contains(normalized)
+            it.role != "system" && (!onlyMine || it.role == "user") && it.displayContent.lowercase().contains(normalized)
         }.take(80)
     }
     NekoDialog(
@@ -3283,9 +3248,10 @@ private fun ModernSearchDialog(
             placeholder = { Text(stringResource(R.string.chat_search_placeholder)) },
             singleLine = true
         )
+        if (allowRoleFilter) FilterChip(selected = onlyMine, onClick = { onlyMine = !onlyMine }, label = { Text("只看我发送的") })
         Spacer(Modifier.height(12.dp))
         when {
-            query.isBlank() -> Text(
+            query.isBlank() && !onlyMine -> Text(
                 stringResource(R.string.chat_search_keyword_hint),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp)
