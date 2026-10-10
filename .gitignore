@@ -19,6 +19,23 @@ captures/
 # Local design brainstorming previews
 .superpowers/
 
+# Local planning, delivery records and one-off manual fixtures
+/docs/superpowers/
+/scripts/generate_companion_conversion_fixture.py
+
+# Private local build inputs and outputs
+/.env
+/.env.*
+!/.env.example
+/personal-build.json
+/*.jks
+/*.keystore
+/*.apk
+/*.aab
+/*.log
+/*.bak
+/*.tmp
+
 # OS
 .DS_Store
 Thumbs.db
