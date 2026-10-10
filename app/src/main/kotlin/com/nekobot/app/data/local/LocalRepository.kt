@@ -6848,7 +6848,7 @@ class LocalRepository(
                 put("auto_state_interval", session.autoStateInterval)
                 if (disabledKeys.isNotEmpty()) put("disabled_prompt_keys", disabledKeys)
                 session.senderName?.takeIf { it.isNotBlank() }?.let { put("sender_name", it) }
-                session.userPersona?.takeIf { it.isNotBlank() }?.let { put("user_persona", it) }
+                session.userPersona?.takeIf { !session.companionMode && it.isNotBlank() }?.let { put("user_persona", it) }
             }
         )
         val ctx = com.nekobot.app.data.local.ai.PipelineContext(chatRequest)
@@ -6859,7 +6859,7 @@ class LocalRepository(
         ctx.metadata["auto_state_interval"] = session.autoStateInterval
         if (disabledKeys.isNotEmpty()) ctx.metadata["disabled_prompt_keys"] = disabledKeys
         session.senderName?.takeIf { it.isNotBlank() }?.let { ctx.metadata["sender_name"] = it }
-        session.userPersona?.takeIf { it.isNotBlank() }?.let { ctx.metadata["user_persona"] = it }
+        session.userPersona?.takeIf { !session.companionMode && it.isNotBlank() }?.let { ctx.metadata["user_persona"] = it }
 
         if (session.sessionMode.equals("agent", ignoreCase = true)) {
             val promptLanguage = appContext?.let {
@@ -6921,7 +6921,7 @@ class LocalRepository(
             }
         }
 
-        if (character != null && !session.customPrompts.isNullOrBlank()) {
+        if (!session.companionMode && character != null && !session.customPrompts.isNullOrBlank()) {
             try {
                 val type = object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type
                 val customPrompts = gson.fromJson<List<Map<String, Any>>>(session.customPrompts, type)
@@ -7537,9 +7537,9 @@ class LocalRepository(
                 put("reasoning_effort", reasoningEffort.wireValue)
                 if (disabledKeys.isNotEmpty()) put("disabled_prompt_keys", disabledKeys)
                 // senderName 是 AI 扮演的角色名；userPersona 是本会话玩家身份描述（含姓名/背景）。
-                // userPersona 供 AIPipeline 注入 PromptStack 的 user.persona 项、AutoMemory 识别玩家姓名。
+                // 单会话角色通过记忆维护玩家资料，不再提供旧会话人设；其他模式仍正常使用。
                 session.senderName?.takeIf { it.isNotBlank() }?.let { put("sender_name", it) }
-                session.userPersona?.takeIf { it.isNotBlank() }?.let { put("user_persona", it) }
+                session.userPersona?.takeIf { !session.companionMode && it.isNotBlank() }?.let { put("user_persona", it) }
                 putAll(internalMetadata)
             }
         )
@@ -7626,11 +7626,11 @@ class LocalRepository(
         // senderName（角色名）/ userPersona（玩家身份描述）同步到 ctx.metadata。
         // AIPipeline 读 user_persona 注入 PromptStack；AutoMemory 读 user_persona 识别玩家姓名。
         session.senderName?.takeIf { it.isNotBlank() }?.let { ctx.metadata["sender_name"] = it }
-        session.userPersona?.takeIf { it.isNotBlank() }?.let { ctx.metadata["user_persona"] = it }
+        session.userPersona?.takeIf { !session.companionMode && it.isNotBlank() }?.let { ctx.metadata["user_persona"] = it }
 
-        // 注入会话自定义提示词
+        // 单会话角色从实际相处形成习惯，不再注入旧会话自定义提示词；旧值保留。
         val customPromptsRaw = session.customPrompts
-        if (character != null && !customPromptsRaw.isNullOrBlank()) {
+        if (!session.companionMode && character != null && !customPromptsRaw.isNullOrBlank()) {
             try {
                 val type = object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type
                 @Suppress("UNCHECKED_CAST")

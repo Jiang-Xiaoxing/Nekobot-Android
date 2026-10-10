@@ -1052,7 +1052,7 @@ fun SessionDetailScreen(
                     session?.let { s ->
                         if (advancedPage) {
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("提示词、剧情与状态设置放在这里。修改后，点右上角保存。",
+                            Text("剧情与状态设置放在这里。修改后，点右上角保存。",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (showMain) {
@@ -1161,7 +1161,7 @@ fun SessionDetailScreen(
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text("高级设置", style = MaterialTheme.typography.titleSmall)
-                                        Text("提示词、剧情、状态与调试信息", style = MaterialTheme.typography.bodySmall,
+                                        Text("剧情、状态与调试信息", style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Icon(Icons.Filled.ChevronRight, null)
@@ -1170,25 +1170,27 @@ fun SessionDetailScreen(
                         }
 
                         if (showAdvanced) {
-                            // === 3. 系统提示词 ===
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(
-                                    title = systemPromptTitle,
-                                    trailing = {
-                                        IconButton(onClick = { clipboard.setText(AnnotatedString(systemPrompt)) }) {
-                                            Icon(Icons.Filled.ContentCopy, contentDescription = copyDesc, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                            if (!singleSessionRole) {
+                                // === 3. 系统提示词 ===
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(
+                                        title = systemPromptTitle,
+                                        trailing = {
+                                            IconButton(onClick = { clipboard.setText(AnnotatedString(systemPrompt)) }) {
+                                                Icon(Icons.Filled.ContentCopy, contentDescription = copyDesc, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                            }
                                         }
-                                    }
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedTextField(
-                                    value = systemPrompt,
-                                    onValueChange = { vm.systemPrompt.value = it },
-                                    label = { Text("System Prompt") },
-                                    minLines = 3,
-                                    maxLines = 8,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = systemPrompt,
+                                        onValueChange = { vm.systemPrompt.value = it },
+                                        label = { Text("System Prompt") },
+                                        minLines = 3,
+                                        maxLines = 8,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
 
                             // === 3.4 运行时系统提示词（composed_system_prompt，只读） ===
@@ -1222,37 +1224,39 @@ fun SessionDetailScreen(
                                 }
                             }
 
-                            // === 3.5 自定义提示词（custom_prompts，可编辑） ===
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(
-                                    title = customPromptsTitle,
-                                    trailing = {
-                                        Row {
-                                            IconButton(onClick = { vm.addCustomPrompt() }) {
-                                                Icon(Icons.Filled.Add, contentDescription = addDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                            }
-                                            IconButton(onClick = { vm.saveCustomPrompts() }) {
-                                                Icon(Icons.Filled.Save, contentDescription = savePromptsDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            if (!singleSessionRole) {
+                                // === 3.5 自定义提示词（custom_prompts，可编辑） ===
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(
+                                        title = customPromptsTitle,
+                                        trailing = {
+                                            Row {
+                                                IconButton(onClick = { vm.addCustomPrompt() }) {
+                                                    Icon(Icons.Filled.Add, contentDescription = addDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                                }
+                                                IconButton(onClick = { vm.saveCustomPrompts() }) {
+                                                    Icon(Icons.Filled.Save, contentDescription = savePromptsDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                                }
                                             }
                                         }
-                                    }
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                if (customPrompts.isEmpty()) {
-                                    Text(
-                                        noCustomPromptsHint,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                } else {
-                                    customPrompts.forEachIndexed { idx, item ->
-                                        CustomPromptEditor(
-                                            item = item,
-                                            onTitleChange = { vm.updateCustomPrompt(idx, it, item.content) },
-                                            onContentChange = { vm.updateCustomPrompt(idx, item.title, it) },
-                                            onRemove = { vm.removeCustomPrompt(idx) }
+                                    Spacer(Modifier.height(8.dp))
+                                    if (customPrompts.isEmpty()) {
+                                        Text(
+                                            noCustomPromptsHint,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        if (idx < customPrompts.lastIndex) Spacer(Modifier.height(8.dp))
+                                    } else {
+                                        customPrompts.forEachIndexed { idx, item ->
+                                            CustomPromptEditor(
+                                                item = item,
+                                                onTitleChange = { vm.updateCustomPrompt(idx, it, item.content) },
+                                                onContentChange = { vm.updateCustomPrompt(idx, item.title, it) },
+                                                onRemove = { vm.removeCustomPrompt(idx) }
+                                            )
+                                            if (idx < customPrompts.lastIndex) Spacer(Modifier.height(8.dp))
+                                        }
                                     }
                                 }
                             }
@@ -1385,39 +1389,41 @@ fun SessionDetailScreen(
                         }
 
                         if (showAdvanced) {
-                            // === 4.5 用户人设 / 背景 ===
-                            // 本会话玩家名称 + 背景提示词，注入到 PromptStack 的 user.persona 项
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = userPersonaLabel)
-                                Spacer(Modifier.height(8.dp))
-                                var showUserPersonaDialog by remember { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        userPersonaLabel,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    OutlinedButton(onClick = { showUserPersonaDialog = true }) {
+                            if (!singleSessionRole) {
+                                // === 4.5 用户人设 / 背景 ===
+                                // 本会话玩家名称 + 背景提示词，注入到 PromptStack 的 user.persona 项
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = userPersonaLabel)
+                                    Spacer(Modifier.height(8.dp))
+                                    var showUserPersonaDialog by remember { mutableStateOf(false) }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
-                                            text = if (userPersona.isBlank()) userPersonaUnset
-                                                   else userPersonaSetFmt.format(userPersona.length),
-                                            style = MaterialTheme.typography.labelMedium
+                                            userPersonaLabel,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedButton(onClick = { showUserPersonaDialog = true }) {
+                                            Text(
+                                                text = if (userPersona.isBlank()) userPersonaUnset
+                                                       else userPersonaSetFmt.format(userPersona.length),
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                        }
+                                    }
+                                    if (showUserPersonaDialog) {
+                                        UserPersonaEditorDialog(
+                                            currentPersona = userPersona,
+                                            onConfirm = { newText ->
+                                                vm.userPersona.value = newText
+                                                showUserPersonaDialog = false
+                                            },
+                                            onDismiss = { showUserPersonaDialog = false }
                                         )
                                     }
-                                }
-                                if (showUserPersonaDialog) {
-                                    UserPersonaEditorDialog(
-                                        currentPersona = userPersona,
-                                        onConfirm = { newText ->
-                                            vm.userPersona.value = newText
-                                            showUserPersonaDialog = false
-                                        },
-                                        onDismiss = { showUserPersonaDialog = false }
-                                    )
                                 }
                             }
 
