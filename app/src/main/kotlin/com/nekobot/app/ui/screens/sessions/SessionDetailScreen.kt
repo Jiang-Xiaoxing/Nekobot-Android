@@ -1,6 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +43,8 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Tune
 import com.nekobot.app.ui.components.BorderlessAssistChip as AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -65,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -841,6 +847,16 @@ fun SessionDetailScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showBindCharacterDialog by remember { mutableStateOf(false) }
     var selectedPromptStackItem by remember { mutableStateOf<PromptStackItem?>(null) }
+    var advancedOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    val singleSessionRole = session?.companionMode == true
+    val advancedPage = singleSessionRole && advancedOpen
+    val showMain = !singleSessionRole || !advancedOpen
+    val showAdvanced = !singleSessionRole || advancedOpen
+    val mainScroll = rememberScrollState()
+    val advancedScroll = rememberScrollState()
+    BackHandler(enabled = advancedPage && selectedPromptStackItem == null && !showDeleteDialog && !showExportDialog) {
+        advancedOpen = false
+    }
 
     LaunchedEffect(toast) {
         toast?.let { message ->
@@ -988,13 +1004,13 @@ fun SessionDetailScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(detailTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
+                title = { Text(if (advancedPage) "高级设置" else detailTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (advancedPage) advancedOpen = false else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backDesc, tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
@@ -1016,6 +1032,7 @@ fun SessionDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .then(if (singleSessionRole) Modifier.consumeWindowInsets(padding).imePadding() else Modifier)
                 .background(MaterialTheme.colorScheme.background)
         ) {
             if (loading && session == null) {
@@ -1028,716 +1045,767 @@ fun SessionDetailScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(if (advancedPage) advancedScroll else mainScroll)
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     session?.let { s ->
-                        // === 1. 顶部：立绘 + 基本信息 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val portraitUrl = resolveAvatarUrl(s.portraitUrl)
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 80.dp, height = 104.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(MaterialTheme.colorScheme.surface),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (!portraitUrl.isNullOrBlank()) {
-                                        AsyncImage(
-                                            model = portraitUrl,
-                                            contentDescription = s.characterName ?: portraitDesc,
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Icon(Icons.Filled.SmartToy, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                        if (advancedPage) {
+                            Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("提示词、剧情与状态设置放在这里。修改后，点右上角保存。",
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (showMain) {
+                            // === 1. 顶部：立绘 + 基本信息 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val portraitUrl = resolveAvatarUrl(s.portraitUrl)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 80.dp, height = 104.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(MaterialTheme.colorScheme.surface),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (!portraitUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = portraitUrl,
+                                                contentDescription = s.characterName ?: portraitDesc,
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else if (singleSessionRole) {
+                                            Text(s.characterName?.trim()?.takeIf { it.isNotEmpty() }?.take(1) ?: s.displayName.take(1),
+                                                style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                                        } else {
+                                            Icon(Icons.Filled.SmartToy, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                                        }
+                                    }
+                                    Spacer(Modifier.size(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(s.displayName, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        if (!s.characterName.isNullOrBlank()) {
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(characterColonFmt.format(s.characterName), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        // 类型 / 模式 badge
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (singleSessionRole) BadgeChip("单会话角色", MaterialTheme.colorScheme.primary)
+                                            else {
+                                                s.type?.let { BadgeChip(it) }
+                                                s.sessionMode?.let { BadgeChip(it) }
+                                            }
+                                            if (s.pinned == true) BadgeChip(pinnedBadge, MaterialTheme.colorScheme.primary)
+                                            if (s.favorite == true) BadgeChip(favoriteBadge, WarningAmber)
+                                            if (s.archived == true) BadgeChip(archivedBadgeText, MaterialTheme.colorScheme.onSurfaceVariant)
+                                            if (s.readOnly == true) BadgeChip(readonlyBadge, MaterialTheme.colorScheme.error)
+                                        }
+                                        s.messageCount?.let { count ->
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(messageCountFmt.format(count), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        s.updatedAt?.let { time ->
+                                            Text(updatedFmt.format(time.take(19)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
                                     }
                                 }
-                                Spacer(Modifier.size(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(s.displayName, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    if (!s.characterName.isNullOrBlank()) {
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(characterColonFmt.format(s.characterName), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+
+                            if (singleSessionRole) {
+                                Text("固定与这个角色在同一个会话里聊天，记忆只用于这个会话。",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                AgentModeDetailsCard(companion = true, legacy = false,
+                                    onOpenMemories = { onOpenExperienceArchive(sessionId) }, onCreateAgentCharacter = onCreateAgentCharacter)
+                            }
+
+                            // === 2. 编辑基本信息 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = basicInfoTitle)
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { vm.name.value = it },
+                                    label = { Text(sessionNameLabel) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = tagsText,
+                                    onValueChange = { vm.tagsText.value = it },
+                                    label = { Text(tagsLabel) },
+                                    singleLine = false,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    ToggleChipRow(
+                                        label = if (pinned) pinnedLabel else pinLabel,
+                                        selected = pinned,
+                                        onClick = { vm.pinned.value = !pinned },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    ToggleChipRow(
+                                        label = if (favorite) favoritedLabel else favoriteLabel,
+                                        selected = favorite,
+                                        onClick = { vm.favorite.value = !favorite },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+
+                            if (singleSessionRole) {
+                                OutlinedButton(onClick = { advancedOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+                                    Icon(Icons.Filled.Tune, null)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text("高级设置", style = MaterialTheme.typography.titleSmall)
+                                        Text("提示词、剧情、状态与调试信息", style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    Spacer(Modifier.height(4.dp))
-                                    // 类型 / 模式 badge
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        s.type?.let { BadgeChip(it) }
-                                        s.sessionMode?.let { BadgeChip(it) }
-                                        if (s.pinned == true) BadgeChip(pinnedBadge, MaterialTheme.colorScheme.primary)
-                                        if (s.favorite == true) BadgeChip(favoriteBadge, WarningAmber)
-                                        if (s.archived == true) BadgeChip(archivedBadgeText, MaterialTheme.colorScheme.onSurfaceVariant)
-                                        if (s.readOnly == true) BadgeChip(readonlyBadge, MaterialTheme.colorScheme.error)
-                                    }
-                                    s.messageCount?.let { count ->
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(messageCountFmt.format(count), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    s.updatedAt?.let { time ->
-                                        Text(updatedFmt.format(time.take(19)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
+                                    Icon(Icons.Filled.ChevronRight, null)
                                 }
                             }
                         }
 
-                        // === 2. 编辑基本信息 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = basicInfoTitle)
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = name,
-                                onValueChange = { vm.name.value = it },
-                                label = { Text(sessionNameLabel) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = tagsText,
-                                onValueChange = { vm.tagsText.value = it },
-                                label = { Text(tagsLabel) },
-                                singleLine = false,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                ToggleChipRow(
-                                    label = if (pinned) pinnedLabel else pinLabel,
-                                    selected = pinned,
-                                    onClick = { vm.pinned.value = !pinned },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                ToggleChipRow(
-                                    label = if (favorite) favoritedLabel else favoriteLabel,
-                                    selected = favorite,
-                                    onClick = { vm.favorite.value = !favorite },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        // === 3. 系统提示词 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(
-                                title = systemPromptTitle,
-                                trailing = {
-                                    IconButton(onClick = { clipboard.setText(AnnotatedString(systemPrompt)) }) {
-                                        Icon(Icons.Filled.ContentCopy, contentDescription = copyDesc, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = systemPrompt,
-                                onValueChange = { vm.systemPrompt.value = it },
-                                label = { Text("System Prompt") },
-                                minLines = 3,
-                                maxLines = 8,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        // === 3.4 运行时系统提示词（composed_system_prompt，只读） ===
-                        if (composedSystemPrompt.isNotBlank()) {
+                        if (showAdvanced) {
+                            // === 3. 系统提示词 ===
                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                 SectionHeader(
-                                    title = runtimeSystemPromptTitle,
+                                    title = systemPromptTitle,
                                     trailing = {
-                                        IconButton(onClick = { clipboard.setText(AnnotatedString(composedSystemPrompt)) }) {
+                                        IconButton(onClick = { clipboard.setText(AnnotatedString(systemPrompt)) }) {
                                             Icon(Icons.Filled.ContentCopy, contentDescription = copyDesc, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    runtimePromptDesc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = composedSystemPrompt,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 300.dp)
-                                        .verticalScroll(rememberScrollState())
-                                        .padding(8.dp)
-                                )
-                            }
-                        }
-
-                        // === 3.5 自定义提示词（custom_prompts，可编辑） ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(
-                                title = customPromptsTitle,
-                                trailing = {
-                                    Row {
-                                        IconButton(onClick = { vm.addCustomPrompt() }) {
-                                            Icon(Icons.Filled.Add, contentDescription = addDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                        }
-                                        IconButton(onClick = { vm.saveCustomPrompts() }) {
-                                            Icon(Icons.Filled.Save, contentDescription = savePromptsDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-                                }
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            if (customPrompts.isEmpty()) {
-                                Text(
-                                    noCustomPromptsHint,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                customPrompts.forEachIndexed { idx, item ->
-                                    CustomPromptEditor(
-                                        item = item,
-                                        onTitleChange = { vm.updateCustomPrompt(idx, it, item.content) },
-                                        onContentChange = { vm.updateCustomPrompt(idx, item.title, it) },
-                                        onRemove = { vm.removeCustomPrompt(idx) }
-                                    )
-                                    if (idx < customPrompts.lastIndex) Spacer(Modifier.height(8.dp))
-                                }
-                            }
-                        }
-
-                        // === 3.6 提示词注入栈（prompt_stack_debug，只读 + 可禁用） ===
-                        if (promptStackDebug.isNotEmpty()) {
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = promptStackTitle)
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    promptStackDesc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                promptStackDebug.forEach { inj ->
-                                    PromptStackChip(
-                                        item = inj,
-                                        disabled = inj.key in disabledPromptKeys,
-                                        onClick = { selectedPromptStackItem = inj }
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                }
-                                if (disabledPromptKeys.isNotEmpty()) {
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        disabledPromptsCountFmt.format(disabledPromptKeys.size),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = WarningAmber
-                                    )
-                                }
-                            }
-                        }
-
-                        // === 4. 角色绑定信息 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = characterBindingTitle)
-                            Spacer(Modifier.height(8.dp))
-                            DetailLine(label = characterIdLabel, value = s.characterId ?: "—")
-                            // 优先用后端返回的 characterName，否则用二次查询的角色详情
-                            DetailLine(label = characterNameLabelText, value = s.characterName ?: characterDetail?.name ?: "—")
-                            DetailLine(label = senderNameLabel, value = s.senderName ?: "—")
-                            DetailLine(label = scenarioLabel, value = s.scenario?.take(60) ?: "—")
-                            s.characterIds?.takeIf { it.isNotEmpty() }?.let {
-                                DetailLine(label = groupCharactersLabel, value = it.joinToString(", "))
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            // 更改绑定角色按钮
-                            OutlinedButton(
-                                onClick = { showBindCharacterDialog = true },
-                                enabled = s.companionMode != true,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(
-                                    Icons.Filled.SwapHoriz,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    changeCharacterLabel,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-
-                        AgentModeDetailsCard(
-                            companion = s.companionMode == true,
-                            legacy = com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
-                                s.sessionMode.equals("agent", ignoreCase = true) &&
-                                (inheritCharacter || longConversationEnabled),
-                            onOpenMemories = { onOpenExperienceArchive(sessionId) },
-                            onCreateAgentCharacter = onCreateAgentCharacter
-                        )
-
-                        // === 4.3 延迟回复 ===
-                        // 只在本地普通角色会话，以及继承完整角色能力的本地 Agent 会话中提供。
-                        if (
-                            com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
-                            (
-                                s.sessionMode.equals("character", ignoreCase = true) ||
-                                    (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter)
-                                )
-                        ) {
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = delayReplyTitle)
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    delayReplyDesc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                ToggleChipRow(
-                                    label = if (delayReplyEnabled) delayReplyOn else delayReplyOff,
-                                    selected = delayReplyEnabled,
-                                    onClick = { vm.delayReplyEnabled.value = !delayReplyEnabled },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (delayReplyEnabled) {
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        stringResource(
-                                            R.string.sessions_detail_delay_reply_seconds,
-                                            delayReplyDelaySeconds
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Slider(
-                                        value = delayReplyDelaySeconds.toFloat(),
-                                        onValueChange = {
-                                            vm.delayReplyDelaySeconds.value = it.roundToInt()
-                                        },
-                                        valueRange = MIN_DELAY_REPLY_SECONDS.toFloat()..
-                                            MAX_DELAY_REPLY_SECONDS.toFloat(),
-                                        steps = MAX_DELAY_REPLY_SECONDS - MIN_DELAY_REPLY_SECONDS - 1,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        }
-
-                        // === 4.5 用户人设 / 背景 ===
-                        // 本会话玩家名称 + 背景提示词，注入到 PromptStack 的 user.persona 项
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = userPersonaLabel)
-                            Spacer(Modifier.height(8.dp))
-                            var showUserPersonaDialog by remember { mutableStateOf(false) }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    userPersonaLabel,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                OutlinedButton(onClick = { showUserPersonaDialog = true }) {
-                                    Text(
-                                        text = if (userPersona.isBlank()) userPersonaUnset
-                                               else userPersonaSetFmt.format(userPersona.length),
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                }
-                            }
-                            if (showUserPersonaDialog) {
-                                UserPersonaEditorDialog(
-                                    currentPersona = userPersona,
-                                    onConfirm = { newText ->
-                                        vm.userPersona.value = newText
-                                        showUserPersonaDialog = false
-                                    },
-                                    onDismiss = { showUserPersonaDialog = false }
-                                )
-                            }
-                        }
-
-                        // === 5. 角色运行时状态 ===
-                        s.characterRuntimeSnapshot?.takeIf { it.isJsonObject }?.asJsonObject?.let { snap ->
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = runtimeStateTitle)
-                                Spacer(Modifier.height(8.dp))
-                                // 心情 / 能量
-                                val mood = snap.get("mood")?.asString
-                                val intensity = snap.get("mood_intensity")?.let { if (it.isJsonPrimitive) it.asFloat else null }
-                                val energy = snap.get("energy")?.let { if (it.isJsonPrimitive) it.asInt else null }
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    StateMiniCard(moodLabel, mood, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                                    StateMiniCard(intensityLabel, intensity?.let { "${(it * 100).toInt()}%" }, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
-                                    StateMiniCard(energyLabel, energy?.toString(), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                // 关系数值
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    RelBar(affectionLabel, snap.get("affection")?.asInt, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                                    RelBar(trustLabel, snap.get("trust")?.asInt, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
-                                    RelBar(familiarityLabel, snap.get("familiarity")?.asInt, MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
-                                    RelBar(dependencyLabel, snap.get("dependency")?.asInt, WarningAmber, Modifier.weight(1f))
-                                    RelBar(securityLabel, snap.get("security")?.asInt, SuccessGreen, Modifier.weight(1f))
-                                    RelBar(jealousyLabel, snap.get("jealousy")?.asInt, MaterialTheme.colorScheme.error, Modifier.weight(1f))
-                                }
-                                // 表情
-                                snap.get("visible_emotion")?.asString?.let {
-                                    Spacer(Modifier.height(8.dp))
-                                    DetailLine(label = surfaceEmotionLabel, value = it)
-                                }
-                                snap.get("hidden_emotion")?.asString?.let {
-                                    DetailLine(label = innerEmotionLabel, value = it)
-                                }
-                            }
-                        }
-
-                        // === 6. 剧情模式 / 自动状态 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = advancedTitle)
-                            Spacer(Modifier.height(8.dp))
-                            ToggleChipRow(
-                                label = if (plotMode) plotModeOnLabel else plotModeOffLabel,
-                                selected = plotMode,
-                                onClick = { vm.plotMode.value = !plotMode },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            if (plotMode) {
-                                Spacer(Modifier.height(8.dp))
-                                ToggleChipRow(
-                                    label = if (plotRealTimeSync) realtimeSyncOnLabel else realtimeSyncOffLabel,
-                                    selected = plotRealTimeSync,
-                                    onClick = { vm.plotRealTimeSync.value = !plotRealTimeSync },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                // 回复风格编辑器
-                                var showStyleDialog by remember { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        replyStyleLabel,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    OutlinedButton(onClick = { showStyleDialog = true }) {
-                                        Text(
-                                            text = stringResource(plotStyleLabelResId(plotChoiceStyle)),
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
-                                if (showStyleDialog) {
-                                    PlotStylePickerDialog(
-                                        currentStyle = plotChoiceStyle,
-                                        onConfirm = { newStyle ->
-                                            vm.plotChoiceStyle.value = newStyle
-                                            showStyleDialog = false
-                                        },
-                                        onDismiss = { showStyleDialog = false }
-                                    )
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                // 剧情大纲编辑器入口
-                                var showOutlineDialog by remember { mutableStateOf(false) }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        stringResource(R.string.sessions_detail_plot_outline),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    OutlinedButton(onClick = { showOutlineDialog = true }) {
-                                        Text(
-                                            text = if (plotOutline.isBlank()) stringResource(R.string.sessions_detail_plot_outline_unset)
-                                                   else stringResource(R.string.sessions_detail_plot_outline_set, plotOutline.length),
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
-                                if (showOutlineDialog) {
-                                    PlotOutlineEditorDialog(
-                                        currentOutline = plotOutline,
-                                        onConfirm = { newOutline ->
-                                            vm.plotOutline.value = newOutline
-                                            showOutlineDialog = false
-                                        },
-                                        onDismiss = { showOutlineDialog = false }
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            // 自动状态间隔 / 自动命名间隔：均改为弹窗选择
-                            var showAutoStateDialog by remember { mutableStateOf(false) }
-                            IntervalSettingRow(
-                                label = autoStateIntervalLabel,
-                                valueLabel = stringResource(autoStateIntervalLabelRes(autoStateInterval)),
-                                onClick = { showAutoStateDialog = true }
-                            )
-                            if (showAutoStateDialog) {
-                                IntervalPickerDialog(
-                                    titleRes = R.string.sessions_detail_auto_state_interval,
-                                    options = AUTO_STATE_INTERVAL_OPTIONS,
-                                    current = autoStateInterval,
-                                    onConfirm = {
-                                        vm.autoStateInterval.value = it
-                                        showAutoStateDialog = false
-                                    },
-                                    onDismiss = { showAutoStateDialog = false }
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            var showAutoNameDialog by remember { mutableStateOf(false) }
-                            IntervalSettingRow(
-                                label = autoNameIntervalLabel,
-                                valueLabel = stringResource(autoNameIntervalLabelRes(autoNameInterval)),
-                                onClick = { showAutoNameDialog = true }
-                            )
-                            if (showAutoNameDialog) {
-                                IntervalPickerDialog(
-                                    titleRes = R.string.sessions_detail_auto_name_interval,
-                                    options = AUTO_NAME_INTERVAL_OPTIONS,
-                                    current = autoNameInterval,
-                                    onConfirm = {
-                                        vm.autoNameInterval.value = it ?: 10
-                                        showAutoNameDialog = false
-                                    },
-                                    onDismiss = { showAutoNameDialog = false }
-                                )
-                            }
-                        }
-
-                        // === 6.5 TTS / 主动聊天 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = ttsProactiveTitle)
-                            Spacer(Modifier.height(8.dp))
-
-                            // TTS 开关
-                            ToggleChipRow(
-                                label = if (ttsEnabled) ttsOnLabel else ttsOffLabel,
-                                selected = ttsEnabled,
-                                onClick = { vm.ttsEnabled.value = !ttsEnabled },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            if (ttsEnabled) {
-                                Spacer(Modifier.height(8.dp))
-                                // TTS 模型选择下拉
-                                Text(ttsModelLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                Spacer(Modifier.height(4.dp))
-                                TtsModelSelector(
-                                    modelId = ttsModelId,
-                                    models = aiModels,
-                                    onChange = { vm.ttsModelId.value = it }
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                // 音色选择
-                                Text(voiceLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                Spacer(Modifier.height(4.dp))
-                                TtsVoiceSelector(
-                                    voice = ttsVoice,
-                                    provider = ttsModelProviders[ttsModelId].orEmpty(),
-                                    onChange = { vm.ttsVoice.value = it }
-                                )
-                            }
-
-                            Spacer(Modifier.height(12.dp))
-
-                            // 主动聊天开关
-                            ToggleChipRow(
-                                label = if (proactiveChatEnabled) proactiveOnLabel else proactiveOffLabel,
-                                selected = proactiveChatEnabled,
-                                onClick = { vm.proactiveChatEnabled.value = !proactiveChatEnabled },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            if (proactiveChatEnabled) {
-                                Spacer(Modifier.height(8.dp))
-                                Text(proactiveIntervalLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                Spacer(Modifier.height(4.dp))
-                                ProactiveIntervalSelector(
-                                    value = proactiveChatInterval,
-                                    onChange = { vm.proactiveChatInterval.value = it }
-                                )
-                            }
-
-                        }
-
-                        // === 6.6 公开分享：与原仓库一致，独立于会话详情保存 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = publicShareTitle)
-                            Spacer(Modifier.height(8.dp))
-                            if (com.nekobot.app.ServiceContainer.prefs.isLocalMode) {
-                                Text(
-                                    publicLocalUnsupported,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else if (!isPublic) {
-                                Text(
-                                    publicDesc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(12.dp))
-                                Text(expiryLabel, style = MaterialTheme.typography.bodyMedium)
-                                Spacer(Modifier.height(4.dp))
-                                ShareExpirySelector(
-                                    value = shareExpiresDays,
-                                    onChange = { vm.shareExpiresDays.value = it }
-                                )
                                 Spacer(Modifier.height(8.dp))
                                 OutlinedTextField(
-                                    value = sharePassword,
-                                    onValueChange = { vm.sharePassword.value = it },
-                                    label = { Text(passwordLabel, style = MaterialTheme.typography.labelSmall) },
-                                    singleLine = true,
+                                    value = systemPrompt,
+                                    onValueChange = { vm.systemPrompt.value = it },
+                                    label = { Text("System Prompt") },
+                                    minLines = 3,
+                                    maxLines = 8,
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                Spacer(Modifier.height(8.dp))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(
-                                        value = shareMessageStart,
-                                        onValueChange = { vm.shareMessageStart.value = it.filter(Char::isDigit) },
-                                        label = { Text(startMsgLabel, style = MaterialTheme.typography.labelSmall) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
+                            }
+
+                            // === 3.4 运行时系统提示词（composed_system_prompt，只读） ===
+                            if (composedSystemPrompt.isNotBlank()) {
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(
+                                        title = runtimeSystemPromptTitle,
+                                        trailing = {
+                                            IconButton(onClick = { clipboard.setText(AnnotatedString(composedSystemPrompt)) }) {
+                                                Icon(Icons.Filled.ContentCopy, contentDescription = copyDesc, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                            }
+                                        }
                                     )
-                                    OutlinedTextField(
-                                        value = shareMessageEnd,
-                                        onValueChange = { vm.shareMessageEnd.value = it.filter(Char::isDigit) },
-                                        label = { Text(endMsgLabel, style = MaterialTheme.typography.labelSmall) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        runtimePromptDesc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = composedSystemPrompt,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 300.dp)
+                                            .verticalScroll(rememberScrollState())
+                                            .padding(8.dp)
                                     )
                                 }
+                            }
+
+                            // === 3.5 自定义提示词（custom_prompts，可编辑） ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(
+                                    title = customPromptsTitle,
+                                    trailing = {
+                                        Row {
+                                            IconButton(onClick = { vm.addCustomPrompt() }) {
+                                                Icon(Icons.Filled.Add, contentDescription = addDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                            }
+                                            IconButton(onClick = { vm.saveCustomPrompts() }) {
+                                                Icon(Icons.Filled.Save, contentDescription = savePromptsDesc, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                            }
+                                        }
+                                    }
+                                )
                                 Spacer(Modifier.height(8.dp))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    ToggleChipRow(
-                                        label = if (s.sessionMode == "agent") agentNoCharacterLabel else if (shareIncludeCharacter) characterShowLabel else characterHideLabel,
-                                        selected = shareIncludeCharacter && s.sessionMode != "agent",
-                                        onClick = { if (s.sessionMode != "agent") vm.shareIncludeCharacter.value = !shareIncludeCharacter },
-                                        modifier = Modifier.weight(1f)
+                                if (customPrompts.isEmpty()) {
+                                    Text(
+                                        noCustomPromptsHint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    ToggleChipRow(
-                                        label = if (shareIncludeUserMessages) userMsgShowLabel else userMsgHideLabel,
-                                        selected = shareIncludeUserMessages,
-                                        onClick = { vm.shareIncludeUserMessages.value = !shareIncludeUserMessages },
-                                        modifier = Modifier.weight(1f)
+                                } else {
+                                    customPrompts.forEachIndexed { idx, item ->
+                                        CustomPromptEditor(
+                                            item = item,
+                                            onTitleChange = { vm.updateCustomPrompt(idx, it, item.content) },
+                                            onContentChange = { vm.updateCustomPrompt(idx, item.title, it) },
+                                            onRemove = { vm.removeCustomPrompt(idx) }
+                                        )
+                                        if (idx < customPrompts.lastIndex) Spacer(Modifier.height(8.dp))
+                                    }
+                                }
+                            }
+
+                            // === 3.6 提示词注入栈（prompt_stack_debug，只读 + 可禁用） ===
+                            if (promptStackDebug.isNotEmpty()) {
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = promptStackTitle)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        promptStackDesc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Spacer(Modifier.height(8.dp))
+                                    promptStackDebug.forEach { inj ->
+                                        PromptStackChip(
+                                            item = inj,
+                                            disabled = inj.key in disabledPromptKeys,
+                                            onClick = { selectedPromptStackItem = inj }
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                    }
+                                    if (disabledPromptKeys.isNotEmpty()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            disabledPromptsCountFmt.format(disabledPromptKeys.size),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = WarningAmber
+                                        )
+                                    }
+                                }
+                            }
+
+                        }
+
+                        if (!singleSessionRole) {
+                            // === 4. 角色绑定信息 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = characterBindingTitle)
+                                Spacer(Modifier.height(8.dp))
+                                DetailLine(label = characterIdLabel, value = s.characterId ?: "—")
+                                // 优先用后端返回的 characterName，否则用二次查询的角色详情
+                                DetailLine(label = characterNameLabelText, value = s.characterName ?: characterDetail?.name ?: "—")
+                                DetailLine(label = senderNameLabel, value = s.senderName ?: "—")
+                                DetailLine(label = scenarioLabel, value = s.scenario?.take(60) ?: "—")
+                                s.characterIds?.takeIf { it.isNotEmpty() }?.let {
+                                    DetailLine(label = groupCharactersLabel, value = it.joinToString(", "))
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                Button(
-                                    onClick = vm::makeSessionPublic,
-                                    enabled = !isLoadingPublic,
+                                // 更改绑定角色按钮
+                                OutlinedButton(
+                                    onClick = { showBindCharacterDialog = true },
+                                    enabled = s.companionMode != true,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    if (isLoadingPublic) {
-                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        Spacer(Modifier.width(8.dp))
-                                    }
-                                    Text(if (isLoadingPublic) processingText else publishText)
-                                }
-                            } else {
-                                Text(publishedText, style = MaterialTheme.typography.titleSmall, color = SuccessGreen)
-                                Spacer(Modifier.height(8.dp))
-                                SelectionContainer {
+                                    Icon(
+                                        Icons.Filled.SwapHoriz,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
                                     Text(
-                                        publicShareUrl,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        changeCharacterLabel,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 }
-                                Spacer(Modifier.height(12.dp))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            clipboard.setText(AnnotatedString(publicShareUrl))
-                                            vm.showToast(linkCopiedToast)
-                                        },
-                                        enabled = publicShareUrl.isNotBlank(),
-                                        modifier = Modifier.weight(1f)
-                                    ) { Text(copyLinkText) }
-                                    OutlinedButton(
-                                        onClick = { uriHandler.openUri(publicShareUrl) },
-                                        enabled = publicShareUrl.isNotBlank(),
-                                        modifier = Modifier.weight(1f)
-                                    ) { Text(openLinkText) }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedButton(
-                                    onClick = vm::removeSessionPublic,
-                                    enabled = !isLoadingPublic,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(if (isLoadingPublic) processingText else unpublishText, color = MaterialTheme.colorScheme.error)
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    buildString {
-                                        append(readonlyViewText)
-                                        if (publicSharePasswordRequired) append(" · $passwordRequiredText")
-                                        publicShareExpiresAt?.let { append(" · " + expiresAtFmt.format(formatPublicExpiresAt(it))) }
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
-                        }
 
-                        // === 6.7 通知提醒 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = notificationTitle, subtitle = notificationSubtitle)
-                            Spacer(Modifier.height(8.dp))
-                            ToggleChipRow(
-                                label = if (notificationEnabled) notificationOnLabel else notificationOffLabel,
-                                selected = notificationEnabled,
-                                onClick = {
-                                    val newVal = !notificationEnabled
-                                    if (newVal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                        // 开启通知时先请求运行时权限
-                                        vm.notificationEnabled.value = true
-                                        s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, true) }
-                                        notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        vm.notificationEnabled.value = newVal
-                                        s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, newVal) }
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
+                            AgentModeDetailsCard(
+                                companion = s.companionMode == true,
+                                legacy = com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
+                                    s.sessionMode.equals("agent", ignoreCase = true) &&
+                                    (inheritCharacter || longConversationEnabled),
+                                onOpenMemories = { onOpenExperienceArchive(sessionId) },
+                                onCreateAgentCharacter = onCreateAgentCharacter
                             )
-                            if (notificationEnabled) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    notificationDesc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+
                         }
 
-                        // === 7. 只读元信息 ===
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = metaTitle)
-                            Spacer(Modifier.height(8.dp))
-                            DetailLine(label = sessionIdLabel, value = s.id.orEmpty())
-                            DetailLine(label = userIdLabel, value = s.userId ?: "—")
-                            DetailLine(label = createdAtLabel, value = s.createdAt?.take(19) ?: "—")
-                            DetailLine(label = updatedAtLabel, value = s.updatedAt?.take(19) ?: "—")
-                            DetailLine(label = publicLabel, value = if (isPublic) yesText else noText)
-                            DetailLine(label = archivedLabel, value = if (s.archived == true) yesText else noText)
-                            DetailLine(label = readonlyLabel, value = if (s.readOnly == true) yesText else noText)
-                            s.lastMessage?.let {
-                                DetailLine(label = lastMessageLabel, value = it.take(50))
+                        if (showMain) {
+                            // === 4.3 延迟回复 ===
+                            // 只在本地普通角色会话，以及继承完整角色能力的本地 Agent 会话中提供。
+                            if (
+                                com.nekobot.app.ServiceContainer.prefs.isLocalMode &&
+                                (
+                                    s.sessionMode.equals("character", ignoreCase = true) ||
+                                        (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter)
+                                    )
+                            ) {
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = delayReplyTitle)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        delayReplyDesc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    ToggleChipRow(
+                                        label = if (delayReplyEnabled) delayReplyOn else delayReplyOff,
+                                        selected = delayReplyEnabled,
+                                        onClick = { vm.delayReplyEnabled.value = !delayReplyEnabled },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    if (delayReplyEnabled) {
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(
+                                            stringResource(
+                                                R.string.sessions_detail_delay_reply_seconds,
+                                                delayReplyDelaySeconds
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Slider(
+                                            value = delayReplyDelaySeconds.toFloat(),
+                                            onValueChange = {
+                                                vm.delayReplyDelaySeconds.value = it.roundToInt()
+                                            },
+                                            valueRange = MIN_DELAY_REPLY_SECONDS.toFloat()..
+                                                MAX_DELAY_REPLY_SECONDS.toFloat(),
+                                            steps = MAX_DELAY_REPLY_SECONDS - MIN_DELAY_REPLY_SECONDS - 1,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
                             }
+
+                        }
+
+                        if (showAdvanced) {
+                            // === 4.5 用户人设 / 背景 ===
+                            // 本会话玩家名称 + 背景提示词，注入到 PromptStack 的 user.persona 项
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = userPersonaLabel)
+                                Spacer(Modifier.height(8.dp))
+                                var showUserPersonaDialog by remember { mutableStateOf(false) }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        userPersonaLabel,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedButton(onClick = { showUserPersonaDialog = true }) {
+                                        Text(
+                                            text = if (userPersona.isBlank()) userPersonaUnset
+                                                   else userPersonaSetFmt.format(userPersona.length),
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                }
+                                if (showUserPersonaDialog) {
+                                    UserPersonaEditorDialog(
+                                        currentPersona = userPersona,
+                                        onConfirm = { newText ->
+                                            vm.userPersona.value = newText
+                                            showUserPersonaDialog = false
+                                        },
+                                        onDismiss = { showUserPersonaDialog = false }
+                                    )
+                                }
+                            }
+
+                            // === 5. 角色运行时状态 ===
+                            s.characterRuntimeSnapshot?.takeIf { it.isJsonObject }?.asJsonObject?.let { snap ->
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = runtimeStateTitle)
+                                    Spacer(Modifier.height(8.dp))
+                                    // 心情 / 能量
+                                    val mood = snap.get("mood")?.asString
+                                    val intensity = snap.get("mood_intensity")?.let { if (it.isJsonPrimitive) it.asFloat else null }
+                                    val energy = snap.get("energy")?.let { if (it.isJsonPrimitive) it.asInt else null }
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        StateMiniCard(moodLabel, mood, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                                        StateMiniCard(intensityLabel, intensity?.let { "${(it * 100).toInt()}%" }, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
+                                        StateMiniCard(energyLabel, energy?.toString(), MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    // 关系数值
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        RelBar(affectionLabel, snap.get("affection")?.asInt, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                                        RelBar(trustLabel, snap.get("trust")?.asInt, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
+                                        RelBar(familiarityLabel, snap.get("familiarity")?.asInt, MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+                                        RelBar(dependencyLabel, snap.get("dependency")?.asInt, WarningAmber, Modifier.weight(1f))
+                                        RelBar(securityLabel, snap.get("security")?.asInt, SuccessGreen, Modifier.weight(1f))
+                                        RelBar(jealousyLabel, snap.get("jealousy")?.asInt, MaterialTheme.colorScheme.error, Modifier.weight(1f))
+                                    }
+                                    // 表情
+                                    snap.get("visible_emotion")?.asString?.let {
+                                        Spacer(Modifier.height(8.dp))
+                                        DetailLine(label = surfaceEmotionLabel, value = it)
+                                    }
+                                    snap.get("hidden_emotion")?.asString?.let {
+                                        DetailLine(label = innerEmotionLabel, value = it)
+                                    }
+                                }
+                            }
+
+                            // === 6. 剧情模式 / 自动状态 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = advancedTitle)
+                                Spacer(Modifier.height(8.dp))
+                                ToggleChipRow(
+                                    label = if (plotMode) plotModeOnLabel else plotModeOffLabel,
+                                    selected = plotMode,
+                                    onClick = { vm.plotMode.value = !plotMode },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (plotMode) {
+                                    Spacer(Modifier.height(8.dp))
+                                    ToggleChipRow(
+                                        label = if (plotRealTimeSync) realtimeSyncOnLabel else realtimeSyncOffLabel,
+                                        selected = plotRealTimeSync,
+                                        onClick = { vm.plotRealTimeSync.value = !plotRealTimeSync },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    // 回复风格编辑器
+                                    var showStyleDialog by remember { mutableStateOf(false) }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            replyStyleLabel,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedButton(onClick = { showStyleDialog = true }) {
+                                            Text(
+                                                text = stringResource(plotStyleLabelResId(plotChoiceStyle)),
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                        }
+                                    }
+                                    if (showStyleDialog) {
+                                        PlotStylePickerDialog(
+                                            currentStyle = plotChoiceStyle,
+                                            onConfirm = { newStyle ->
+                                                vm.plotChoiceStyle.value = newStyle
+                                                showStyleDialog = false
+                                            },
+                                            onDismiss = { showStyleDialog = false }
+                                        )
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    // 剧情大纲编辑器入口
+                                    var showOutlineDialog by remember { mutableStateOf(false) }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.sessions_detail_plot_outline),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedButton(onClick = { showOutlineDialog = true }) {
+                                            Text(
+                                                text = if (plotOutline.isBlank()) stringResource(R.string.sessions_detail_plot_outline_unset)
+                                                       else stringResource(R.string.sessions_detail_plot_outline_set, plotOutline.length),
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                        }
+                                    }
+                                    if (showOutlineDialog) {
+                                        PlotOutlineEditorDialog(
+                                            currentOutline = plotOutline,
+                                            onConfirm = { newOutline ->
+                                                vm.plotOutline.value = newOutline
+                                                showOutlineDialog = false
+                                            },
+                                            onDismiss = { showOutlineDialog = false }
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                // 自动状态间隔 / 自动命名间隔：均改为弹窗选择
+                                var showAutoStateDialog by remember { mutableStateOf(false) }
+                                IntervalSettingRow(
+                                    label = autoStateIntervalLabel,
+                                    valueLabel = stringResource(autoStateIntervalLabelRes(autoStateInterval)),
+                                    onClick = { showAutoStateDialog = true }
+                                )
+                                if (showAutoStateDialog) {
+                                    IntervalPickerDialog(
+                                        titleRes = R.string.sessions_detail_auto_state_interval,
+                                        options = AUTO_STATE_INTERVAL_OPTIONS,
+                                        current = autoStateInterval,
+                                        onConfirm = {
+                                            vm.autoStateInterval.value = it
+                                            showAutoStateDialog = false
+                                        },
+                                        onDismiss = { showAutoStateDialog = false }
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                var showAutoNameDialog by remember { mutableStateOf(false) }
+                                IntervalSettingRow(
+                                    label = autoNameIntervalLabel,
+                                    valueLabel = stringResource(autoNameIntervalLabelRes(autoNameInterval)),
+                                    onClick = { showAutoNameDialog = true }
+                                )
+                                if (showAutoNameDialog) {
+                                    IntervalPickerDialog(
+                                        titleRes = R.string.sessions_detail_auto_name_interval,
+                                        options = AUTO_NAME_INTERVAL_OPTIONS,
+                                        current = autoNameInterval,
+                                        onConfirm = {
+                                            vm.autoNameInterval.value = it ?: 10
+                                            showAutoNameDialog = false
+                                        },
+                                        onDismiss = { showAutoNameDialog = false }
+                                    )
+                                }
+                            }
+
+                        }
+
+                        if (showMain) {
+                            // === 6.5 TTS / 主动聊天 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = ttsProactiveTitle)
+                                Spacer(Modifier.height(8.dp))
+
+                                // TTS 开关
+                                ToggleChipRow(
+                                    label = if (ttsEnabled) ttsOnLabel else ttsOffLabel,
+                                    selected = ttsEnabled,
+                                    onClick = { vm.ttsEnabled.value = !ttsEnabled },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (ttsEnabled) {
+                                    Spacer(Modifier.height(8.dp))
+                                    // TTS 模型选择下拉
+                                    Text(ttsModelLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                    Spacer(Modifier.height(4.dp))
+                                    TtsModelSelector(
+                                        modelId = ttsModelId,
+                                        models = aiModels,
+                                        onChange = { vm.ttsModelId.value = it }
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    // 音色选择
+                                    Text(voiceLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                    Spacer(Modifier.height(4.dp))
+                                    TtsVoiceSelector(
+                                        voice = ttsVoice,
+                                        provider = ttsModelProviders[ttsModelId].orEmpty(),
+                                        onChange = { vm.ttsVoice.value = it }
+                                    )
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                // 主动聊天开关
+                                ToggleChipRow(
+                                    label = if (proactiveChatEnabled) proactiveOnLabel else proactiveOffLabel,
+                                    selected = proactiveChatEnabled,
+                                    onClick = { vm.proactiveChatEnabled.value = !proactiveChatEnabled },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (proactiveChatEnabled) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(proactiveIntervalLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                    Spacer(Modifier.height(4.dp))
+                                    ProactiveIntervalSelector(
+                                        value = proactiveChatInterval,
+                                        onChange = { vm.proactiveChatInterval.value = it }
+                                    )
+                                }
+
+                            }
+
+                            // === 6.6 公开分享：与原仓库一致，独立于会话详情保存 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = publicShareTitle)
+                                Spacer(Modifier.height(8.dp))
+                                if (com.nekobot.app.ServiceContainer.prefs.isLocalMode) {
+                                    Text(
+                                        publicLocalUnsupported,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else if (!isPublic) {
+                                    Text(
+                                        publicDesc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(expiryLabel, style = MaterialTheme.typography.bodyMedium)
+                                    Spacer(Modifier.height(4.dp))
+                                    ShareExpirySelector(
+                                        value = shareExpiresDays,
+                                        onChange = { vm.shareExpiresDays.value = it }
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = sharePassword,
+                                        onValueChange = { vm.sharePassword.value = it },
+                                        label = { Text(passwordLabel, style = MaterialTheme.typography.labelSmall) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = shareMessageStart,
+                                            onValueChange = { vm.shareMessageStart.value = it.filter(Char::isDigit) },
+                                            label = { Text(startMsgLabel, style = MaterialTheme.typography.labelSmall) },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedTextField(
+                                            value = shareMessageEnd,
+                                            onValueChange = { vm.shareMessageEnd.value = it.filter(Char::isDigit) },
+                                            label = { Text(endMsgLabel, style = MaterialTheme.typography.labelSmall) },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        ToggleChipRow(
+                                            label = if (s.sessionMode == "agent") agentNoCharacterLabel else if (shareIncludeCharacter) characterShowLabel else characterHideLabel,
+                                            selected = shareIncludeCharacter && s.sessionMode != "agent",
+                                            onClick = { if (s.sessionMode != "agent") vm.shareIncludeCharacter.value = !shareIncludeCharacter },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        ToggleChipRow(
+                                            label = if (shareIncludeUserMessages) userMsgShowLabel else userMsgHideLabel,
+                                            selected = shareIncludeUserMessages,
+                                            onClick = { vm.shareIncludeUserMessages.value = !shareIncludeUserMessages },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                    Button(
+                                        onClick = vm::makeSessionPublic,
+                                        enabled = !isLoadingPublic,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (isLoadingPublic) {
+                                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(if (isLoadingPublic) processingText else publishText)
+                                    }
+                                } else {
+                                    Text(publishedText, style = MaterialTheme.typography.titleSmall, color = SuccessGreen)
+                                    Spacer(Modifier.height(8.dp))
+                                    SelectionContainer {
+                                        Text(
+                                            publicShareUrl,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                clipboard.setText(AnnotatedString(publicShareUrl))
+                                                vm.showToast(linkCopiedToast)
+                                            },
+                                            enabled = publicShareUrl.isNotBlank(),
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text(copyLinkText) }
+                                        OutlinedButton(
+                                            onClick = { uriHandler.openUri(publicShareUrl) },
+                                            enabled = publicShareUrl.isNotBlank(),
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text(openLinkText) }
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlinedButton(
+                                        onClick = vm::removeSessionPublic,
+                                        enabled = !isLoadingPublic,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(if (isLoadingPublic) processingText else unpublishText, color = MaterialTheme.colorScheme.error)
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        buildString {
+                                            append(readonlyViewText)
+                                            if (publicSharePasswordRequired) append(" · $passwordRequiredText")
+                                            publicShareExpiresAt?.let { append(" · " + expiresAtFmt.format(formatPublicExpiresAt(it))) }
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // === 6.7 通知提醒 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = notificationTitle, subtitle = notificationSubtitle)
+                                Spacer(Modifier.height(8.dp))
+                                ToggleChipRow(
+                                    label = if (notificationEnabled) notificationOnLabel else notificationOffLabel,
+                                    selected = notificationEnabled,
+                                    onClick = {
+                                        val newVal = !notificationEnabled
+                                        if (newVal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                            // 开启通知时先请求运行时权限
+                                            vm.notificationEnabled.value = true
+                                            s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, true) }
+                                            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            vm.notificationEnabled.value = newVal
+                                            s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, newVal) }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (notificationEnabled) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        notificationDesc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                        }
+
+                        if (showAdvanced) {
+                            // === 7. 只读元信息 ===
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                SectionHeader(title = metaTitle)
+                                Spacer(Modifier.height(8.dp))
+                                DetailLine(label = sessionIdLabel, value = s.id.orEmpty())
+                                DetailLine(label = userIdLabel, value = s.userId ?: "—")
+                                DetailLine(label = createdAtLabel, value = s.createdAt?.take(19) ?: "—")
+                                DetailLine(label = updatedAtLabel, value = s.updatedAt?.take(19) ?: "—")
+                                DetailLine(label = publicLabel, value = if (isPublic) yesText else noText)
+                                DetailLine(label = archivedLabel, value = if (s.archived == true) yesText else noText)
+                                DetailLine(label = readonlyLabel, value = if (s.readOnly == true) yesText else noText)
+                                s.lastMessage?.let {
+                                    DetailLine(label = lastMessageLabel, value = it.take(50))
+                                }
+                            }
+
                         }
 
                         error?.let {
