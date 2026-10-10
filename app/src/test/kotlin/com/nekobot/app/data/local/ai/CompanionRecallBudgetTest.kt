@@ -21,6 +21,99 @@ class CompanionRecallBudgetTest {
         g.prepare(actor, messages, buildAgentRecallToolDefinitions(), 32000, 4000)
     private fun state() = gson.fromJson(saved, CompanionRecallUsage::class.java)
 
+    private fun systemMessage(): Map<String, Any> {
+        val stack = PromptStack().apply {
+            add("companion.rules", CompanionRecallBudget.QUERY_RULES,
+                priority = PromptStack.Priority.BEHAVIOR, scope = "session")
+        }
+        return mapOf("role" to "system", "content" to stack.render("角色设定"))
+    }
+
+    @Test fun requestKeepsRulesAtTheFrontAndLeavesPlayerMessageLast() = runBlocking {
+        val messages = listOf(systemMessage(), mapOf("role" to "assistant", "content" to "你好"),
+            mapOf("role" to "user", "content" to "今天一起散步吗"))
+        val g = guard()
+        val first = prepare(g, messages)
+        val again = prepare(g, first.messages)
+        assertEquals(messages, first.messages)
+        assertEquals(messages, again.messages)
+        assertEquals(1, again.messages.count { it["role"] == "system" })
+        assertEquals("今天一起散步吗", again.messages.last()["content"])
+        assertFalse(gson.toJson(again.messages).contains("剩余"))
+        assertEquals(0, state().rounds)
+        assertEquals(0, state().tokens)
+    }
+
+    @Test fun guardDoesNotCreateAMessageWhenNoSystemPromptIsPresent() = runBlocking {
+        val messages = listOf(mapOf<String, Any>("role" to "user", "content" to "你好"))
+        assertEquals(messages, prepare(guard(), messages).messages)
+        assertTrue(prepare(guard()).messages.isEmpty())
+    }
+
+    @Test fun multimodalPlayerContentIsPreservedWithoutInternalSuffix() = runBlocking {
+        val player = mapOf<String, Any>("role" to "user", "content" to listOf(
+            mapOf("type" to "text", "text" to "你看这张图"),
+            mapOf("type" to "image_url", "image_url" to mapOf("url" to "data:image/png;base64,c2FtcGxl"))))
+        val result = prepare(guard(), listOf(systemMessage(), player))
+        assertEquals(player, result.messages.last())
+        assertEquals(2, result.messages.size)
+    }
+
+    @Test fun sourceMetadataIsRemovedWithoutChangingTheOriginalText() = runBlocking {
+        val player = mapOf<String, Any>("role" to "user", "content" to "原话正文",
+            CompanionRecallBudget.SOURCE_META to mapOf("id" to "m101",
+                "revision" to CompanionMemoryPolicy.digest("原话正文")))
+        val result = prepare(guard(), listOf(systemMessage(), player))
+        assertEquals(player - CompanionRecallBudget.SOURCE_META, result.messages.last())
+        assertFalse(gson.toJson(result.messages).contains(CompanionRecallBudget.SOURCE_META))
+    }
+
+    @Test fun exhaustedBudgetKeepsToolResultsLastAndOnlyRemovesRecallTools() = runBlocking {
+        val g = guard(rounds = 1)
+        prepare(g)
+        val read = g.read("main") { history(original("散步的原话")) }
+        val messages = listOf(systemMessage(), mapOf("role" to "user", "content" to "那天说过什么"),
+            mapOf("role" to "assistant", "tool_calls" to listOf(
+                mapOf("function" to mapOf("name" to "agent_history_read")),
+                mapOf("function" to mapOf("name" to "web_search")))), tool(read))
+        val otherTool = mapOf<String, Any>("type" to "function", "function" to mapOf("name" to "web_search"))
+        val used = state().tokens
+        val result = g.prepare("main", messages, buildAgentRecallToolDefinitions() + otherTool, 32000, 4000)
+        assertEquals(messages, result.messages)
+        assertEquals(listOf(otherTool), result.tools)
+        assertFalse(result.mustAnswer)
+        assertEquals(1, state().rounds)
+        assertEquals(used, state().tokens)
+        var fetched = false
+        assertEquals(true, g.read("main") { fetched = true; history(original("不应再读")) }["recall_stopped"])
+        assertFalse(fetched)
+    }
+
+    @Test fun supportedProtocolsReceiveRulesInSystemFieldsNotPlayerContent() = runBlocking {
+        val system = systemMessage()
+        val player = mapOf<String, Any>("role" to "user", "content" to "今晚好吗")
+        val prepared = prepare(guard(), listOf(system, player))
+        val protocols = listOf(OpenAIChatProtocol, OpenAIResponsesProtocol, AnthropicMessagesProtocol, GeminiNativeProtocol)
+        for (protocol in protocols) {
+            val payload = protocol.buildPayload("test-model", prepared.messages, false, emptyMap())
+            val systemBody: Any?
+            val conversation: Any?
+            when (protocol) {
+                OpenAIChatProtocol -> {
+                    val rows = payload["messages"] as List<*>
+                    systemBody = (rows.first() as Map<*, *>)["content"]
+                    conversation = rows.drop(1)
+                }
+                OpenAIResponsesProtocol -> { systemBody = payload["instructions"]; conversation = payload["input"] }
+                AnthropicMessagesProtocol -> { systemBody = payload["system"]; conversation = payload["messages"] }
+                else -> { systemBody = payload["systemInstruction"]; conversation = payload["contents"] }
+            }
+            assertTrue(protocol.name, gson.toJson(systemBody).contains(CompanionRecallBudget.QUERY_RULES))
+            assertFalse(protocol.name, gson.toJson(conversation).contains(CompanionRecallBudget.QUERY_RULES))
+            assertTrue(protocol.name, gson.toJson(conversation).contains("今晚好吗"))
+        }
+    }
+
     @Test fun sameBatchCountsOnceAndResumeDoesNotReset() = runBlocking {
         val g = guard(rounds = 1)
         prepare(g)

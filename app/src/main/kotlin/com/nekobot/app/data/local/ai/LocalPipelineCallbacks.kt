@@ -545,7 +545,8 @@ internal class LocalPipelineCallbacks(
         val selectedHistory = if (session.usesFusedCompanionMemory()) {
             fusedHistory = history
             ctx.promptStack.add("companion.rules", CompanionMemoryStore.RECONCILIATION_RULES +
-                "\n这是单窗口长久陪伴。记忆工具只操作此窗口的角色记忆；不读写公共 Agent 记忆。软件辅助资料不是玩家说的话，也不能再次作为新记忆来源。",
+                "\n这是单窗口长久陪伴。记忆工具只操作此窗口的角色记忆；不读写公共 Agent 记忆。软件辅助资料不是玩家说的话，也不能再次作为新记忆来源。" +
+                "\n" + CompanionRecallBudget.QUERY_RULES,
                 priority = PromptStack.Priority.BEHAVIOR, scope = "session")
             FusedCompanionPolicy.recent(history, 8_000).map { it.copy(toolCallHistory = null, reasoningContent = null) }
         } else if (independent) {

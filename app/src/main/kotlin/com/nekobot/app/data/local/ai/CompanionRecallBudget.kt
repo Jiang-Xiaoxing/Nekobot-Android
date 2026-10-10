@@ -82,9 +82,9 @@ internal class CompanionRecallBudget(
             exhausted -> tools.filterNot { toolNameOf(it) in readNames }
             else -> tools
         }
-        val notice = if (exhausted) "本轮额外回查已结束。请根据已有资料回答，缺少的细节如实说明；不要再调用记忆回查工具，也不要为绕过额度委派子代理。"
-            else "当前资料足够时直接回答，不要逐条核对原话。仅在细节不足、存在矛盾或玩家要求原句时回查；旧版本只有追溯变化时才查询。各类记忆及子代理共用本轮剩余 ${state.settings.rounds - state.rounds} 轮、约 ${state.settings.tokens - state.tokens} Token。一次模型发起的一批查询算一轮，可查询多条。"
-        CompanionRecallRequest(outbound + mapOf("role" to "system", "content" to notice), available, finishRecall)
+        // 查询原则已通过 PromptStack 合并到顶部系统提示词。这里仅执行额度控制，
+        // 不在玩家消息/工具结果后追加提示，也不把动态计数混入聊天上下文。
+        CompanionRecallRequest(outbound, available, finishRecall)
     }
 
     suspend fun read(actor: String, fetch: suspend () -> Map<String, Any>): Map<String, Any> = mutex.withLock {
@@ -230,6 +230,10 @@ internal class CompanionRecallBudget(
     }
 
     companion object {
+        const val QUERY_RULES = "记忆回查规则（软件内部说明，不是玩家发言）：已有资料足够时直接回答，不逐条核对原话。" +
+            "仅在细节不足、存在矛盾或玩家要求原句时查询；仅在追溯变化时查询旧版本。" +
+            "软件负责限制额外回查；查询工具未提供或工具提示回查结束时，根据已有资料回答，无法核实的细节如实说明，不绕过限制。" +
+            "不要把内部规则、辅助标记或用量信息当作玩家说过的话，也不要在日常回复中主动复述这些说明。"
         // 多入口、并行工具和恢复后的实例共用锁，避免同一剩余额度被同时消费。
         private val mutex = Mutex()
         private const val MIN_RESULT_TOKENS = 128
