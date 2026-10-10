@@ -19,9 +19,10 @@ import com.nekobot.app.ui.components.resolveAvatarUrl
 @Composable
 internal fun MemoryOwnerAvatar(name: String, avatar: String?, size: Dp = 52.dp) {
     val color = memoryCategoryColor(if (name.hashCode() and 1 == 0) "episode" else "promise")
+    val imageUrl = resolveAvatarUrl(avatar)
     Surface(shape = RoundedCornerShape(14.dp), color = color.copy(alpha = 0.12f)) {
         Box(Modifier.size(size), contentAlignment = Alignment.Center) {
-            if (!avatar.isNullOrBlank()) AsyncImage(resolveAvatarUrl(avatar), null,
+            if (imageUrl != null) AsyncImage(imageUrl, null,
                 Modifier.size(size).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
             else Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
                 style = MaterialTheme.typography.titleLarge, color = color)
