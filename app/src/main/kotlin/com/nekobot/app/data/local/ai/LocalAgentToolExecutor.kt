@@ -989,7 +989,7 @@ internal class LocalAgentToolExecutor(
         val timeoutSeconds = args.int("timeout", 30).coerceIn(1, 600)
         val policy = evaluateLocalCommand(command)
         policy.blockedReason?.let {
-            return failure(it, "command" to command, "main_command" to policy.mainCommand)
+            return failure(it, "main_command" to policy.mainCommand)
         }
         // 后台执行：授权仍在前台完成（不给后台留"偷偷拿到新权限"的路径），随后命令独立跑。
         val background = args["background"] as? Boolean ?: false
@@ -1028,7 +1028,6 @@ internal class LocalAgentToolExecutor(
                 if (generationController.isStopped) stoppedFailure()
                 else failure(
                     "用户拒绝执行命令",
-                    "command" to command,
                     "main_command" to policy.mainCommand
                 )
             )
@@ -1050,15 +1049,13 @@ internal class LocalAgentToolExecutor(
         if (LocalShellJobs.runningCount(sessionId) >= LocalShellJobs.MAX_JOBS_PER_SESSION) {
             return failure(
                 "后台命令并发已达上限（${LocalShellJobs.MAX_JOBS_PER_SESSION}）。" +
-                    "请先用 shell_job(action=list) 查看并终止不再需要的任务。",
-                "command" to command
+                    "请先用 shell_job(action=list) 查看并终止不再需要的任务。"
             )
         }
         val job = LocalShellJobs.start(sessionId = sessionId, command = command) { job ->
             runCommandOnce(command, policy.mainCommand, timeoutSeconds, authorizationLabel, detachedJob = job)
         }
         return success(
-            "command" to command,
             "job_id" to job.id,
             "status" to "running",
             "instruction" to "命令已在后台运行。用 shell_job(action=get, job_id=${job.id}) 查询输出，" +
@@ -1172,7 +1169,6 @@ internal class LocalAgentToolExecutor(
         }.getOrElse { error ->
             return failure(
                 error.message ?: "Linux 沙盒命令执行失败",
-                "command" to command,
                 "main_command" to mainCommand,
                 "environment" to "alpine-linux",
                 "working_directory" to "/workspace",
@@ -1183,7 +1179,6 @@ internal class LocalAgentToolExecutor(
         // 前台命令随本次生成停止而中止；后台命令按用户/模型意图继续跑完，不受停止影响。
         if (detachedJob == null && (result.stopped || generationController.isStopped)) {
             return stoppedFailure(
-                "command" to command,
                 "main_command" to mainCommand,
                 "output" to result.output,
                 "environment" to "alpine-linux",
@@ -1192,7 +1187,6 @@ internal class LocalAgentToolExecutor(
         }
         return mapOf(
             "success" to (!result.timedOut && result.exitCode == 0),
-            "command" to command,
             "main_command" to mainCommand,
             "authorization" to authorization,
             "environment" to "Alpine Linux 3.21.3 (PRoot, arm64-v8a)",
