@@ -173,7 +173,8 @@ internal fun CompanionMemorySources(
     rows: List<CompanionSourceEntity>, memory: CompanionMemoryEntity?, ownerName: String,
     onDismiss: () -> Unit, onLocate: (String) -> Unit
 ) {
-    MemoryPanel("这条记忆的原话", "引用供你核对，点开可以查看前后聊天。", onDismiss = onDismiss,
+    MemoryPanel("这条记忆的原话", if (rows.isEmpty()) "暂无可定位的原话。"
+        else "这条记忆参考了 ${rows.size} 条原话，可分别定位查看前后聊天。", onDismiss = onDismiss,
         actions = { TextButton(onClick = onDismiss) { Text("关闭") } }) { body ->
         LazyColumn(body.fillMaxWidth(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             memory?.let { item("memory") {
@@ -202,7 +203,7 @@ internal fun CompanionMemorySources(
                         TextButton(onClick = { onLocate(source.messageId) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("去聊天中查看")
+                            Text("定位到这条消息")
                         }
                     }
                 }
