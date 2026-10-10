@@ -6,10 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,9 +24,9 @@ import com.nekobot.app.R
 enum class SessionModeLabel { CHARACTER, AGENT, COMPANION, GROUP }
 
 internal fun SessionModeLabel.icon(): ImageVector = when (this) {
-    SessionModeLabel.CHARACTER -> Icons.Filled.Person
-    SessionModeLabel.AGENT -> Icons.Filled.WorkOutline
-    SessionModeLabel.COMPANION -> Icons.Filled.Forum
+    SessionModeLabel.CHARACTER -> SessionModeIcons.Character
+    SessionModeLabel.AGENT -> SessionModeIcons.Agent
+    SessionModeLabel.COMPANION -> SessionModeIcons.Companion
     SessionModeLabel.GROUP -> Icons.Filled.Group
 }
 
