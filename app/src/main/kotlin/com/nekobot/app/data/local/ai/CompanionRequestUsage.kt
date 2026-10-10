@@ -22,7 +22,7 @@ internal object CompanionRequestUsage {
         fun section(header: String): Map<String, Int> {
             val line = text.substringAfter(header, "").lineSequence().firstOrNull().orEmpty()
             val count = runCatching { JsonParser.parseString(line).asJsonArray.size() }.getOrDefault(0)
-            return mapOf("tokens" to if (line.isBlank()) 0 else estimateLocalTextTokens(line), "count" to count)
+            return mapOf("tokens" to if (count == 0) 0 else estimateLocalTextTokens(line), "count" to count)
         }
         return mapOf("role" to "user", "content" to text, META to mapOf(
             "core" to section("每次提供的核心记忆：\n"),
