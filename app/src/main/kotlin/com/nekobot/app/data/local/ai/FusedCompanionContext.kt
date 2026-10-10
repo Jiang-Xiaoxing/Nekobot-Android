@@ -9,13 +9,14 @@ import java.time.ZonedDateTime
 internal class FusedCompanionContext(private val db: NekobotDatabase) {
     suspend fun build(session: LocalSessionEntity, messageId: String, history: List<LocalMessageEntity>,
         system: String, tools: List<Map<String, Any>>, currentMessage: Map<String, Any>, dynamic: String,
-        maxContext: Int, outputReserve: Int, now: ZonedDateTime = ZonedDateTime.now()): List<Map<String, Any>> {
+        maxContext: Int, outputReserve: Int, now: ZonedDateTime = ZonedDateTime.now(), stateKey: String = "relationship-v2:off"): List<Map<String, Any>> {
         val store = CompanionMemoryStore(db)
         val dao = db.companionMemoryDao()
         val scope = store.ensureScope(session)
         // 到期后连同历史辅助资料一起重建，避免旧缓存继续带入已经过期的记忆。
         val expired = dao.memories(scope.id).filterNot { CompanionImportPolicy.usable(it, now.toInstant()) }.map { it.id }.sorted()
-        val configuration = CompanionMemoryPolicy.digest(FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + expired)
+        // State changes invalidate auxiliary caches, including turning the feature off.
+        val configuration = CompanionMemoryPolicy.digest(stateKey + FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + expired)
         val available = maxContext - outputReserve - estimateLocalTextTokens(system) - estimateLocalTextTokens(Gson().toJson(tools)) - 256
         val budgets = FusedCompanionPolicy.budgets(available)
         val (recall, mode) = store.fusedRecall(session, currentMessage["content"].toString(), budgets)

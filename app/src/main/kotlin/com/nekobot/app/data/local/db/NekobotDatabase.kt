@@ -62,12 +62,15 @@ import com.nekobot.app.data.local.LocalLogger
         CompanionClarificationEntity::class,
         CompanionOwnerEntity::class,
         CompanionContextMaterialEntity::class,
+        CompanionRelationshipEntity::class,
+        CompanionRelationshipEventEntity::class,
         CompanionTransferJobEntity::class
     ],
-    version = 55,
+    version = 56,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
+    abstract fun companionRelationshipDao(): CompanionRelationshipDao
     abstract fun companionTransferDao(): CompanionTransferDao
     abstract fun companionMemoryDao(): CompanionMemoryDao
     abstract fun sessionDao(): SessionDao
@@ -1140,6 +1143,15 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+
+        val MIGRATION_55_56 = object : Migration(55, 56) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS companion_relationship_state (sessionId TEXT NOT NULL PRIMARY KEY, characterId TEXT NOT NULL, version INTEGER NOT NULL, enabled INTEGER NOT NULL, automatic INTEGER NOT NULL, interval INTEGER NOT NULL, modelId TEXT, awaitingHistory INTEGER NOT NULL, cursorId TEXT, baselineJson TEXT NOT NULL, legacy INTEGER NOT NULL, mood TEXT NOT NULL, energy TEXT NOT NULL, feelingReason TEXT NOT NULL, feelingSources TEXT NOT NULL, updatedAt INTEGER NOT NULL, notice TEXT, correctionResult TEXT, FOREIGN KEY(sessionId) REFERENCES local_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS companion_relationship_events (id TEXT NOT NULL PRIMARY KEY, sessionId TEXT NOT NULL, eventKey TEXT NOT NULL, revision INTEGER NOT NULL, summary TEXT NOT NULL, reason TEXT NOT NULL, kind TEXT NOT NULL, deltasJson TEXT NOT NULL, sourcesJson TEXT NOT NULL, createdAt INTEGER NOT NULL, corrected INTEGER NOT NULL, FOREIGN KEY(sessionId) REFERENCES companion_relationship_state(sessionId) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_companion_relationship_events_sessionId_eventKey_revision ON companion_relationship_events(sessionId,eventKey,revision)")
+            }
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
@@ -1153,7 +1165,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56
         )
 
         fun get(context: Context): NekobotDatabase =

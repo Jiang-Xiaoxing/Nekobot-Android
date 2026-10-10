@@ -174,10 +174,10 @@ class CharacterRuntime(
         buildCharacterInjections(
             stack = promptStack,
             profile = profile,
-            state = state,
-            relationship = relationship,
+            state = if (fusedCompanion) null else state,
+            relationship = if (fusedCompanion) null else relationship,
             memories = memories,
-            plan = plan
+            plan = if (fusedCompanion) null else plan
         )
         // 世界书注入。按 score 排序后的条目总量可能远超上下文预算：
         // 单条截断 + 总量封顶，避免几本设定集把对话历史挤出去。

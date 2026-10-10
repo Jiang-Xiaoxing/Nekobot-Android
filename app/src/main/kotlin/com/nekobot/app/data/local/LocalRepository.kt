@@ -1586,6 +1586,18 @@ class LocalRepository(
     internal suspend fun deleteCompanionTransferBackup(jobId: String) = companionTransfer.deleteBackup(jobId)
     internal suspend fun deleteCompanionTransferRecord(jobId: String) = companionTransfer.deleteRecord(jobId)
 
+    internal val companionRelationship by lazy {
+        com.nekobot.app.data.local.ai.CompanionRelationshipService(db, aiClient) { id, model, result ->
+            val input = result.usage["prompt"] ?: result.usage["prompt_tokens"] ?: 0
+            val output = result.usage["completion"] ?: result.usage["completion_tokens"] ?: 0
+            appendTokenUsageRecord(sessionId = id, model = model.name, actualModel = model.model,
+                inputTokens = input, outputTokens = output, timestamp = nowIsoTimestamp(), source = "companion_state",
+                estimated = result.usage["estimated"] == 1,
+                purpose = com.nekobot.app.data.local.ai.TokenStatsManager.PURPOSE_UTILITY, provider = model.provider,
+                inputPricePerMillion = model.inputPrice, outputPricePerMillion = model.outputPrice)
+        }
+    }
+
     internal fun companionReasoningEffort(sessionId: String) = ServiceContainer.prefs.companionReasoningEffort(db.dbName, sessionId)
     internal fun setCompanionReasoningEffort(sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) =
         ServiceContainer.prefs.setCompanionReasoningEffort(db.dbName, sessionId, value)
@@ -3402,6 +3414,7 @@ class LocalRepository(
         command: LocalParsedCommand,
         onStateEvent: suspend (RealtimeEvent) -> Unit
     ): AgentSessionCommandOutcome {
+        if (session.companionMode) return AgentSessionCommandOutcome.Reply("单会话角色不提供 Agent 目标和规格任务。")
         if (!session.sessionMode.equals("agent", ignoreCase = true)) {
             return AgentSessionCommandOutcome.Reply(
                 "`${command.name}` 仅支持在 Agent 会话中使用；请先把会话切换为 Agent 模式。"
@@ -6823,6 +6836,8 @@ class LocalRepository(
             )
         }
         val callbacks = com.nekobot.app.data.local.ai.LocalPipelineCallbacks(
+            companionStatePrompt = { companionRelationship.context(sessionId) },
+            onCompanionTurnCompleted = { companionRelationship.afterChat(sessionId) },
             db = db,
             aiClient = aiClient,
             activeModel = activeModel,
@@ -7173,6 +7188,12 @@ class LocalRepository(
             session.sessionMode.equals("agent", ignoreCase = true) &&
             userMessage.trim().equals("/yolo", ignoreCase = true)
         ) {
+            if (session.companionMode) {
+                val reply = addAssistantMessage(sessionId = sessionId,
+                    content = "单会话角色不提供 YOLO 命令执行模式。", model = LOCAL_COMMAND_MODEL)
+                localCommandCompletionEvents(sessionId, reply).forEach { emit(it) }
+                return@flow
+            }
             enableYoloAndResolvePending(sessionId)
             val reply = addAssistantMessage(
                 sessionId = sessionId,
@@ -7427,6 +7448,8 @@ class LocalRepository(
         }
         val callbacks = com.nekobot.app.data.local.ai.LocalPipelineCallbacks(
             db, aiClient, activeModel, session, character, worldBookEntries, runtime, identity,
+            companionStatePrompt = { companionRelationship.context(sessionId) },
+            onCompanionTurnCompleted = { companionRelationship.afterChat(sessionId) },
             parentMessageId = parentMessageId,
             variantTargetMessageId = variantTargetMessageId,
             appendVariantThroughRepository = { id, content, reasoning, model, input, output, duration ->
@@ -7705,9 +7728,9 @@ class LocalRepository(
                 pipelineJob.join()
             }
 
-            // 会话自动命名：异步触发，成功后通过 RealtimeEvent.SessionRenamed 通知 UI
+            // 会话自动命名：单会话角色保持姓名，不额外请求模型。
             if (
-                !generationController.isStopped &&
+                !session.companionMode && !generationController.isStopped &&
                 ctx.finalContent.isNotBlank() &&
                 !ctx.metadata.containsKey("is_heartbeat")
             ) {

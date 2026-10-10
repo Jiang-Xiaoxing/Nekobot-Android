@@ -847,11 +847,16 @@ fun SessionDetailScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showBindCharacterDialog by remember { mutableStateOf(false) }
     var selectedPromptStackItem by remember { mutableStateOf<PromptStackItem?>(null) }
+    var relationshipOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var advancedOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     val singleSessionRole = session?.companionMode == true
     val advancedPage = singleSessionRole && advancedOpen
     val showMain = !singleSessionRole || !advancedOpen
     val showAdvanced = !singleSessionRole || advancedOpen
+    if (singleSessionRole && relationshipOpen) {
+        CompanionRelationshipScreen(sessionId) { relationshipOpen = false }
+        return
+    }
     val mainScroll = rememberScrollState()
     val advancedScroll = rememberScrollState()
     BackHandler(enabled = advancedPage && selectedPromptStackItem == null && !showDeleteDialog && !showExportDialog) {
@@ -1052,7 +1057,7 @@ fun SessionDetailScreen(
                     session?.let { s ->
                         if (advancedPage) {
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("剧情与状态设置放在这里。修改后，点右上角保存。",
+                            Text("这里可以调整思考强度并查看调试信息。思考强度选择后立即保存。",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (showMain) {
@@ -1156,6 +1161,10 @@ fun SessionDetailScreen(
                             }
 
                             if (singleSessionRole) {
+                                OutlinedButton(onClick = { relationshipOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                                    Text("情绪与关系", modifier = Modifier.weight(1f))
+                                    Icon(Icons.Filled.ChevronRight, null)
+                                }
                                 OutlinedButton(onClick = { advancedOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                     Icon(Icons.Filled.Tune, null)
                                     Spacer(Modifier.width(12.dp))

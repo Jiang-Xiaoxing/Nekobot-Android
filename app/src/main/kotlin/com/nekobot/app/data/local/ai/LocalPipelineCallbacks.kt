@@ -167,6 +167,8 @@ internal class LocalPipelineCallbacks(
      * 退出会话重进后卡片仍在。为空时卡片只做实时展示，不落库。
      */
     private val onSubagentThinkingCard: ((card: com.nekobot.app.data.model.ThinkingCard) -> Unit)? = null,
+    private val companionStatePrompt: (suspend () -> Pair<String, String>)? = null,
+    private val onCompanionTurnCompleted: (() -> Unit)? = null,
     private val backgroundTaskScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : PipelineCallbacks() {
 
@@ -208,11 +210,12 @@ internal class LocalPipelineCallbacks(
     override suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>,
         tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> {
         if (!session.usesFusedCompanionMemory()) return messages
+        val relationshipContext = companionStatePrompt?.invoke() ?: ("" to "relationship-v2:off")
         val builder = FusedCompanionContext(db)
         val result = builder.build(session, requireNotNull(parentMessageId), fusedHistory,
             messages.filter { it["role"] == "system" }.joinToString("\n\n") { it["content"].toString() },
-            tools, messages.last { it["role"] == "user" }, dynamic,
-            activeModel.maxContextLength ?: 32_000, activeModel.maxTokens ?: 4_000)
+            tools, messages.last { it["role"] == "user" }, listOf(dynamic, relationshipContext.first).filter(String::isNotBlank).joinToString("\n"),
+            activeModel.maxContextLength ?: 32_000, activeModel.maxTokens ?: 4_000, stateKey = relationshipContext.second)
         ctx.metadata["companion_retrieval"] = builder.lastRetrieval
         companionQuestion = CompanionMemoryStore(db).questionForReply(session)
         return attachDurableAgentToolHistory(result, loadDurableAgentToolHistory(true))
@@ -932,7 +935,7 @@ internal class LocalPipelineCallbacks(
                     model = modelName,
                     createdAt = com.nekobot.app.data.local.LocalRepository.nowIsoStatic(),
                     toolCallHistory = toolCallHistoryJson,
-                    source = assistantSource,
+                    source = if (session.companionMode && (ctx.error != null || ctx.stoppedPrematurely)) "companion_incomplete" else assistantSource,
                     reasoningContent = reasoningContent.takeIf(String::isNotBlank),
                     // 生成耗时（毫秒）：气泡下方 tok/s 与 token 用量记录共用同一来源。
                     durationMs = durationMs
@@ -1676,6 +1679,11 @@ internal class LocalPipelineCallbacks(
 
     override fun onResponseComplete(ctx: PipelineContext, result: PipelineResult) {
         com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_pcb_response_complete, result.finalContent.length, result.error)
+        if (session.companionMode) {
+            if (result.error == null && !ctx.stoppedPrematurely && result.finalContent.isNotBlank() &&
+                variantTargetMessageId == null && ctx.metadata["skip_character_after_turn"] != true) onCompanionTurnCompleted?.invoke()
+            return
+        }
         // 触发 character.after_turn.finished hook（此时 afterTurn 已完成，状态/关系已是最新）
         triggerAfterTurnHook(ctx)
     }
@@ -1684,6 +1692,7 @@ internal class LocalPipelineCallbacks(
 
     /** 触发 character.before_turn.finished 事件 */
     private fun triggerBeforeTurnHook(ctx: PipelineContext) {
+        if (session.companionMode) return
         val executor = hookExecutor ?: return
         val turn = ctx.characterTurn ?: return
         kotlinx.coroutines.GlobalScope.launch {

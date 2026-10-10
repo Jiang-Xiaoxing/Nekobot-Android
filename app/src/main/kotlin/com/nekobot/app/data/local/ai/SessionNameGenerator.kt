@@ -283,6 +283,7 @@ internal class SessionNameGenerator(
         characterTags: String = "",
         characterScenario: String = ""
     ): String? {
+        if (session.companionMode) return null
         val sessionId = session.id
 
         // 会话级命名间隔：0 = 关闭自动命名。

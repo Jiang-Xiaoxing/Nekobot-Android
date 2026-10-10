@@ -212,6 +212,21 @@ fun ModernChatScreen(
     val plotChoices by viewModel.plotChoices.collectAsStateWithLifecycle()
     val plotChoicesLoading by viewModel.plotChoicesLoading.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    if (session?.companionMode == true && ServiceContainer.prefs.isLocalMode) {
+        val stateService = remember { ServiceContainer.localRepository.companionRelationship }
+        val relationship by remember(sessionId) { stateService.observe(sessionId) }.collectAsStateWithLifecycle(null)
+        val evaluating by stateService.running.collectAsStateWithLifecycle()
+        val noticeContext = LocalContext.current
+        var lastNotice by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
+        LaunchedEffect(relationship?.notice, evaluating) {
+            val notice = relationship?.notice
+            if (notice == null || sessionId in evaluating) lastNotice = null
+            if (relationship?.enabled == true && sessionId !in evaluating && notice != null && notice != lastNotice) {
+                lastNotice = notice
+                android.widget.Toast.makeText(noticeContext, "状态未更新，旧状态保留。可在角色详情的情绪与关系中查看。", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     val agentRecovery by viewModel.agentRecovery.collectAsStateWithLifecycle()
     val queuedMessages by viewModel.queuedMessages.collectAsStateWithLifecycle()
     // 已导入表情包：名称 → 图片地址，供消息气泡把 `[名称]` 渲染为原图
@@ -276,9 +291,9 @@ fun ModernChatScreen(
                 )
             }
             // Agent 会话目标/规格任务横幅（/goal、/spec 命令设置）
-            GoalSpecBanner(goal = agentGoal, spec = agentSpec)
+            if (session?.companionMode != true) GoalSpecBanner(goal = agentGoal, spec = agentSpec)
             // Agent 任务列表（todo_write 工具写入，输入框上方可折叠面板）
-            AgentTodosPanel(todos = agentTodos)
+            if (session?.companionMode != true) AgentTodosPanel(todos = agentTodos)
             ModernChatComposer(
             modifier = Modifier.fillMaxWidth(),
             sessionId = sessionId,

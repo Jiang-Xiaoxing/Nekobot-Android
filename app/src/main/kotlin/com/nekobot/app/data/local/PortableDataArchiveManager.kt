@@ -62,7 +62,9 @@ enum class PortableDataCategory(
             "companion_pending",
             "companion_vectors",
             "companion_clarifications",
-            "companion_owners"
+            "companion_owners",
+            "companion_relationship_state",
+            "companion_relationship_events"
         )
     ),
     CHARACTERS("characters", listOf("local_characters")),
@@ -401,6 +403,8 @@ class PortableDataArchiveManager(private val context: Context) {
                 }
                 if (PortableDataCategory.CONVERSATIONS in selected) {
                     invalidateExperiencesWithoutVisibleSources(db)
+                    // Imported state stays visible, but never starts paid evaluations on another device.
+                    db.openHelper.writableDatabase.execSQL("UPDATE companion_relationship_state SET enabled = 0, version = version + 1, awaitingHistory = 1, notice = NULL")
                     // Explicit portable import retains the independent data within the selected
                     // conversation category. Row IDs and database names are local to the destination.
                     db.openHelper.writableDatabase.execSQL(
