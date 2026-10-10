@@ -196,13 +196,13 @@ internal fun CompanionMemoryCard(
                     IconButton(onClick = { menu = true }, enabled = enabled) { Icon(Icons.Filled.MoreHoriz, "更多记忆操作") }
                     DropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }) {
                         if (onCoreChange != null && memory.current && memory.status in setOf("active", "completed")) {
-                            DropdownMenuItem(text = { Text(if (CompanionCoreMemory.contains(memory)) "移出核心，按需查找" else "设为核心，每次带上") },
-                                leadingIcon = { Icon(Icons.Filled.PushPin, null) },
+                            DropdownMenuItem(text = { Text(if (CompanionCoreMemory.contains(memory)) "移出核心记忆" else "设为核心记忆") },
+                                leadingIcon = { CoreMemoryIcon() },
                                 onClick = { menu = false; onCoreChange() })
                         }
-                        DropdownMenuItem(text = { Text("编辑记忆") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                        DropdownMenuItem(text = { Text("编辑记忆") }, leadingIcon = { EditMemoryIcon() },
                             onClick = { menu = false; onEdit() })
-                        DropdownMenuItem(text = { Text("修改记录") }, leadingIcon = { Icon(Icons.Filled.History, null) },
+                        DropdownMenuItem(text = { Text("修改记录") }, leadingIcon = { MemoryHistoryIcon() },
                             onClick = { menu = false; onVersions() })
                         DropdownMenuItem(text = { Text("删除记忆", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Filled.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
@@ -226,9 +226,11 @@ internal fun CompanionMemoryCard(
             }
             if (CompanionCoreMemory.contains(memory) || memory.locked || memory.manual) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (CompanionCoreMemory.contains(memory)) MemoryBadge("核心记忆 · 每次带上", Icons.Filled.PushPin)
-                if (memory.locked) MemoryBadge("只允许我修改", Icons.Filled.Lock)
-                if (memory.manual) MemoryBadge("手动记忆", Icons.Filled.Edit)
+                if (CompanionCoreMemory.contains(memory)) MemoryBadge("核心记忆") { CoreMemoryIcon(Modifier.size(16.dp)) }
+                if (memory.locked) MemoryBadge("只允许我修改") {
+                    Icon(Icons.Filled.Lock, null, Modifier.size(16.dp), tint = memoryAccent())
+                }
+                if (memory.manual) MemoryBadge("手动记忆") { EditMemoryIcon(Modifier.size(16.dp)) }
             }
             if (memory.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED && !memory.manual) {
                 Text("迁入的旧记忆 · 原话来源未验证", color = MaterialTheme.colorScheme.error,
@@ -250,9 +252,9 @@ internal fun CompanionMemoryCard(
 }
 
 @Composable
-private fun MemoryBadge(label: String, icon: ImageVector? = null) {
+private fun MemoryBadge(label: String, icon: (@Composable () -> Unit)? = null) {
         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            icon?.let { Icon(it, null, Modifier.size(12.dp), tint = memoryAccent()); Spacer(Modifier.width(4.dp)) }
+            icon?.let { it(); Spacer(Modifier.width(4.dp)) }
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 }

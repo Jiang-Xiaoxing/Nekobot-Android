@@ -11,7 +11,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -148,7 +147,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         return
     }
     BackHandler(enabled = coreOnly && !editor && versions == null && sources == null && deletion == null) { coreOnly = false }
-    Scaffold(topBar = { TopAppBar(title = { Text(if (coreOnly) "每次都会带上的记忆" else stringResource(R.string.agent_character_memory_title),
+    Scaffold(topBar = { TopAppBar(title = { Text(if (coreOnly) "核心记忆" else stringResource(R.string.agent_character_memory_title),
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }, navigationIcon = {
         IconButton(onClick = { if (coreOnly) coreOnly = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }, actions = {
@@ -170,8 +169,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                         coreOnly = true; category = ""; query = ""
                     } else Modifier).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Filled.PushPin, null, tint = memoryCategoryColor("relationship"))
-                            Text(if (coreOnly) "${coreRecords.size} 条核心记忆" else "每次都会带上的记忆", Modifier.weight(1f),
+                            CoreMemoryIcon(Modifier.size(36.dp))
+                            Text(if (coreOnly) "${coreRecords.size} 条核心记忆" else "核心记忆", Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                             if (!coreOnly) { Text("${coreRecords.size} 条"); Icon(Icons.Filled.ChevronRight, "查看核心记忆") }
                         }
@@ -198,7 +197,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                     filteredRecords.groupingBy { it.category }.eachCount(), filteredRecords.size, shown.size)
             }
             if (shown.isEmpty() && ready && error == null) item("empty") {
-                if (coreOnly && coreRecords.isEmpty()) Text("还没有核心记忆。返回全部记忆，点条目右上角的“设为核心”；也可以在后续聊天整理中由模型挑选。",
+                if (coreOnly && coreRecords.isEmpty()) Text("还没有核心记忆。返回全部记忆，点条目右上角的“设为核心记忆”；也可以在后续聊天整理中由模型挑选。",
                     Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else CompanionMemoryEmpty(query.isNotBlank() || category.isNotBlank())
             }
