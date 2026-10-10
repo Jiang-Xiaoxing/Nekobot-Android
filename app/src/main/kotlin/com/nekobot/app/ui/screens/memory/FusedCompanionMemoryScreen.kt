@@ -1,5 +1,8 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -7,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -21,6 +26,7 @@ import com.nekobot.app.ServiceContainer
 import com.nekobot.app.R
 import com.nekobot.app.data.local.CompanionMemoryOverview
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
+import com.nekobot.app.data.local.ai.CompanionCoreMemory
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import com.nekobot.app.data.local.db.CompanionSourceEntity
 import kotlinx.coroutines.launch
@@ -48,6 +54,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var refresh by remember { mutableIntStateOf(0) }
     var query by rememberSaveable(sessionId) { mutableStateOf("") }
     var category by rememberSaveable(sessionId) { mutableStateOf("") }
+    var coreOnly by rememberSaveable(sessionId) { mutableStateOf(false) }
     var editor by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var versions by remember { mutableStateOf<List<CompanionMemoryEntity>?>(null) }
@@ -119,7 +126,10 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         finally { busy = false }
     } }
     val visibleRecords = records.filter { it.current || it.status in setOf("conflict", "locked_conflict") }
-    val shown = visibleRecords.filter { (category.isEmpty() || it.category == category) &&
+    val coreRecords = CompanionCoreMemory.rows(records)
+    val coreTokens = CompanionCoreMemory.tokens(coreRecords)
+    val filteredRecords = if (coreOnly) coreRecords else visibleRecords
+    val shown = filteredRecords.filter { (category.isEmpty() || it.category == category) &&
         (query.isBlank() || "${it.content} ${it.tagsJson} ${it.factKey}".contains(query, true)) }
     val editable = ready && !busy && error == null && repo === ServiceContainer.localRepository
     if (recallSettingsOpen) {
@@ -131,9 +141,10 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             } })
         return
     }
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.agent_character_memory_title),
+    BackHandler(enabled = coreOnly && !editor && versions == null && sources == null && deletion == null) { coreOnly = false }
+    Scaffold(topBar = { TopAppBar(title = { Text(if (coreOnly) "每次都会带上的记忆" else stringResource(R.string.agent_character_memory_title),
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }, navigationIcon = {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        IconButton(onClick = { if (coreOnly) coreOnly = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }, actions = {
         IconButton(enabled = editable, onClick = { recallSettings = repo.companionRecallSettings(sessionId); actionError = null; recallSettingsOpen = true }) {
             Icon(Icons.Filled.Tune, "回查设置")
@@ -142,10 +153,30 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         onClick = { selected = null; actionError = null; editor = true }) { Icon(Icons.Filled.Add, "新增记忆") } }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("fused-memory-list"),
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item("overview") {
+            if (!coreOnly) item("overview") {
                 CompanionMemoryOverviewCard(ownerName, overview, visibleRecords.size,
-                    records.filter { it.current && it.alwaysProvide }.sumOf { estimateLocalTextTokens(it.content) + 30 },
+                    coreTokens,
                     loading = !ready && error == null, onRefresh = { refresh++ })
+            }
+            if (ready) item("core-entry") {
+                Surface(shape = RoundedCornerShape(18.dp), color = memoryCategoryColor("relationship").copy(alpha = 0.09f)) {
+                    Column(Modifier.fillMaxWidth().then(if (!coreOnly) Modifier.clickable {
+                        coreOnly = true; category = ""; query = ""
+                    } else Modifier).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Filled.PushPin, null, tint = memoryCategoryColor("relationship"))
+                            Text(if (coreOnly) "${coreRecords.size} 条核心记忆" else "每次都会带上的记忆", Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            if (!coreOnly) { Text("${coreRecords.size} 条"); Icon(Icons.Filled.ChevronRight, "查看核心记忆") }
+                        }
+                        Text(if (coreOnly) "这里的内容，每次聊天都会提供给模型。点记忆右上角可移出核心，正文仍然保留。模型在整理旧聊天时挑选和更新，你的手动选择优先。"
+                            else "重要的称呼、关系与相处习惯，随时查看和调整。", style = MaterialTheme.typography.bodySmall)
+                        if (coreOnly) Text("约 $coreTokens Token · 不扣主动回查额度", style = MaterialTheme.typography.labelMedium)
+                        if (coreTokens > CompanionCoreMemory.maintenanceTokens) Text(
+                            "现有核心超过精简目标，仍会完整提供。建议缩短正文或移出部分条目；新增核心前需要腾出空间。",
+                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
             error?.let { message -> item("error") {
                 CompanionMemoryNotice("记忆暂时无法读取", message) { refresh++ }
@@ -158,17 +189,20 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             }
             item("filters") {
                 CompanionMemoryFilters(query, { query = it }, category, { category = it },
-                    visibleRecords.groupingBy { it.category }.eachCount(), visibleRecords.size, shown.size)
+                    filteredRecords.groupingBy { it.category }.eachCount(), filteredRecords.size, shown.size)
             }
             if (shown.isEmpty() && ready && error == null) item("empty") {
-                CompanionMemoryEmpty(query.isNotBlank() || category.isNotBlank())
+                if (coreOnly && coreRecords.isEmpty()) Text("还没有核心记忆。返回全部记忆，点条目右上角的“设为核心”；也可以在后续聊天整理中由模型挑选。",
+                    Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else CompanionMemoryEmpty(query.isNotBlank() || category.isNotBlank())
             }
             items(shown, key = { it.id }) { memory ->
                 CompanionMemoryCard(memory, enabled = editable,
                     onSource = { action { sources = repo.fusedMemorySources(sessionId, memory.id); sourceMemory = memory } },
                     onEdit = { selected = memory; actionError = null; editor = true },
                     onVersions = { action { versions = repo.fusedMemoryVersions(sessionId, memory.factKey) } },
-                    onDelete = { actionError = null; deletion = memory })
+                    onDelete = { actionError = null; deletion = memory },
+                    onCoreChange = { action { repo.setFusedMemoryCore(sessionId, memory.factKey, !CompanionCoreMemory.contains(memory)) } })
             }
         }
     }

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.nekobot.app.data.local.ai.CompanionImportPolicy
+import com.nekobot.app.data.local.ai.CompanionCoreMemory
 import com.nekobot.app.data.local.ai.MemoryTags
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
@@ -77,7 +78,7 @@ internal fun CompanionMemoryEditor(
     var content by rememberSaveable(memory?.id) { mutableStateOf(memory?.content.orEmpty()) }
     var tags by rememberSaveable(memory?.id) { mutableStateOf(memory?.let { MemoryTags.fromJson(it.tagsJson).joinToString("，") }.orEmpty()) }
     var category by rememberSaveable(memory?.id) { mutableStateOf(memory?.category ?: "user_profile") }
-    var pinned by rememberSaveable(memory?.id) { mutableStateOf(memory?.alwaysProvide ?: false) }
+    var pinned by rememberSaveable(memory?.id) { mutableStateOf(memory?.let { CompanionCoreMemory.contains(it) } ?: false) }
     var locked by rememberSaveable(memory?.id) { mutableStateOf(memory?.locked ?: false) }
     MemoryPanel(if (memory == null) "添加一条记忆" else "编辑这条记忆", "写下你希望角色记住的事", busy, onDismiss,
         actions = {
@@ -113,7 +114,7 @@ internal fun CompanionMemoryEditor(
                 supportingText = { Text("用逗号分开，方便以后查找。") }, shape = RoundedCornerShape(16.dp))
             Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
                 Column {
-                    MemoryOption("每次聊天都提供", "这条约 ${estimateLocalTextTokens(content) + 30} Token；适合少量特别重要的记忆。",
+                    MemoryOption("设为核心记忆", "每次聊天都会带上。关闭后仍保留，需要时再查；你的选择不会被模型改回。",
                         pinned, !busy) { pinned = it }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     MemoryOption("只允许我修改", "AI 不会自动改写；你仍然可以编辑或删除。", locked, !busy) { locked = it }

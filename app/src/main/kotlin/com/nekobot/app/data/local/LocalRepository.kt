@@ -11487,6 +11487,11 @@ ${AiOutputLanguage.directive()}
         scheduleCompanionMemoryExtraction(session)
     }
 
+    suspend fun setFusedMemoryCore(sessionId: String, key: String, enabled: Boolean) = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)).also { require(it.companionMode) }
+        CompanionMemoryStore(db).setCore(session, key, enabled)
+    }
+
     suspend fun deleteFusedMemory(sessionId: String, key: String) = withContext(Dispatchers.IO) {
         val session = requireNotNull(sessionDao.getById(sessionId)).also { require(it.companionMode) }
         CompanionMemoryStore(db).deleteFused(session, key)

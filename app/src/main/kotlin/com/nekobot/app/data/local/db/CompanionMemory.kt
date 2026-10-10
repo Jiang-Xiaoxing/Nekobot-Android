@@ -41,7 +41,8 @@ data class CompanionMemoryEntity(
     val createdAt: String,
     val updatedAt: String,
     @ColumnInfo(defaultValue = "'native'") val provenance: String = "native",
-    val expiresAt: String? = null
+    val expiresAt: String? = null,
+    @ColumnInfo(defaultValue = "0") val coreExcluded: Boolean = false
 )
 
 @Entity(tableName = "companion_sources", primaryKeys = ["memoryId", "messageId"], indices = [Index("messageId")])

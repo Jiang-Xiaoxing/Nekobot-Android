@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
 import com.nekobot.app.data.local.CompanionMemoryOverview
 import com.nekobot.app.data.local.ai.CompanionImportPolicy
+import com.nekobot.app.data.local.ai.CompanionCoreMemory
 import com.nekobot.app.data.local.ai.FusedCompanionPolicy
 import com.nekobot.app.data.local.ai.MemoryTags
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
@@ -135,9 +136,9 @@ internal fun CompanionMemoryOverviewCard(
                     if (details) "收起整理详情" else "展开整理详情", Modifier.size(20.dp), tint = accent)
             }
             if (details) {
-                Text("原话始终保留。未整理数量包含保留的近期原话，较早的内容达到整理量后由后台继续处理。\n最近检索：${overview?.lastRetrieval ?: "尚未聊天"}",
+                Text("原话始终保留。未整理数量包含近期原话；较早的聊天达到整理量后，APP 调用模型归纳，再核对来源并保存。\n最近检索：${overview?.lastRetrieval ?: "尚未聊天"}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("每次聊天都提供的记忆：约 $pinnedTokens Token。通常预算约 1000，小上下文会缩减；超额时会提示调整。",
+                Text("核心记忆约 $pinnedTokens Token，每次完整提供，不扣主动回查额度；仍占模型上下文。",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -176,7 +177,8 @@ internal fun CompanionMemoryFilters(
 @Composable
 internal fun CompanionMemoryCard(
     memory: CompanionMemoryEntity, enabled: Boolean,
-    onSource: () -> Unit, onEdit: () -> Unit, onVersions: () -> Unit, onDelete: () -> Unit
+    onSource: () -> Unit, onEdit: () -> Unit, onVersions: () -> Unit, onDelete: () -> Unit,
+    onCoreChange: (() -> Unit)? = null
 ) {
     val accent = memoryCategoryColor(memory.category)
     var menu by remember(memory.id) { mutableStateOf(false) }
@@ -193,6 +195,11 @@ internal fun CompanionMemoryCard(
                 Box {
                     IconButton(onClick = { menu = true }, enabled = enabled) { Icon(Icons.Filled.MoreHoriz, "更多记忆操作") }
                     DropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }) {
+                        if (onCoreChange != null && memory.current && memory.status in setOf("active", "completed")) {
+                            DropdownMenuItem(text = { Text(if (CompanionCoreMemory.contains(memory)) "移出核心，按需查找" else "设为核心，每次带上") },
+                                leadingIcon = { Icon(Icons.Filled.PushPin, null) },
+                                onClick = { menu = false; onCoreChange() })
+                        }
                         DropdownMenuItem(text = { Text("编辑记忆") }, leadingIcon = { Icon(Icons.Filled.Edit, null) },
                             onClick = { menu = false; onEdit() })
                         DropdownMenuItem(text = { Text("修改记录") }, leadingIcon = { Icon(Icons.Filled.History, null) },
@@ -217,9 +224,9 @@ internal fun CompanionMemoryCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 tags.forEach { Text("#$it", style = MaterialTheme.typography.labelMedium, color = accent) }
             }
-            if (memory.alwaysProvide || memory.locked || memory.manual) FlowRow(
+            if (CompanionCoreMemory.contains(memory) || memory.locked || memory.manual) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (memory.alwaysProvide) MemoryBadge("每次聊天都提供", Icons.Filled.PushPin)
+                if (CompanionCoreMemory.contains(memory)) MemoryBadge("核心记忆 · 每次带上", Icons.Filled.PushPin)
                 if (memory.locked) MemoryBadge("只允许我修改", Icons.Filled.Lock)
                 if (memory.manual) MemoryBadge("手动记忆", Icons.Filled.Edit)
             }

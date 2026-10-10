@@ -2,7 +2,7 @@ package com.nekobot.app.data.local.ai
 
 /** 查看页和实际请求共用这份规则，避免只展示一份没有实际执行的说明。 */
 internal object CompanionConversionRules {
-    const val version = "2026-10-10.1"
+    const val version = "2026-10-10.2"
     const val referenceProvenance = "conversion_reference"
     val explanation = """
         你正在把旧聊天整理成 Agent 角色自己的记忆，请按以下规则处理。
@@ -44,6 +44,7 @@ internal object CompanionConversionRules {
          "event_evidence":"", "target_key":"", "legacy_key":"", "tags":[]}
         category 只能是 user_profile（用户资料）、character_profile（角色特点）、relationship（双方关系）、episode（经历档案）、promise（约定）、open_issue（未解决事项）。
         kind 只能是 core（核心信息）、fact（事实）、task（约定）、birthday（生日）、episode（经历）。
+        ${CompanionCoreMemory.selectionRules.trimIndent()}
         operation 必填：add 新增；update 修改 existing 或本批已添加的事实；complete 完成；cancel 取消；retract 否定 existing 中的旧事实。
         更新或否定必须使用 target_key 指向已有事实；新增时 target_key 留空。同一事实只保留最终说法，避免前后重复。
         source_id 只能使用 target 给出的短编号，逐字照抄，不用自己生成编号。
