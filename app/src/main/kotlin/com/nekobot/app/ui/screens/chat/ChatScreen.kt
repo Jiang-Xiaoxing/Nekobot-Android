@@ -377,7 +377,8 @@ fun ChatScreen(
     // 进度卡片，卡片自身已经表达了“正在处理”，这里就不再渲染独立气泡，融合成一个卡片。
     val progressCardsVisible = shouldRenderProgressCards(
         isLocalMode = ServiceContainer.prefs.isLocalMode,
-        sessionMode = session?.sessionMode
+        sessionMode = session?.sessionMode,
+        companionMode = companionChat
     )
     val streamingPlaceholderIndex = renderMessages.indexOfLast { it.id == ChatViewModel.STREAMING_ID }
     val progressCardHost = if (streamingPlaceholderIndex > 0) {
@@ -917,7 +918,7 @@ fun ChatScreen(
                     )
                 } else {
                     val conversationLabel = stringResource(R.string.chat_conversation)
-                    val typingLabel = stringResource(R.string.chat_typing)
+                    val typingLabel = stringResource(if (companionChat) R.string.companion_chat_typing else R.string.chat_typing)
                     TopAppBar(
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -949,7 +950,8 @@ fun ChatScreen(
                                         text = if (sending) typingLabel
                                         else stringResource(R.string.chat_message_count, totalMessageCount),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (sending) MaterialTheme.colorScheme.primary
+                                        color = if (companionChat) companionChatPalette().secondary
+                                        else if (sending) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1
                                     )
@@ -1498,7 +1500,9 @@ fun ChatScreen(
                 ) {
                     ErrorBanner(
                         message = errorMsg,
-                        onRetry = { viewModel.clearError() }
+                        // Clearing an error is not a retry. Companion recovery uses the saved-run action.
+                        onRetry = if (companionChat) null else ({ viewModel.clearError() }),
+                        onDismiss = if (companionChat) ({ viewModel.clearError() }) else null
                     )
                 }
             }
@@ -2615,16 +2619,13 @@ private fun StreamingAssistantBubble(
 ) {
     val content by contentFlow.collectAsStateWithLifecycle()
     val reasoning by reasoningFlow.collectAsStateWithLifecycle()
-    if (content.isBlank() && reasoning.isBlank()) {
+    val companionChat = LocalCompanionChatName.current != null
+    val visibleReasoning = reasoning.takeIf { !companionChat || LocalCompanionShowReasoning.current }.orEmpty()
+    if (content.isBlank() && visibleReasoning.isBlank()) {
+        // Companion waiting feedback lives only in the header, even when hidden reasoning is streaming.
+        if (companionChat) return
         if (fuseTypingIndicator) return
-        if (LocalCompanionChatName.current != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ChatAvatar(portraitUrl = portraitUrl, size = 36.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.chat_typing), color = companionChatPalette().secondary,
-                    style = MaterialTheme.typography.bodyMedium)
-            }
-        } else ThinkingIndicator(
+        ThinkingIndicator(
             portraitUrl = portraitUrl,
             showAiAvatar = showAiAvatar,
             fillAiWidth = fillAiWidth,
@@ -2737,7 +2738,9 @@ private fun MessageBubble(
     val userBrush = if (companionChat) Brush.linearGradient(listOf(userBubble, userBubble)) else bubbleAppearance.userBrush
     val aiContainer = if (companionChat) companionPalette.surface else bubbleAppearance.assistantColor
     val aiBorder = if (companionChat) Color.Transparent else bubbleAppearance.assistantBorder
-    val textColor = if (companionChat) companionPalette.ink else bubbleAppearance.textColor(isUser)
+    val textColor = if (companionChat) {
+        if (isUser) companionPalette.outgoingInk else companionPalette.ink
+    } else bubbleAppearance.textColor(isUser)
     // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
     val linkColor = if (isUser) linkColorOnBubble(userBubble) else accentLink()
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -2903,7 +2906,13 @@ private fun MessageBubble(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (!isUser && !fillAiWidth && !message.reasoningContent.isNullOrBlank()) {
+            if (companionChat && !isUser) {
+                CompanionReasoningSection(
+                    messageId = message.id,
+                    reasoning = message.reasoningContent,
+                    enabled = LocalCompanionShowReasoning.current
+                )
+            } else if (!isUser && !fillAiWidth && !message.reasoningContent.isNullOrBlank()) {
                 var reasoningExpanded by remember(message.id) {
                     mutableStateOf(isStreamingPlaceholder)
                 }
@@ -3972,8 +3981,9 @@ internal fun resolveProgressCardExpanded(
 /** 进度卡片只属于本地执行链路或远程 Agent 工具链路，远程角色/群聊不展示。 */
 internal fun shouldRenderProgressCards(
     isLocalMode: Boolean,
-    sessionMode: String?
-): Boolean = isLocalMode || sessionMode.equals("agent", ignoreCase = true)
+    sessionMode: String?,
+    companionMode: Boolean = false
+): Boolean = !companionMode && (isLocalMode || sessionMode.equals("agent", ignoreCase = true))
 
 /**
  * 本轮的“思考中”占位气泡是否应融进进度卡片。

@@ -247,6 +247,9 @@ fun ModernChatScreen(
             ?: session?.displayName.orEmpty()
     } else null
     var companionSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var companionShowReasoning by remember(sessionId, companionName != null) {
+        mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
+    }
     var companionUtilityRequest by remember(sessionId) { mutableStateOf<CompanionChatUtility?>(null) }
     val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
     val yoloAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode
@@ -264,7 +267,8 @@ fun ModernChatScreen(
 
     CompositionLocalProvider(
         LocalStickerLookup provides stickerLookup,
-        LocalCompanionChatName provides companionName
+        LocalCompanionChatName provides companionName,
+        LocalCompanionShowReasoning provides companionShowReasoning
     ) {
     ChatScreen(
     sessionId = sessionId,
@@ -284,7 +288,10 @@ fun ModernChatScreen(
             modifier = Modifier.padding(bottom = embeddedBottomBarClearance)
         ) {
             if (agentRecovery != null && !replyBusy) {
-                AgentRecoveryBar(
+                if (companionName != null) CompanionReplyRecovery(
+                    onResume = viewModel::resumeAgentRun,
+                    onDismiss = viewModel::discardAgentRun
+                ) else AgentRecoveryBar(
                     state = agentRecovery!!,
                     onResume = viewModel::resumeAgentRun,
                     onDiscard = viewModel::discardAgentRun
@@ -299,6 +306,11 @@ fun ModernChatScreen(
             sessionId = sessionId,
             session = session,
             showCompanionSettings = companionSettingsOpen,
+            showCompanionReasoning = companionShowReasoning,
+            onShowCompanionReasoningChange = { show ->
+                ServiceContainer.localRepository.setCompanionShowReasoning(sessionId, show)
+                companionShowReasoning = show
+            },
             onDismissCompanionSettings = { companionSettingsOpen = false },
             onOpenCompanionDetail = { onOpenSessionDetail(sessionId) },
             onOpenCompanionStory = { onOpenStoryGraph(sessionId) },
@@ -727,6 +739,8 @@ private fun ModernChatComposer(
     sessionId: String,
     session: Session?,
     showCompanionSettings: Boolean,
+    showCompanionReasoning: Boolean,
+    onShowCompanionReasoningChange: (Boolean) -> Unit,
     onDismissCompanionSettings: () -> Unit,
     onOpenCompanionDetail: () -> Unit,
     onOpenCompanionStory: () -> Unit,
@@ -1375,6 +1389,10 @@ private fun ModernChatComposer(
                     CompanionSettingsRow(stringResource(R.string.companion_chat_details), Icons.Filled.Person) {
                         onDismissCompanionSettings(); onOpenCompanionDetail()
                     }
+                    CompanionReasoningSetting(
+                        checked = showCompanionReasoning,
+                        onCheckedChange = onShowCompanionReasoningChange
+                    )
                     CompanionSettingsRow(stringResource(R.string.companion_chat_search), Icons.Filled.Search) {
                         onDismissCompanionSettings(); showSearch = true
                     }

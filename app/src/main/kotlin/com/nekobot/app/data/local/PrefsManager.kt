@@ -1277,6 +1277,14 @@ class PrefsManager(context: Context) {
         prefs.edit().putString(companionRecallKey(profile, sessionId) + ":reasoning", value.wireValue).apply()
     }
 
+    /** Display only: never changes model settings or erases saved reasoning. */
+    internal fun companionShowReasoning(profile: String, sessionId: String): Boolean =
+        prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", false)
+
+    internal fun setCompanionShowReasoning(profile: String, sessionId: String, show: Boolean) {
+        prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", show).apply()
+    }
+
     fun getReasoningEffort(isAgentSession: Boolean): com.nekobot.app.data.model.ReasoningEffort =
         com.nekobot.app.data.model.ReasoningEffort.fromValue(
             prefs.getString(

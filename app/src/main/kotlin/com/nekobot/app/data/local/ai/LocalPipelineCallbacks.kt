@@ -469,10 +469,8 @@ internal class LocalPipelineCallbacks(
                         if (reasoningEffort != ReasoningEffort.NONE) {
                             if (session.sessionMode.equals("agent", ignoreCase = true)) {
                                 ctx.metadata["agent_reasoning_streamed"] = true
-                                activeAgentProgressReporter?.onThinkingContent(ctx, event.chunk)
-                            } else {
-                                emitEvent(event)
                             }
+                            onReasoningChunk(ctx, event.chunk, streamMessageId)
                         }
                     }
                     else -> emitEvent(event)
@@ -1417,7 +1415,9 @@ internal class LocalPipelineCallbacks(
         if (reasoningEffort == ReasoningEffort.NONE) return
         if (session.sessionMode.equals("agent", ignoreCase = true)) {
             activeAgentProgressReporter?.onThinkingContent(ctx, chunk)
-        } else {
+        }
+        // Companion chat uses the optional per-reply disclosure instead of the Agent progress card.
+        if (session.companionMode || !session.sessionMode.equals("agent", ignoreCase = true)) {
             emitEvent(RealtimeEvent.ReasoningChunk(chunk))
         }
     }

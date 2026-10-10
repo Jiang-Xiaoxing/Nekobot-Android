@@ -1634,6 +1634,10 @@ class LocalRepository(
     internal fun setCompanionReasoningEffort(sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) =
         ServiceContainer.prefs.setCompanionReasoningEffort(db.dbName, sessionId, value)
 
+    internal fun companionShowReasoning(sessionId: String) = ServiceContainer.prefs.companionShowReasoning(db.dbName, sessionId)
+    internal fun setCompanionShowReasoning(sessionId: String, show: Boolean) =
+        ServiceContainer.prefs.setCompanionShowReasoning(db.dbName, sessionId, show)
+
     internal suspend fun companionConversionModels(): List<CompanionConversionModel> = aiModelDao.listAll()
         .filter { it.enabled && it.purpose in setOf("chat", "compression") }.map { model ->
             CompanionConversionModel(model.id, model.name, model.provider?.takeIf { it.isNotBlank() }

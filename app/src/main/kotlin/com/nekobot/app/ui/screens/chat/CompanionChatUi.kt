@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +23,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -27,22 +32,94 @@ import com.nekobot.app.R
 
 /** Only provided inside a single-session companion chat; shared Agent/role UI keeps its own style. */
 internal val LocalCompanionChatName = staticCompositionLocalOf<String?> { null }
+internal val LocalCompanionShowReasoning = staticCompositionLocalOf { false }
 enum class CompanionChatUtility { TERMINAL, BROWSER, RESTORE_ARCHIVE, VIEW_ARCHIVE }
 
 internal data class CompanionChatPalette(
     val background: Color, val surface: Color, val outgoing: Color,
-    val ink: Color, val secondary: Color, val accent: Color
+    val ink: Color, val secondary: Color, val accent: Color,
+    val outgoingInk: Color = Color(0xFF172411)
 )
 
 @Composable
 internal fun companionChatPalette(): CompanionChatPalette =
     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        CompanionChatPalette(Color(0xFF191A1C), Color(0xFF282A2E), Color(0xFF51343E),
-            Color(0xFFF3EFF1), Color(0xFFB8B2B6), Color(0xFFE4A2B6))
+        CompanionChatPalette(Color(0xFF191A1C), Color(0xFF282A2E), Color(0xFF70B958),
+            Color(0xFFF3EFF1), Color(0xFFB8B2B6), Color(0xFF85CC75))
     } else {
-        CompanionChatPalette(Color(0xFFF2F3F4), Color.White, Color(0xFFF7DCE5),
-            Color(0xFF27282D), Color(0xFF73767E), Color(0xFF9D4F69))
+        CompanionChatPalette(Color(0xFFF2F3F4), Color.White, Color(0xFF95EC69),
+            Color(0xFF27282D), Color(0xFF73767E), Color(0xFF168144))
     }
+
+/** A display preference only; NONE applies to new requests, never to saved messages. */
+@Composable
+internal fun CompanionReasoningSetting(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val palette = companionChatPalette()
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+        .padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.Psychology, null, Modifier.size(22.dp), tint = palette.ink)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.companion_chat_show_reasoning),
+                style = MaterialTheme.typography.bodyLarge, color = palette.ink)
+            Text(stringResource(R.string.companion_chat_show_reasoning_hint),
+                style = MaterialTheme.typography.bodySmall, color = palette.secondary)
+        }
+        Switch(checked = checked, onCheckedChange = null,
+            colors = SwitchDefaults.colors(checkedTrackColor = palette.accent))
+    }
+}
+
+/** Reuses saved-run recovery, without exposing the Agent execution panel. */
+@Composable
+internal fun CompanionReplyRecovery(onResume: () -> Unit, onDismiss: () -> Unit) {
+    val palette = companionChatPalette()
+    Column(Modifier.fillMaxWidth().background(palette.background).padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Text(stringResource(R.string.companion_chat_reply_unfinished),
+            color = palette.secondary, style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onResume) { Text(stringResource(R.string.companion_chat_resume_reply), color = palette.accent) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.companion_chat_dismiss_reply), color = palette.secondary) }
+        }
+    }
+}
+
+/** Compact optional disclosure; hidden/empty reasoning never leaves a blank card. */
+@Composable
+internal fun CompanionReasoningSection(messageId: String?, reasoning: String?, enabled: Boolean) {
+    if (!enabled || reasoning.isNullOrBlank()) return
+    var expanded by remember(messageId) { mutableStateOf(false) }
+    val palette = companionChatPalette()
+    val dark = palette.background.luminance() < 0.5f
+    val container = if (dark) Color(0xFF292D31) else Color(0xFFE7E9ED)
+    val content = if (dark) palette.secondary else Color(0xFF62666F)
+    Surface(Modifier.fillMaxWidth().padding(bottom = 6.dp).testTag("companion_reasoning"),
+        shape = RoundedCornerShape(8.dp), color = container) {
+        Column {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Psychology, null, Modifier.size(18.dp), tint = content)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.companion_chat_reasoning), Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge, color = content)
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    stringResource(if (expanded) R.string.common_collapse else R.string.common_expand),
+                    Modifier.size(20.dp), tint = content)
+            }
+            if (expanded) {
+                SelectionContainer {
+                    Text(reasoning, Modifier.fillMaxWidth().heightIn(max = 240.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                        style = MaterialTheme.typography.bodySmall, color = content)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 internal fun CompanionTimeLabel(label: String) {

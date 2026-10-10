@@ -504,10 +504,17 @@ class ChatViewModel : BaseViewModel() {
     }
 
     private fun isReasoningEnabled(): Boolean =
-        currentReasoningEffort() != ReasoningEffort.NONE
+        // Local companion callbacks already enforce the effort captured for this request.
+        // Re-reading a changed setting here would wrongly hide an in-flight reply or old messages.
+        (isLocalMode && _session.value?.companionMode == true) || currentReasoningEffort() != ReasoningEffort.NONE
 
     private fun currentReasoningEffort(): ReasoningEffort =
-        ServiceContainer.prefs.getReasoningEffort(isAgentSession())
+        if (isLocalMode && _session.value?.companionMode == true) {
+            ServiceContainer.localRepository.companionReasoningEffort(currentSessionId)
+        } else ServiceContainer.prefs.getReasoningEffort(isAgentSession())
+
+    private fun keepsStandaloneReasoning(): Boolean =
+        _session.value?.companionMode == true || (isReasoningEnabled() && !isAgentSession())
 
     private fun isAgentSession(): Boolean =
         _session.value?.sessionMode.equals("agent", ignoreCase = true) ||
@@ -1056,7 +1063,7 @@ class ChatViewModel : BaseViewModel() {
             is RealtimeEvent.ReasoningChunk -> {
                 if (!isReasoningEnabled()) return
                 streamingReasoning.append(event.chunk)
-                if (isAgentSession()) {
+                if (isAgentSession() && _session.value?.companionMode != true) {
                     applyAgentReasoningToLatestCard(streamingReasoning.toString())
                     return
                 }
@@ -1077,7 +1084,7 @@ class ChatViewModel : BaseViewModel() {
                 // 若再生成随机 ID 的正式消息，刷新时会因时间戳不同同时保留两条相同气泡。
                 val finalContent = streamingContent.toString()
                 val finalReasoning = streamingReasoning.toString()
-                    .takeIf { isReasoningEnabled() && !isAgentSession() }
+                    .takeIf { keepsStandaloneReasoning() }
                     .orEmpty()
                 _messages.value = finalizeStreamEndMessages(
                     current = _messages.value,
@@ -1134,7 +1141,7 @@ class ChatViewModel : BaseViewModel() {
                 _execConfirmation.value = null
                 _askUserQuestion.value = null
                 val msg = event.message?.let { incoming ->
-                    if (isReasoningEnabled() && !isAgentSession()) incoming
+                    if (keepsStandaloneReasoning()) incoming
                     else incoming.copy(reasoningContent = null)
                 }
                 if (msg != null && !msg.content.isNullOrBlank()) {
@@ -1170,7 +1177,7 @@ class ChatViewModel : BaseViewModel() {
             }
             is RealtimeEvent.NewMessage -> {
                 val msg = event.message.let { incoming ->
-                    if (isReasoningEnabled() && !isAgentSession()) incoming
+                    if (keepsStandaloneReasoning()) incoming
                     else incoming.copy(reasoningContent = null)
                 }
                 // 过滤进度卡片（thinking_card），不展示在聊天列表
@@ -1442,7 +1449,11 @@ class ChatViewModel : BaseViewModel() {
         launchResult(
             block = { unified.getSession(sessionId) },
             onSuccess = {
+                val companionJustResolved = _session.value?.companionMode != true && it?.companionMode == true
                 _session.value = it
+                // Session and message loads run in parallel on entry. Re-read saved reasoning
+                // if the first page arrived before the companion mode was known.
+                if (companionJustResolved && runtime.shouldLoadPersistedMessagesOnEntry()) loadMessages()
                 // Agent 任务列表：进入会话时从持久化数据恢复
                 _agentTodos.value = com.nekobot.app.data.model.AgentTodo.fromJsonList(it?.agentTodos)
                 // Agent 会话目标与规格任务：进入会话时从持久化数据恢复
@@ -1509,7 +1520,7 @@ class ChatViewModel : BaseViewModel() {
                     message.thinkingCards.orEmpty().any(ThinkingCard::isAgent)
                 }
                 val showStandaloneReasoning =
-                    isReasoningEnabled() && !isAgentSession() && !hasAgentCards
+                    _session.value?.companionMode == true || (keepsStandaloneReasoning() && !hasAgentCards)
                 // 合并：保留现有 thinking_cards，避免被刷新覆盖（对齐原仓库 nbot-methods.js:6221）
                 val current = _messages.value.map { message ->
                     if (showStandaloneReasoning || message.isUser) message
