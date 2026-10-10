@@ -497,7 +497,8 @@ data class LocalCharacterEntity(
     @ColumnInfo(name = "system_prompt") val systemPrompt: String? = null,
     val greeting: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: String,
-    @ColumnInfo(name = "updated_at") val updatedAt: String
+    @ColumnInfo(name = "updated_at") val updatedAt: String,
+    @ColumnInfo(name = "chat_model_queue", defaultValue = "NULL") val chatModelQueue: String? = null
 )
 
 /**

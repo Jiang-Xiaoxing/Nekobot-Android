@@ -363,6 +363,9 @@ fun LocalAiModelsScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .padding(16.dp)
         ) {
+            Text("在这里管理服务商和模型。角色可在「聊天模型」中选择并排序；未单独设置的角色使用默认队列。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
             if (models.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -786,7 +789,7 @@ private fun ModelCard(
             if (isActive) {
                 Icon(
                     imageVector = Icons.Filled.Check,
-                    contentDescription = stringResource(R.string.localai_current_model),
+                    contentDescription = if (model.purpose == "chat") "默认队列主用" else stringResource(R.string.localai_current_model),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )

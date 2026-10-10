@@ -503,6 +503,7 @@ object NbotConfigImporter {
                     state = obj.jsonStr("state"),
                     systemPrompt = obj.str("systemPrompt") ?: obj.str("system_prompt"),
                     greeting = obj.str("greeting"),
+                    chatModelQueue = db.characterDao().getById(id)?.chatModelQueue,
                     createdAt = obj.str("created_at") ?: now,
                     updatedAt = obj.str("updated_at") ?: now
                 )

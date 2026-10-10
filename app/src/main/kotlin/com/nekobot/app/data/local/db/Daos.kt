@@ -647,6 +647,9 @@ interface AgentToolMessageDao {
 
 @Dao
 interface CharacterDao {
+    @Query("UPDATE local_characters SET chat_model_queue = :queue WHERE id = :id")
+    suspend fun updateChatModelQueue(id: String, queue: String?): Int
+
     @Query("SELECT * FROM local_characters ORDER BY updated_at DESC")
     fun observeAll(): Flow<List<LocalCharacterEntity>>
 

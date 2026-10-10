@@ -16,6 +16,9 @@ import com.nekobot.app.data.local.ai.CustomToolSetModeRecord
 import com.nekobot.app.data.local.ai.ToolSetMode
 import com.nekobot.app.data.local.ai.ToolSetModeCatalog
 import com.nekobot.app.data.local.ai.FailoverAllFailedException
+import com.nekobot.app.data.local.ai.CharacterChatQueue
+import com.nekobot.app.data.local.ai.CharacterQueueModel
+import com.nekobot.app.data.local.ai.CharacterQueueSettings
 import com.nekobot.app.data.local.ai.AgentRunStage
 import com.nekobot.app.data.local.ai.AgentRunStatus
 import com.nekobot.app.data.local.ai.FailoverCoordinator
@@ -548,6 +551,31 @@ class LocalRepository(
         aiModelDao.listByPurpose(purpose)
             .sortedWith(compareBy(LocalAiModelEntity::priority, LocalAiModelEntity::createdAt))
 
+    /** 仅绑定配置ID；不复制密钥、不写全局active/priority，也不扩展明确选择的候选范围。 */
+    private suspend fun characterChatQueue(characterId: String?): List<LocalAiModelEntity>? {
+        if (characterId == null) return null
+        val character = characterDao.getById(characterId) ?: return null
+        return CharacterChatQueue.resolve(character.chatModelQueue, aiModelDao.listAll())
+    }
+
+    internal suspend fun characterQueueSettings(id: String): CharacterQueueSettings = withContext(Dispatchers.IO) {
+        val character = requireNotNull(characterDao.getById(id)) { "角色已不存在" }
+        val ids = runCatching { CharacterChatQueue.ids(character.chatModelQueue) }
+        CharacterQueueSettings(character.name, ids.getOrElse { emptyList() },
+            aiModelDao.listAll().map { CharacterQueueModel(it.id, it.name, CharacterChatQueue.providerLabel(it), it.model, it.enabled, it.purpose == "chat") },
+            queueFor("chat").map { it.id }, ids.exceptionOrNull()?.message)
+    }
+
+    internal suspend fun saveCharacterQueue(id: String, ids: List<String>?) = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            val character = requireNotNull(characterDao.getById(id)) { "角色已不存在" }
+            val oldIds = runCatching { CharacterChatQueue.ids(character.chatModelQueue) }.getOrNull().orEmpty()
+            val available = aiModelDao.listAll().filter { it.enabled && it.purpose == "chat" }.map { it.id }.toSet()
+            require(ids == null || ids.all { it in available || it in oldIds }) { "模型配置已变化，请重新选择可用的聊天模型" }
+            check(characterDao.updateChatModelQueue(id, CharacterChatQueue.encode(ids)) == 1) { "角色队列未保存，请重试" }
+        }
+    }
+
     private data class RoutedChatPlan(
         val models: List<LocalAiModelEntity>,
         val routingDecisionId: String? = null
@@ -571,11 +599,15 @@ class LocalRepository(
         attachments: List<Map<String, Any>> = emptyList(),
         sessionModeOverride: String? = null
     ): RoutedChatPlan {
+        val session = sessionId.takeIf(String::isNotBlank)?.let { sessionDao.getById(it) }
+        // 辅助任务有自己的配置语义，不能借共享 currentSessionId 误用另一个角色的聊天队列。
+        if (sessionModeOverride != "utility" && !session?.sessionMode.equals("group", ignoreCase = true)) {
+            characterChatQueue(session?.characterId)?.let { return RoutedChatPlan(it) }
+        }
         val models = queueFor("chat")
         val routingPrefs = ServiceContainer.prefs
         if (!routingPrefs.smartRoutingEnabled || models.size <= 1) return RoutedChatPlan(models)
 
-        val session = sessionId.takeIf(String::isNotBlank)?.let { sessionDao.getById(it) }
         val contextTokens = sessionId.takeIf(String::isNotBlank)
             ?.let { id ->
                 if (session?.longConversationEnabled == true) ensureLongConversationBoundary(id)
@@ -6129,6 +6161,8 @@ class LocalRepository(
                 emit(RealtimeEvent.StreamEnd(sessionId))
                 return@flow
             }
+        val configuredQueue = characterChatQueue(session.characterId)
+        val activeModel = configuredQueue?.first() ?: activeModel
         val character = session.characterId?.let { characterDao.getById(it) }
         val history = listAiContextMessages(sessionId)
             .filter { it.role != "system" }
@@ -6153,7 +6187,7 @@ class LocalRepository(
         }
 
         // 5. 构造故障转移队列：activeModel 优先，附加同 purpose 其他启用模型
-        val routePlan = routedChatPlan(sessionId, userMessage)
+        val routePlan = configuredQueue?.let { RoutedChatPlan(it) } ?: routedChatPlan(sessionId, userMessage)
         val queue = routePlan.models.let { routed ->
             if (routed.any { it.id == activeModel.id }) {
                 listOf(activeModel) + routed.filter { it.id != activeModel.id }
@@ -6169,6 +6203,7 @@ class LocalRepository(
         var outputTokens: Int? = null
         var cachedInputTokens: Int? = null
         var cacheWriteTokens: Int? = null
+        var usedModelId: String? = null
         var modelName: String? = null
         var modelDisplayName: String? = null
         var streamFailureReason: String? = null
@@ -6179,9 +6214,18 @@ class LocalRepository(
             messages = messages,
             extra = extra,
             requiredContextTokens = estimateLocalMessagesTokens(messages),
-            requestTag = sessionId
+            requestTag = sessionId,
+            roleQueueCoordinator = failoverCoordinator.takeIf { configuredQueue != null }
         ).collect { event ->
             when (event) {
+                is RealtimeEvent.StreamStart -> {
+                    if (configuredQueue != null) {
+                        fullContent.clear()
+                        fullReasoning.clear()
+                        firstChunkNano = null
+                    }
+                    emit(event)
+                }
                 is RealtimeEvent.StreamChunk -> {
                     if (fullContent.isEmpty()) firstChunkNano = System.nanoTime()
                     fullContent.append(event.chunk)
@@ -6197,11 +6241,16 @@ class LocalRepository(
                     outputTokens = event.outputTokens
                     cachedInputTokens = event.cachedInputTokens
                     cacheWriteTokens = event.cacheWriteTokens
+                    usedModelId = event.modelId
                     modelName = event.model
                     modelDisplayName = event.modelDisplayName
                     emit(event)
                 }
                 is RealtimeEvent.Error -> {
+                    if (configuredQueue != null) {
+                        fullContent.clear()
+                        fullReasoning.clear()
+                    }
                     streamFailureReason = event.message
                     emit(event)
                 }
@@ -6236,7 +6285,7 @@ class LocalRepository(
                             reasoningContent = fullReasoning.toString()
                         )
                     }
-                    val costModel = queue.firstOrNull {
+                    val costModel = queue.firstOrNull { it.id == usedModelId } ?: queue.firstOrNull {
                         it.model == modelName || it.name == modelDisplayName
                     } ?: activeModel
                     updateRoutingDecision(
@@ -6362,6 +6411,8 @@ class LocalRepository(
                 emit(RealtimeEvent.StreamEnd(sessionId))
                 return@flow
             }
+        val configuredQueue = characterChatQueue(session.characterId)
+        val activeModel = configuredQueue?.first() ?: activeModel
         val character = session.characterId?.let { characterDao.getById(it) }
 
         // 找到首条 assistant 消息作为候选宿主；旧开场白保留为候选 0。
@@ -6397,7 +6448,7 @@ class LocalRepository(
         }
 
         // 构造故障转移队列
-        val routePlan = routedChatPlan(sessionId, greetingInstruction)
+        val routePlan = configuredQueue?.let { RoutedChatPlan(it) } ?: routedChatPlan(sessionId, greetingInstruction)
         val queue = routePlan.models.let { routed ->
             if (routed.any { it.id == activeModel.id }) {
                 listOf(activeModel) + routed.filter { it.id != activeModel.id }
@@ -6412,6 +6463,7 @@ class LocalRepository(
         var outputTokens: Int? = null
         var cachedInputTokens: Int? = null
         var cacheWriteTokens: Int? = null
+        var usedModelId: String? = null
         var modelName: String? = null
         var modelDisplayName: String? = null
         val streamStartNano = System.nanoTime()
@@ -6422,9 +6474,18 @@ class LocalRepository(
             messages = promptMessages,
             extra = extra,
             requiredContextTokens = estimateLocalMessagesTokens(promptMessages),
-            requestTag = sessionId
+            requestTag = sessionId,
+            roleQueueCoordinator = failoverCoordinator.takeIf { configuredQueue != null }
         ).collect { event ->
             when (event) {
+                is RealtimeEvent.StreamStart -> {
+                    if (configuredQueue != null) {
+                        fullContent.clear()
+                        fullReasoning.clear()
+                        firstChunkNano = null
+                    }
+                    emit(event)
+                }
                 is RealtimeEvent.StreamChunk -> {
                     if (fullContent.isEmpty()) firstChunkNano = System.nanoTime()
                     fullContent.append(event.chunk)
@@ -6441,14 +6502,20 @@ class LocalRepository(
                     outputTokens = event.outputTokens
                     cachedInputTokens = event.cachedInputTokens
                     cacheWriteTokens = event.cacheWriteTokens
+                    usedModelId = event.modelId
                     modelName = event.model
                     modelDisplayName = event.modelDisplayName
                     emit(event)
                 }
                 is RealtimeEvent.Error -> {
+                    if (configuredQueue != null) {
+                        fullContent.clear()
+                        fullReasoning.clear()
+                    }
                     emit(event)
                 }
                 is RealtimeEvent.StreamEnd -> {
+                    val usedModel = queue.firstOrNull { it.id == usedModelId } ?: activeModel
                     val content = fullContent.toString().trim()
                     if (content.isNotEmpty()) {
                         val usage = resolveLocalTokenUsage(
@@ -6488,13 +6555,13 @@ class LocalRepository(
                                 estimated = usage.estimated,
                                 durationMs = durationMs,
                                 ttftMs = ttftMs ?: durationMs,
-                                provider = activeModel.provider,
-                                inputPricePerMillion = activeModel.inputPrice,
-                                outputPricePerMillion = activeModel.outputPrice,
+                                provider = usedModel.provider,
+                                inputPricePerMillion = usedModel.inputPrice,
+                                outputPricePerMillion = usedModel.outputPrice,
                                 cachedInputTokens = usage.cachedInputTokens,
                                 cacheWriteTokens = usage.cacheWriteTokens,
-                                cacheReadPricePerMillion = activeModel.cacheReadPrice,
-                                cacheWritePricePerMillion = activeModel.cacheWritePrice
+                                cacheReadPricePerMillion = usedModel.cacheReadPrice,
+                                cacheWritePricePerMillion = usedModel.cacheWritePrice
                             )
                         }
                     }
@@ -7155,6 +7222,10 @@ class LocalRepository(
         try {
         // 标记当前会话，供二级 LLM 调用（AutoState/记忆）token 记账归属
         currentSessionId = sessionId
+        val queueSession = sessionDao.getById(sessionId)
+        val configuredQueue = if (queueSession?.sessionMode.equals("group", ignoreCase = true)) null
+            else characterChatQueue(queueSession?.characterId)
+        val activeModel = configuredQueue?.first() ?: activeModel
 
         // 0. 延迟回复批次中的消息逐条执行发送前钩子并保存；最后一条驱动本轮生成。
         val preparedUserBatch = if (persistUserMessage) {
@@ -7421,7 +7492,7 @@ class LocalRepository(
         }
 
         // 4. 构建回调（传入故障转移备选队列：同 purpose 其他启用模型 + 持久化协调器）
-        val routePlan = routedChatPlan(
+        val routePlan = configuredQueue?.let { RoutedChatPlan(it) } ?: routedChatPlan(
             sessionId = sessionId,
             prompt = effectiveUserMessage,
             attachments = attachments,
@@ -7516,6 +7587,7 @@ class LocalRepository(
                 skillStorage = localSkillStorage,
                 browserToolExecutor = { args -> executeLocalBrowserTool(session.id, args) },
                 failoverQueue = failoverQueue,
+                strictCharacterQueue = configuredQueue != null,
                 coordinator = failoverCoordinator,
                 hookExecutor = hookExecutor,
             visionDescriber = { imageUrl, question ->
@@ -8041,13 +8113,13 @@ class LocalRepository(
                 gson.fromJson<List<Map<String, Any>>>(raw, type)
             }.getOrNull()
         }.orEmpty()
-        val failoverQueue = routedChatQueue(
+        val defaultQueue = routedChatQueue(
             sessionId = session.id,
             prompt = userMessage,
             attachments = attachments,
             sessionModeOverride = session.sessionMode
         )
-            .filter { it.id != activeModel.id }
+
 
         var lastCompletedSpeaker: com.nekobot.app.data.local.ai.LocalGroupParticipant? = null
         var lastContext: com.nekobot.app.data.local.ai.PipelineContext? = null
@@ -8065,6 +8137,13 @@ class LocalRepository(
                 index++
                 continue
             }
+            val configuredQueue = try { characterChatQueue(character.id) } catch (e: IllegalStateException) {
+                emit(RealtimeEvent.Error("${character.name}：${e.message}")); index++; continue
+            } catch (e: IllegalArgumentException) {
+                emit(RealtimeEvent.Error("${character.name}：${e.message}")); index++; continue
+            }
+            val activeModel = configuredQueue?.first() ?: activeModel
+            val failoverQueue = (configuredQueue ?: defaultQueue).filter { it.id != activeModel.id }
             val isCrossTalk = index >= initialSpeakerCount
             val callbacks = com.nekobot.app.data.local.ai.LocalPipelineCallbacks(
                 db = db,
@@ -8118,6 +8197,7 @@ class LocalRepository(
                 skillToolExecutor = ::executeLocalSkillTool,
                 skillStorage = localSkillStorage,
                 failoverQueue = failoverQueue,
+                strictCharacterQueue = configuredQueue != null,
                 coordinator = failoverCoordinator,
                 hookExecutor = hookExecutor,
                 visionDescriber = { imageUrl, question ->
@@ -9460,8 +9540,10 @@ class LocalRepository(
     suspend fun upsertCharacter(preset: CharacterPreset): CharacterPreset =
         withContext(Dispatchers.IO) {
             val now = nowIso()
-            val entity = preset.toEntity(now)
-            characterDao.upsert(entity)
+            val entity = db.withTransaction {
+                val incoming = preset.toEntity(now)
+                incoming.copy(chatModelQueue = characterDao.getById(incoming.id)?.chatModelQueue).also { characterDao.upsert(it) }
+            }
             // 同步刷新以该角色为主角的会话立绘快照，使会话列表/聊天头像跟随角色卡立绘变更
             val cid = preset.id?.takeIf { it.isNotBlank() }
             if (cid != null) {

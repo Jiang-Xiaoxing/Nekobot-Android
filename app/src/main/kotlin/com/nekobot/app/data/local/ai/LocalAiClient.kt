@@ -1080,8 +1080,13 @@ class LocalAiClient(
         messages: List<Map<String, Any>>,
         extra: Map<String, Any?> = emptyMap(),
         requiredContextTokens: Int? = null,
-        requestTag: String? = null
+        requestTag: String? = null,
+        roleQueueCoordinator: FailoverCoordinator? = null
     ): Flow<RealtimeEvent> = flow {
+        if (roleQueueCoordinator != null) {
+            characterQueueStream(models, messages, extra, requiredContextTokens, requestTag, roleQueueCoordinator).collect { emit(it) }
+            return@flow
+        }
         if (models.isEmpty()) {
             emit(RealtimeEvent.Error("无可用模型"))
             emit(RealtimeEvent.StreamEnd(null))

@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
+import com.nekobot.app.ServiceContainer
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 
@@ -849,6 +851,12 @@ fun SessionDetailScreen(
     var selectedPromptStackItem by remember { mutableStateOf<PromptStackItem?>(null) }
     var relationshipOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var advancedOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var modelQueueOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    val queueCharacterId = session?.characterId
+    if (ServiceContainer.prefs.isLocalMode && queueCharacterId != null && modelQueueOpen) {
+        com.nekobot.app.ui.screens.characters.CharacterModelQueueScreen(queueCharacterId) { modelQueueOpen = false }
+        return
+    }
     val singleSessionRole = session?.companionMode == true
     val advancedPage = singleSessionRole && advancedOpen
     val showMain = !singleSessionRole || !advancedOpen
@@ -1160,6 +1168,12 @@ fun SessionDetailScreen(
                                 }
                             }
 
+                            if (ServiceContainer.prefs.isLocalMode && queueCharacterId != null) {
+                                OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                                    Text("聊天模型", modifier = Modifier.weight(1f))
+                                    Icon(Icons.Filled.ChevronRight, null)
+                                }
+                            }
                             if (singleSessionRole) {
                                 OutlinedButton(onClick = { relationshipOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                                     Text("情绪与关系", modifier = Modifier.weight(1f))

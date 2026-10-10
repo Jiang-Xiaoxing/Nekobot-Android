@@ -240,7 +240,8 @@ sealed class RealtimeEvent {
         val modelDisplayName: String? = null,
         val cachedInputTokens: Int = 0,
         val cacheWriteTokens: Int = 0,
-        val cacheReported: Boolean = false
+        val cacheReported: Boolean = false,
+        val modelId: String? = null
     ) : RealtimeEvent()
     /** AI 请求执行非白名单命令，等待用户授权。 */
     data class ExecConfirmationRequired(val request: ExecConfirmationRequest) : RealtimeEvent()

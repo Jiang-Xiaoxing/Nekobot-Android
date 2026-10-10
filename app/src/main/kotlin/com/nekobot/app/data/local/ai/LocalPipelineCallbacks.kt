@@ -98,6 +98,7 @@ internal class LocalPipelineCallbacks(
     private val dbToolExecutor: ((toolName: String, args: Map<String, Any>) -> Map<String, Any>)? = null,
     /** 故障转移队列：activeModel 优先 + 同 purpose 其他启用模型，按 priority 升序 */
     private val failoverQueue: List<LocalAiModelEntity> = emptyList(),
+    private val strictCharacterQueue: Boolean = false,
     /** 持久化故障转移协调器；非空时 [buildModelCall] 走 coordinator，否则回退到 chatOnceWithFailover */
     private val coordinator: FailoverCoordinator? = null,
     /** Hook 执行引擎；非空时在管线关键节点触发 hook 事件 */
@@ -997,7 +998,7 @@ internal class LocalPipelineCallbacks(
             }
         }
 
-        val priceModel = modelQueue.firstOrNull { model ->
+        val priceModel = modelQueue.firstOrNull { it.id == ctx.metadata["model_id"] } ?: modelQueue.firstOrNull { model ->
             model.model == actualModelName || model.name == modelName
         } ?: activeModel
 
@@ -1241,6 +1242,7 @@ internal class LocalPipelineCallbacks(
             val fullReasoning = StringBuilder()
             var streamError: String? = null
             var usedModelName = activeModel.name
+            var usedModelId: String? = null
             var usedActualModel = activeModel.model
             var usage: Map<String, Any> = emptyMap()
             val streamRelay = createStreamEventCoalescer(ctx)
@@ -1251,6 +1253,7 @@ internal class LocalPipelineCallbacks(
                 kotlinx.coroutines.runBlocking {
                     aiClient.chatStreamWithFailover(
                         models = modelQueueFor(ctx),
+                        roleQueueCoordinator = coordinator.takeIf { strictCharacterQueue },
                         messages = requestMessages,
                         extra = extra,
                         requiredContextTokens = estimateLocalMessagesTokens(requestMessages),
@@ -1260,7 +1263,13 @@ internal class LocalPipelineCallbacks(
                             throw kotlinx.coroutines.CancellationException("生成已停止")
                         }
                         when (event) {
-                            is RealtimeEvent.StreamStart -> streamRelay.onStart()
+                            is RealtimeEvent.StreamStart -> {
+                                if (strictCharacterQueue) {
+                                    fullContent.setLength(0)
+                                    fullReasoning.setLength(0)
+                                }
+                                streamRelay.onStart()
+                            }
                             is RealtimeEvent.ReasoningChunk -> {
                                 if (reasoningEffort != ReasoningEffort.NONE) {
                                     fullReasoning.append(event.chunk)
@@ -1272,6 +1281,7 @@ internal class LocalPipelineCallbacks(
                                 streamRelay.onContentChunk(event.chunk)
                             }
                             is RealtimeEvent.Usage -> {
+                                usedModelId = event.modelId
                                 usedModelName = event.modelDisplayName ?: usedModelName
                                 usedActualModel = event.model ?: usedActualModel
                                 usage = buildMap {
@@ -1293,7 +1303,7 @@ internal class LocalPipelineCallbacks(
             }
             streamError?.let { throw RuntimeException(it) }
             if (session.companionMode && db.isOpen) {
-                val used = modelQueue.firstOrNull { it.model == usedActualModel } ?: activeModel
+                val used = modelQueue.firstOrNull { it.id == usedModelId } ?: modelQueue.firstOrNull { it.model == usedActualModel } ?: activeModel
                 com.nekobot.app.ServiceContainer.prefs.saveCompanionRequestSnapshot(db.dbName, session.id,
                     CompanionRequestUsage.snapshot(messages, emptyList(), used.maxContextLength ?: 32000, usage, requestStartedAt))
             }
@@ -1306,7 +1316,7 @@ internal class LocalPipelineCallbacks(
                 }
                 add(buildMap {
                     if (usage.isNotEmpty()) put("usage", usage)
-                    put("_model_id", activeModel.id)
+                    put("_model_id", usedModelId ?: activeModel.id)
                     put("_model_name", usedModelName)
                     put("_model_actual_name", usedActualModel)
                     put("_relayed", true)
@@ -1330,10 +1340,10 @@ internal class LocalPipelineCallbacks(
             aiClient.chatOnce(
                 model,
                 messages,
-                extra,
+                if (strictCharacterQueue) CharacterChatQueue.extraFor(model, extra) else extra,
                 requestTag = session.id,
-                streamCallbacks = streamCallbacks
-            )
+                streamCallbacks = streamCallbacks.takeIf { !strictCharacterQueue || model.supportsStream }
+            ).also { if (strictCharacterQueue) it.error?.let { message -> throw FailoverHttpException(it.statusCode, message) } }
         } catch (error: Exception) {
             if (generationController.isStopped) {
                 throw kotlinx.coroutines.CancellationException("生成已停止").apply {

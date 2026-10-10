@@ -410,6 +410,11 @@ fun CharacterDetailScreen(
     // 订阅全局 appMode Flow，模式切换时自动刷新
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val isLocalMode = appMode == AppMode.LOCAL
+    var modelQueueOpen by androidx.compose.runtime.saveable.rememberSaveable(characterId) { mutableStateOf(false) }
+    if (!isNew && isLocalMode && modelQueueOpen) {
+        CharacterModelQueueScreen(characterId) { modelQueueOpen = false }
+        return
+    }
     val toast by vm.toast.collectAsStateWithLifecycle()
     var fullscreenPortrait by remember { mutableStateOf<String?>(null) }
 
@@ -515,6 +520,11 @@ fun CharacterDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 角色名（必填）
+                if (!isNew && isLocalMode) {
+                    OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("聊天模型")
+                    }
+                }
                 LabeledField(label = stringResource(R.string.character_name_label), value = name, onValueChange = { vm.name.value = it }, singleLine = true)
                 // 描述
                 LabeledField(

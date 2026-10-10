@@ -196,6 +196,11 @@ fun CharacterViewScreen(
     var showRelationshipSourceDialog by remember { mutableStateOf(false) }
     var relationshipStateSource by remember { mutableStateOf(RELATIONSHIP_STATE_SOURCE_INHERIT) }
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
+    var modelQueueOpen by androidx.compose.runtime.saveable.rememberSaveable(characterId) { mutableStateOf(false) }
+    if (appMode == AppMode.LOCAL && modelQueueOpen) {
+        CharacterModelQueueScreen(characterId) { modelQueueOpen = false }
+        return
+    }
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -290,6 +295,11 @@ fun CharacterViewScreen(
                 if (c != null) {
                     // 顶部：头像/立绘 + 名称 + 标签
                     HeaderCard(c)
+                    if (appMode == AppMode.LOCAL) {
+                        OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("聊天模型")
+                        }
+                    }
                     // 用此角色新建会话
                     Button(
                         onClick = {
