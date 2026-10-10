@@ -30,8 +30,8 @@ import com.nekobot.app.data.local.ai.FusedCompanionPolicy
 import com.nekobot.app.data.local.ai.MemoryTags
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
 
-// 经历可能由用户独自经历；只调整展示名称，不改变底层分类或转换规则。
-internal val memoryCategoryNames = FusedCompanionPolicy.categories + ("episode" to "经历档案")
+// 界面与记忆整理共用分类名称，避免仅在界面覆盖后与模型规则脱节。
+internal val memoryCategoryNames = FusedCompanionPolicy.categories
 
 @Composable
 internal fun memoryAccent(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)

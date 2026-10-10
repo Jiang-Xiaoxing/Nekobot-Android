@@ -8,7 +8,10 @@ internal data class CompanionBudgets(val recent: Int, val pinned: Int, val recal
 /** Budgets count estimated tokens, never characters. Source rows are never truncated. */
 internal object FusedCompanionPolicy {
     val categories = linkedMapOf("user_profile" to "用户画像", "character_profile" to "角色画像",
-        "relationship" to "双方关系", "episode" to "共同经历", "promise" to "约定", "open_issue" to "未解决事项")
+        "relationship" to "双方关系", "episode" to "经历档案", "promise" to "约定", "open_issue" to "未解决事项")
+
+    // 日常整理和旧聊天转换共用经历范围，避免两条路径对参与者的理解不同。
+    const val episodeScope = "经历档案包括独自经历和共同经历，按原话写清参与者；独自经历不得写成双方共同经历，参与者不明时不要猜。"
 
     fun budgets(availableInput: Int): CompanionBudgets {
         require(availableInput >= 512) { "系统提示、工具和预留输出已占满模型容量，请选更大上下文模型" }
@@ -42,7 +45,8 @@ internal object FusedCompanionPolicy {
         绝不能提取 reference 独有的新事实；每项 source_id 和逐字 quote 必须来自 target。
         根据完整上下文判定：助手单方面编出的共同往事、用户否定的往事不保存；背景设定不是聊天证据。
         分类 category：user_profile 用户画像、character_profile 交流形成的角色特点、relationship 双方关系、
-        episode 共同经历、promise 约定、open_issue 未解决事项。没有必要就不记录；不生成近期摘要或历史总摘要。
+        episode 经历档案、promise 约定、open_issue 未解决事项。没有必要就不记录；不生成近期摘要或历史总摘要。
+        $episodeScope
         经历记录已发生的原因、经过、结果和进行状态；尚未结束就写进行中，不编结局。
         同一场景跨批延续，用 existing 的稳定 key 更新同一事件；同一事实重复用 merge 合并来源。
         用户明确改变/纠正用 update；旧错误被否定用 retract，保留历史版本但不再作为有效事实。
