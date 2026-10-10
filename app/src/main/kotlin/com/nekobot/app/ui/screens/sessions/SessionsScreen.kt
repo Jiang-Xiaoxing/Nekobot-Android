@@ -1945,6 +1945,11 @@ private fun SessionItem(
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
+                } else if (row.modeLabel == SessionModeLabel.COMPANION) {
+                    val name = row.characterLabel?.takeIf(String::isNotBlank) ?: row.displayName
+                    Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                        color = row.modeLabel.color())
                 } else {
                     val fallbackPainter = if (row.isAgentSession && !row.inheritCharacter) {
                         painterResource(R.drawable.ic_agent_neko)
