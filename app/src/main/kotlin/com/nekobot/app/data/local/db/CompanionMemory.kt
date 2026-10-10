@@ -15,7 +15,9 @@ data class CompanionScopeEntity(
     val historyAccess: Boolean = false,
     val revision: Long = 0,
     val error: String? = null,
-    val updatedAt: String
+    val updatedAt: String,
+    /** null 沿用未设置前的行为，空串仅关键词，其他值固定到已有模型配置。 */
+    val embeddingModelId: String? = null
 )
 
 /** Immutable versions. Invalidated/forgotten versions are never returned to a model. */

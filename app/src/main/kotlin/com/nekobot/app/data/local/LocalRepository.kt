@@ -1594,6 +1594,48 @@ class LocalRepository(
         }
     internal fun selectedCompanionConversionModel() = ServiceContainer.prefs.companionConversionModel(db.dbName)
     internal fun companionRecallSettings(sessionId: String) = ServiceContainer.prefs.companionRecallSettings(db.dbName, sessionId)
+    internal suspend fun companionEmbeddingSettings(sessionId: String): CompanionEmbeddingSettings = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)?.takeIf { it.companionMode })
+        val scope = CompanionMemoryStore(db).ensureScope(session)
+        val models = aiModelDao.listAll().filter { it.enabled && it.purpose == "embedding" }
+        val options = models.map {
+            CompanionEmbeddingOption(it.id, it.name, it.provider.orEmpty(), it.model)
+        }
+        val globalId = aiModelDao.getActiveByPurpose("embedding")?.id
+        CompanionEmbeddingSettings(scope.embeddingModelId,
+            options.firstOrNull { it.id == globalId }, options)
+    }
+
+    internal suspend fun saveCompanionMemorySettings(sessionId: String, rounds: Int, tokens: Int, embeddingId: String?) = withContext(Dispatchers.IO) {
+        val session = requireNotNull(sessionDao.getById(sessionId)?.takeIf { it.companionMode })
+        val settings = com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens)
+        require(settings.valid()) { "回查轮数或资料上限不在有效范围内" }
+        val store = CompanionMemoryStore(db)
+        var changed = false
+        db.withTransaction {
+            val scope = store.ensureScope(session)
+            changed = scope.embeddingModelId != embeddingId
+            // 已失效的旧绑定可保留，让用户只调整回查设置；新选择必须有效。
+            if (changed && !embeddingId.isNullOrEmpty()) {
+                require(aiModelDao.getById(embeddingId)?.let { it.enabled && it.purpose == "embedding" } == true) {
+                    "所选向量模型已停用或删除，请重新选择"
+                }
+            }
+            if (changed) db.companionMemoryDao().saveScope(scope.copy(embeddingModelId = embeddingId,
+                revision = scope.revision + 1, updatedAt = nowIso()))
+            ServiceContainer.prefs.saveCompanionRecallSettings(db.dbName, sessionId, settings)
+        }
+        if (changed && embeddingId != "") {
+            // 只重建已有正文的向量，不为切换模型额外调用聊天模型整理记忆。
+            ServiceContainer.applicationScope.launch(Dispatchers.IO) {
+                try {
+                    if (db.isOpen && sessionDao.getById(sessionId)?.companionMode == true) store.indexFused(session)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* 新索引未就绪时，关键词检索继续可用。 */ }
+            }
+        }
+    }
+
     internal suspend fun saveCompanionRecallSettings(sessionId: String, rounds: Int, tokens: Int) = withContext(Dispatchers.IO) {
         require(sessionDao.getById(sessionId)?.companionMode == true) { "请在单会话角色中设置回查额度" }
         ServiceContainer.prefs.saveCompanionRecallSettings(db.dbName, sessionId,

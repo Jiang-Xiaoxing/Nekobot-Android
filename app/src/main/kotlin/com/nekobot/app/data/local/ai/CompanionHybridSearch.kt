@@ -146,7 +146,13 @@ internal class CompanionHybridSearch(
             JsonParser.parseString(json).asJsonArray.map { it.asFloat }.toFloatArray().takeIf(::validVector)
         }.getOrNull()
         internal suspend fun configuredBackend(db: NekobotDatabase, scope: CompanionScopeEntity): CompanionEmbeddingBackend? {
-            val model = db.aiModelDao().getActiveByPurpose("embedding")?.takeIf { it.enabled } ?: return null
+            val configured = when (val selected = scope.embeddingModelId) {
+                null -> db.aiModelDao().getActiveByPurpose("embedding")
+                "" -> null
+                else -> db.aiModelDao().getById(selected)
+            }
+            // 显式选择失效时仅退回关键词，绝不把正文改发到另一个服务商。
+            val model = configured?.takeIf { it.enabled && it.purpose == "embedding" } ?: return null
             // Provider, model and explicit dimensions each identify a separate index.
             val identity = embeddingCacheIdentity(model)
             val client = LocalAiClient()

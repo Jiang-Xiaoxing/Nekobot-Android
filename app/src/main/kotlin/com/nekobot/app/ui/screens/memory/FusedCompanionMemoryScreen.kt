@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.R
 import com.nekobot.app.data.local.CompanionMemoryOverview
+import com.nekobot.app.data.local.CompanionEmbeddingSettings
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.local.ai.CompanionCoreMemory
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
@@ -64,6 +65,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var ready by remember { mutableStateOf(false) }
     var recallSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var recallSettings by remember { mutableStateOf(repo.companionRecallSettings(sessionId)) }
+    var embeddingSettings by remember { mutableStateOf<CompanionEmbeddingSettings?>(null) }
     val categories = memoryCategoryNames
     LaunchedEffect(sessionId, dataSourceRevision, appMode) {
         records = emptyList()
@@ -78,6 +80,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         selected = null
         actionError = null
         recallSettingsOpen = false
+        embeddingSettings = null
     }
     LaunchedEffect(sessionId, refresh, dataSourceRevision, appMode) {
         ready = false
@@ -88,9 +91,11 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             check(session?.companionMode == true) { "此入口仅管理当前单会话角色的独立记忆" }
             val loadedRecords = repo.listCompanionMemories(sessionId)
             val loadedOverview = repo.companionMemoryOverview(sessionId)
+            val loadedEmbedding = repo.companionEmbeddingSettings(sessionId)
             check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
             records = loadedRecords
             overview = loadedOverview
+            embeddingSettings = loadedEmbedding
             ownerName = session.characterName?.takeIf { it.isNotBlank() } ?: session.name.orEmpty()
             ownerAvatar = session.portrait?.takeIf(String::isNotBlank) ?: session.characterAvatar
             error = null
@@ -134,11 +139,12 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val editable = ready && !busy && error == null && repo === ServiceContainer.localRepository
     if (recallSettingsOpen) {
         CompanionRecallSettingsScreen(sessionId, ownerName, ownerAvatar, recallSettings, busy, actionError,
-            onBack = { recallSettingsOpen = false; actionError = null }, onSave = { rounds, tokens -> action {
-                repo.saveCompanionRecallSettings(sessionId, rounds, tokens)
+            onBack = { recallSettingsOpen = false; actionError = null }, onSave = { rounds, tokens, modelId -> action {
+                repo.saveCompanionMemorySettings(sessionId, rounds, tokens, modelId)
                 recallSettings = repo.companionRecallSettings(sessionId)
+                embeddingSettings = repo.companionEmbeddingSettings(sessionId)
                 recallSettingsOpen = false
-            } })
+            } }, embedding = requireNotNull(embeddingSettings))
         return
     }
     BackHandler(enabled = coreOnly && !editor && versions == null && sources == null && deletion == null) { coreOnly = false }
@@ -146,8 +152,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }, navigationIcon = {
         IconButton(onClick = { if (coreOnly) coreOnly = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }, actions = {
-        IconButton(enabled = editable, onClick = { recallSettings = repo.companionRecallSettings(sessionId); actionError = null; recallSettingsOpen = true }) {
-            Icon(Icons.Filled.Tune, "回查设置")
+        IconButton(enabled = editable && embeddingSettings != null, onClick = { recallSettings = repo.companionRecallSettings(sessionId); actionError = null; recallSettingsOpen = true }) {
+            Icon(Icons.Filled.Tune, "记忆设置")
         }
         IconButton(enabled = editable,
         onClick = { selected = null; actionError = null; editor = true }) { Icon(Icons.Filled.Add, "新增记忆") } }) }) { padding ->
