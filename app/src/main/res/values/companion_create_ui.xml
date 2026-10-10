@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="companion_create_title">创建 Agent 角色</string>
-    <string name="companion_create_intro">拥有独立记忆，固定在一个会话中陪伴你。</string>
+    <string name="companion_create_title">创建 单会话角色</string>
+    <string name="companion_create_intro">每个角色固定一个聊天窗口，使用「单会话角色记忆」记住你的喜好、聊过的重要事情和约定，也能使用工具帮你办事。</string>
     <string name="companion_profile_changed">资料库已切换，请重新打开创建页面。</string>
     <string name="companion_operation_failed">这次操作没有完成。原资料保留，请查看详情或重新预览后再试。</string>
-    <string name="companion_transfer_title">迁入 Agent 角色</string>
+    <string name="companion_transfer_title">迁入 单会话角色</string>
     <string name="companion_transfer_record">查看迁入记录</string>
     <string name="companion_transfer_records">迁入记录</string>
     <string name="companion_delete_backup">删除这次备份</string>
@@ -16,7 +16,7 @@
     <string name="companion_select_session">选择会话迁入</string>
     <string name="companion_choose_character">选择角色</string>
     <string name="companion_available">尚未使用，可以创建</string>
-    <string name="companion_has_main">已有 Agent 主会话</string>
+    <string name="companion_has_main">已有单会话角色窗口</string>
     <string name="companion_has_sessions">已有会话，可以建立独立副本</string>
     <string name="companion_reserved">已保留主会话归属</string>
     <string name="companion_select_hint">选择后会检查角色的使用情况</string>

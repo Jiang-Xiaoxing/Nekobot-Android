@@ -179,6 +179,7 @@ internal fun CompanionCreateContent(
     onDeleteRecord: (String) -> Unit = {}
 ) {
     var picker by rememberSaveable { mutableStateOf(false) }
+    var about by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var sources by rememberSaveable { mutableStateOf(false) }
@@ -234,13 +235,24 @@ internal fun CompanionCreateContent(
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().testTag("companion_content"),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (state.preview == null) {
-                item { Text(stringResource(R.string.companion_create_intro), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge) }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(stringResource(R.string.single_session_headline), style = MaterialTheme.typography.headlineSmall)
+                        Text(stringResource(R.string.companion_create_intro), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { about = true }) { Text(stringResource(R.string.single_session_about)) }
+                    }
+                }
                 item {
                     Card(onClick = { if (!state.busy) picker = true }, modifier = Modifier.fillMaxWidth().testTag("companion_character"), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             if (selected?.avatarUrl != null) AsyncImage(resolveAvatarUrl(selected.avatarUrl), contentDescription = null,
                                 modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
-                            else Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(Icons.Filled.Person, null, Modifier.padding(16.dp).size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+                            else Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+                                    if (selected != null) Text(selected.displayName.take(1), style = MaterialTheme.typography.titleLarge)
+                                    else Icon(Icons.Filled.Person, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                            }
                             Column(Modifier.weight(1f)) {
                                 Text(selected?.displayName ?: stringResource(R.string.companion_choose_character), style = MaterialTheme.typography.titleMedium)
                                 Text(stringResource(when(state.eligibility) {
@@ -265,9 +277,9 @@ internal fun CompanionCreateContent(
                 }
                 if (state.eligibility == CompanionEligibility.ReservedCharacter) item { Text(stringResource(R.string.companion_create_reserved), style = MaterialTheme.typography.bodyMedium) }
                 if (state.eligibility == CompanionEligibility.Available) {
+                    item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.companion_optional_name)) }, singleLine = true) }
                     item { TextButton(onClick = { advanced = !advanced }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(if (advanced) R.string.companion_less_settings else R.string.companion_more_settings)) } }
                     if (advanced) {
-                        item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.companion_optional_name)) }, singleLine = true) }
                         item { OutlinedTextField(greeting, { greeting = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.companion_optional_greeting)) }, minLines = 3) }
                         item { Text(stringResource(R.string.companion_initial_state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
@@ -324,6 +336,10 @@ internal fun CompanionCreateContent(
             }
         }
     }
+    if (about) AlertDialog(onDismissRequest = { about = false },
+        title = { Text(stringResource(R.string.single_session_about)) },
+        text = { LazyColumn { item { Text(stringResource(R.string.single_session_about_body)) } } },
+        confirmButton = { TextButton(onClick = { about = false }) { Text(stringResource(R.string.common_close)) } })
     if(picker) ModalBottomSheet(onDismissRequest = { picker = false }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).padding(horizontal = 20.dp)) {
             Text(stringResource(R.string.companion_choose_character), style = MaterialTheme.typography.titleLarge)

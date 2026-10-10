@@ -40,7 +40,8 @@ data class SessionListRow(
     /** Agent 会话开启「继承完整角色能力」：按角色会话展示绑定角色名与立绘。 */
     val inheritCharacter: Boolean = false,
     /** 群聊会话：列表项无立绘时回退到群聊图标而非默认聊天图标。 */
-    val isGroupSession: Boolean = false
+    val isGroupSession: Boolean = false,
+    val modeLabel: SessionModeLabel = SessionModeLabel.CHARACTER
 )
 
 /**
@@ -179,7 +180,13 @@ fun buildSessionListRows(
             archived = session.archived == true,
             isAgentSession = isAgentSession,
             inheritCharacter = inheritCharacter,
-            isGroupSession = isGroupSession
+            isGroupSession = isGroupSession,
+            modeLabel = when {
+                session.isAgentCharacterSession() -> SessionModeLabel.COMPANION
+                isAgentSession -> SessionModeLabel.AGENT
+                isGroupSession -> SessionModeLabel.GROUP
+                else -> SessionModeLabel.CHARACTER
+            }
         )
     }
 }

@@ -562,14 +562,14 @@ fun SessionsScreen(
                                 onDismissRequest = { showCreateModeMenu = false }
                             ) {
                                 if (ServiceContainer.prefs.isLocalMode) DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.companion_create_title)) },
-                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                                    text = { SessionModeMenuText(SessionModeLabel.COMPANION, R.string.session_mode_companion_hint) },
+                                    leadingIcon = { Icon(SessionModeLabel.COMPANION.icon(), null, tint = SessionModeLabel.COMPANION.color()) },
                                     onClick = { showCreateModeMenu = false; onNavigate(com.nekobot.app.ui.navigation.Routes.COMPANION_CREATE) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessions_mode_role)) },
+                                    text = { SessionModeMenuText(SessionModeLabel.CHARACTER, R.string.session_mode_character_hint) },
                                     leadingIcon = {
-                                        Icon(Icons.Filled.Person, contentDescription = null)
+                                        Icon(SessionModeLabel.CHARACTER.icon(), null, tint = SessionModeLabel.CHARACTER.color())
                                     },
                                     onClick = {
                                         showCreateModeMenu = false
@@ -577,10 +577,11 @@ fun SessionsScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessions_mode_agent)) },
+                                    text = { SessionModeMenuText(SessionModeLabel.AGENT, R.string.session_mode_agent_hint) },
                                     leadingIcon = {
                                         Icon(
-                                            painter = painterResource(R.drawable.ic_agent_neko),
+                                            imageVector = SessionModeLabel.AGENT.icon(),
+                                            tint = SessionModeLabel.AGENT.color(),
                                             contentDescription = null
                                         )
                                     },
@@ -977,21 +978,24 @@ internal fun SessionStatFilters(
         StatFilterCard(
             label = characterSessionsLabel,
             value = overview.characterSessions,
-            icon = Icons.AutoMirrored.Outlined.Chat,
+            icon = SessionModeLabel.CHARACTER.icon(),
+            accent = SessionModeLabel.CHARACTER.color(),
             selected = selected == SessionFilter.CHARACTER_SESSIONS,
             onClick = { onToggle(SessionFilter.CHARACTER_SESSIONS) }
         )
         StatFilterCard(
             label = agentSessionsLabel,
             value = overview.agentSessions,
-            icon = Icons.Filled.DashboardCustomize,
+            icon = SessionModeLabel.AGENT.icon(),
+            accent = SessionModeLabel.AGENT.color(),
             selected = selected == SessionFilter.AGENT_SESSIONS,
             onClick = { onToggle(SessionFilter.AGENT_SESSIONS) }
         )
         StatFilterCard(
             label = stringResource(R.string.sessions_filter_agent_characters),
             value = overview.agentCharacterSessions,
-            icon = Icons.Filled.Person,
+            icon = SessionModeLabel.COMPANION.icon(),
+            accent = SessionModeLabel.COMPANION.color(),
             selected = selected == SessionFilter.AGENT_CHARACTERS,
             onClick = { onToggle(SessionFilter.AGENT_CHARACTERS) }
         )
@@ -1018,16 +1022,17 @@ private fun StatFilterCard(
     value: Int,
     icon: ImageVector,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    accent: Color? = null
 ) {
-    val contentColor =
+    val contentColor = accent ?:
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     val containerColor =
-        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        if (selected) contentColor.copy(alpha = 0.16f)
+        else accent?.copy(alpha = 0.07f) ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     // 选中时加一条主题色描边，增强点按反馈与可辨识性
     val borderStroke = if (selected) {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+        BorderStroke(1.dp, contentColor.copy(alpha = 0.65f))
     } else null
     Surface(
         modifier = Modifier.widthIn(min = 92.dp),
@@ -1969,6 +1974,7 @@ private fun SessionItem(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
                 )
+                SessionModeBadge(row.modeLabel, Modifier.padding(top = 4.dp, bottom = 3.dp))
                 if (row.lastMessage != null || row.updatedAt != null) {
                     Spacer(Modifier.height(3.dp))
                     Row(

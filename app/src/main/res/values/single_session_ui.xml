@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_mode_group_label">群聊会话</string>
+    <string name="session_mode_character_hint">以角色身份展开对话</string>
+    <string name="session_mode_agent_hint">使用工具处理任务</string>
+    <string name="session_mode_companion_hint">固定一个会话，持续记住相处的点滴</string>
+    <string name="single_session_headline">在同一个会话里，\n一直聊下去。</string>
+    <string name="single_session_about">了解这个模式</string>
+    <string name="single_session_about_body">一个角色，一个聊天窗口\n创建后，这个角色固定在同一个会话里，不再另开第二个窗口。\n\n记住相处中的重要事情\n单会话角色记忆会整理喜好、经历和约定；你可以查看、编辑，也可以回到聊天原话核对。它与普通角色记忆、全局 Agent 记忆分别保存。\n\n已有聊天怎么带过来\n在创建页选择已有角色，再选择要迁入的会话。配置模型并转换后会建立新副本，原角色和聊天保留。\n\n需要时使用工具\n聊天时仍可使用已配置且可用的 Agent 工具。模型和工具可能产生服务商费用。</string>
+</resources>

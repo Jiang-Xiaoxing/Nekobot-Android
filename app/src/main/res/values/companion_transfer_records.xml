@@ -12,5 +12,5 @@
     <string name="companion_record_processed">已整理 %1$d 条原话</string>
     <string name="companion_record_progress_unknown">暂时无法读取整理进度</string>
     <string name="companion_delete_pending_record_hint">将删除这条转换记录、本次备份、临时副本、错误报告和已整理进度，删除后无法继续这次转换。\n原角色、原聊天及原记忆保留。以后仍可重新发起转换。</string>
-    <string name="companion_delete_completed_record_hint">将删除这条转换记录、本次备份和错误报告。\n已经生成的 Agent 角色、会话、记忆和附件保留，原资料也保留。</string>
+    <string name="companion_delete_completed_record_hint">将删除这条转换记录、本次备份和错误报告。\n已经生成的 单会话角色、会话、记忆和附件保留，原资料也保留。</string>
 </resources>

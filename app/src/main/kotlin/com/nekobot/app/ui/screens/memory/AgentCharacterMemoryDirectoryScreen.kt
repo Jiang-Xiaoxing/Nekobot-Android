@@ -84,7 +84,7 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
                     Text("正在打开记忆册…", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium)
                 }
                 owners!!.isEmpty() -> item("empty") {
-                    DirectoryEmpty("这里还没有记忆册", "创建或迁入一个 Agent 角色后，就能在这里管理它的独立记忆。")
+                    DirectoryEmpty("这里还没有记忆册", "创建或迁入一个 单会话角色后，就能在这里管理它的独立记忆。")
                 }
                 else -> {
                     item("search") {

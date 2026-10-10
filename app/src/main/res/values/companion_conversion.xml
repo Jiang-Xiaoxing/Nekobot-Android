@@ -2,7 +2,7 @@
     <string name="companion_conversion_configure">配置</string>
     <string name="companion_conversion_start">转换</string>
     <string name="companion_conversion_no_model">先选择转换用的模型</string>
-    <string name="companion_conversion_intro">把这段聊天整理成 Agent 角色的独立记忆。完成后自动导入新副本，原资料保留。</string>
+    <string name="companion_conversion_intro">把这段聊天整理成 单会话角色的独立记忆。完成后自动导入新副本，原资料保留。</string>
     <string name="companion_conversion_service_notice">聊天与旧记忆参考会发送给所选服务商，费用按其标准计费。资料较多时需要一些时间；停止后可以继续。</string>
     <string name="companion_conversion_rules">转换规则</string>
     <string name="companion_conversion_model_title">选择转换模型</string>

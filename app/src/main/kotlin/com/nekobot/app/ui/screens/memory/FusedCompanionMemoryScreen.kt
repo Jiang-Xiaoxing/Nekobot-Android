@@ -72,7 +72,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         try {
             check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
             val session = repo.getSession(sessionId)
-            check(session?.companionMode == true) { "此入口仅管理当前 Agent 角色的独立记忆" }
+            check(session?.companionMode == true) { "此入口仅管理当前 单会话角色的独立记忆" }
             val loadedRecords = repo.listCompanionMemories(sessionId)
             val loadedOverview = repo.companionMemoryOverview(sessionId)
             check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
