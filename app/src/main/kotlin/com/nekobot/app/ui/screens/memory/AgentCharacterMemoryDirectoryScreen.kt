@@ -43,6 +43,7 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val repo = remember(revision) { ServiceContainer.localRepository }
     var owners by remember(repo) { mutableStateOf<List<LocalSessionEntity>?>(null) }
+    var portraits by remember(repo) { mutableStateOf(emptyMap<String, String>()) }
     var names by remember(repo) { mutableStateOf(emptyMap<String, String>()) }
     var error by remember(repo) { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -50,13 +51,16 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
     LaunchedEffect(repo, appMode, refresh) {
         owners = null
         names = emptyMap()
+        portraits = emptyMap()
         error = null
         if (appMode != AppMode.LOCAL) return@LaunchedEffect
         try {
             repo.observeSessions().collect { sessions ->
-                val labels = repo.listCharacters().mapNotNull { c -> c.id?.let { it to c.name.orEmpty() } }.toMap()
+                val characters = repo.listCharacters()
+                val labels = characters.mapNotNull { c -> c.id?.let { it to c.name.orEmpty() } }.toMap()
                 check(repo === ServiceContainer.localRepository) { "资料库已切换，请重新打开" }
                 names = labels
+                portraits = characters.mapNotNull { c -> c.id?.let { id -> c.avatarUrl?.let { id to it } } }.toMap()
                 owners = sessions.filter { it.usesFusedCompanionMemory() }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -84,7 +88,7 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
                     Text("正在打开记忆册…", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium)
                 }
                 owners!!.isEmpty() -> item("empty") {
-                    DirectoryEmpty("这里还没有记忆册", "创建或迁入一个 单会话角色后，就能在这里管理它的独立记忆。")
+                    DirectoryEmpty("这里还没有记忆册", "创建或迁入一个单会话角色后，就能在这里查看它记住的喜好、经历与约定。")
                 }
                 else -> {
                     item("search") {
@@ -105,15 +109,9 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
                         Surface(onClick = {
                             if (repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) onOpen(session.id)
                         }, modifier = Modifier.fillMaxWidth().testTag("agent-character-owner-${session.id}"),
-                            shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface) {
+                            shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
                             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Surface(shape = RoundedCornerShape(15.dp)) {
-                                    Box(Modifier.size(52.dp).background(Brush.linearGradient(listOf(Color(0xFF5265CC), Color(0xFF9A68CE)))),
-                                        contentAlignment = Alignment.Center) {
-                                        Text(name.substring(0, name.offsetByCodePoints(0, 1)), color = Color.White, style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
+                                MemoryOwnerAvatar(name, portraits[session.characterId])
                                 Spacer(Modifier.width(14.dp))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                     Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,

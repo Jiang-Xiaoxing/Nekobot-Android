@@ -145,6 +145,7 @@ internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit,
     var configuration by rememberSaveable { mutableStateOf(false) }
     var rules by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(revision, appMode) { if (revision != initialRevision || !ServiceContainer.prefs.isLocalMode) { vm.cancel(); onBack() } }
+    com.nekobot.app.ui.screens.memory.CompanionMemoryTheme {
     CompanionCreateContent(vm.state, onBack = { vm.cancel(); onBack() }, onSelect = vm::select,
         onPreview = vm::preview, onCreate = { name, greeting -> vm.create(name, greeting, onOpen) },
         onTransfer = vm::transfer, onOpen = onOpen, onCancel = vm::cancel, onNewCharacter = onNewCharacter,
@@ -156,6 +157,7 @@ internal fun CompanionCreateScreen(onBack: () -> Unit, onOpen: (String) -> Unit,
         onSelect = { vm.selectModel(it); configuration = false }, onDismiss = { configuration = false },
         onManage = { configuration = false; onModelSettings() })
     if (rules) CompanionConversionRulesSheet { rules = false }
+    }
     receipt?.let { body -> AlertDialog(onDismissRequest = { receipt = null },
         title = { Text(stringResource(R.string.companion_transfer_record)) },
         text = { LazyColumn { item { androidx.compose.foundation.text.selection.SelectionContainer { Text(body) } } } },

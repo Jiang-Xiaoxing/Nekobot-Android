@@ -98,12 +98,7 @@ internal fun CompanionMemoryEditor(
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("放在哪一类", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    memoryCategoryNames.forEach { (key, name) ->
-                        FilterChip(category == key, { category = key }, enabled = !busy, label = { Text(name) },
-                            shape = RoundedCornerShape(50))
-                    }
-                }
+                MemoryCategorySelector(category, { category = it }, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 Text(when (category) {
                     "user_profile" -> "你的喜好、习惯和个人资料。"
                     "character_profile" -> "角色在相处中表现出的特点。"

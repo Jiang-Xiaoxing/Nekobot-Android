@@ -72,7 +72,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         try {
             check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
             val session = repo.getSession(sessionId)
-            check(session?.companionMode == true) { "此入口仅管理当前 单会话角色的独立记忆" }
+            check(session?.companionMode == true) { "此入口仅管理当前单会话角色的独立记忆" }
             val loadedRecords = repo.listCompanionMemories(sessionId)
             val loadedOverview = repo.companionMemoryOverview(sessionId)
             check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
@@ -138,15 +138,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             }
             item("filters") {
                 CompanionMemoryFilters(query, { query = it }, category, { category = it },
-                    visibleRecords.groupingBy { it.category }.eachCount(), visibleRecords.size)
-            }
-            item("count") {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (category.isBlank()) "全部记忆" else categories[category].orEmpty(), Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text("${shown.size} 条", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                    visibleRecords.groupingBy { it.category }.eachCount(), visibleRecords.size, shown.size)
             }
             if (shown.isEmpty() && ready && error == null) item("empty") {
                 CompanionMemoryEmpty(query.isNotBlank() || category.isNotBlank())

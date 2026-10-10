@@ -35,23 +35,37 @@ internal val memoryCategoryNames = FusedCompanionPolicy.categories + ("episode" 
 
 @Composable
 internal fun memoryAccent(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
-    Color(0xFFC3AEFF) else Color(0xFF7054C9)
+    Color(0xFFB3C3ED) else Color(0xFF5365A2)
 
 /** 只在独立记忆入口内应用，不覆盖其他页面的用户主题。 */
 @Composable
-internal fun CompanionMemoryTheme(content: @Composable () -> Unit) {
+fun CompanionMemoryTheme(content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val accent = memoryAccent()
+    val dark = colors.surface.luminance() < 0.5f
     MaterialTheme(colorScheme = colors.copy(primary = accent,
-        onPrimary = if (colors.surface.luminance() < 0.5f) Color(0xFF261842) else Color.White,
+        onPrimary = if (dark) Color(0xFF182544) else Color.White,
         primaryContainer = lerp(colors.surface, accent, 0.12f), onPrimaryContainer = colors.onSurface,
-        background = lerp(colors.surface, accent, 0.035f)), content = content)
+        surface = if (dark) colors.surface else Color.White,
+        surfaceContainer = if (dark) colors.surfaceContainer else Color(0xFFF3F1EE),
+        background = if (dark) colors.background else Color(0xFFF8F7F4)), content = content)
+}
+
+@Composable
+internal fun memoryCategoryColor(category: String): Color {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return when (category) {
+        "episode", "open_issue" -> if (dark) Color(0xFFE4BA7B) else Color(0xFF9D6B2C)
+        "relationship", "promise" -> if (dark) Color(0xFFDEAABD) else Color(0xFFA2637C)
+        "character_profile" -> if (dark) Color(0xFFC9B7DA) else Color(0xFF8A6B9A)
+        else -> memoryAccent()
+    }
 }
 
 @Composable
 internal fun CompanionMemoryIntro(title: String, description: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Image(painterResource(R.drawable.ic_agent_character_memory), null, Modifier.size(60.dp))
+        Image(painterResource(R.drawable.ic_agent_character_memory), null, Modifier.size(44.dp))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
@@ -130,12 +144,11 @@ internal fun CompanionMemoryOverviewCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CompanionMemoryFilters(
     query: String, onQueryChange: (String) -> Unit,
     category: String, onCategoryChange: (String) -> Unit,
-    counts: Map<String, Int>, total: Int
+    counts: Map<String, Int>, total: Int, visibleCount: Int = total
 ) {
     val accent = memoryAccent()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -150,14 +163,11 @@ internal fun CompanionMemoryFilters(
                 unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            (mapOf("" to "全部") + memoryCategoryNames).forEach { (key, label) ->
-                FilterChip(selected = category == key, onClick = { onCategoryChange(key) },
-                    label = { Text("$label ${if (key.isEmpty()) total else counts[key] ?: 0}") },
-                    shape = RoundedCornerShape(50), border = null,
-                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface,
-                        selectedContainerColor = accent.copy(alpha = 0.14f), selectedLabelColor = accent))
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            MemoryCategorySelector(category, onCategoryChange, counts = counts, total = total,
+                includeAll = true, modifier = Modifier.weight(1f))
+            Text("$visibleCount 条", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -168,10 +178,10 @@ internal fun CompanionMemoryCard(
     memory: CompanionMemoryEntity, enabled: Boolean,
     onSource: () -> Unit, onEdit: () -> Unit, onVersions: () -> Unit, onDelete: () -> Unit
 ) {
-    val accent = memoryAccent()
+    val accent = memoryCategoryColor(memory.category)
     var menu by remember(memory.id) { mutableStateOf(false) }
     val tags = remember(memory.tagsJson) { MemoryTags.fromJson(memory.tagsJson) }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, accent.copy(alpha = 0.10f))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -205,7 +215,7 @@ internal fun CompanionMemoryCard(
             }
             if (tags.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                tags.forEach { MemoryBadge(it) }
+                tags.forEach { Text("#$it", style = MaterialTheme.typography.labelMedium, color = accent) }
             }
             if (memory.alwaysProvide || memory.locked || memory.manual) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -234,12 +244,10 @@ internal fun CompanionMemoryCard(
 
 @Composable
 private fun MemoryBadge(label: String, icon: ImageVector? = null) {
-    Surface(shape = RoundedCornerShape(8.dp), color = memoryAccent().copy(alpha = 0.07f)) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             icon?.let { Icon(it, null, Modifier.size(12.dp), tint = memoryAccent()); Spacer(Modifier.width(4.dp)) }
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-    }
 }
 
 @Composable
@@ -260,7 +268,7 @@ private fun MemoryStatusLabel(status: String) {
     Text(label, style = MaterialTheme.typography.labelSmall, color = color)
 }
 
-private fun memoryCategoryIcon(category: String): ImageVector = when (category) {
+internal fun memoryCategoryIcon(category: String): ImageVector = when (category) {
     "user_profile" -> Icons.Filled.PersonOutline
     "character_profile" -> Icons.Filled.Face
     "relationship" -> Icons.Filled.FavoriteBorder
