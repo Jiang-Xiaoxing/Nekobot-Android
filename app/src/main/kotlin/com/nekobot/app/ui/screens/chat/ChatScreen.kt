@@ -297,6 +297,9 @@ fun ChatScreen(
     onOpenBrowserSettings: () -> Unit = {},
     externalListState: androidx.compose.foundation.lazy.LazyListState? = null,
     customBottomBar: (@Composable () -> Unit)? = null,
+    onOpenCompanionSettings: (() -> Unit)? = null,
+    companionUtilityRequest: CompanionChatUtility? = null,
+    onCompanionUtilityHandled: () -> Unit = {},
     // 平板双栏嵌入会话页时，底部悬浮导航栏盖住覆盖层输入区，需要整体抬升避让
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
@@ -312,8 +315,11 @@ fun ChatScreen(
     val session by viewModel.session.collectAsStateWithLifecycle()
     // Agent 会话开启「继承完整角色能力」后按角色会话渲染：显示角色头像，气泡不再占满整宽。
     val inheritsCharacter = session?.sessionMode == "agent" && session?.inheritCharacter == true
-    val showAiAvatar = session?.sessionMode != "agent" || inheritsCharacter
-    val fillAiWidth = session?.sessionMode == "agent" && !inheritsCharacter
+    val companionChat = session?.companionMode == true
+    val companionName = session?.characterName?.takeIf { it.isNotBlank() }
+        ?: session?.senderName?.takeIf { it.isNotBlank() } ?: session?.displayName.orEmpty()
+    val showAiAvatar = companionChat || session?.sessionMode != "agent" || inheritsCharacter
+    val fillAiWidth = !companionChat && session?.sessionMode == "agent" && !inheritsCharacter
     val groupCharacters by viewModel.groupCharacters.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
@@ -429,6 +435,17 @@ fun ChatScreen(
     var showSandboxTerminal by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 内置浏览器：输入网址或直接打开当前会话工作区里的 HTML 文件
     var showBuiltinBrowser by rememberSaveable(sessionId) { mutableStateOf(false) }
+    LaunchedEffect(sessionId, companionUtilityRequest) {
+        if (companionChat && companionUtilityRequest != null) {
+            when (companionUtilityRequest) {
+                CompanionChatUtility.TERMINAL -> if (ServiceContainer.prefs.isLocalMode) showSandboxTerminal = true
+                CompanionChatUtility.BROWSER -> showBuiltinBrowser = true
+                CompanionChatUtility.RESTORE_ARCHIVE -> if (!session?.archiveSessionId.isNullOrBlank()) showRestoreArchiveDialog = true
+                CompanionChatUtility.VIEW_ARCHIVE -> if (!session?.archiveSessionId.isNullOrBlank()) showArchiveViewer = true
+            }
+            onCompanionUtilityHandled()
+        }
+    }
     // 沙盒文件浏览器：覆盖在终端之上，复用同一会话沙盒 shell 的命令通道
     var showSandboxFiles by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 展开状态必须高于 LazyColumn item：工具步骤更新或卡片离屏回收后仍保留用户选择。
@@ -863,7 +880,7 @@ fun ChatScreen(
     val chatBackgroundOpacity = ServiceContainer.prefs.chatBackgroundOpacity
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = if (companionChat) companionChatPalette().background else MaterialTheme.colorScheme.background,
         topBar = {
             // 顶栏融入聊天背景，底部以发丝分割线区分内容区
             Column {
@@ -895,7 +912,7 @@ fun ChatScreen(
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background
+                            containerColor = if (companionChat) companionChatPalette().background else MaterialTheme.colorScheme.background
                         )
                     )
                 } else {
@@ -904,6 +921,7 @@ fun ChatScreen(
                     TopAppBar(
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (!companionChat) {
                                 ChatAvatar(
                                     portraitUrl = session?.portraitUrl,
                                     size = 34.dp,
@@ -916,17 +934,18 @@ fun ChatScreen(
                                     }
                                 )
                                 Spacer(Modifier.width(10.dp))
+                                }
                                 Column {
                                     Text(
-                                        text = session?.displayName ?: conversationLabel,
+                                        text = if (companionChat) companionName else session?.displayName ?: conversationLabel,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    // 副标题：生成中显示“正在输入…”，否则显示消息总数
-                                    Text(
+                                    // 陪伴聊天只在实际回复中显示输入状态，不展示消息统计。
+                                    if (!companionChat || sending) Text(
                                         text = if (sending) typingLabel
                                         else stringResource(R.string.chat_message_count, totalMessageCount),
                                         style = MaterialTheme.typography.labelSmall,
@@ -960,7 +979,10 @@ fun ChatScreen(
                                 }
                             }
                             Box {
-                                IconButton(onClick = { menuExpanded = true }) {
+                                IconButton(onClick = {
+                                    if (companionChat && onOpenCompanionSettings != null) onOpenCompanionSettings()
+                                    else menuExpanded = true
+                                }) {
                                     Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.chat_more), tint = MaterialTheme.colorScheme.onSurface)
                                 }
                                 DropdownMenu(
@@ -1031,7 +1053,7 @@ fun ChatScreen(
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background
+                            containerColor = if (companionChat) companionChatPalette().background else MaterialTheme.colorScheme.background
                         )
                     )
                 }
@@ -1140,8 +1162,8 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            // 氛围背景：顶部一抹主题色微光，向下渐隐，增加层次感
-            Box(
+            // 陪伴聊天保持安静的纯色底，不覆盖用户自己设置的聊天背景。
+            if (!companionChat) Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
@@ -1232,7 +1254,7 @@ fun ChatScreen(
                         .liveRegion(),
                     state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(if (companionChat) 16.dp else 10.dp)
                 ) {
                     // 向上分页入口：还有更早历史时常驻在列表顶部，可直接点击加载；
                     // 加载中显示进度，避免"分页不可见"——滚动到顶部也能自动加载（见上方效果）。
@@ -1294,7 +1316,21 @@ fun ChatScreen(
                             // 跨天消息之间插入日期分隔条
                             val day = dayKey(msg.timestamp)
                             val prevDay = renderMessages.getOrNull(index - 1)?.let { dayKey(it.timestamp) }
-                            if (day != null && day != prevDay) {
+                            if (companionChat) {
+                                val time = compactTime(msg.timestamp)
+                                val previousTime = renderMessages.getOrNull(index - 1)?.let { compactTime(it.timestamp) }
+                                fun minutes(value: String?): Int? = value?.split(":")?.let { parts ->
+                                    if (parts.size == 2) parts[0].toIntOrNull()?.let { h ->
+                                        parts[1].toIntOrNull()?.let { m -> h * 60 + m }
+                                    } else null
+                                }
+                                val gap = minutes(time)?.let { current -> minutes(previousTime)?.let { current - it } }
+                                if (msg.id != ChatViewModel.STREAMING_ID &&
+                                    (index == 0 || day != prevDay || gap == null || gap >= 5 || gap < 0)) {
+                                    val label = listOfNotNull(day?.takeIf { index == 0 || day != prevDay }?.let(::dayLabel), time).joinToString("  ")
+                                    if (label.isNotBlank()) CompanionTimeLabel(label)
+                                }
+                            } else if (day != null && day != prevDay) {
                                 DateSeparatorChip(label = dayLabel(day))
                                 Spacer(Modifier.height(2.dp))
                             }
@@ -1560,6 +1596,7 @@ fun ChatScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             dragHandle = { BottomSheetDefaults.DragHandle() }
         ) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             Text(
                 text = stringResource(R.string.chat_message_actions),
                 style = MaterialTheme.typography.titleMedium,
@@ -1567,6 +1604,24 @@ fun ChatScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
             )
+            if (companionChat) {
+                MessageActionSheetItem(text = stringResource(R.string.common_copy), icon = Icons.Filled.ContentCopy) {
+                    clipboard.setText(AnnotatedString(target.displayContent))
+                    messageActionTarget = null
+                }
+                if (!target.isUser && !target.isLocalCommandMessage()) {
+                    MessageActionSheetItem(text = stringResource(R.string.companion_chat_retry), icon = Icons.Filled.Refresh,
+                        enabled = targetId != null && !sending) {
+                        messageActionTarget = null
+                        if (renderMessages.firstOrNull()?.id == target.id && !hasOlderMessages) viewModel.regenerateGreeting()
+                        else viewModel.regenerateMessage(target)
+                    }
+                }
+                val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
+                    formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
+                if (details.isNotBlank()) Text(details, Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             MessageActionSheetItem(
                 text = stringResource(R.string.chat_message_edit),
                 icon = Icons.Filled.Edit,
@@ -1624,6 +1679,7 @@ fun ChatScreen(
                 }
             )
             Spacer(Modifier.height(24.dp))
+            }
         }
     }
 
@@ -2561,7 +2617,14 @@ private fun StreamingAssistantBubble(
     val reasoning by reasoningFlow.collectAsStateWithLifecycle()
     if (content.isBlank() && reasoning.isBlank()) {
         if (fuseTypingIndicator) return
-        ThinkingIndicator(
+        if (LocalCompanionChatName.current != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ChatAvatar(portraitUrl = portraitUrl, size = 36.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.chat_typing), color = companionChatPalette().secondary,
+                    style = MaterialTheme.typography.bodyMedium)
+            }
+        } else ThinkingIndicator(
             portraitUrl = portraitUrl,
             showAiAvatar = showAiAvatar,
             fillAiWidth = fillAiWidth,
@@ -2667,12 +2730,14 @@ private fun MessageBubble(
     val commandCapsuleBrush = commandCapsule?.let {
         Brush.linearGradient(listOf(it.kind.startColor, it.kind.endColor))
     }
+    val companionChat = LocalCompanionChatName.current != null
+    val companionPalette = companionChatPalette()
     val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.themeColorOverride)
-    val userBubble = bubbleAppearance.userColor
-    val userBrush = bubbleAppearance.userBrush
-    val aiContainer = bubbleAppearance.assistantColor
-    val aiBorder = bubbleAppearance.assistantBorder
-    val textColor = bubbleAppearance.textColor(isUser)
+    val userBubble = if (companionChat) companionPalette.outgoing else bubbleAppearance.userColor
+    val userBrush = if (companionChat) Brush.linearGradient(listOf(userBubble, userBubble)) else bubbleAppearance.userBrush
+    val aiContainer = if (companionChat) companionPalette.surface else bubbleAppearance.assistantColor
+    val aiBorder = if (companionChat) Color.Transparent else bubbleAppearance.assistantBorder
+    val textColor = if (companionChat) companionPalette.ink else bubbleAppearance.textColor(isUser)
     // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
     val linkColor = if (isUser) linkColorOnBubble(userBubble) else accentLink()
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -2709,7 +2774,9 @@ private fun MessageBubble(
     // 是否包含非文本段（图片/视频/音频/链接/HTML/文件卡片），决定气泡最大宽度
     val hasMultimedia = parsedSegments.any { segs -> segs.any { it.type != SegmentType.TEXT } }
     val hasAudioUrl = !message.audioUrl.isNullOrBlank()
-    val maxBubbleWidth = if (hasMultimedia || hasAudioUrl || ttsState != null) 360.dp else 280.dp
+    val maxBubbleWidth = if (companionChat) {
+        (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp - 104.dp).coerceIn(120.dp, 360.dp)
+    } else if (hasMultimedia || hasAudioUrl || ttsState != null) 360.dp else 280.dp
 
     // swipes：有多份候选时，左右滑动气泡即可快速切换（左滑下一版、右滑上一版）。
     // 拖动与手指 1:1 连续跟手，松手后旧气泡完整滑出、新气泡从对侧完整滑入。
@@ -2809,12 +2876,13 @@ private fun MessageBubble(
         }
         // AI 头像（使用角色立绘，带回主题色光环，失败回退到图标）
         if (!isUser && showAiAvatar) {
-            ChatAvatar(portraitUrl = portraitUrl, size = 34.dp, ring = true)
+            ChatAvatar(portraitUrl = portraitUrl, size = if (companionChat) 36.dp else 34.dp, ring = !companionChat)
             Spacer(Modifier.width(8.dp))
         }
 
         Column(
             modifier = when {
+                companionChat -> Modifier.weight(1f, fill = false).widthIn(max = maxBubbleWidth)
                 !isUser && fillAiWidth -> Modifier.weight(1f)
                 hasUserImage -> Modifier.widthIn(min = 300.dp, max = maxBubbleWidth)
                 isUser -> Modifier.widthIn(max = maxBubbleWidth).width(IntrinsicSize.Max)
@@ -2824,7 +2892,7 @@ private fun MessageBubble(
             // 气泡本身也紧贴右边缘，工具栏向左延伸
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            if (!isUser && !senderName.isNullOrBlank()) {
+            if (!companionChat && !isUser && !senderName.isNullOrBlank()) {
                 Text(
                     text = senderName,
                     modifier = Modifier.padding(start = 4.dp, bottom = 5.dp),
@@ -2934,16 +3002,20 @@ private fun MessageBubble(
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
                     val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
-                    val segShape = chatBubbleShape(isUser, isLast)
+                    val segShape = if (companionChat) RoundedCornerShape(
+                        topStart = if (!isUser && isFirst) 3.dp else 10.dp,
+                        topEnd = if (isUser && isFirst) 3.dp else 10.dp,
+                        bottomStart = 10.dp, bottomEnd = 10.dp
+                    ) else chatBubbleShape(isUser, isLast)
                     Box(
                         modifier = Modifier
                             .then(if (!isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
                             // 用户气泡带轻微投影，浮于背景之上
-                            .then(if (isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
+                            .then(if (!companionChat && isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
                             .then(variantSwipeModifier)
                             .then(
                                 when {
-                                    isUser && commandStyle != null && !segHasUserImage ->
+                                    !companionChat && isUser && commandStyle != null && !segHasUserImage ->
                                         Modifier.background(brush = commandCapsuleBrush!!, shape = segShape)
                                     isUser && !segHasUserImage ->
                                         Modifier.background(brush = userBrush, shape = segShape)
@@ -2998,7 +3070,7 @@ private fun MessageBubble(
                                         Box(
                                             modifier = Modifier
                                                 .widthIn(max = maxBubbleWidth)
-                                                .shadow(2.dp, segShape, clip = false)
+                                                .shadow(if (companionChat) 0.dp else 2.dp, segShape, clip = false)
                                                 .background(brush = userBrush, shape = segShape)
                                                 .padding(horizontal = 14.dp, vertical = 9.dp)
                                         ) {
@@ -3141,6 +3213,23 @@ private fun MessageBubble(
                 )
             }
 
+            if (companionChat) {
+                delayReplyStatus?.let { status ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (status.paused) stringResource(R.string.chat_delay_reply_paused_draft)
+                            else stringResource(R.string.chat_delay_reply_countdown, status.remainingSeconds),
+                            style = MaterialTheme.typography.labelSmall, color = companionPalette.secondary,
+                            modifier = Modifier.weight(1f))
+                        if (onWithdrawDelay != null) TextButton(onClick = onWithdrawDelay) {
+                            Text(stringResource(R.string.chat_delay_reply_withdraw_batch))
+                        }
+                    }
+                }
+                if (!isUser && message.hasVariants && !isStreamingPlaceholder && !selectionMode) {
+                    VariantSwitcher(label = message.variantLabel.orEmpty(), index = message.variantIndex ?: 0,
+                        total = message.variantCount ?: 0, onSwitch = onSwitchVariant)
+                }
+            } else {
             // 元信息：时间（精简到分钟）/ token 数 / 生成速度 + 操作按钮，AI 气泡合并到同一行。
             // 左侧信息栏内容变长（时间 + token + tok/s + 候选切换器）时可能超出气泡宽度，
             // 这里给予剩余宽度并允许横向滑动，避免信息被裁掉或把右侧按钮挤出屏幕。
@@ -3263,6 +3352,12 @@ private fun MessageBubble(
                     }
                 }
             }
+            }
+
+        }
+        if (companionChat && isUser) {
+            Spacer(Modifier.width(8.dp))
+            ChatAvatar(portraitUrl = null, size = 36.dp, fallbackName = stringResource(R.string.chat_me))
         }
         // 多选模式：用户气泡右侧显示勾选框
         if (selectionMode && isUser) {
@@ -5463,8 +5558,11 @@ private fun ChatAvatar(
     size: androidx.compose.ui.unit.Dp,
     ring: Boolean = false,
     fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.SmartToy,
-    fallbackPainter: androidx.compose.ui.graphics.painter.Painter? = null
+    fallbackPainter: androidx.compose.ui.graphics.painter.Painter? = null,
+    fallbackName: String? = null
 ) {
+    val companionName = LocalCompanionChatName.current
+    val avatarShape = if (companionName != null) RoundedCornerShape(8.dp) else CircleShape
     val resolved = resolveAvatarUrl(portraitUrl)
     Box(
         modifier = Modifier
@@ -5477,12 +5575,16 @@ private fun ChatAvatar(
                 ) else Modifier
             )
             .padding(if (ring) 2.dp else 0.dp)
-            .clip(CircleShape)
+            .clip(avatarShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
         contentAlignment = Alignment.Center
     ) {
         val fallback: @Composable () -> Unit = {
-            if (fallbackPainter != null) {
+            if (companionName != null) {
+                Text((fallbackName ?: companionName).trim().take(1),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium,
+                    color = companionChatPalette().accent)
+            } else if (fallbackPainter != null) {
                 Icon(
                     painter = fallbackPainter,
                     contentDescription = null,

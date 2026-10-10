@@ -54,6 +54,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AccountCircle
@@ -220,6 +224,13 @@ fun ModernChatScreen(
     // Agent 会话目标/规格任务（/goal、/spec 命令设置，输入框上方横幅展示）
     val agentGoal by viewModel.agentGoal.collectAsStateWithLifecycle()
     val agentSpec by viewModel.agentSpec.collectAsStateWithLifecycle()
+    val companionName = if (session?.companionMode == true) {
+        session?.characterName?.takeIf { it.isNotBlank() }
+            ?: session?.senderName?.takeIf { it.isNotBlank() }
+            ?: session?.displayName.orEmpty()
+    } else null
+    var companionSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var companionUtilityRequest by remember(sessionId) { mutableStateOf<CompanionChatUtility?>(null) }
     val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
     val yoloAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode
     var yoloEnabled by remember(sessionId, yoloAvailable) {
@@ -234,7 +245,10 @@ fun ModernChatScreen(
         if (lastIndex >= 0) composerScope.launch { listState.animateScrollToItem(lastIndex) }
     }
 
-    CompositionLocalProvider(LocalStickerLookup provides stickerLookup) {
+    CompositionLocalProvider(
+        LocalStickerLookup provides stickerLookup,
+        LocalCompanionChatName provides companionName
+    ) {
     ChatScreen(
     sessionId = sessionId,
     onBack = onBack,
@@ -244,6 +258,9 @@ fun ModernChatScreen(
     onOpenStoryGraph = onOpenStoryGraph,
     onOpenBrowserSettings = onOpenBrowserSettings,
     externalListState = listState,
+    onOpenCompanionSettings = { companionSettingsOpen = true },
+    companionUtilityRequest = companionUtilityRequest,
+    onCompanionUtilityHandled = { companionUtilityRequest = null },
     embeddedBottomBarClearance = embeddedBottomBarClearance,
     customBottomBar = {
         Column(
@@ -264,6 +281,11 @@ fun ModernChatScreen(
             modifier = Modifier.fillMaxWidth(),
             sessionId = sessionId,
             session = session,
+            showCompanionSettings = companionSettingsOpen,
+            onDismissCompanionSettings = { companionSettingsOpen = false },
+            onOpenCompanionDetail = { onOpenSessionDetail(sessionId) },
+            onOpenCompanionStory = { onOpenStoryGraph(sessionId) },
+            onOpenCompanionUtility = { companionUtilityRequest = it },
             messages = messages,
             sending = sending,
             delayReplyPending = delayReplyPending,
@@ -687,6 +709,11 @@ private fun ModernChatComposer(
     modifier: Modifier,
     sessionId: String,
     session: Session?,
+    showCompanionSettings: Boolean,
+    onDismissCompanionSettings: () -> Unit,
+    onOpenCompanionDetail: () -> Unit,
+    onOpenCompanionStory: () -> Unit,
+    onOpenCompanionUtility: (CompanionChatUtility) -> Unit,
     messages: List<Message>,
     sending: Boolean,
     delayReplyPending: Boolean,
@@ -748,6 +775,9 @@ private fun ModernChatComposer(
     LaunchedEffect(input.isNotBlank()) {
         onDelayInputContentChanged(input.isNotBlank())
     }
+    val companionChat = session?.companionMode == true
+    var companionSettingsPage by remember(sessionId) { mutableStateOf(0) }
+    LaunchedEffect(showCompanionSettings) { if (showCompanionSettings) companionSettingsPage = 0 }
     var panelExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 表情包选择面板开关
     var stickerPickerOpen by remember { mutableStateOf(false) }
@@ -1173,7 +1203,7 @@ private fun ModernChatComposer(
         }
     }
     val hasPlotSurface = plotChoicesLoading || plotChoices.isNotEmpty()
-    val inputVisible = shouldShowChatInput(
+    val inputVisible = companionChat || shouldShowChatInput(
         layoutMode = chatInputLayout,
         inputExpanded = inputExpanded,
         hasPlotSurface = hasPlotSurface,
@@ -1217,7 +1247,7 @@ private fun ModernChatComposer(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = Color.Transparent,
+        color = if (companionChat) companionChatPalette().background else Color.Transparent,
         shadowElevation = 0.dp
     ) {
         Column(
@@ -1263,12 +1293,9 @@ private fun ModernChatComposer(
                 )
             }
 
-            AnimatedVisibility(
-                visible = panelExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
+            val actionPanel: @Composable () -> Unit = {
                 ModernChatActionPanel(
+                    showClearAction = !companionChat,
                     messageCount = messageCount,
                     cacheHitRate = cacheStats?.hitRate,
                     usedTokens = usedTokens,
@@ -1292,24 +1319,27 @@ private fun ModernChatComposer(
                     },
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
+                        if (companionChat) onDismissCompanionSettings()
                         showToolSetDialog = true
                     },
                     onCompress = { onCompress() },
                     allowCompression = session?.companionMode != true,
                     onOpenContextAnalysis = {
-                        panelExpanded = true
+                        if (companionChat) onDismissCompanionSettings() else panelExpanded = true
                         onOpenContextAnalysis()
                     },
                     onSendFile = {
+                        if (companionChat) onDismissCompanionSettings()
                         filePickMode = "send"
                         pickFile.launch("*/*")
                     },
-                    onOpenWorkspace = { onOpenWorkspace() },
-                    onSearch = { showSearch = true },
-                    onFavorites = { showFavorites = true },
-                    onJumpToLatest = { onJumpToLatest() },
-                    onMyMessages = { showMyMessages = true },
+                    onOpenWorkspace = { if (companionChat) onDismissCompanionSettings(); onOpenWorkspace() },
+                    onSearch = { if (companionChat) onDismissCompanionSettings(); showSearch = true },
+                    onFavorites = { if (companionChat) onDismissCompanionSettings(); showFavorites = true },
+                    onJumpToLatest = { if (companionChat) onDismissCompanionSettings(); onJumpToLatest() },
+                    onMyMessages = { if (companionChat) onDismissCompanionSettings(); showMyMessages = true },
                     onUploadOnly = {
+                        if (companionChat) onDismissCompanionSettings()
                         filePickMode = "upload"
                         pickFile.launch("*/*")
                     },
@@ -1318,13 +1348,122 @@ private fun ModernChatComposer(
                     onClear = { showClearConfirm = true }
                 )
             }
+            if (!companionChat) {
+                AnimatedVisibility(visible = panelExpanded,
+                    enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    actionPanel()
+                }
+            }
+            if (companionChat && showCompanionSettings) {
+                CompanionChatSheet(
+                    title = stringResource(if (companionSettingsPage == 0) R.string.companion_chat_settings
+                        else R.string.companion_chat_tools),
+                    onDismiss = onDismissCompanionSettings,
+                    onBack = if (companionSettingsPage > 0) ({ companionSettingsPage-- }) else null,
+                    scrollable = companionSettingsPage != 2
+                ) {
+                    when (companionSettingsPage) {
+                        0 -> {
+                            CompanionSettingsRow(stringResource(R.string.companion_chat_details), Icons.Filled.Person) {
+                                onDismissCompanionSettings(); onOpenCompanionDetail()
+                            }
+                            CompanionSettingsRow(stringResource(R.string.companion_chat_search), Icons.Filled.Search) {
+                                onDismissCompanionSettings(); showSearch = true
+                            }
+                            CompanionSettingsRow(stringResource(R.string.companion_chat_favorites), Icons.Filled.Star) {
+                                onDismissCompanionSettings(); showFavorites = true
+                            }
+                            CompanionSettingsRow(stringResource(R.string.chat_jump_to_latest), Icons.Filled.KeyboardDoubleArrowDown) {
+                                onDismissCompanionSettings(); onJumpToLatest()
+                            }
+                            HorizontalDivider(Modifier.padding(horizontal = 20.dp))
+                            CompanionSettingsRow(stringResource(R.string.companion_chat_tools), Icons.Filled.Settings,
+                                subtitle = stringResource(R.string.companion_chat_tools_hint)) { companionSettingsPage = 1 }
+                            Spacer(Modifier.height(32.dp))
+                            CompanionSettingsRow(stringResource(R.string.companion_chat_clear), Icons.Filled.Delete,
+                                enabled = !replyBusy && !sessionGenerating && messageCount > 0, destructive = true) {
+                                onDismissCompanionSettings(); showClearConfirm = true
+                            }
+                        }
+                        1 -> {
+                            CompanionSettingsRow(stringResource(R.string.companion_chat_more_tools), Icons.Filled.Settings) {
+                                companionSettingsPage = 2
+                            }
+                            CompanionSettingsRow(stringResource(R.string.chat_browser), Icons.Filled.Public,
+                                subtitle = stringResource(R.string.companion_chat_browser_hint)) {
+                                onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.BROWSER)
+                            }
+                            if (ServiceContainer.prefs.isLocalMode) {
+                                CompanionSettingsRow(stringResource(R.string.chat_sandbox_terminal), Icons.Filled.Terminal,
+                                    subtitle = stringResource(R.string.companion_chat_terminal_hint)) {
+                                    onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.TERMINAL)
+                                }
+                            }
+                            CompanionSettingsRow(stringResource(R.string.chat_story_graph), Icons.Filled.AccountTree) {
+                                onDismissCompanionSettings(); onOpenCompanionStory()
+                            }
+                            if (!session?.archiveSessionId.isNullOrBlank()) {
+                                CompanionSettingsRow(stringResource(R.string.chat_extract_archive), Icons.Filled.Folder) {
+                                    onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.RESTORE_ARCHIVE)
+                                }
+                                CompanionSettingsRow(stringResource(R.string.chat_view_archive), Icons.Filled.Folder) {
+                                    onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.VIEW_ARCHIVE)
+                                }
+                            }
+                        }
+                        else -> actionPanel()
+                    }
+                }
+            }
 
             AnimatedVisibility(
                 visible = inputVisible,
                 enter = expandVertically() + fadeIn(),
                 exit = if (skipInputExit) ExitTransition.None else shrinkVertically() + fadeOut()
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                if (companionChat) {
+                    Column(Modifier.fillMaxWidth()) {
+                        if (pendingAttachments.isNotEmpty()) {
+                            PendingChatAttachments(sessionId = sessionId, attachments = pendingAttachments,
+                                onRemove = { target -> pendingAttachments = pendingAttachments.filterNot { it === target } })
+                        }
+                        CompanionChatInput(
+                            value = inputField,
+                            onValueChange = {
+                                closePanel()
+                                inputField = it
+                                if (pendingPlotChoiceId != null && it.text != plotChoices.firstOrNull { c -> c.id == pendingPlotChoiceId }?.title) {
+                                    pendingPlotChoiceId = null
+                                }
+                            },
+                            hasAttachments = pendingAttachments.isNotEmpty(),
+                            busy = replyBusy || sessionGenerating,
+                            enabled = delayReplyPending || !sending || isAgentSession,
+                            attachmentsOpen = panelExpanded,
+                            onAttachments = togglePanel,
+                            onSticker = { handleQuickAction(ChatQuickAction.STICKER) },
+                            onVoice = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                            onStop = onStop,
+                            onSend = {
+                                val text = input
+                                val choiceId = pendingPlotChoiceId
+                                val attachments = pendingAttachments
+                                val keepComposerOpen = shouldKeepComposerOpen(text, choiceId == null)
+                                updateInput("")
+                                inputExpanded = keepComposerOpen
+                                pendingPlotChoiceId = null
+                                pendingAttachments = emptyList()
+                                closePanel()
+                                onSend(text, choiceId, attachments, reasoningEffort)
+                            }
+                        )
+                        AnimatedVisibility(visible = panelExpanded) {
+                            CompanionAttachmentPanel(enabled = !fileBusy,
+                                onImage = { closePanel(); handleQuickAction(ChatQuickAction.IMAGE) },
+                                onFile = { closePanel(); handleQuickAction(ChatQuickAction.FILE) })
+                        }
+                    }
+                } else Column(modifier = Modifier.fillMaxWidth()) {
                     val composerShape = RoundedCornerShape(30.dp)
                     val composerGlassFill = Brush.linearGradient(
                         colorStops = arrayOf(
@@ -1618,7 +1757,11 @@ private fun ModernChatComposer(
     }
 
     if (showClearConfirm) {
-        AlertDialog(
+        if (companionChat) CompanionClearMessagesDialog(
+            enabled = !replyBusy && !sessionGenerating,
+            onDismiss = { showClearConfirm = false },
+            onConfirm = { if (!replyBusy && !sessionGenerating) { showClearConfirm = false; onClear() } }
+        ) else AlertDialog(
             onDismissRequest = { showClearConfirm = false },
             title = { Text(stringResource(R.string.chat_clear_current_session)) },
             text = { Text(stringResource(R.string.chat_clear_current_confirm)) },
@@ -2284,6 +2427,7 @@ private fun ReasoningEffortSelector(
 @Composable
 private fun ModernChatActionPanel(
     allowCompression: Boolean = true,
+    showClearAction: Boolean = true,
     messageCount: Int,
     cacheHitRate: Double?,
     usedTokens: Long,
@@ -2472,6 +2616,7 @@ private fun ModernChatActionPanel(
                     }
                 }
             }
+            if (showClearAction) {
             item { ModernSectionTitle(stringResource(R.string.chat_danger_zone)) }
             item {
                 Surface(
@@ -2488,6 +2633,7 @@ private fun ModernChatActionPanel(
                         onClick = onClear
                     )
                 }
+            }
             }
         }
     }
