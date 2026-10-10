@@ -35,7 +35,7 @@ class FusedCompanionMemoryScreenTest {
             compose.waitForIdle()
             compose.onNodeWithText("添加一条记忆").assertIsDisplayed()
             compose.onNode(hasText("只允许我修改") and isToggleable()).performScrollTo().assertIsDisplayed()
-            compose.onNode(hasText("每次聊天都提供") and isToggleable()).performScrollTo().performClick()
+            compose.onNode(hasText("设为核心记忆") and isToggleable()).performScrollTo().performClick()
             compose.onNodeWithText("保存记忆",useUnmergedTree=true).performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithText("添加一条记忆").fetchSemanticsNodes().isEmpty() }
             runBlocking {

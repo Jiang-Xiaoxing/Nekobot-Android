@@ -114,7 +114,7 @@ internal fun CompanionMemoryEditor(
                 supportingText = { Text("用逗号分开，方便以后查找。") }, shape = RoundedCornerShape(16.dp))
             Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
                 Column {
-                    MemoryOption("设为核心记忆", "每次聊天都会带上。关闭后仍保留，需要时再查；你的选择不会被模型改回。",
+                    MemoryOption("设为核心记忆", "每次聊天都会带上。手动移入或移出核心后，模型不会改回；移出不删除正文。",
                         pinned, !busy) { pinned = it }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     MemoryOption("只允许我修改", "AI 不会自动改写；你仍然可以编辑或删除。", locked, !busy) { locked = it }

@@ -30,7 +30,7 @@ class FusedCompanionAndroidTest {
                 CompanionSourceEntity("bad",source.id,"bad fingerprint","我喝茶",null,"user"),
                 CompanionSourceEntity("good",source.id,CompanionMemoryPolicy.fingerprint(source),"我喝茶",null,"user")))
             val result=store.fusedRecall(session,"喝茶",FusedCompanionPolicy.budgets(14000)).first
-            val ids=JsonParser.parseString(result.substringAfter('\n')).asJsonArray.map { it.asJsonObject["id"].asString }
+            val ids=JsonParser.parseString(result.substringAfter("本轮相关记忆：\n")).asJsonArray.map { it.asJsonObject["id"].asString }
             assertFalse("Invalid high-ranking evidence must never reach the model", "bad" in ids)
             assertTrue("The next valid fact must still be considered", "good" in ids)
             db.messageDao().upsert(source.copy(content="我现在改成喝白水"))
@@ -59,9 +59,9 @@ class FusedCompanionAndroidTest {
         }
         return rows
     }
-    private fun response(source: LocalMessageEntity, key: String="diet", operation: String="add", content: String="用户怕辣") =
+    private fun response(source: LocalMessageEntity, key: String="diet", operation: String="add", content: String="用户怕辣", kind: String="fact") =
         gson.toJson(mapOf("changes" to listOf(mapOf("key" to key,"target_key" to if(operation=="add") "" else key,
-            "operation" to operation,"kind" to "fact","category" to "user_profile","subject" to "用户",
+            "operation" to operation,"kind" to kind,"category" to "user_profile","subject" to "用户",
             "content" to content,"source_id" to source.id,"quote" to source.content.take(20)))))
     private suspend fun fails(block: suspend () -> Unit) { try { block(); fail("Expected rejection") } catch (e: Exception) { assertTrue(e.message != null) } }
 
@@ -231,7 +231,7 @@ class FusedCompanionAndroidTest {
         } finally { db.close() }
     }
 
-    @Test fun tinyContextFailsWithoutDroppingUnprocessedRawAndPinnedOverflowIsExplicit() = runBlocking<Unit> {
+    @Test fun tinyContextKeepsRawAndCoreOverflowIsRejectedBeforeSaving() = runBlocking<Unit> {
         val db=db(); try {
             val s=setup(db); say(db,"old","原话".repeat(5000)); say(db,"a","回复","assistant")
             val current=say(db,"now","接着说")
@@ -239,8 +239,35 @@ class FusedCompanionAndroidTest {
                 "ROLE",emptyList(),mapOf("role" to "user","content" to "接着说"),"",2000,800) }
             assertEquals(3,db.messageDao().listBySession("s").size)
             val store=CompanionMemoryStore(db)
-            repeat(4) { store.editFused(s,"p$it","常驻内容".repeat(300),"user_profile",emptyList(),true,false) }
-            fails { store.fusedRecall(s,"问题",FusedCompanionPolicy.budgets(14000)) }
+            store.editFused(s,"p","原来的内容","user_profile",emptyList(),true,false)
+            fails { store.editFused(s,"p","常驻内容".repeat(350),"user_profile",emptyList(),true,false) }
+            val saved=store.validatedMemories(store.ensureScope(s)).single { it.current }
+            assertEquals("原来的内容",saved.content)
+            assertTrue(saved.alwaysProvide)
+            assertTrue(store.fusedRecall(s,"不相关的话题",FusedCompanionPolicy.budgets(14000)).first.contains("原来的内容"))
+        } finally { db.close() }
+    }
+
+    @Test fun backgroundCoreChoiceKeepsManualExclusionAndExistingDate() = runBlocking<Unit> {
+        val db=db(); try {
+            val s=setup(db); val rows=backlog(db); val store=CompanionMemoryStore(db)
+            val scope=store.ensureScope(s)
+            db.companionMemoryDao().saveMemory(CompanionMemoryEntity("diet-v1",scope.id,"diet",1,"fact","用户","用户怕辣","active",
+                eventDate="2026-10-01",manual=true,createdAt="now",updatedAt="now"))
+            store.setCore(s,"diet",false)
+            store.process(s,{_,material -> if(material.contains("\"id\":\"u0\""))
+                response(rows.first(),operation="update",kind="core") else "{\"changes\":[]}"},24_000)
+            val updated=store.validatedMemories(store.ensureScope(s)).single { it.current }
+            assertEquals("core",updated.kind)
+            assertTrue(updated.coreExcluded)
+            assertFalse(CompanionCoreMemory.contains(updated))
+            assertEquals("2026-10-01",updated.eventDate)
+            store.setCore(s,"diet",true)
+            store.editFused(s,"diet",updated.content,updated.category,emptyList(),true,false)
+            val edited=store.validatedMemories(store.ensureScope(s)).single { it.current }
+            assertTrue(edited.alwaysProvide)
+            assertFalse(edited.coreExcluded)
+            assertEquals(updated.eventDate,edited.eventDate)
         } finally { db.close() }
     }
 

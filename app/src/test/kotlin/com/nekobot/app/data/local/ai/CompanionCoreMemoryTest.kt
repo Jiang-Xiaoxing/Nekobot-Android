@@ -30,4 +30,14 @@ class CompanionCoreMemoryTest {
         assertTrue(CompanionCoreMemory.tokens(rows) > CompanionCoreMemory.maintenanceTokens)
         assertEquals(saved.size, JsonParser.parseString(CompanionCoreMemory.render(rows)).asJsonArray.size())
     }
+
+    @Test fun compactPayloadPreservesWhoseBirthdayAndItsDate() {
+        val birthday = memory().copy(subject = "角色", content = "生日", annualMonthDay = "05-20",
+            eventDate = "2000-05-20", expiresAt = "2099-01-01T00:00:00Z")
+        val sent = JsonParser.parseString(CompanionCoreMemory.render(listOf(birthday))).asJsonArray[0].asJsonObject
+        assertEquals("角色", sent["subject"].asString)
+        assertEquals("05-20", sent["annual_month_day"].asString)
+        assertEquals("2000-05-20", sent["event_date"].asString)
+        assertEquals(birthday.expiresAt, sent["expires_at"].asString)
+    }
 }

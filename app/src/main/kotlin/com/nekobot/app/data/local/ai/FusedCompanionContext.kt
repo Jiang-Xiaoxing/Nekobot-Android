@@ -57,7 +57,7 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
             auxiliary = material()
         }
         require(size(selected, cached, auxiliary) <= available) {
-            "完整原话和待整理内容超过模型容量；未删除、未截断消息。请等待后台整理完成，或增大模型上下文后重试"
+            "本轮原话、核心记忆及其他资料合计超过模型容量，尚未发送。请等待待整理内容处理完毕、精简核心记忆，或选择更大上下文的模型后重试；原资料保留。"
         }
         val startId = selected.firstOrNull()?.id ?: messageId
         val userPayload = currentMessage

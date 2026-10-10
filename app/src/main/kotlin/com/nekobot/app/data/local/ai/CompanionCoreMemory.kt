@@ -16,10 +16,12 @@ internal object CompanionCoreMemory {
     fun rows(memories: List<CompanionMemoryEntity>): List<CompanionMemoryEntity> =
         memories.filter { contains(it) }.sortedBy { it.factKey }
 
-    // 原话通过记忆 ID 按需读取；核心不重复附带版本、来源数组和内部事实键。
+    // 原话通过记忆 ID 按需读取；省去版本和来源数组，保留正文所属对象及时间事实。
     fun render(memories: List<CompanionMemoryEntity>): String = Gson().toJson(memories.map {
-        mapOf("id" to it.id, "key" to it.factKey, "category" to it.category, "content" to it.content,
-            "status" to it.status, "evidence" to CompanionImportPolicy.evidence(it))
+        mapOf("id" to it.id, "key" to it.factKey, "category" to it.category, "subject" to it.subject,
+            "content" to it.content, "status" to it.status, "event_date" to it.eventDate,
+            "annual_month_day" to it.annualMonthDay, "expires_at" to it.expiresAt,
+            "evidence" to CompanionImportPolicy.evidence(it))
     })
 
     fun tokens(memories: List<CompanionMemoryEntity>): Int =

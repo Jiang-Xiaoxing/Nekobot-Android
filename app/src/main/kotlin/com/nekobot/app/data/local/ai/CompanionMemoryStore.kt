@@ -431,6 +431,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             alwaysProvide = if (deliveryChanged || old == null) alwaysProvide else old.alwaysProvide,
             coreExcluded = if (deliveryChanged) !alwaysProvide else old?.coreExcluded ?: false,
             locked = onlyMe, manual = true, createdAt = old?.createdAt ?: now, updatedAt = now,
+            eventDate = old?.eventDate.takeIf { content.trim() == old?.content },
+            annualMonthDay = old?.annualMonthDay.takeIf { content.trim() == old?.content },
             expiresAt = old?.expiresAt)
         // retire 在同一事务内；失败会回滚正文及归属。旧超量核心允许缩短，不强制丢弃。
         val existing = validatedMemories(scope).filter { it.factKey != factKey }
@@ -623,7 +625,9 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 else CompanionMemoryPolicy.digest("${scope.id}:$target:$nextVersion:${CompanionMemoryPolicy.fingerprint(source)}"),
             scopeId = scope.id, factKey = target, version = nextVersion, kind = nextKind,
             subject = old?.subject ?: draft.subject, content = content, status = if (isConflict) "conflict" else status,
-            eventDate = eventDay?.toString() ?: old?.eventDate.takeIf { draft.operation in setOf("cancel", "complete", "resolve") },
+            eventDate = eventDay?.toString() ?: old?.eventDate.takeIf {
+                draft.operation in setOf("cancel", "complete", "resolve") || (updateCore && content == old?.content)
+            },
             annualMonthDay = if (draft.kind == "birthday") CompanionMemoryPolicy.annualDay(draft.eventEvidence, eventDay) else old?.annualMonthDay,
             tagsJson = MemoryTags.toJson(MemoryTags.normalizeGenerated(draft.tags)), current = !isConflict,
             category = if (fused) old?.category ?: draft.category else "user_profile",
