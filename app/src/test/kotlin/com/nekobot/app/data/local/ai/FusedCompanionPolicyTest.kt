@@ -54,11 +54,13 @@ class FusedCompanionPolicyTest {
             assertTrue(prompt(now, false, lang).contains("Test device"))
         }
     }
-    @Test fun allMemoryToolAliasesAreScopedAndOtherDefinitionsAreUntouched() {
-        val original = (FusedCompanionTools.readNames + FusedCompanionTools.writeNames + "write_file")
+    @Test fun allowedMemoryToolsAreScopedAndUnrelatedPermittedToolsAreUntouched() {
+        val original = (FusedCompanionTools.readNames + FusedCompanionTools.writeNames + "write_file" + "get_date_time")
             .map { mapOf<String,Any>("type" to "function", "function" to mapOf("name" to it, "description" to "original")) }
         val result = FusedCompanionTools.definitions(original)
         assertEquals(original.last(), result.last())
+        assertEquals(setOf("agent_memory_read", "agent_memory_update", "get_date_time"),
+            result.map { (it["function"] as Map<*, *>)["name"] }.toSet())
         assertTrue(result.dropLast(1).all { (it["function"] as Map<*, *>)["description"].toString().contains("当前") })
     }
 }
