@@ -392,8 +392,12 @@ internal class CompanionTransferService(
             }
         val selectedState = relationship ?: relationshipStateFromInitial(target.characterId!!, sessionRelationshipTargetId(target.id),
             LocalProfileRepository(db.characterDao()).getById(target.characterId)?.initialState.orEmpty(), Instant.now().toString())
+        val selectedJson = JsonParser.parseString(selectedState.toJson()).asJsonObject.apply {
+            // 明确区分角色卡初始值和已经评估过的积累，初始值不能把迁入聊天标记为已评估。
+            addProperty("companion_initial_only", relationship == null)
+        }.toString()
         db.relationshipDao().upsert(LocalRelationshipStateEntity(UUID.randomUUID().toString(),
-            target.characterId!!, sessionRelationshipTargetId(target.id), selectedState.toJson(), selectedState.updatedAt))
+            target.characterId!!, sessionRelationshipTargetId(target.id), selectedJson, selectedState.updatedAt))
         transferRows(directory, "local_character_states").firstOrNull { it.text("scope_id") == snapshot.sourceId }?.let { row ->
             row.addProperty("id", id("character-state", requireNotNull(row.text("id"))))
             row.addProperty("character_id", target.characterId); row.addProperty("scope_id", target.id)

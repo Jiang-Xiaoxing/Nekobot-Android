@@ -22,7 +22,12 @@ data class CompanionRelationshipEntity(
     val feelingSources: String = "[]",
     val updatedAt: Long = 0,
     val notice: String? = null,
-    val correctionResult: String? = null
+    val correctionResult: String? = null,
+    /** 本次心情的强烈程度，0—1；与 feelingSources 共用依据，未知时不填默认分数。 */
+    @ColumnInfo(defaultValue = "NULL") val moodIntensity: Float? = null,
+    /** 旧版曾将迁入时的初始值误作评估进度；只核对一次，不能反复覆盖玩家的跳过决定。 */
+    @ColumnInfo(defaultValue = "0") val historyScopeVersion: Int = 1,
+    @ColumnInfo(defaultValue = "0") val historyReviewRequired: Boolean = false
 )
 
 /** 仅记录事件对关系的影响及来源引用，不另建事实记忆库；修正追加版本，保留核对轨迹。 */

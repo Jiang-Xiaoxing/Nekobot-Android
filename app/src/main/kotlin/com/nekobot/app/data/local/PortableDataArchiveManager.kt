@@ -587,6 +587,15 @@ class PortableDataArchiveManager(private val context: Context) {
             // 保留父表先于子表的恢复顺序；逐行解析，避免六万条聊天同时展开为 JSON 树。
             forEachPortableRow(raw, table) { row ->
                 val values = ContentValues()
+                // 旧备份没有强度；合并恢复心情/来源时必须同时清掉目标库中的另一份强度。
+                if (table == "companion_relationship_state" && !row.has("moodIntensity")) {
+                    values.putNull("moodIntensity")
+                }
+                if (table == "companion_relationship_state" && !row.has("historyScopeVersion")) {
+                    // 旧备份合并时也重新核对其历史范围，不能混用目标库另一条进度的确认标记。
+                    values.put("historyScopeVersion", 0)
+                    values.put("historyReviewRequired", 0)
+                }
                 row.entrySet().forEach { (column, value) ->
                     if (column in allowedColumns) {
                         val portableValue = if (rewriteMediaReferences) {

@@ -1,6 +1,7 @@
 package com.nekobot.app.data.local.ai
 
 import com.google.gson.JsonParser
+import com.google.gson.JsonElement
 import com.nekobot.app.data.local.db.*
 import com.nekobot.app.data.local.isLocalCommandMessage
 
@@ -15,6 +16,15 @@ internal object CompanionRelationshipPolicy {
     fun values(json: String): Map<String, Int> {
         val obj = JsonParser.parseString(json).asJsonObject
         return dimensions.keys.associateWith { obj[it]?.asInt ?: 0 }
+    }
+    /** 强度是心情的程度，不是精力、好感或情绪正负；拒绝错误单位和类型，不能截断为合法值。 */
+    fun parseMoodIntensity(element: JsonElement?): Float? {
+        requireNotNull(element) { "评估结果缺少情绪强度；无法判断时应返回 null" }
+        if (element.isJsonNull) return null
+        require(element.isJsonPrimitive && element.asJsonPrimitive.isNumber) { "情绪强度必须是 0—1 的数值或 null" }
+        val value = element.asDouble
+        require(value.isFinite() && value in 0.0..1.0) { "情绪强度超出 0—1 范围，已保留旧状态" }
+        return value.toFloat()
     }
     /** 连续玩家消息到首条有效回复算一轮；不把主动消息和重生成重复算轮次。 */
     fun turns(rows: List<LocalMessageEntity>): List<RelationshipTurn> {
@@ -40,8 +50,23 @@ internal object CompanionRelationshipPolicy {
         // 不在每次更新时截断积累，否则纠错无法撤回原事件，连续失信也会被压成相同的底值。
         (base[key] ?: initial.getValue(key)).toLong() + deltas.sumOf { (it[key] ?: 0).toLong() }
     }
+    /** 只能提出一次范围确认，不能据此断言旧记录从未评估，更不能自动发起付费补评。 */
+    fun needsHistoryReview(state: CompanionRelationshipEntity, hasEvents: Boolean, hasSnapshots: Boolean,
+        initialValues: Map<String, Int>): Boolean = state.historyScopeVersion == 0 && state.legacy &&
+        state.cursorId != null && state.updatedAt == 0L && !hasEvents && !hasSnapshots &&
+        state.feelingSources == "[]" && values(state.baselineJson) == initialValues
+
+    private fun band(value: Long) = when { value < 20 -> 0; value < 40 -> 1; value < 65 -> 2; value < 85 -> 3; else -> 4 }
+    fun shortDescription(key: String, value: Long): String = when (key) {
+        "affection" -> listOf("保持距离", "有些疏远", "愿意相处", "感到亲近", "深厚亲近")
+        "trust" -> listOf("难以相信", "有所保留", "愿意倾听", "认为可靠", "信任稳固")
+        "familiarity" -> listOf("尚不熟悉", "逐渐了解", "已有默契", "熟悉习惯", "了解细致")
+        "dependency" -> listOf("主要自立", "偶尔求助", "愿意依靠", "习惯求助", "依赖较强")
+        "security" -> listOf("缺乏安心", "仍有戒备", "部分放松", "多数安心", "稳定安心")
+        else -> listOf("无明显迹象", "偶尔在意", "对比较敏感", "较易不安", "不安较强")
+    }[band(value)]
     fun describe(key: String, value: Long): String {
-        val band = when { value < 20 -> 0; value < 40 -> 1; value < 65 -> 2; value < 85 -> 3; else -> 4 }
+        val band = band(value)
         return when (key) {
             "trust" -> listOf("很难相信承诺，需要持续兑现", "对承诺有明显保留", "愿意听取承诺，也会看实际行动", "多数时候认为对方可靠", "长期相处中形成了较稳固的信任")
             "affection" -> listOf("保持距离", "相处还有些疏远", "愿意继续相处", "感到亲近", "积累了深厚的亲近感")

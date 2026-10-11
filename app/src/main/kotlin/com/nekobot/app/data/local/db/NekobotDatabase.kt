@@ -66,7 +66,7 @@ import com.nekobot.app.data.local.LocalLogger
         CompanionRelationshipEventEntity::class,
         CompanionTransferJobEntity::class
     ],
-    version = 57,
+    version = 58,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
@@ -1158,6 +1158,15 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_57_58 = object : Migration(57, 58) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 旧评估没有情绪强度依据，保留未知，不改变既有心情、积累和评估进度。
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN moodIntensity REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN historyScopeVersion INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN historyReviewRequired INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
@@ -1171,7 +1180,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58
         )
 
         fun get(context: Context): NekobotDatabase =
