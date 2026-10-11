@@ -71,6 +71,7 @@ object Routes {
         return if (archiveId == null) route else "$route?archiveId=${android.net.Uri.encode(archiveId)}"
     }
     const val STYLE_SETTINGS = "style_settings"
+    const val RELATIONSHIP_BACKGROUND = "relationship_background"
 
     const val WORKSPACE = "workspace/{sessionId}"
     fun workspace(sessionId: String) = "workspace/$sessionId"

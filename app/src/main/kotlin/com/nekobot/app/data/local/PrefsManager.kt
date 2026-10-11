@@ -938,6 +938,11 @@ class PrefsManager(context: Context) {
             prefs.edit().putString(KEY_CHAT_BACKGROUND_MODE, normalized).apply()
         }
 
+    /** 关系页插画独立保存，不随全局主题或聊天背景改变。 */
+    var relationshipBackground: RelationshipBackground
+        get() = RelationshipBackground.fromId(prefs.getString("relationship_background", null))
+        set(value) { prefs.edit().putString("relationship_background", value.id).apply() }
+
     /** 已复制到应用私有目录的自定义聊天背景路径。 */
     var customChatBackgroundPath: String?
         get() = prefs.getString(KEY_CUSTOM_CHAT_BACKGROUND_PATH, null)
