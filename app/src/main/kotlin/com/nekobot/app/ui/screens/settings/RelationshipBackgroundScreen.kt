@@ -23,6 +23,9 @@ import com.nekobot.app.data.local.RelationshipBackground
 import com.nekobot.app.ui.screens.sessions.RelationshipPaper
 import com.nekobot.app.ui.screens.sessions.RelationshipScene
 import com.nekobot.app.ui.screens.sessions.readableOn
+import com.nekobot.app.ui.screens.sessions.RelationshipSkinTheme
+import com.nekobot.app.ui.screens.sessions.LocalJournalSkin
+import com.nekobot.app.ui.screens.sessions.journalFinish
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +38,7 @@ internal fun RelationshipBackgroundScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     Scaffold(topBar = {
-        TopAppBar(title = { Text("关系页背景") }, navigationIcon = {
+        TopAppBar(title = { Text("关系页皮肤") }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
         })
     }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
@@ -47,20 +50,36 @@ internal fun RelationshipBackgroundScreen(onBack: () -> Unit) {
             }, modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)
                 .heightIn(min = 48.dp).testTag("relationship_background_apply"),
                 colors = ButtonDefaults.buttonColors(contentColor = readableOn(MaterialTheme.colorScheme.primary))) {
-                Text("使用这个背景")
+                Text("使用这个皮肤")
             }
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).verticalScroll(rememberScrollState())
             .padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("独立设置，不随主题色改变", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("背景、按钮和图标成套切换，不随主题色改变", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).testTag("relationship_background_preview"),
                 contentAlignment = Alignment.Center) {
                 RelationshipScene(selected, Modifier.matchParentSize())
-                RelationshipPaper(Modifier.fillMaxWidth(.76f)) {
+                RelationshipSkinTheme(selected) {
+                RelationshipPaper(Modifier.fillMaxWidth(.82f)) {
                     Text("心情", style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.height(8.dp))
                     Text("轻松随和，带有一点好奇", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(12.dp))
+                    val skin = LocalJournalSkin.current
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("心情", "强度", "精力").forEachIndexed { index, label ->
+                            Surface(modifier = Modifier.weight(1f), shape = skin.buttonShape,
+                                color = if (index == 0) skin.accent else skin.paper,
+                                contentColor = if (index == 0) readableOn(skin.accent) else skin.ink,
+                                border = BorderStroke(1.dp, skin.rim), shadowElevation = 2.dp) {
+                                Box(Modifier.height(36.dp).journalFinish(skin, selected = index == 0), contentAlignment = Alignment.Center) {
+                                    Text(label, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
                 }
             }
             Text(if (selectedId == applied) "当前：${selected.title}" else "预览：${selected.title}", style = MaterialTheme.typography.bodyMedium)

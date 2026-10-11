@@ -1,6 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,7 +31,7 @@ private val LocalJournalAtlas = staticCompositionLocalOf<ImageBitmap?> { null }
 
 @Composable
 internal fun RelationshipJournalBackdrop(background: RelationshipBackground, content: @Composable BoxScope.() -> Unit) {
-    val atlas = ImageBitmap.imageResource(R.drawable.relationship_journal_icons)
+    val atlas = ImageBitmap.imageResource(LocalJournalSkin.current.atlas)
     CompositionLocalProvider(LocalJournalAtlas provides atlas) {
         Box(Modifier.fillMaxSize()) {
             RelationshipScene(background, Modifier.matchParentSize())
@@ -55,15 +57,17 @@ internal val RelationshipBackground.resource: Int get() = when (this) {
 
 @Composable
 internal fun RelationshipScene(background: RelationshipBackground, modifier: Modifier = Modifier) {
+    var ready by remember(background) { mutableStateOf(false) }
     Box(modifier) {
         AsyncImage(model = background.resource, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize())
+            onSuccess = { ready = true },
+            modifier = Modifier.matchParentSize().testTag(if (ready) "relationship_scene_${background.id}_ready" else "relationship_scene_loading"))
         if (isSystemInDarkTheme()) Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = .30f)))
     }
 }
 
 @Composable
-internal fun journalPaperColor(): Color = if (isSystemInDarkTheme()) Color(0xFF27313D) else Color(0xFFFCF9F1)
+internal fun journalPaperColor(): Color = LocalJournalSkin.current.paper
 
 internal fun readableOn(color: Color): Color = if (color.luminance() > .179f) Color.Black else Color.White
 
@@ -106,9 +110,11 @@ private fun Modifier.paperGrain() = drawWithCache {
 
 @Composable
 internal fun RelationshipPaper(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val skin = LocalJournalSkin.current
     Surface(modifier = modifier, shape = JournalPaperShape, color = journalPaperColor(),
         contentColor = MaterialTheme.colorScheme.onSurface, shadowElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().paperGrain().padding(horizontal = 18.dp, vertical = 22.dp), content = content)
+        Column(Modifier.fillMaxWidth().paperGrain().journalFinish(skin, paper = true)
+            .padding(horizontal = 18.dp, vertical = 22.dp), content = content)
     }
 }
 
@@ -120,37 +126,32 @@ internal fun JournalHeading(text: String, modifier: Modifier = Modifier) {
 /** The atlas has transparent independent cells. Source rectangles trim padding without resampling assets. */
 @Composable
 internal fun JournalEmblem(index: Int, modifier: Modifier = Modifier) {
-    val atlas = LocalJournalAtlas.current ?: ImageBitmap.imageResource(R.drawable.relationship_journal_icons)
-    val rectangles = listOf(
-        intArrayOf(14, 228, 295, 575), intArrayOf(307, 269, 624, 542),
-        intArrayOf(626, 251, 940, 542), intArrayOf(940, 290, 1247, 517),
-        intArrayOf(8, 744, 324, 1044), intArrayOf(327, 715, 603, 1054),
-        intArrayOf(625, 774, 931, 1046), intArrayOf(937, 771, 1246, 1054)
-    )
-    val bounds = rectangles[index.coerceIn(rectangles.indices)]
+    val atlas = LocalJournalAtlas.current ?: ImageBitmap.imageResource(LocalJournalSkin.current.atlas)
     Canvas(modifier) {
-        val scaleX = atlas.width / 1254f; val scaleY = atlas.height / 1254f
-        val sourceWidth = ((bounds[2] - bounds[0]) * scaleX).roundToInt()
-        val sourceHeight = ((bounds[3] - bounds[1]) * scaleY).roundToInt()
-        val scale = minOf(size.width / sourceWidth, size.height / sourceHeight)
-        val width = (sourceWidth * scale).roundToInt(); val height = (sourceHeight * scale).roundToInt()
-        drawImage(atlas, srcOffset = IntOffset((bounds[0] * scaleX).roundToInt(), (bounds[1] * scaleY).roundToInt()),
-            srcSize = IntSize(sourceWidth, sourceHeight), dstOffset = IntOffset(((size.width - width) / 2).roundToInt(), ((size.height - height) / 2).roundToInt()),
-            dstSize = IntSize(width, height), filterQuality = FilterQuality.Medium)
+        val cell = atlas.width / 8
+        val side = minOf(size.width, size.height).roundToInt()
+        drawImage(atlas, srcOffset = IntOffset(index.coerceIn(0, 7) * cell, 0),
+            srcSize = IntSize(cell, atlas.height), dstOffset = IntOffset(((size.width - side) / 2).roundToInt(), ((size.height - side) / 2).roundToInt()),
+            dstSize = IntSize(side, side), filterQuality = FilterQuality.Medium)
     }
 }
 
 @Composable
 internal fun JournalAction(title: String, subtitle: String? = null, icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(18.dp), color = journalPaperColor(),
-        contentColor = MaterialTheme.colorScheme.onSurface, shadowElevation = 2.dp) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+    val skin = LocalJournalSkin.current
+    val prominent = subtitle != null
+    val foreground = if (prominent) readableOn(skin.accent) else skin.ink
+    Surface(onClick = onClick, modifier = modifier, shape = skin.buttonShape,
+        color = if (prominent) skin.accent else skin.paper, border = BorderStroke(1.dp, skin.rim),
+        contentColor = foreground, shadowElevation = if (prominent) 4.dp else 2.dp) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).journalFinish(skin, selected = prominent)
+            .padding(14.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, null, Modifier.size(24.dp), tint = if (prominent) foreground else skin.accent)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
-                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = foreground.copy(alpha = .85f)) }
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
         }

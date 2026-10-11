@@ -108,8 +108,8 @@ fun MoreScreen(
                 MoreRow(
                     icon = Icons.Filled.Landscape,
                     tint = MaterialTheme.colorScheme.primary,
-                    title = "关系页背景",
-                    desc = "七幅独立插画，不随主题色改变",
+                    title = "关系页皮肤",
+                    desc = "七套背景、按钮与图标，不随主题色改变",
                     onClick = { onNavigate(Routes.RELATIONSHIP_BACKGROUND) }
                 )
             }

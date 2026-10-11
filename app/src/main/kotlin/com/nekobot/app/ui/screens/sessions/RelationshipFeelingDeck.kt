@@ -5,6 +5,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -48,7 +49,8 @@ internal fun RelationshipFeelingDeck(identity: String, values: List<JournalFeeli
             shift.animateTo(0f, tween(430))
         } else { previous = current; shift.snapTo(0f) }
     }
-    val accent = MaterialTheme.colorScheme.primary
+    val skin = LocalJournalSkin.current
+    val accent = skin.accent
     val paper = journalPaperColor()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp)
@@ -68,7 +70,8 @@ internal fun RelationshipFeelingDeck(identity: String, values: List<JournalFeeli
                 color = paper, shadowElevation = 5.dp,
                 modifier = Modifier.fillMaxWidth().animateContentSize(tween(250)).testTag("relationship_feeling_card")
                     .graphicsLayer { translationX = shift.value * density; rotationZ = shift.value * .16f }) {
-                Column(Modifier.fillMaxWidth().heightIn(min = 172.dp).padding(horizontal = 22.dp, vertical = 20.dp),
+                Column(Modifier.fillMaxWidth().heightIn(min = 172.dp).journalFinish(skin, paper = true)
+                    .padding(horizontal = 22.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     Surface(shape = RoundedCornerShape(3.dp), color = lerp(paper, accent, .13f), shadowElevation = 1.dp) {
                         Text(values[current].label, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelLarge)
@@ -81,7 +84,7 @@ internal fun RelationshipFeelingDeck(identity: String, values: List<JournalFeeli
                     }
                 }
             }
-            Icon(Icons.Filled.AttachFile, null, Modifier.align(Alignment.TopStart).offset(5.dp, (-13).dp).rotate(27f).size(36.dp), tint = Color(0xFFAA864B))
+            Icon(Icons.Filled.AttachFile, null, Modifier.align(Alignment.TopStart).offset(5.dp, (-13).dp).rotate(27f).size(36.dp), tint = skin.metal)
         }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val icons = listOf(Icons.Filled.Favorite, Icons.Filled.Waves, Icons.Filled.Bolt)
@@ -90,9 +93,10 @@ internal fun RelationshipFeelingDeck(identity: String, values: List<JournalFeeli
                 val fill = if (active) accent else paper
                 Surface(modifier = Modifier.weight(1f).fillMaxHeight(), color = fill,
                     contentColor = if (active) readableOn(accent) else MaterialTheme.colorScheme.onSurface,
-                    shape = RoundedCornerShape(17.dp), shadowElevation = if (active) 3.dp else 1.dp) {
+                    shape = skin.buttonShape, border = BorderStroke(1.dp, skin.rim),
+                    shadowElevation = if (active) 4.dp else 1.dp) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).selectable(active, role = Role.Tab, onClick = { selected = index })
-                        .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = .10f), Color.Transparent)))
+                        .journalFinish(skin, selected = active)
                         .padding(horizontal = 9.dp, vertical = 12.dp).testTag("relationship_feeling_$index"),
                         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(icons[index], null, Modifier.size(21.dp))

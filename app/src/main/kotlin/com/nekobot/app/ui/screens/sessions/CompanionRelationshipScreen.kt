@@ -96,6 +96,7 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     LaunchedEffect(sessionId, stored, running, refresh) {
         try { reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "读取状态失败" }
     }
+    RelationshipSkinTheme(background) {
     RelationshipJournalBackdrop(background) {
     Scaffold(containerColor = Color.Transparent, topBar = { TopAppBar(title = { Text("关系状态", color = Color.White) }, navigationIcon = {
         Surface(shape = RoundedCornerShape(16.dp), color = journalPaperColor(), shadowElevation = 2.dp,
@@ -295,4 +296,5 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
             items.forEach { Text("${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it.createdAt))}\n${it.summary}\n${it.reason}") }
         }
     }, confirmButton = { TextButton(onClick = { history = null }) { Text("关闭") } }) }
+    }
 }
