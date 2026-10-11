@@ -64,7 +64,8 @@ enum class PortableDataCategory(
             "companion_clarifications",
             "companion_owners",
             "companion_relationship_state",
-            "companion_relationship_events"
+            "companion_relationship_events",
+            "companion_relationship_assessments"
         )
     ),
     CHARACTERS("characters", listOf("local_characters")),
@@ -587,6 +588,12 @@ class PortableDataArchiveManager(private val context: Context) {
             // 保留父表先于子表的恢复顺序；逐行解析，避免六万条聊天同时展开为 JSON 树。
             forEachPortableRow(raw, table) { row ->
                 val values = ContentValues()
+                if (table == "companion_relationship_state") {
+                    // 合并旧备份不能留下目标库另一份新评估/旧版快照。
+                    if (!row.has("narrativeJson")) values.putNull("narrativeJson")
+                    if (!row.has("legacySnapshotJson")) values.putNull("legacySnapshotJson")
+                }
+                if (table == "companion_relationship_events" && !row.has("impactsJson")) values.putNull("impactsJson")
                 // 旧备份没有强度；合并恢复心情/来源时必须同时清掉目标库中的另一份强度。
                 if (table == "companion_relationship_state" && !row.has("moodIntensity")) {
                     values.putNull("moodIntensity")

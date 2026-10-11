@@ -27,7 +27,11 @@ data class CompanionRelationshipEntity(
     @ColumnInfo(defaultValue = "NULL") val moodIntensity: Float? = null,
     /** 旧版曾将迁入时的初始值误作评估进度；只核对一次，不能反复覆盖玩家的跳过决定。 */
     @ColumnInfo(defaultValue = "0") val historyScopeVersion: Int = 1,
-    @ColumnInfo(defaultValue = "0") val historyReviewRequired: Boolean = false
+    @ColumnInfo(defaultValue = "0") val historyReviewRequired: Boolean = false,
+    /** 新评估的文字与依据；旧分数仅留作历史，不能用于生成这份文字。 */
+    @ColumnInfo(defaultValue = "NULL") val narrativeJson: String? = null,
+    /** 首次升级时冻结原来显示的内容；不把旧版词表伪装成新的模型评估。 */
+    @ColumnInfo(defaultValue = "NULL") val legacySnapshotJson: String? = null
 )
 
 /** 仅记录事件对关系的影响及来源引用，不另建事实记忆库；修正追加版本，保留核对轨迹。 */
@@ -46,7 +50,22 @@ data class CompanionRelationshipEventEntity(
     val deltasJson: String,
     val sourcesJson: String,
     val createdAt: Long,
-    val corrected: Boolean = false
+    val corrected: Boolean = false,
+    @ColumnInfo(defaultValue = "NULL") val impactsJson: String? = null
+)
+
+/** 每次成功评估的完整文字快照；纠错也追加保存，历史不被覆盖。 */
+@Entity(tableName = "companion_relationship_assessments",
+    foreignKeys = [ForeignKey(entity = CompanionRelationshipEntity::class, parentColumns = ["sessionId"],
+        childColumns = ["sessionId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["sessionId", "revision"], unique = true)])
+data class CompanionRelationshipAssessmentEntity(
+    @PrimaryKey val id: String,
+    val sessionId: String,
+    val revision: Long,
+    val narrativeJson: String,
+    val createdAt: Long,
+    val correctionKey: String? = null
 )
 
 @Dao
@@ -59,6 +78,11 @@ interface CompanionRelationshipDao {
     suspend fun state(id: String): CompanionRelationshipEntity?
     @Upsert suspend fun save(state: CompanionRelationshipEntity)
     @Insert suspend fun append(events: List<CompanionRelationshipEventEntity>)
+    @Insert suspend fun appendAssessment(assessment: CompanionRelationshipAssessmentEntity)
+    @Query("SELECT * FROM companion_relationship_assessments WHERE sessionId = :id ORDER BY revision DESC LIMIT :limit")
+    suspend fun assessments(id: String, limit: Int = 50): List<CompanionRelationshipAssessmentEntity>
+    @Query("SELECT MAX(revision) FROM (SELECT revision FROM companion_relationship_assessments WHERE sessionId = :id UNION ALL SELECT revision FROM companion_relationship_events WHERE sessionId = :id)")
+    suspend fun latestRevision(id: String): Long?
     @Query("SELECT e.* FROM companion_relationship_events e WHERE sessionId = :id AND NOT EXISTS (SELECT 1 FROM companion_relationship_events n WHERE n.sessionId = e.sessionId AND n.eventKey = e.eventKey AND n.revision > e.revision) ORDER BY createdAt DESC")
     suspend fun currentEvents(id: String): List<CompanionRelationshipEventEntity>
     @Query("SELECT * FROM companion_relationship_events WHERE sessionId = :id AND eventKey = :key ORDER BY revision DESC")

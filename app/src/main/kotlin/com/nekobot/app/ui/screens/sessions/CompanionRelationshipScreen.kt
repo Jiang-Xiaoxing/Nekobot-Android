@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,11 +49,16 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     var claim by remember { mutableStateOf("") }
     var quotes by remember { mutableStateOf<List<LocalMessageEntity>?>(null) }
     var history by remember { mutableStateOf<List<CompanionRelationshipEventEntity>?>(null) }
-    var detail by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
+    var detail by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    var oldRecordsOpen by remember { mutableStateOf(false) }
+    var settingsExpanded by remember { mutableStateOf(false) }
+    var characterName by remember(sessionId) { mutableStateOf<String?>(null) }
+    var assessments by remember { mutableStateOf<List<com.nekobot.app.data.local.db.CompanionRelationshipAssessmentEntity>?>(null) }
     var showCount by remember { mutableIntStateOf(12) }
     BackHandler(onBack = onBack)
     suspend fun reload() {
         view = service.view(sessionId)
+        characterName = repository.getCharacter(requireNotNull(view).state.characterId)?.name
         models = repository.companionConversionModels()
     }
     fun action(block: suspend () -> Unit) {
@@ -66,7 +72,7 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     LaunchedEffect(sessionId, stored, running, refresh) {
         try { reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "读取状态失败" }
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("关系状态") }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Column { Text("关系状态"); characterName?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
@@ -96,8 +102,18 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                     TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !v.busy && !working) { Text("保留已有积累，从现在继续") }
                 }
                 if (state.updatedAt > 0) Text("最近评估：${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(state.updatedAt))}", style = MaterialTheme.typography.labelMedium)
-                if (state.legacy) Text("包含升级前的关系积累，旧数值没有可核对的原话依据，不会伪造来源。", style = MaterialTheme.typography.bodySmall)
-                RelationshipSection("评估设置") {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+                    Column(Modifier.padding(horizontal = 14.dp)) {
+                        AppearanceSettingRow("查看旧版记录", onClick = { oldRecordsOpen = true }) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+                        }
+                        AppearanceDivider()
+                        AppearanceSettingRow("评估设置", onClick = { settingsExpanded = !settingsExpanded }) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+                        }
+                    }
+                }
+                if (settingsExpanded) RelationshipSection("评估设置") {
                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
                         Column(Modifier.padding(horizontal = 12.dp)) {
                             Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -156,11 +172,42 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     detail?.let { item -> AlertDialog(onDismissRequest = { detail = null }, title = { Text(item.first) }, text = {
         Text(item.second, modifier = Modifier.verticalScroll(rememberScrollState()))
     }, confirmButton = { TextButton(onClick = { detail = null }) { Text("关闭") } }, dismissButton = {
-        if (item.third && view?.state?.feelingSources?.let { it != "[]" } == true) TextButton(onClick = {
+        if (item.third != null) TextButton(onClick = {
             detail = null
-            action { quotes = service.sourceQuotes(sessionId, requireNotNull(view).state.feelingSources) }
+            action { quotes = service.sourceQuotes(sessionId, item.third!!) }
         }) { Text("查看原话") }
     }) }
+    if (oldRecordsOpen) AlertDialog(onDismissRequest = { oldRecordsOpen = false }, title = { Text("旧版记录") }, text = {
+        Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val old = view?.legacy
+            if (old == null) Text("没有可读取的旧版记录。") else {
+                Text("${old.origin}，不会因新版文字评估而删除。旧数值不是当前模型的新判断。", style = MaterialTheme.typography.bodySmall)
+                old.observedAt?.let { Text("原话时间 ${relationshipTime(it)}") }
+                Text("心情：${old.mood}\n精力：${old.energy}\n原情绪强度：${old.intensity?.let { "${(it * 100).roundToInt()}%" } ?: "未记录"}")
+                if (old.reason.isNotBlank()) Text(old.reason)
+                CompanionRelationshipPolicy.dimensions.forEach { (key, label) ->
+                    Text("$label：${old.descriptions[key] ?: "暂无文字描述"}\n原数值：${old.totals[key] ?: "未记录"}")
+                }
+                Text("旧记录未提供原话依据的部分，不补造来源。", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { oldRecordsOpen = false }) { Text("关闭") } }, dismissButton = {
+        TextButton(onClick = { oldRecordsOpen = false; action { assessments = service.assessmentHistory(sessionId) } }) { Text("历次文字评估") }
+    })
+    assessments?.let { items -> AlertDialog(onDismissRequest = { assessments = null }, title = { Text("历次文字评估") }, text = {
+        Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (items.isEmpty()) Text("还没有新版文字评估记录。")
+            items.forEach { saved ->
+                val snapshot = CompanionRelationshipNarrative.read(saved.narrativeJson)
+                Text(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(saved.createdAt)), style = MaterialTheme.typography.titleSmall)
+                if (snapshot == null) Text("这份记录暂不可读取。") else {
+                    snapshot.feelings?.let { feeling -> Text("当时感受（${relationshipTime(feeling.observedAt)}）：\n心情：${feeling.mood ?: "未知"}\n情绪强度：${feeling.intensity ?: "未知"}\n精力：${feeling.energy ?: "未知"}\n${feeling.reason}") }
+                    snapshot.relationships.forEach { (key, field) -> field?.let { Text("${CompanionRelationshipPolicy.dimensions[key]}：${it.description}\n${it.reason}") } }
+                }
+            }
+            if (items.size >= 50) Text("这里显示最近50份文字评估；更早记录仍保留在导出资料中。", style = MaterialTheme.typography.bodySmall)
+        }
+    }, confirmButton = { TextButton(onClick = { assessments = null }) { Text("关闭") } }) }
     if (modelPicker) AlertDialog(onDismissRequest = { modelPicker = false }, title = { Text("选择状态评估模型") },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
             Text("关闭关系状态后不再更新，也不提供给聊天；已有记录保留。评估失败保留旧状态，不自动切换聊天模型。", style = MaterialTheme.typography.bodySmall)
