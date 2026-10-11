@@ -47,6 +47,9 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.TextButton
+import com.nekobot.app.ui.screens.chat.companionSettingsBackground
 import com.nekobot.app.ui.components.BorderlessAssistChip as AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -852,6 +855,8 @@ fun SessionDetailScreen(
     var relationshipOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var advancedOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var modelQueueOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var sharingExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var managementMenu by remember { mutableStateOf(false) }
     val queueCharacterId = session?.characterId
     if (ServiceContainer.prefs.isLocalMode && queueCharacterId != null && modelQueueOpen) {
         com.nekobot.app.ui.screens.characters.CharacterModelQueueScreen(queueCharacterId) { modelQueueOpen = false }
@@ -1014,28 +1019,36 @@ fun SessionDetailScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = if (singleSessionRole) companionSettingsBackground() else MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(if (advancedPage) "高级设置" else detailTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
+                title = { Text(if (advancedPage) "高级设置" else if (singleSessionRole) "角色与记忆" else detailTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 navigationIcon = {
                     IconButton(onClick = { if (advancedPage) advancedOpen = false else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backDesc, tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backDesc, tint = if (singleSessionRole) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showExportDialog = true }) {
-                        Icon(Icons.Filled.FileDownload, contentDescription = exportDesc, tint = MaterialTheme.colorScheme.primary)
-                    }
-                    IconButton(onClick = { vm.save(onBack) }) {
-                        Icon(Icons.Filled.Save, contentDescription = saveDesc, tint = MaterialTheme.colorScheme.primary)
-                    }
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = deleteDesc, tint = MaterialTheme.colorScheme.error)
+                    if (singleSessionRole) {
+                        TextButton(onClick = { vm.save(onBack) }) { Text(saveDesc, fontWeight = FontWeight.SemiBold) }
+                        Box {
+                            IconButton(onClick = { managementMenu = true }) { Icon(Icons.Filled.MoreVert, "更多操作") }
+                            CompanionRoleMenu({ showExportDialog = true }, { showDeleteDialog = true }, { managementMenu = false }, managementMenu)
+                        }
+                    } else {
+                        IconButton(onClick = { showExportDialog = true }) {
+                            Icon(Icons.Filled.FileDownload, contentDescription = exportDesc, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { vm.save(onBack) }) {
+                            Icon(Icons.Filled.Save, contentDescription = saveDesc, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Filled.Delete, contentDescription = deleteDesc, tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             )
@@ -1046,7 +1059,7 @@ fun SessionDetailScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .then(if (singleSessionRole) Modifier.consumeWindowInsets(padding).imePadding() else Modifier)
-                .background(MaterialTheme.colorScheme.background)
+                .background(if (singleSessionRole) companionSettingsBackground() else MaterialTheme.colorScheme.background)
         ) {
             if (loading && session == null) {
                 Column(
@@ -1068,7 +1081,52 @@ fun SessionDetailScreen(
                             Text("这里可以调整思考强度并查看调试信息。思考强度选择后立即保存。",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (showMain) {
+                        if (showMain && singleSessionRole) {
+                            CompanionRoleSettingsContent(
+                                session = s, name = name, tags = tagsText, pinned = pinned, favorite = favorite,
+                                onNameChange = { vm.name.value = it }, onTagsChange = { vm.tagsText.value = it },
+                                onPinnedChange = { vm.pinned.value = it }, onFavoriteChange = { vm.favorite.value = it },
+                                onMemories = { onOpenExperienceArchive(sessionId) }, onRelationship = { relationshipOpen = true },
+                                onModels = if (ServiceContainer.prefs.isLocalMode && queueCharacterId != null) ({ modelQueueOpen = true }) else null,
+                                onAdvanced = { advancedOpen = true },
+                                delayEnabled = delayReplyEnabled, onDelayChange = { vm.delayReplyEnabled.value = it },
+                                delayEligible = ServiceContainer.prefs.isLocalMode &&
+                                    (s.sessionMode.equals("character", ignoreCase = true) || (s.sessionMode.equals("agent", ignoreCase = true) && inheritCharacter)),
+                                ttsEnabled = ttsEnabled, onTtsChange = { vm.ttsEnabled.value = it },
+                                proactiveEnabled = proactiveChatEnabled, onProactiveChange = { vm.proactiveChatEnabled.value = it },
+                                notificationEnabled = notificationEnabled,
+                                onNotificationChange = { newVal ->
+                                    if (newVal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                        vm.notificationEnabled.value = true
+                                        s.id?.let { ServiceContainer.prefs.setSessionNotificationEnabled(it, true) }
+                                        notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        vm.notificationEnabled.value = newVal
+                                        s.id?.let { ServiceContainer.prefs.setSessionNotificationEnabled(it, newVal) }
+                                    }
+                                },
+                                notificationDescription = notificationDesc,
+                                delayConfiguration = {
+                                    Text(delayReplyDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(stringResource(R.string.sessions_detail_delay_reply_seconds, delayReplyDelaySeconds), style = MaterialTheme.typography.bodyMedium)
+                                    Slider(delayReplyDelaySeconds.toFloat(), { vm.delayReplyDelaySeconds.value = it.roundToInt() },
+                                        valueRange = MIN_DELAY_REPLY_SECONDS.toFloat()..MAX_DELAY_REPLY_SECONDS.toFloat(),
+                                        steps = MAX_DELAY_REPLY_SECONDS - MIN_DELAY_REPLY_SECONDS - 1)
+                                },
+                                ttsConfiguration = {
+                                    Text(ttsModelLabel, style = MaterialTheme.typography.bodyMedium)
+                                    TtsModelSelector(ttsModelId, aiModels) { vm.ttsModelId.value = it }
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(voiceLabel, style = MaterialTheme.typography.bodyMedium)
+                                    TtsVoiceSelector(ttsVoice, ttsModelProviders[ttsModelId].orEmpty()) { vm.ttsVoice.value = it }
+                                },
+                                proactiveConfiguration = {
+                                    Text(proactiveIntervalLabel, style = MaterialTheme.typography.bodyMedium)
+                                    ProactiveIntervalSelector(proactiveChatInterval) { vm.proactiveChatInterval.value = it }
+                                }
+                            )
+                        }
+                        if (showMain && !singleSessionRole) {
                             // === 1. 顶部：立绘 + 基本信息 ===
                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1360,7 +1418,7 @@ fun SessionDetailScreen(
 
                         }
 
-                        if (showMain) {
+                        if (showMain && !singleSessionRole) {
                             // === 4.3 延迟回复 ===
                             // 只在本地普通角色会话，以及继承完整角色能力的本地 Agent 会话中提供。
                             if (
@@ -1612,63 +1670,67 @@ fun SessionDetailScreen(
 
                         if (showMain) {
                             // === 6.5 TTS / 主动聊天 ===
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = ttsProactiveTitle)
-                                Spacer(Modifier.height(8.dp))
-
-                                // TTS 开关
-                                ToggleChipRow(
-                                    label = if (ttsEnabled) ttsOnLabel else ttsOffLabel,
-                                    selected = ttsEnabled,
-                                    onClick = { vm.ttsEnabled.value = !ttsEnabled },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (ttsEnabled) {
+                            if (!singleSessionRole) {
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = ttsProactiveTitle)
                                     Spacer(Modifier.height(8.dp))
-                                    // TTS 模型选择下拉
-                                    Text(ttsModelLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                    Spacer(Modifier.height(4.dp))
-                                    TtsModelSelector(
-                                        modelId = ttsModelId,
-                                        models = aiModels,
-                                        onChange = { vm.ttsModelId.value = it }
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    // 音色选择
-                                    Text(voiceLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                    Spacer(Modifier.height(4.dp))
-                                    TtsVoiceSelector(
-                                        voice = ttsVoice,
-                                        provider = ttsModelProviders[ttsModelId].orEmpty(),
-                                        onChange = { vm.ttsVoice.value = it }
-                                    )
-                                }
 
-                                Spacer(Modifier.height(12.dp))
-
-                                // 主动聊天开关
-                                ToggleChipRow(
-                                    label = if (proactiveChatEnabled) proactiveOnLabel else proactiveOffLabel,
-                                    selected = proactiveChatEnabled,
-                                    onClick = { vm.proactiveChatEnabled.value = !proactiveChatEnabled },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (proactiveChatEnabled) {
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(proactiveIntervalLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                    Spacer(Modifier.height(4.dp))
-                                    ProactiveIntervalSelector(
-                                        value = proactiveChatInterval,
-                                        onChange = { vm.proactiveChatInterval.value = it }
+                                    // TTS 开关
+                                    ToggleChipRow(
+                                        label = if (ttsEnabled) ttsOnLabel else ttsOffLabel,
+                                        selected = ttsEnabled,
+                                        onClick = { vm.ttsEnabled.value = !ttsEnabled },
+                                        modifier = Modifier.fillMaxWidth()
                                     )
+                                    if (ttsEnabled) {
+                                        Spacer(Modifier.height(8.dp))
+                                        // TTS 模型选择下拉
+                                        Text(ttsModelLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                        Spacer(Modifier.height(4.dp))
+                                        TtsModelSelector(
+                                            modelId = ttsModelId,
+                                            models = aiModels,
+                                            onChange = { vm.ttsModelId.value = it }
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        // 音色选择
+                                        Text(voiceLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                        Spacer(Modifier.height(4.dp))
+                                        TtsVoiceSelector(
+                                            voice = ttsVoice,
+                                            provider = ttsModelProviders[ttsModelId].orEmpty(),
+                                            onChange = { vm.ttsVoice.value = it }
+                                        )
+                                    }
+
+                                    Spacer(Modifier.height(12.dp))
+
+                                    // 主动聊天开关
+                                    ToggleChipRow(
+                                        label = if (proactiveChatEnabled) proactiveOnLabel else proactiveOffLabel,
+                                        selected = proactiveChatEnabled,
+                                        onClick = { vm.proactiveChatEnabled.value = !proactiveChatEnabled },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    if (proactiveChatEnabled) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(proactiveIntervalLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                        Spacer(Modifier.height(4.dp))
+                                        ProactiveIntervalSelector(
+                                            value = proactiveChatInterval,
+                                            onChange = { vm.proactiveChatInterval.value = it }
+                                        )
+                                    }
+
                                 }
 
                             }
-
                             // === 6.6 公开分享：与原仓库一致，独立于会话详情保存 ===
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            SessionSharingContainer(singleSessionRole, publicShareTitle, sharingExpanded, { sharingExpanded = !sharingExpanded }) {
+                                if (!singleSessionRole) {
                                 SectionHeader(title = publicShareTitle)
                                 Spacer(Modifier.height(8.dp))
+                                }
                                 if (com.nekobot.app.ServiceContainer.prefs.isLocalMode) {
                                     Text(
                                         publicLocalUnsupported,
@@ -1788,38 +1850,39 @@ fun SessionDetailScreen(
                             }
 
                             // === 6.7 通知提醒 ===
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                SectionHeader(title = notificationTitle, subtitle = notificationSubtitle)
-                                Spacer(Modifier.height(8.dp))
-                                ToggleChipRow(
-                                    label = if (notificationEnabled) notificationOnLabel else notificationOffLabel,
-                                    selected = notificationEnabled,
-                                    onClick = {
-                                        val newVal = !notificationEnabled
-                                        if (newVal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                            // 开启通知时先请求运行时权限
-                                            vm.notificationEnabled.value = true
-                                            s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, true) }
-                                            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                        } else {
-                                            vm.notificationEnabled.value = newVal
-                                            s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, newVal) }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (notificationEnabled) {
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        notificationDesc,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                            if (!singleSessionRole) {
+                                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                    SectionHeader(title = notificationTitle, subtitle = notificationSubtitle)
+                                    Spacer(Modifier.height(8.dp))
+                                    ToggleChipRow(
+                                        label = if (notificationEnabled) notificationOnLabel else notificationOffLabel,
+                                        selected = notificationEnabled,
+                                        onClick = {
+                                            val newVal = !notificationEnabled
+                                            if (newVal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                                // 开启通知时先请求运行时权限
+                                                vm.notificationEnabled.value = true
+                                                s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, true) }
+                                                notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                            } else {
+                                                vm.notificationEnabled.value = newVal
+                                                s.id?.let { com.nekobot.app.ServiceContainer.prefs.setSessionNotificationEnabled(it, newVal) }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
                                     )
+                                    if (notificationEnabled) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            notificationDesc,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
+
                             }
-
                         }
-
                         if (showAdvanced) {
                             if (singleSessionRole) {
                                 var effort by remember(sessionId) { mutableStateOf(com.nekobot.app.ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }

@@ -691,11 +691,18 @@ fun ChatScreen(
     }
 
     // 标记是否为首次加载，用于跳过滚动动画直接定位到最新消息
-    var initialLoad by remember { mutableStateOf(true) }
+    var initialLoad by rememberSaveable(sessionId) { mutableStateOf(true) }
+    var firstRenderedMessageId by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
+    var renderedMessageCount by rememberSaveable(sessionId) { mutableIntStateOf(0) }
 
     // 进入页面加载
     LaunchedEffect(sessionId) {
-        initialLoad = true
+        // 单会话设置的二级页面返回时沿用列表锚点；其他模式保持原有进入即定位末尾的行为。
+        if (!companionChat) {
+            initialLoad = true
+            firstRenderedMessageId = null
+            renderedMessageCount = 0
+        }
         viewModel.init(sessionId)
     }
     // 角色卡立绘/头像变更后刷新当前会话，使顶栏头像和消息头像跟随更新
@@ -740,18 +747,18 @@ fun ChatScreen(
     // 新消息时滚动：首次加载用瞬时滚动（无动画），后续用动画滚动。
     // 向上分页会在头部插入更早历史，此时首条消息与列表长度同时变化——
     // 这种"前插"必须保持用户当前位置（LazyColumn 依稳定 key 会自然锚定），不能滚到底部。
-    var firstRenderedMessageId by remember(sessionId) { mutableStateOf<String?>(null) }
-    var renderedMessageCount by remember(sessionId) { mutableIntStateOf(0) }
     LaunchedEffect(visibleMessages.size) {
         if (visibleMessages.isNotEmpty()) {
             val currentFirstId = renderMessages.firstOrNull()?.id
+            val unchangedCompanionHistory = companionChat && !initialLoad &&
+                currentFirstId == firstRenderedMessageId && visibleMessages.size == renderedMessageCount
             val prepended = firstRenderedMessageId != null &&
                 currentFirstId != null &&
                 currentFirstId != firstRenderedMessageId &&
                 visibleMessages.size > renderedMessageCount
             firstRenderedMessageId = currentFirstId
             renderedMessageCount = visibleMessages.size
-            if (prepended) return@LaunchedEffect
+            if (prepended || unchangedCompanionHistory) return@LaunchedEffect
             if (initialLoad) {
                 // 首次加载：直接跳到底部，无动画
                 listState.scrollToItem(renderMessages.lastIndex)

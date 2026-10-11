@@ -124,6 +124,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -247,6 +248,9 @@ fun ModernChatScreen(
             ?: session?.displayName.orEmpty()
     } else null
     var companionSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var companionSearchRequest by remember(sessionId) { mutableStateOf(0) }
+    var companionFavoritesRequest by remember(sessionId) { mutableStateOf(0) }
+    val settingsKeyboard = LocalSoftwareKeyboardController.current
     var companionShowReasoning by remember(sessionId, companionName != null) {
         mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
     }
@@ -270,6 +274,9 @@ fun ModernChatScreen(
         LocalCompanionChatName provides companionName,
         LocalCompanionShowReasoning provides companionShowReasoning
     ) {
+    Box(Modifier.fillMaxSize()) {
+    // Keep the chat and its list/composer state alive beneath the full page, but hide it from accessibility.
+    Box(if (companionName != null && companionSettingsOpen) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) {
     ChatScreen(
     sessionId = sessionId,
     onBack = onBack,
@@ -279,7 +286,7 @@ fun ModernChatScreen(
     onOpenStoryGraph = onOpenStoryGraph,
     onOpenBrowserSettings = onOpenBrowserSettings,
     externalListState = listState,
-    onOpenCompanionSettings = { companionSettingsOpen = true },
+    onOpenCompanionSettings = { settingsKeyboard?.hide(); companionSettingsOpen = true },
     companionUtilityRequest = companionUtilityRequest,
     onCompanionUtilityHandled = { companionUtilityRequest = null },
     embeddedBottomBarClearance = embeddedBottomBarClearance,
@@ -305,16 +312,9 @@ fun ModernChatScreen(
             modifier = Modifier.fillMaxWidth(),
             sessionId = sessionId,
             session = session,
-            showCompanionSettings = companionSettingsOpen,
-            showCompanionReasoning = companionShowReasoning,
-            onShowCompanionReasoningChange = { show ->
-                ServiceContainer.localRepository.setCompanionShowReasoning(sessionId, show)
-                companionShowReasoning = show
-            },
+            companionSearchRequest = companionSearchRequest,
+            companionFavoritesRequest = companionFavoritesRequest,
             onDismissCompanionSettings = { companionSettingsOpen = false },
-            onOpenCompanionDetail = { onOpenSessionDetail(sessionId) },
-            onOpenCompanionStory = { onOpenStoryGraph(sessionId) },
-            onOpenCompanionUtility = { companionUtilityRequest = it },
             messages = messages,
             sending = sending,
             delayReplyPending = delayReplyPending,
@@ -369,6 +369,27 @@ fun ModernChatScreen(
         }
     }
     )
+    }
+    if (companionName != null && companionSettingsOpen) {
+        CompanionSettingsScreen(
+            characterName = companionName,
+            portraitUrl = session?.portraitUrl,
+            checked = companionShowReasoning,
+            onCheckedChange = { show ->
+                ServiceContainer.localRepository.setCompanionShowReasoning(sessionId, show)
+                companionShowReasoning = show
+            },
+            onDismiss = { companionSettingsOpen = false },
+            onDetails = { onOpenSessionDetail(sessionId) },
+            onSearch = { companionSearchRequest++ },
+            onFavorites = { companionFavoritesRequest++ },
+            onUsage = { onOpenContextAnalysis(sessionId) },
+            onArchive = if (!session?.archiveSessionId.isNullOrBlank()) {
+                { companionUtilityRequest = CompanionChatUtility.VIEW_ARCHIVE }
+            } else null
+        )
+    }
+    }
     }
 }
 
@@ -738,13 +759,9 @@ private fun ModernChatComposer(
     modifier: Modifier,
     sessionId: String,
     session: Session?,
-    showCompanionSettings: Boolean,
-    showCompanionReasoning: Boolean,
-    onShowCompanionReasoningChange: (Boolean) -> Unit,
+    companionSearchRequest: Int,
+    companionFavoritesRequest: Int,
     onDismissCompanionSettings: () -> Unit,
-    onOpenCompanionDetail: () -> Unit,
-    onOpenCompanionStory: () -> Unit,
-    onOpenCompanionUtility: (CompanionChatUtility) -> Unit,
     messages: List<Message>,
     sending: Boolean,
     delayReplyPending: Boolean,
@@ -839,6 +856,12 @@ private fun ModernChatComposer(
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
+    LaunchedEffect(companionSearchRequest) {
+        if (companionSearchRequest > 0) showSearch = true
+    }
+    LaunchedEffect(companionFavoritesRequest) {
+        if (companionFavoritesRequest > 0) showFavorites = true
+    }
     var favoritesLoading by remember { mutableStateOf(false) }
     var favorites by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var favoritesVersion by remember { mutableStateOf(0) }
@@ -1383,33 +1406,6 @@ private fun ModernChatComposer(
                     actionPanel()
                 }
             }
-            if (companionChat && showCompanionSettings) {
-                CompanionChatSheet(title = stringResource(R.string.companion_chat_settings),
-                    onDismiss = onDismissCompanionSettings) {
-                    CompanionSettingsRow(stringResource(R.string.companion_chat_details), Icons.Filled.Person) {
-                        onDismissCompanionSettings(); onOpenCompanionDetail()
-                    }
-                    CompanionReasoningSetting(
-                        checked = showCompanionReasoning,
-                        onCheckedChange = onShowCompanionReasoningChange
-                    )
-                    CompanionSettingsRow(stringResource(R.string.companion_chat_search), Icons.Filled.Search) {
-                        onDismissCompanionSettings(); showSearch = true
-                    }
-                    CompanionSettingsRow(stringResource(R.string.companion_chat_favorites), Icons.Filled.Star) {
-                        onDismissCompanionSettings(); showFavorites = true
-                    }
-                    CompanionSettingsRow("聊天用量", Icons.Filled.Info,
-                        subtitle = "查看上次请求带入了哪些内容") {
-                        onDismissCompanionSettings(); onOpenContextAnalysis()
-                    }
-                    if (!session?.archiveSessionId.isNullOrBlank()) {
-                        CompanionSettingsRow(stringResource(R.string.chat_view_archive), Icons.Filled.Folder) {
-                            onDismissCompanionSettings(); onOpenCompanionUtility(CompanionChatUtility.VIEW_ARCHIVE)
-                        }
-                    }
-                }
-            }
 
             AnimatedVisibility(
                 visible = inputVisible,
@@ -1788,7 +1784,13 @@ private fun ModernChatComposer(
     }
 
     if (showSearch) {
-        ModernSearchDialog(
+        if (companionChat) CompanionMessageSearch(
+            messages, searchQuery, { searchQuery = it }, session?.characterName,
+            onDismiss = { showSearch = false }, onResultClick = { message ->
+                onDismissCompanionSettings()
+                onJumpToMessage(message)
+            }
+        ) else ModernSearchDialog(
             allowRoleFilter = companionChat,
             messages = messages,
             query = searchQuery,
@@ -1800,6 +1802,8 @@ private fun ModernChatComposer(
 
     if (showFavorites) {
         ModernFavoritesDialog(
+            companion = companionChat,
+            characterName = session?.characterName,
             favorites = favorites,
             loading = favoritesLoading,
             sessionId = sessionId,
@@ -3356,6 +3360,8 @@ private fun ModernSearchDialog(
 
 @Composable
 private fun ModernFavoritesDialog(
+    companion: Boolean = false,
+    characterName: String? = null,
     favorites: List<JsonObject>,
     loading: Boolean,
     sessionId: String,
@@ -3418,6 +3424,13 @@ private fun ModernFavoritesDialog(
             cancelText = if (deleting) null else stringResource(R.string.common_cancel),
             onCancel = { deletingCollection = null }
         )
+    }
+
+    if (companion) {
+        CompanionFavoritesReading(favorites, loading, selectedCollection, characterName,
+            onBack = { if (selectedCollection != null) selectedCollection = null else onDismiss() },
+            onSelect = { selectedCollection = it }, onDelete = { deletingCollection = it })
+        return
     }
 
     // 主弹窗
