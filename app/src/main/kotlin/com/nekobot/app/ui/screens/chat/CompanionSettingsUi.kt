@@ -143,6 +143,7 @@ internal fun CompanionSettingsScreen(
                         Text("开启后，可在消息中展开查看思考。", Modifier.padding(horizontal = 4.dp),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    CompanionFeedbackEntry()
                 }
             }
         }

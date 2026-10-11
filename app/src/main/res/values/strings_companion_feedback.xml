@@ -1,0 +1,4 @@
+<resources>
+    <!-- 本地定制构建可覆盖。空值时不展示联系入口，不在通用源码中公开私人联系方式。 -->
+    <string name="companion_feedback_email" translatable="false"></string>
+</resources>
