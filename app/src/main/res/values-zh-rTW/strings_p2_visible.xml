@@ -44,6 +44,7 @@
     <string name="audio_generation_failed">語音生成失敗</string>
 
     <string name="chat_continue_remaining">繼續顯示（剩餘 %1$d 字符）</string>
+    <string name="chat_dynamic_thinking">思考中</string>
     <string name="chat_thinking">正在思考…</string>
     <string name="chat_reasoning_process">思考過程</string>
     <string name="chat_ai_processing">AI 正在處理…</string>

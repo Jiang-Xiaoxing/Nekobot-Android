@@ -40,6 +40,7 @@
     <string name="audio_generating">音声を生成中…</string>
     <string name="audio_generation_failed">音声の生成に失敗しました</string>
     <string name="chat_continue_remaining">続きを表示（残り %1$d 文字）</string>
+    <string name="chat_dynamic_thinking">思考中</string>
     <string name="chat_thinking">思考中…</string>
     <string name="chat_reasoning_process">思考過程</string>
     <string name="chat_ai_processing">AI が処理中…</string>

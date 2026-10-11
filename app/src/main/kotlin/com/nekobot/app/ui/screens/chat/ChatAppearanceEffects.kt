@@ -6,9 +6,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -21,8 +20,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,7 +29,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
@@ -131,34 +127,29 @@ internal fun DynamicThinkingSection(identity: String?, text: String, thinking: B
         }
     }
     val accent = MaterialTheme.colorScheme.primary
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).testTag("dynamic_thinking"),
-        shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp).testTag("dynamic_thinking")
     ) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .clickable(role = Role.Button) { expanded = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ThinkingMotionDots(thinking, accent)
+        // The surface is transparent; the small label retains a full touch target.
+        Row(
+            Modifier.heightIn(min = 48.dp)
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ThinkingBreathingLabel(thinking, Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(6.dp))
+            Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                stringResource(if (expanded) R.string.common_collapse else R.string.common_expand),
+                Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        AnimatedVisibility(expanded, enter = expandVertically(tween(180)), exit = shrinkVertically(tween(180))) {
+            Row(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp).height(IntrinsicSize.Min)) {
+                Box(Modifier.width(2.dp).fillMaxHeight().background(accent.copy(alpha = 0.25f)))
                 Spacer(Modifier.width(10.dp))
-                Text(stringResource(if (thinking) R.string.chat_thinking else R.string.chat_reasoning_process),
-                    Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    stringResource(if (expanded) R.string.common_collapse else R.string.common_expand),
-                    Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            AnimatedVisibility(expanded, enter = expandVertically(tween(180)), exit = shrinkVertically(tween(180))) {
-                Row(Modifier.padding(start = 16.dp, end = 12.dp, bottom = 12.dp).height(IntrinsicSize.Min)) {
-                    Box(Modifier.width(2.dp).fillMaxHeight().background(accent.copy(alpha = 0.25f)))
-                    Spacer(Modifier.width(12.dp))
-                    SelectionContainer {
-                        Text(text, Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(scroll),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                SelectionContainer {
+                    Text(text, Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(scroll),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -166,18 +157,23 @@ internal fun DynamicThinkingSection(identity: String?, text: String, thinking: B
 }
 
 @Composable
-private fun ThinkingMotionDots(active: Boolean, color: Color) {
+private fun ThinkingBreathingLabel(active: Boolean, modifier: Modifier = Modifier) {
     val animate = active && appearanceMotionAllowed()
-    val transition = if (animate) rememberInfiniteTransition(label = "thinking_dots") else null
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-        repeat(3) { index ->
-            val opacity = if (transition != null) {
-                val value by transition.animateFloat(0.3f, 1f,
-                    infiniteRepeatable(tween(480, easing = LinearEasing), RepeatMode.Reverse, StartOffset(index * 160)),
-                    label = "thinking_dot_$index")
-                value
-            } else 0.65f
-            Box(Modifier.size(4.dp).background(color.copy(alpha = opacity), CircleShape))
-        }
-    }
+    val opacity = if (animate) {
+        val transition = rememberInfiniteTransition(label = "thinking_text")
+        transition.animateFloat(
+            initialValue = 1f, targetValue = 0.68f,
+            animationSpec = infiniteRepeatable(
+                tween(1400, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)),
+                RepeatMode.Reverse
+            ),
+            label = "thinking_text_opacity"
+        )
+    } else null
+    Text(
+        text = stringResource(if (active) R.string.chat_dynamic_thinking else R.string.chat_reasoning_process),
+        modifier = modifier.graphicsLayer { alpha = opacity?.value ?: 1f },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
