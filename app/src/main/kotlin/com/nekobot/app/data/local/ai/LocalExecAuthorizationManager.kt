@@ -383,8 +383,8 @@ internal fun toolAuthorizationFingerprint(toolName: String, argument: String): S
 /**
  * 本地 Agent 命令授权状态。
  *
- * `/yolo` 只在当前应用进程与当前会话内生效，可跳过命令类请求的授权（解释器、安装类命令
- * 也在内，它们只是不能「始终允许」）；读取界面树、截图这类操作不可 YOLO 跳过。
+ * `/yolo` 按会话持久化，可跳过命令类请求的授权（解释器、安装类命令也在内，它们只是
+ * 不能「始终允许」）；读取界面树、截图这类操作不可 YOLO 跳过。
  * “始终允许”按**授权指纹**记忆，并可按会话持久化（重启后仍有效），
  * 见 [extractLocalAuthorizationFingerprints]。
  */
@@ -393,7 +393,11 @@ class LocalExecAuthorizationManager(
     /** 读取某会话已持久化的“始终允许”指纹；返回 null/空集表示无记录。 */
     private val loadPersistedRules: ((sessionId: String) -> Set<String>?)? = null,
     /** 保存某会话的“始终允许”指纹集合。 */
-    private val savePersistedRules: ((sessionId: String, fingerprints: Set<String>) -> Unit)? = null
+    private val savePersistedRules: ((sessionId: String, fingerprints: Set<String>) -> Unit)? = null,
+    /** 读取某会话是否已持久化开启 YOLO。 */
+    private val loadPersistedYoloEnabled: ((sessionId: String) -> Boolean)? = null,
+    /** 保存某会话的 YOLO 开关状态。 */
+    private val savePersistedYoloEnabled: ((sessionId: String, enabled: Boolean) -> Unit)? = null
 ) {
     private data class Pending(
         val sessionId: String,
@@ -411,6 +415,7 @@ class LocalExecAuthorizationManager(
     /** 开启 YOLO 并立即放行该会话中已挂起、且允许 YOLO 跳过的请求。 */
     fun enableYolo(sessionId: String): List<String> {
         yoloSessions.add(sessionId)
+        runCatching { savePersistedYoloEnabled?.invoke(sessionId, true) }
         return pending.entries.mapNotNull { (requestId, request) ->
             if (request.sessionId == sessionId && !request.yoloExempt &&
                 request.decision.complete(ExecAuthorization.Once)
@@ -424,9 +429,11 @@ class LocalExecAuthorizationManager(
 
     fun disableYolo(sessionId: String) {
         yoloSessions.remove(sessionId)
+        runCatching { savePersistedYoloEnabled?.invoke(sessionId, false) }
     }
 
-    fun isYoloEnabled(sessionId: String): Boolean = sessionId in yoloSessions
+    fun isYoloEnabled(sessionId: String): Boolean = sessionId in yoloSessions ||
+        runCatching { loadPersistedYoloEnabled?.invoke(sessionId) == true }.getOrDefault(false)
 
     /** 某会话当前已记忆的授权指纹（含持久化恢复的部分），供测试与调试查看。 */
     fun allowedKeys(sessionId: String): Set<String> = allowedKeySet(sessionId).toSet()

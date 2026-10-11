@@ -436,6 +436,12 @@ class LocalRepository(
             },
             savePersistedRules = { sessionId, rules ->
                 ServiceContainer.prefs.setSessionExecAllowRules(sessionId, rules)
+            },
+            loadPersistedYoloEnabled = { sessionId ->
+                ServiceContainer.prefs.isSessionYoloEnabled(sessionId)
+            },
+            savePersistedYoloEnabled = { sessionId, enabled ->
+                ServiceContainer.prefs.setSessionYoloEnabled(sessionId, enabled)
             }
         )
     /** 会话 Agent 工具集选择：大类 + 单工具可管理，按会话持久化。 */
