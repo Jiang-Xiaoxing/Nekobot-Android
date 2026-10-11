@@ -1598,6 +1598,21 @@ class LocalRepository(
         db.withTransaction { CompanionCreation(db).eligibility(characterId) }
     }
 
+    /** 资料页使用真实归属；缺失或损坏的主窗口不能回退为普通角色的新建入口。 */
+    suspend fun companionSessionForCharacter(characterId: String): String? = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            val owner = db.companionMemoryDao().owner(characterId)
+            if (owner == null) {
+                val actual = sessionDao.listForCompanionEligibility(characterId).filter { it.companionMode }
+                require(actual.size <= 1) { "发现多个单会话主窗口，请先核对资料归属。" }
+                return@withTransaction actual.singleOrNull()?.also { require(it.characterId == characterId) }?.id
+            }
+            val bound = sessionDao.getById(owner.sessionId)
+            require(bound?.companionMode == true && bound.characterId == characterId) { "单会话角色的主窗口暂不可读取，请检查资料库或备份。" }
+            bound.id
+        }
+    }
+
     private val companionTransfer by lazy {
         CompanionTransferService(requireNotNull(appContext), db, guard = { sessions ->
             check(this === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode && db.isOpen) {

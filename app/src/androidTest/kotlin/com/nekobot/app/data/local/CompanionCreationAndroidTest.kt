@@ -12,6 +12,26 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CompanionCreationAndroidTest {
+    @Test fun profileFindsItsOwnWindowAndNeverTreatsReservedOwnershipAsOrdinary() = runBlocking {
+        val db = database()
+        try {
+            FusedCompanionSchema.installTriggers(db.openHelper.writableDatabase)
+            db.characterDao().upsert(LocalCharacterEntity("c", "test", createdAt = "now", updatedAt = "now"))
+            db.characterDao().upsert(LocalCharacterEntity("other", "test", createdAt = "now", updatedAt = "now"))
+            val repo = LocalRepository(db, appContext = ApplicationProvider.getApplicationContext())
+            assertNull(repo.companionSessionForCharacter("c"))
+            db.sessionDao().upsert(session("main", "agent").copy(companionMode = true, inheritCharacter = true, longConversationEnabled = true))
+            assertEquals("main", repo.companionSessionForCharacter("c"))
+            assertNull(repo.companionSessionForCharacter("other")) // 同名角色不能共用状态。
+            db.openHelper.writableDatabase.execSQL("DELETE FROM companion_owners WHERE characterId='c'")
+            assertEquals("main", repo.companionSessionForCharacter("c")) // 兼容旧资料的归属标记缺失。
+            db.sessionDao().upsert(requireNotNull(db.sessionDao().getById("main")))
+            db.sessionDao().deleteById("main")
+            try { repo.companionSessionForCharacter("c"); fail("保留归属不能开放新建入口") }
+            catch (expected: IllegalArgumentException) { assertTrue(expected.message.orEmpty().contains("主窗口")) }
+        } finally { db.close() }
+    }
+
     private fun database() = Room.inMemoryDatabaseBuilder(
         ApplicationProvider.getApplicationContext(), NekobotDatabase::class.java
     ).build()
