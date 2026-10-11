@@ -223,7 +223,7 @@ fun ModernChatScreen(
             if (notice == null || sessionId in evaluating) lastNotice = null
             if (relationship?.enabled == true && sessionId !in evaluating && notice != null && notice != lastNotice) {
                 lastNotice = notice
-                android.widget.Toast.makeText(noticeContext, "状态未更新，旧状态保留。可在角色详情的情绪与关系中查看。", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(noticeContext, "状态未更新，旧状态保留。可在会话详情的关系状态中查看。", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }

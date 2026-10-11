@@ -2,6 +2,10 @@ package com.nekobot.app.ui.screens.sessions
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import com.nekobot.app.ui.screens.settings.AppearanceSettingRow
+import com.nekobot.app.ui.screens.settings.AppearanceDivider
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,6 +48,7 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     var claim by remember { mutableStateOf("") }
     var quotes by remember { mutableStateOf<List<LocalMessageEntity>?>(null) }
     var history by remember { mutableStateOf<List<CompanionRelationshipEventEntity>?>(null) }
+    var detail by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
     var showCount by remember { mutableIntStateOf(12) }
     BackHandler(onBack = onBack)
     suspend fun reload() {
@@ -61,56 +66,28 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     LaunchedEffect(sessionId, stored, running, refresh) {
         try { reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "读取状态失败" }
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("情绪与关系") }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Text("关系状态") }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("心情可以变化，关系来自长期相处。评估模型提出变化，软件核对原话并保存积累。", style = MaterialTheme.typography.bodyMedium)
             val v = view
             if (v == null) { if (error == null) LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else {
                 val state = v.state
-                ElevatedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("启用情绪与关系", style = MaterialTheme.typography.titleMedium)
-                                Text("关闭后不再更新，也不提供给聊天；已有记录保留。", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Switch(state.enabled, enabled = !working && (state.enabled || state.modelId != null), onCheckedChange = { enabled ->
-                                action { service.configure(sessionId, enabled, state.automatic, state.modelId, state.interval) }
-                            })
-                        }
-                        val model = models.firstOrNull { it.id == state.modelId }
-                        Text("状态评估模型", style = MaterialTheme.typography.labelLarge)
-                        OutlinedButton(onClick = { modelPicker = true }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
-                            Text(model?.let { "${it.name}\n${it.provider} · ${it.model}" } ?: if (state.modelId == null) "选择一个模型" else "所选模型不可用，请重新选择")
-                        }
-                        Text("单独调用此模型，会产生对应费用。失败时保留旧状态，不自动改用聊天模型。", style = MaterialTheme.typography.bodySmall)
-                        HorizontalDivider()
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("按轮次自动更新", Modifier.weight(1f))
-                            Switch(state.automatic, enabled = state.enabled && !working, onCheckedChange = { automatic ->
-                                action { service.configure(sessionId, state.enabled, automatic, state.modelId, state.interval) }
-                            })
-                        }
-                        OutlinedButton(onClick = { intervalText = state.interval.toString(); intervalEditor = true }, enabled = !working) { Text("每 ${state.interval} 轮更新") }
-                        Text("一轮为你发言后收到一次回复。六个方面由同一次评估判断，聊天不会等待评估完成。", style = MaterialTheme.typography.bodySmall)
-                    }
+                RelationshipCurrentState(v) { title, text, sources -> detail = Triple(title, text, sources) }
+                RelationshipSummary(v, working, onUpdate = { action { service.start(sessionId) } }) { title, text, sources ->
+                    detail = Triple(title, text, sources)
                 }
                 if (state.enabled && state.awaitingHistory) {
                     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("有 ${v.pending} 轮尚未评估", style = MaterialTheme.typography.titleMedium)
-                        Text("是否补评由你决定。较长历史会分批调用评估模型，每批完成后保存进度。")
+                        Text(if (state.historyReviewRequired) "历史范围待确认：${v.pending} 轮" else "有 ${v.pending} 轮尚未评估", style = MaterialTheme.typography.titleMedium)
+                        Text(if (state.historyReviewRequired) "旧版可能把迁入时的初始关系当成了评估进度。无法确认旧历史是否评估或曾被跳过，请选择是否从头补评；现有聊天不变。补评会分批调用所选模型并产生费用。" else "是否补评由你决定。较长历史会分批调用评估模型，每批完成后保存进度。")
                         Button(onClick = { action { service.start(sessionId) } }, enabled = !working && !v.busy) { Text("补评这些对话") }
                         TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !working && !v.busy) { Text("不补评，从现在继续") }
                     } }
-                } else {
-                    Text(if (v.busy) "正在后台评估，聊天仍使用上次状态…" else "尚未评估：${v.pending} 轮", style = MaterialTheme.typography.bodyMedium)
-                    if (v.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    OutlinedButton(onClick = { action { service.start(sessionId) } }, enabled = state.enabled && !v.busy && !working && v.pending > 0) { Text("立即更新") }
                 }
+                if (v.busy && !state.awaitingHistory) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (v.busy && state.awaitingHistory) { Text("正在分批补评，已完成的进度会保留。"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 if (!v.busy) state.notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 state.correctionResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -120,17 +97,44 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                 }
                 if (state.updatedAt > 0) Text("最近评估：${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(state.updatedAt))}", style = MaterialTheme.typography.labelMedium)
                 if (state.legacy) Text("包含升级前的关系积累，旧数值没有可核对的原话依据，不会伪造来源。", style = MaterialTheme.typography.bodySmall)
-                Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("先前的心情与精力", style = MaterialTheme.typography.titleMedium)
-                    Text("${state.mood} · ${state.energy}")
-                    if (state.feelingReason.isNotBlank()) Text(state.feelingReason)
-                    if (state.feelingSources != "[]") TextButton(onClick = { action { quotes = service.sourceQuotes(sessionId, state.feelingSources) } }) { Text("查看原话") }
-                    HorizontalDivider()
-                    Text("长期相处", style = MaterialTheme.typography.titleMedium)
-                    v.descriptions.forEach { (key, description) -> Text("${CompanionRelationshipPolicy.dimensions[key]}：$description") }
-                } }
+                RelationshipSection("评估设置") {
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
+                        Column(Modifier.padding(horizontal = 12.dp)) {
+                            Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("启用关系状态", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Switch(state.enabled, enabled = !working && (state.enabled || state.modelId != null), onCheckedChange = { enabled ->
+                                    action { service.configure(sessionId, enabled, state.automatic, state.modelId, state.interval) }
+                                })
+                            }
+                            AppearanceDivider()
+                            AppearanceSettingRow("评估模型", onClick = { if (!working) modelPicker = true }) {
+                                val model = models.firstOrNull { it.id == state.modelId }
+                                Text(model?.name ?: if (state.modelId == null) "请选择" else "不可用", modifier = Modifier.widthIn(max = 140.dp),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+                            }
+                            AppearanceDivider()
+                            Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("按轮次自动更新", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Switch(state.automatic, enabled = state.enabled && !working, onCheckedChange = { automatic ->
+                                    action { service.configure(sessionId, state.enabled, automatic, state.modelId, state.interval) }
+                                })
+                            }
+                            AppearanceDivider()
+                            AppearanceSettingRow("更新间隔", onClick = { if (!working) { intervalText = state.interval.toString(); intervalEditor = true } }) {
+                                Text("每 ${state.interval} 轮", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    Text("单独调用所选模型，会产生对应费用。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Text("变化依据", style = MaterialTheme.typography.titleMedium)
-                if (v.events.isEmpty()) Text("还没有新的评估记录。不会为了填满六个方面而制造变化。")
+                if (v.events.isEmpty()) Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+                    Text("暂无新的评估记录", Modifier.fillMaxWidth().padding(20.dp), style = MaterialTheme.typography.bodyMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 v.events.take(showCount).forEach { event ->
                     OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(event.summary, style = MaterialTheme.typography.titleSmall)
@@ -149,8 +153,17 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
             Spacer(Modifier.height(24.dp))
         }
     }
+    detail?.let { item -> AlertDialog(onDismissRequest = { detail = null }, title = { Text(item.first) }, text = {
+        Text(item.second, modifier = Modifier.verticalScroll(rememberScrollState()))
+    }, confirmButton = { TextButton(onClick = { detail = null }) { Text("关闭") } }, dismissButton = {
+        if (item.third && view?.state?.feelingSources?.let { it != "[]" } == true) TextButton(onClick = {
+            detail = null
+            action { quotes = service.sourceQuotes(sessionId, requireNotNull(view).state.feelingSources) }
+        }) { Text("查看原话") }
+    }) }
     if (modelPicker) AlertDialog(onDismissRequest = { modelPicker = false }, title = { Text("选择状态评估模型") },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+            Text("关闭关系状态后不再更新，也不提供给聊天；已有记录保留。评估失败保留旧状态，不自动切换聊天模型。", style = MaterialTheme.typography.bodySmall)
             if (models.isEmpty()) Text("请先在 API 设置添加聊天或辅助模型。")
             models.forEach { model -> TextButton(onClick = {
                 modelPicker = false
@@ -158,7 +171,10 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
             }, modifier = Modifier.fillMaxWidth()) { Text("${model.name}\n${model.provider} · ${model.model}") } }
         } }, confirmButton = { TextButton(onClick = { modelPicker = false }) { Text("关闭") } })
     if (intervalEditor) AlertDialog(onDismissRequest = { intervalEditor = false }, title = { Text("自动更新间隔") }, text = {
-        OutlinedTextField(intervalText, { intervalText = it }, label = { Text("1—100 轮") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("一轮为你发言后收到一次回复。一次评估会同时判断心情、情绪强度、精力和六项关系，聊天不会等待评估完成。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(intervalText, { intervalText = it }, label = { Text("1—100 轮") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        }
     }, confirmButton = { TextButton(enabled = intervalText.toIntOrNull() in 1..100, onClick = {
         intervalEditor = false
         view?.state?.let { state -> action { service.configure(sessionId, state.enabled, state.automatic, state.modelId, intervalText.toInt()) } }

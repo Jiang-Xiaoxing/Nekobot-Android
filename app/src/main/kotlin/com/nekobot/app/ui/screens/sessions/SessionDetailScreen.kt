@@ -1176,7 +1176,7 @@ fun SessionDetailScreen(
                             }
                             if (singleSessionRole) {
                                 OutlinedButton(onClick = { relationshipOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                                    Text("情绪与关系", modifier = Modifier.weight(1f))
+                                    Text("关系状态", modifier = Modifier.weight(1f))
                                     Icon(Icons.Filled.ChevronRight, null)
                                 }
                                 OutlinedButton(onClick = { advancedOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
