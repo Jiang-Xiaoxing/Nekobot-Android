@@ -2,6 +2,8 @@
 <resources>
     <!-- ==================== 角色列表页 (CharactersScreen) ==================== -->
     <string name="characters_title">角色</string>
+    <string name="characters_no_linked_sessions">未关联会话</string>
+    <string name="characters_session_modes_unavailable">会话类型暂不可用</string>
     <string name="characters_view_grid">卡片视图</string>
     <string name="characters_view_list">列表视图</string>
     <string name="characters_refresh">刷新</string>
