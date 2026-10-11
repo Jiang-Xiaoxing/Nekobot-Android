@@ -2750,7 +2750,7 @@ private fun MessageBubble(
     val companionPalette = companionChatPalette()
     val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
     val userBubble = bubbleAppearance.userColor
-    val userBrush = if (companionChat) Brush.linearGradient(listOf(userBubble, userBubble)) else bubbleAppearance.userBrush
+    val userBrush = bubbleAppearance.userBrush
     val aiBorder = Color.Transparent
     val textColor = bubbleAppearance.textColor(isUser)
     // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
@@ -3024,25 +3024,20 @@ private fun MessageBubble(
             // swipes 需要让整块气泡整体位移，抽成 lambda 才能复用同一套分段渲染
             val renderSegments: @Composable () -> Unit = {
                 segments.forEachIndexed { idx, segment ->
-                    val isFirst = idx == 0
                     val isLast = idx == segments.lastIndex
                     // 解析多媒体内容段
                     val contentSegments = parsedSegments[idx]
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
                     val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
-                    val segShape = if (companionChat) RoundedCornerShape(
-                        topStart = if (!isUser && isFirst) 3.dp else 10.dp,
-                        topEnd = if (isUser && isFirst) 3.dp else 10.dp,
-                        bottomStart = 10.dp, bottomEnd = 10.dp
-                    ) else chatBubbleShape(isUser, isLast)
+                    val segShape = chatBubbleShape(isUser, isLast)
                     Box(
                         modifier = Modifier
                             .then(messageEntranceModifier(motionRegistry, motionKey, idx, message.timestamp,
                                 ServiceContainer.prefs.dynamicMessages, isUser))
                             .then(if (!isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
                             // 用户气泡带轻微投影，浮于背景之上
-                            .then(if (!companionChat && isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
+                            .then(if (isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
                             .then(variantSwipeModifier)
                             .then(
                                 when {
@@ -3101,7 +3096,7 @@ private fun MessageBubble(
                                         Box(
                                             modifier = Modifier
                                                 .widthIn(max = maxBubbleWidth)
-                                                .shadow(if (companionChat) 0.dp else 2.dp, segShape, clip = false)
+                                                .shadow(2.dp, segShape, clip = false)
                                                 .background(brush = userBrush, shape = segShape)
                                                 .padding(horizontal = 14.dp, vertical = 9.dp)
                                         ) {
