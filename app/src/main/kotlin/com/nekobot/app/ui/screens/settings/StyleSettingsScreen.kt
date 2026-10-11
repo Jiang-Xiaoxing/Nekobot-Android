@@ -87,6 +87,8 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
     val prefs = ServiceContainer.prefs
 
     var themeColorOverride by remember { mutableStateOf(prefs.themeColorOverride) }
+    var messageColorOverride by remember { mutableStateOf(prefs.messageColorOverride) }
+    var fontsExpanded by remember { mutableStateOf(false) }
     var fontFamily by remember { mutableStateOf(prefs.fontFamily) }
     var customFontPath by remember { mutableStateOf(prefs.customFontPath) }
     var customFontName by remember { mutableStateOf(prefs.customFontName) }
@@ -101,7 +103,6 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
     var customChatBackgroundName by remember { mutableStateOf(prefs.customChatBackgroundName) }
     var chatBackgroundOpacity by remember { mutableStateOf(prefs.chatBackgroundOpacity) }
     var showCustomColorDialog by remember { mutableStateOf(false) }
-    var showCustomThemeColorDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -143,6 +144,7 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
 
     fun applyAndRecreate() {
         prefs.themeColorOverride = themeColorOverride
+        prefs.messageColorOverride = messageColorOverride
         prefs.fontFamily = fontFamily
         prefs.customFontPath = customFontPath
         prefs.customFontName = customFontName
@@ -235,69 +237,26 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 实时预览
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                val previewTypography = buildTypography(fontFamily, fontScale)
-                val previewPrimary = parseHexColor(themeColorOverride) ?: defaultPrimaryColor()
-                val previewColor = fontColorOverride?.let {
-                    runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
-                } ?: MaterialTheme.colorScheme.onSurface
-
-                Text(stringResource(R.string.style_realtime_preview), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.style_preview_title), style = previewTypography.titleLarge, color = previewColor, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                Text(stringResource(R.string.style_preview_body), style = previewTypography.bodyLarge, color = previewColor)
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(width = 32.dp, height = 20.dp)
-                            .clip(MaterialTheme.shapes.small)
-                            .background(previewPrimary)
-                    )
-                    Text(
-                        stringResource(R.string.style_preview_bubble),
-                        style = previewTypography.labelMedium,
-                        color = previewColor
-                    )
+            ChatAppearancePreview(messageColorOverride)
+            ChatColorSettings(themeColorOverride, messageColorOverride, themeColorOptions,
+                onThemeColor = { themeColorOverride = it; prefs.themeColorOverride = it },
+                onMessageColor = { messageColorOverride = it; prefs.messageColorOverride = it })
+            ChatEffectsSettings()
+            GlassCard(Modifier.fillMaxWidth()) {
+                AppearanceSettingRow("字体与文字", "字体、字号与文字颜色", onClick = { fontsExpanded = !fontsExpanded }) {
+                    Text(if (fontsExpanded) "收起 ⌃" else "展开 ⌄", style = MaterialTheme.typography.labelLarge)
                 }
             }
-
-            // 主题色
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.style_theme_color), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    themeColorOptions.forEach { (hex, label) ->
-                        // null 表示默认紫色，用默认紫色展示（不受当前主题色影响）
-                        val circleColor = parseHexColor(hex) ?: defaultPrimaryColor()
-                        val selected = themeColorOverride == hex
-                        ColorCircleButton(
-                            color = circleColor,
-                            label = label,
-                            selected = selected,
-                            onClick = {
-                                themeColorOverride = hex
-                                prefs.themeColorOverride = hex
-                            }
-                        )
-                    }
-                    // 自定义主题色按钮
-                    val presetHexes = themeColorOptions.map { it.first }
-                    val customSelected = themeColorOverride != null && themeColorOverride !in presetHexes
-                    ColorCircleButton(
-                        color = parseHexColor(themeColorOverride) ?: defaultPrimaryColor(),
-                        label = stringResource(R.string.style_custom),
-                        selected = customSelected,
-                        onClick = { showCustomThemeColorDialog = true }
-                    )
+            if (fontsExpanded) {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    val previewTypography = buildTypography(fontFamily, fontScale)
+                    val previewColor = parseHexColor(fontColorOverride) ?: MaterialTheme.colorScheme.onSurface
+                    Text(stringResource(R.string.style_realtime_preview), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.style_preview_title), style = previewTypography.titleLarge, color = previewColor)
+                    Spacer(Modifier.height(4.dp))
+                    Text(stringResource(R.string.style_preview_body), style = previewTypography.bodyLarge, color = previewColor)
                 }
-            }
-
             // 字体类型
             GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.style_font_type), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
@@ -450,6 +409,43 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            // 字体颜色
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.style_font_color), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    colorOptions.forEach { (hex, label) ->
+                        val circleColor = hex?.let {
+                            runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
+                        } ?: MaterialTheme.colorScheme.onSurface
+                        val selected = fontColorOverride == hex
+                        ColorCircleButton(
+                            color = circleColor,
+                            label = label,
+                            selected = selected,
+                            onClick = {
+                                fontColorOverride = hex
+                                prefs.fontColorOverride = hex
+                            }
+                        )
+                    }
+                    // 自定义颜色按钮
+                    val presetHexes = colorOptions.map { it.first }
+                    val customSelected = fontColorOverride != null && fontColorOverride !in presetHexes
+                    ColorCircleButton(
+                        color = MaterialTheme.colorScheme.primary,
+                        label = stringResource(R.string.style_custom),
+                        selected = customSelected,
+                        onClick = { showCustomColorDialog = true }
+                    )
+                }
+            }
+
+            }
+
             // 聊天界面背景
             GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -593,41 +589,6 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // 字体颜色
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.style_font_color), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    colorOptions.forEach { (hex, label) ->
-                        val circleColor = hex?.let {
-                            runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
-                        } ?: MaterialTheme.colorScheme.onSurface
-                        val selected = fontColorOverride == hex
-                        ColorCircleButton(
-                            color = circleColor,
-                            label = label,
-                            selected = selected,
-                            onClick = {
-                                fontColorOverride = hex
-                                prefs.fontColorOverride = hex
-                            }
-                        )
-                    }
-                    // 自定义颜色按钮
-                    val presetHexes = colorOptions.map { it.first }
-                    val customSelected = fontColorOverride != null && fontColorOverride !in presetHexes
-                    ColorCircleButton(
-                        color = MaterialTheme.colorScheme.primary,
-                        label = stringResource(R.string.style_custom),
-                        selected = customSelected,
-                        onClick = { showCustomColorDialog = true }
-                    )
-                }
-            }
-
             // 应用按钮
             Button(
                 onClick = { applyAndRecreate() },
@@ -675,41 +636,7 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
         )
     }
 
-    // 自定义主题色对话框
-    if (showCustomThemeColorDialog) {
-        var customHex by remember { mutableStateOf(themeColorOverride ?: "#") }
-        AlertDialog(
-            onDismissRequest = { showCustomThemeColorDialog = false },
-            title = { Text(stringResource(R.string.style_custom_theme_color)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.style_color_hex_hint_theme), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = customHex,
-                        onValueChange = { customHex = it },
-                        label = { Text(stringResource(R.string.style_color_hex_label)) },
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val normalized = customHex.trim().let { if (it.startsWith("#")) it else "#$it" }
-                    themeColorOverride = normalized
-                    prefs.themeColorOverride = normalized
-                    showCustomThemeColorDialog = false
-                }) {
-                    Text(stringResource(R.string.common_ok), color = MaterialTheme.colorScheme.primary)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCustomThemeColorDialog = false }) {
-                    Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
-    }
+
 }
 
 /** 颜色圆形按钮：选中时有边框高亮。 */

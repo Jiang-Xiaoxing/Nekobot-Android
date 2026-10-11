@@ -969,6 +969,10 @@ class PortableDataArchiveManager(private val context: Context) {
             addProperty("chat_background_opacity", prefs.chatBackgroundOpacity)
             addProperty("font_color_override", prefs.fontColorOverride)
             addProperty("theme_color_override", prefs.themeColorOverride)
+            addProperty("message_color_override", prefs.messageColorOverride)
+            addProperty("message_color_independent", true)
+            addProperty("dynamic_thinking", prefs.dynamicThinking)
+            addProperty("dynamic_messages", prefs.dynamicMessages)
             addProperty("language", prefs.language)
         }.toString().toByteArray(StandardCharsets.UTF_8)
     }
@@ -1003,6 +1007,10 @@ class PortableDataArchiveManager(private val context: Context) {
         root.float("chat_background_opacity")?.let { prefs.chatBackgroundOpacity = it }
         prefs.fontColorOverride = root.string("font_color_override")
         prefs.themeColorOverride = root.string("theme_color_override")
+        prefs.messageColorOverride = if (root.bool("message_color_independent") == true || root.has("message_color_override"))
+            root.string("message_color_override") else prefs.themeColorOverride
+        root.bool("dynamic_thinking")?.let { prefs.dynamicThinking = it }
+        root.bool("dynamic_messages")?.let { prefs.dynamicMessages = it }
         root.string("language")?.let { prefs.language = it }
 
         prefs.customFontPath = root.string("custom_font_file")

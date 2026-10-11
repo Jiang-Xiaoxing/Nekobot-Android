@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.ui.theme.BubbleUser
 import com.nekobot.app.ui.theme.BubbleUserLight
@@ -20,20 +21,29 @@ internal data class ChatBubbleAppearance(
     val assistantBorder: Color,
     val assistantText: Color
 ) {
-    fun textColor(isUser: Boolean): Color = if (isUser) Color.White else assistantText
+    fun textColor(isUser: Boolean): Color = assistantText
 }
 
 @Composable
 internal fun chatBubbleAppearance(colorOverride: String?): ChatBubbleAppearance {
     val userColor = parseHexColor(colorOverride)
         ?: if (isSystemInDarkTheme()) BubbleUser else BubbleUserLight
+    val endColor = deepenBubbleColor(userColor)
+    val ink = bubbleContentColor(userColor, endColor)
     return ChatBubbleAppearance(
         userColor = userColor,
-        userBrush = Brush.linearGradient(listOf(userColor, deepenBubbleColor(userColor))),
-        assistantColor = aiBubbleContainerColor(),
-        assistantBorder = aiBubbleBorderColor(),
-        assistantText = MaterialTheme.colorScheme.onSurface
+        userBrush = Brush.linearGradient(listOf(userColor, endColor)),
+        assistantColor = userColor,
+        assistantBorder = Color.Transparent,
+        assistantText = ink
     )
+}
+
+/** Choose the foreground with the best minimum contrast across both gradient endpoints. */
+internal fun bubbleContentColor(start: Color, end: Color = start): Color {
+    val low = minOf(start.luminance(), end.luminance())
+    val high = maxOf(start.luminance(), end.luminance())
+    return if ((low + 0.05f) / 0.05f >= 1.05f / (high + 0.05f)) Color(0xFF14171B) else Color.White
 }
 
 internal fun chatBubbleShape(isUser: Boolean, isLast: Boolean = true) = RoundedCornerShape(

@@ -602,7 +602,7 @@ private fun SourceTurnCard(
 private fun SourceMessageBubble(message: LocalMessageEntity, isUser: Boolean) {
     var expanded by rememberSaveable(message.id, message.content) { mutableStateOf(false) }
     var overflows by remember(message.id, message.content) { mutableStateOf(false) }
-    val appearance = chatBubbleAppearance(ServiceContainer.prefs.themeColorOverride)
+    val appearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
     val shape = chatBubbleShape(isUser)
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.TopEnd else Alignment.TopStart) {
         Column(
@@ -610,7 +610,7 @@ private fun SourceMessageBubble(message: LocalMessageEntity, isUser: Boolean) {
                 .testTag("source-bubble:${message.id}")
                 .then(if (isUser) Modifier.shadow(2.dp, shape, clip = false) else Modifier)
                 .then(if (isUser) Modifier.background(appearance.userBrush, shape)
-                    else Modifier.background(appearance.assistantColor, shape).border(1.dp, appearance.assistantBorder, shape))
+                    else Modifier.background(appearance.userBrush, shape).border(1.dp, appearance.assistantBorder, shape))
                 .padding(horizontal = 14.dp, vertical = 9.dp)
         ) {
             SelectionContainer {
