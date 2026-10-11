@@ -71,6 +71,33 @@ class PrefsManager(context: Context) {
     private fun companionRecallKey(profile: String, session: String) =
         "companion_recall:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest("$profile\n$session")
 
+    private fun companionRetrievalKey(profile: String) =
+        "companion_retrieval:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(profile)
+
+    internal fun companionRetrievalSettings(profile: String): CompanionRetrievalSettings = synchronized(this) {
+        val key = companionRetrievalKey(profile)
+        CompanionRetrievalSettings(prefs.getBoolean("$key:enabled", false),
+            prefs.getString("$key:model", null), prefs.getLong("$key:revision", 0))
+    }
+
+    /** 开关、共享模型和当前角色额度一次落盘；取消页面不会改变设置。 */
+    internal fun saveCompanionMemorySettings(profile: String, session: String,
+        recall: com.nekobot.app.data.local.ai.CompanionRecallSettings, enabled: Boolean, modelId: String?
+    ): CompanionRetrievalSettings = synchronized(this) {
+        require(recall.valid())
+        require(!enabled || !modelId.isNullOrBlank()) { "请先选择向量模型" }
+        val old = companionRetrievalSettings(profile)
+        val selected = modelId?.takeIf(String::isNotBlank)
+        val updated = CompanionRetrievalSettings(enabled, selected,
+            old.revision + if (old.enabled != enabled || old.modelId != selected) 1 else 0)
+        val key = companionRetrievalKey(profile)
+        val localKey = companionRecallKey(profile, session)
+        check(prefs.edit().putBoolean("$key:enabled", enabled).putString("$key:model", selected)
+            .putLong("$key:revision", updated.revision).putInt("$localKey:rounds", recall.rounds)
+            .putInt("$localKey:tokens", recall.tokens).commit()) { "记忆设置保存失败，请重试" }
+        updated
+    }
+
     internal fun companionRecallSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRecallSettings {
         val key = companionRecallKey(profile, session)
         return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 3000))

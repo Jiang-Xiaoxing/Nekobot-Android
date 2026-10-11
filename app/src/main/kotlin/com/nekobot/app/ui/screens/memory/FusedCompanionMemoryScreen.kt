@@ -65,6 +65,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var recallSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var recallSettings by remember { mutableStateOf(repo.companionRecallSettings(sessionId)) }
     var embeddingSettings by remember { mutableStateOf<CompanionEmbeddingSettings?>(null) }
+    var addingEmbeddingModel by rememberSaveable { mutableStateOf(false) }
+    var addedEmbeddingId by remember { mutableStateOf<String?>(null) }
     val categories = memoryCategoryNames
     LaunchedEffect(sessionId, dataSourceRevision, appMode) {
         records = emptyList()
@@ -80,6 +82,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         actionError = null
         recallSettingsOpen = false
         embeddingSettings = null
+        addingEmbeddingModel = false
+        addedEmbeddingId = null
     }
     LaunchedEffect(sessionId, refresh, dataSourceRevision, appMode) {
         ready = false
@@ -138,12 +142,18 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val editable = ready && !busy && error == null && repo === ServiceContainer.localRepository
     if (recallSettingsOpen) {
         CompanionRecallSettingsScreen(sessionId, ownerName, ownerAvatar, recallSettings, busy, actionError,
-            onBack = { recallSettingsOpen = false; actionError = null }, onSave = { rounds, tokens, modelId -> action {
-                repo.saveCompanionMemorySettings(sessionId, rounds, tokens, modelId)
+            onBack = { recallSettingsOpen = false; actionError = null; addedEmbeddingId = null }, onSave = { rounds, tokens, enabled, modelId -> action {
+                repo.saveCompanionMemorySettings(sessionId, rounds, tokens, enabled, modelId)
                 recallSettings = repo.companionRecallSettings(sessionId)
                 embeddingSettings = repo.companionEmbeddingSettings(sessionId)
                 recallSettingsOpen = false
-            } }, embedding = requireNotNull(embeddingSettings))
+                addedEmbeddingId = null
+            } }, embedding = requireNotNull(embeddingSettings), onAddModel = { addingEmbeddingModel = true }, addedModelId = addedEmbeddingId)
+        if (addingEmbeddingModel) CompanionEmbeddingModelEditor(repo, onDismiss = { addingEmbeddingModel = false }, onAdded = { id -> action {
+            embeddingSettings = repo.companionEmbeddingSettings(sessionId)
+            addedEmbeddingId = id
+            addingEmbeddingModel = false
+        } })
         return
     }
     BackHandler(enabled = coreOnly && !editor && versions == null && sources == null && deletion == null) { coreOnly = false }

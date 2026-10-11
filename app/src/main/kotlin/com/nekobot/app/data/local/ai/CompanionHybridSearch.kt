@@ -146,7 +146,11 @@ internal class CompanionHybridSearch(
             JsonParser.parseString(json).asJsonArray.map { it.asFloat }.toFloatArray().takeIf(::validVector)
         }.getOrNull()
         internal suspend fun configuredBackend(db: NekobotDatabase, scope: CompanionScopeEntity): CompanionEmbeddingBackend? {
-            val configured = when (val selected = scope.embeddingModelId) {
+            val shared = if (db.sessionDao().getById(scope.sessionId)?.companionMode == true)
+                com.nekobot.app.ServiceContainer.prefs.companionRetrievalSettings(db.dbName) else null
+            // 默认关闭也阻止后台建索引；只有旧版长久陪伴继续使用原角色绑定。
+            if (shared != null && !shared.enabled) return null
+            val configured = when (val selected = if (shared != null) shared.modelId ?: "" else scope.embeddingModelId) {
                 null -> db.aiModelDao().getActiveByPurpose("embedding")
                 "" -> null
                 else -> db.aiModelDao().getById(selected)
@@ -157,6 +161,14 @@ internal class CompanionHybridSearch(
             val identity = embeddingCacheIdentity(model)
             val client = LocalAiClient()
             return CompanionEmbeddingBackend(identity) { inputs ->
+                suspend fun stillSelected(): Boolean {
+                    if (!db.isOpen) return false
+                    if (shared != null && (com.nekobot.app.ServiceContainer.prefs.companionRetrievalSettings(db.dbName) != shared ||
+                        db.sessionDao().getById(scope.sessionId)?.companionMode != true)) return false
+                    val latest = db.aiModelDao().getById(model.id)
+                    return latest?.let { it.enabled && it.purpose == "embedding" && embeddingCacheIdentity(it) == identity } == true
+                }
+                check(stillSelected()) { "向量设置已改变，本次改用关键词" }
                 val started = System.nanoTime()
                 val result = client.createEmbeddings(model, inputs)
                 val duration = (System.nanoTime() - started) / 1_000_000.0
@@ -170,6 +182,8 @@ internal class CompanionHybridSearch(
                     com.nekobot.app.ServiceContainer.localRepository.recordCompanionEmbeddingUsage(db, scope.sessionId,
                         model, tokens, duration, estimated)
                 }
+                // 已发出的请求无法撤回；关闭后不接纳旧结果，也不继续下一批。
+                check(stillSelected()) { "向量设置已改变，本次改用关键词" }
                 result.vectors
             }
         }
