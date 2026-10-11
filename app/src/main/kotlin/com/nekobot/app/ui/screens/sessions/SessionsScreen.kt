@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -51,7 +52,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
@@ -85,7 +85,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
@@ -547,16 +546,10 @@ fun SessionsScreen(
                             Icon(Icons.Filled.DashboardCustomize, contentDescription = stringResource(R.string.stats_customize_layout), tint = MaterialTheme.colorScheme.primary)
                         }
                     } else {
-                        IconButton(onClick = { viewModel.loadAll() }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = refreshDesc, tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        IconButton(onClick = { importFileLauncher.launch("*/*") }) {
-                            Icon(Icons.Filled.FileUpload, contentDescription = importDesc, tint = MaterialTheme.colorScheme.onSurface)
-                        }
+                        SessionHeaderAction(Icons.Filled.Refresh, refreshDesc, onClick = { viewModel.loadAll() })
+                        SessionHeaderAction(Icons.Filled.FileUpload, importDesc, onClick = { importFileLauncher.launch("*/*") })
                         Box {
-                            IconButton(onClick = { showCreateModeMenu = true }) {
-                                Icon(Icons.Filled.Add, contentDescription = newSessionDesc, tint = MaterialTheme.colorScheme.primary)
-                            }
+                            SessionHeaderAction(Icons.Filled.Add, newSessionDesc, prominent = true, onClick = { showCreateModeMenu = true })
                             DropdownMenu(
                                 expanded = showCreateModeMenu,
                                 onDismissRequest = { showCreateModeMenu = false }
@@ -691,10 +684,10 @@ fun SessionsScreen(
                         // 初次加载时搜索框仍可见（固定在顶部），下方显示加载指示。
                         // 外层 padding 与有数据时 LazyColumn 的 contentPadding 保持一致，
                         // 保证搜索框在所有状态下样式统一。
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 12.dp, end = 12.dp, top = 8.dp)
+                                .padding(start = 16.dp, end = 16.dp, top = 4.dp)
                         ) {
                             SearchEntryBar(
                                 searchQuery = searchQuery,
@@ -703,6 +696,7 @@ fun SessionsScreen(
                                 availableChannels = availableChannels,
                                 onClick = { showSearchPanel = true }
                             )
+                            SessionRecentControls(filter, viewModel::toggleFilter)
                         }
                         Column(
                             modifier = Modifier.fillMaxSize(),
@@ -716,10 +710,10 @@ fun SessionsScreen(
                         // 空状态下搜索框仍可见（固定在顶部），下方显示空状态。
                         // 外层 padding 与有数据时 LazyColumn 的 contentPadding 保持一致，
                         // 保证搜索框在所有状态下样式统一。
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 12.dp, end = 12.dp, top = 8.dp)
+                                .padding(start = 16.dp, end = 16.dp, top = 4.dp)
                         ) {
                             SearchEntryBar(
                                 searchQuery = searchQuery,
@@ -728,6 +722,7 @@ fun SessionsScreen(
                                 availableChannels = availableChannels,
                                 onClick = { showSearchPanel = true }
                             )
+                            SessionRecentControls(filter, viewModel::toggleFilter)
                         }
                         val emptyTitle = when {
                             searchQuery.isNotBlank() -> noMatchTitle
@@ -757,8 +752,8 @@ fun SessionsScreen(
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             state = sessionListState,
-                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 110.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 110.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
                             // 搜索栏：跟随列表滚动的首项
                             item(
@@ -777,15 +772,17 @@ fun SessionsScreen(
                                 key = "session-section-header",
                                 contentType = "session-section-header"
                             ) {
-                                SessionSectionHeader(sessionRows.size)
+                                SessionRecentControls(filter, viewModel::toggleFilter)
                             }
-                            items(
+                            itemsIndexed(
                                 items = sessionRows,
-                                key = SessionListRow::key,
-                                contentType = { "session-row" }
-                            ) { row ->
+                                key = { _, row -> row.key },
+                                contentType = { _, _ -> "session-row" }
+                            ) { index, row ->
                                 SessionItem(
                                     row = row,
+                                    first = index == 0,
+                                    last = index == sessionRows.lastIndex,
                                     hasAttention = row.id?.let { attentionBySession.containsKey(it) } == true,
                                     isGenerating = row.id != null && row.id in generatingSessions,
                                     onClick = { row.id?.let(handleOpenChat) },
@@ -954,8 +951,7 @@ private fun SessionCountBadge(count: Int) {
 }
 
 /**
- * 概览统计与快速筛选合并成一排可点击的统计卡：每张卡展示数量并作为筛选入口，
- * 选中态用主题色高亮。原先「统计卡 + 筛选 pill」两段内容重复，合并后更紧凑清爽。
+ * 三种会话模式固定在同一排；收藏和归档在最近会话标题旁，窄屏也能直接操作。
  * 已选中的卡片再次点按会恢复到默认「最近会话」筛选。
  */
 @Composable
@@ -964,145 +960,7 @@ internal fun SessionStatFilters(
     selected: SessionFilter,
     onToggle: (SessionFilter) -> Unit
 ) {
-    val characterSessionsLabel = stringResource(R.string.sessions_filter_character_sessions)
-    val agentSessionsLabel = stringResource(R.string.sessions_filter_agent_sessions)
-    val favoriteLabel = stringResource(R.string.sessions_favorite)
-    val archiveLabel = stringResource(R.string.sessions_archive)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        StatFilterCard(
-            label = characterSessionsLabel,
-            value = overview.characterSessions,
-            icon = SessionModeLabel.CHARACTER.icon(),
-            accent = SessionModeLabel.CHARACTER.color(),
-            selected = selected == SessionFilter.CHARACTER_SESSIONS,
-            onClick = { onToggle(SessionFilter.CHARACTER_SESSIONS) }
-        )
-        StatFilterCard(
-            label = agentSessionsLabel,
-            value = overview.agentSessions,
-            icon = SessionModeLabel.AGENT.icon(),
-            accent = SessionModeLabel.AGENT.color(),
-            selected = selected == SessionFilter.AGENT_SESSIONS,
-            onClick = { onToggle(SessionFilter.AGENT_SESSIONS) }
-        )
-        StatFilterCard(
-            label = stringResource(R.string.sessions_filter_agent_characters),
-            value = overview.agentCharacterSessions,
-            icon = SessionModeLabel.COMPANION.icon(),
-            accent = SessionModeLabel.COMPANION.color(),
-            selected = selected == SessionFilter.AGENT_CHARACTERS,
-            onClick = { onToggle(SessionFilter.AGENT_CHARACTERS) }
-        )
-        StatFilterCard(
-            label = favoriteLabel,
-            value = overview.favorite,
-            icon = Icons.Filled.Favorite,
-            selected = selected == SessionFilter.FAVORITE,
-            onClick = { onToggle(SessionFilter.FAVORITE) }
-        )
-        StatFilterCard(
-            label = archiveLabel,
-            value = overview.archived,
-            icon = Icons.Filled.Archive,
-            selected = selected == SessionFilter.ARCHIVED,
-            onClick = { onToggle(SessionFilter.ARCHIVED) }
-        )
-    }
-}
-
-@Composable
-private fun StatFilterCard(
-    label: String,
-    value: Int,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-    accent: Color? = null
-) {
-    val contentColor = accent ?:
-        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    val containerColor =
-        if (selected) contentColor.copy(alpha = 0.16f)
-        else accent?.copy(alpha = 0.07f) ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    // 选中时加一条主题色描边，增强点按反馈与可辨识性
-    val borderStroke = if (selected) {
-        BorderStroke(1.dp, contentColor.copy(alpha = 0.65f))
-    } else null
-    Surface(
-        modifier = Modifier.widthIn(min = 92.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = containerColor,
-        border = borderStroke
-    ) {
-        Column(
-            modifier = Modifier
-                // 筛选卡不使用点按波纹，仅靠选中态颜色反馈
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onClick
-                )
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = contentColor
-            )
-            Spacer(Modifier.size(4.dp))
-            Text(
-                text = value.toString(),
-                style = MaterialTheme.typography.titleSmall,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = contentColor,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
-        )
-        }
-    }
-}
-
-@Composable
-private fun SessionSectionHeader(resultCount: Int) {
-    val recentText = stringResource(R.string.sessions_recent)
-    val resultsCountFmt = stringResource(R.string.sessions_results_count)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 2.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = recentText,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = resultsCountFmt.format(resultCount),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    SessionModeFilters(overview, selected, onToggle)
 }
 
 /** 搜索入口栏：点击展开半屏搜索面板。展示当前搜索词和活跃筛选标签。 */
@@ -1759,46 +1617,6 @@ private fun CreateSessionDialog(
 }
 
 @Composable
-private fun SessionMetaLabel(text: String, emphasized: Boolean = false) {
-    Box(
-        modifier = Modifier
-            .widthIn(max = 120.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(
-                if (emphasized) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun SessionTagChip(tag: String) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = tag,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.tertiary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
 private fun SessionStatusIcon(icon: ImageVector, description: String) {
     Icon(
         imageVector = icon,
@@ -1809,39 +1627,14 @@ private fun SessionStatusIcon(icon: ImageVector, description: String) {
 }
 
 /** 「等待处理」提示：该会话有 AI 授权/提问等待用户处理。 */
-@Composable
-private fun SessionAttentionChip(text: String) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.14f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Filled.NotificationsActive,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(11.dp)
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-private val SessionItemShape = RoundedCornerShape(16.dp)
 private val SessionPortraitShape = RoundedCornerShape(12.dp)
 
 /** 单个会话项卡片。 */
 @Composable
-private fun SessionItem(
+internal fun SessionItem(
     row: SessionListRow,
+    first: Boolean,
+    last: Boolean,
     hasAttention: Boolean = false,
     isGenerating: Boolean = false,
     onClick: () -> Unit,
@@ -1855,7 +1648,6 @@ private fun SessionItem(
 ) {
     var menuExpanded by remember(row.key) { mutableStateOf(false) }
     // 提取本地化字符串
-    val msgCountFmt = stringResource(R.string.sessions_msg_count)
     val pinnedBadge = stringResource(R.string.sessions_pinned_badge)
     val favoritedBadge = stringResource(R.string.sessions_favorited_badge)
     val archivedBadge = stringResource(R.string.sessions_archived_badge)
@@ -1882,13 +1674,10 @@ private fun SessionItem(
                 .build()
         }
     }
-    // 列表背景是纯色，预合成后视觉等价于半透明 GlassCard，同时省去逐帧透明混合与渐变描边。
-    val containerColor = MaterialTheme.colorScheme.surfaceVariant
-        .copy(alpha = 0.45f)
-        .compositeOver(MaterialTheme.colorScheme.background)
-    val borderColor = MaterialTheme.colorScheme.onSurface
-        .copy(alpha = 0.08f)
-        .compositeOver(containerColor)
+    val containerColor = MaterialTheme.colorScheme.surface
+    val itemShape = RoundedCornerShape(
+        topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
+        bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
 
     Surface(
         onClick = onClick,
@@ -1897,153 +1686,72 @@ private fun SessionItem(
             .listItemSemantics(
                 stringResource(
                     R.string.sessions_item_description,
-                    row.displayName,
+                    row.listTitle,
                     listOfNotNull(
                         row.lastMessage ?: stringResource(R.string.sessions_no_message),
                         row.updatedAt
                     ).joinToString(" · ")
                 )
             ),
-        shape = SessionItemShape,
+        shape = itemShape,
         color = containerColor,
         border = null,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
+        Column {
         Row(
-            modifier = Modifier
-                .height(IntrinsicSize.Min)
-                // 左侧 3dp 竖条 + 9dp 间距 = 原 12dp 起始内边距，内容位置不变
-                .padding(start = 9.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(start = 14.dp, end = 2.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // AI 生成中指示竖条：非生成状态透明占位，避免列表项内容左右跳动
-            val generatingBarColor by animateColorAsState(
-                targetValue = if (isGenerating) MaterialTheme.colorScheme.primary else Color.Transparent,
-                animationSpec = tween(200),
-                label = "sessionGeneratingBar"
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(generatingBarColor)
-            )
-            Spacer(Modifier.width(9.dp))
-            Box(
-                modifier = Modifier
-                    .size(width = 48.dp, height = 60.dp)
-                    .clip(SessionPortraitShape)
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
-            ) {
-                if (portraitRequest != null) {
-                    AsyncImage(
-                        model = portraitRequest,
-                        contentDescription = null,
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else if (row.modeLabel == SessionModeLabel.COMPANION) {
-                    val name = row.characterLabel?.takeIf(String::isNotBlank) ?: row.displayName
-                    Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
-                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
-                        color = row.modeLabel.color())
-                } else {
-                    val fallbackPainter = if (row.isAgentSession && !row.inheritCharacter) {
-                        painterResource(R.drawable.ic_agent_neko)
-                    } else {
-                        rememberVectorPainter(
-                            if (row.isGroupSession) Icons.Outlined.Group
-                            else Icons.AutoMirrored.Outlined.Chat
-                        )
-                    }
-                    Icon(
-                        painter = fallbackPainter,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.size(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = row.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                SessionModeBadge(row.modeLabel, Modifier.padding(top = 4.dp, bottom = 3.dp))
-                if (row.lastMessage != null || row.updatedAt != null) {
-                    Spacer(Modifier.height(3.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        row.lastMessage?.let { preview ->
-                            Text(
-                                text = preview,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                        } ?: Spacer(Modifier.weight(1f))
-                        row.updatedAt?.let { time ->
-                            if (row.lastMessage != null) Spacer(Modifier.size(8.dp))
-                            Text(
-                                text = time,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                                maxLines = 1
-                            )
+            Box {
+                Surface(shape = SessionPortraitShape, color = row.modeLabel.color().copy(alpha = .08f),
+                    border = BorderStroke(1.dp, row.modeLabel.color().copy(alpha = .08f)), modifier = Modifier.size(46.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (portraitRequest != null) {
+                            AsyncImage(model = portraitRequest, contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        } else if (row.modeLabel == SessionModeLabel.COMPANION) {
+                            val name = row.listTitle
+                            Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = row.modeLabel.color())
+                        } else {
+                            val fallbackPainter = if (row.isAgentSession && !row.inheritCharacter) painterResource(R.drawable.ic_agent_neko)
+                                else rememberVectorPainter(if (row.isGroupSession) Icons.Outlined.Group else Icons.AutoMirrored.Outlined.Chat)
+                            Icon(fallbackPainter, null, Modifier.size(27.dp), tint = row.modeLabel.color())
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    row.characterLabel?.let {
-                        SessionMetaLabel(text = it, emphasized = true)
-                    }
-                    row.messageCount?.let { SessionMetaLabel(text = msgCountFmt.format(it)) }
-                    if (hasAttention) {
-                        SessionAttentionChip(stringResource(R.string.sessions_attention_pending))
-                    }
+                if (hasAttention || isGenerating) Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.BottomEnd).size(9.dp)) { }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(row.listTitle, style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (row.pinned) SessionStatusIcon(Icons.Filled.PushPin, pinnedBadge)
                     if (row.favorite) SessionStatusIcon(Icons.Filled.Favorite, favoritedBadge)
                     if (row.archived) SessionStatusIcon(Icons.Filled.Archive, archivedBadge)
-                }
-                if (row.tags.isNotEmpty()) {
-                    Spacer(Modifier.height(5.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        row.tags.take(3).forEach { tag ->
-                            SessionTagChip(tag = tag)
-                        }
+                    row.listDate?.let { date ->
+                        Text(date, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .78f), maxLines = 1)
                     }
                 }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(row.modeLabel.icon(), null, Modifier.size(12.dp), tint = row.modeLabel.color())
+                    Text(row.modeLabel.title(), style = MaterialTheme.typography.labelSmall, color = row.modeLabel.color(), maxLines = 1)
+                    Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .4f))
+                    Text(row.lastMessage ?: stringResource(R.string.sessions_no_message), modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = moreDesc,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(Icons.Filled.MoreVert, contentDescription = moreDesc, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
                 DropdownMenu(
                     expanded = menuExpanded,
@@ -2100,6 +1808,9 @@ private fun SessionItem(
                     )
                 }
             }
+        }
+        if (!last) HorizontalDivider(Modifier.padding(start = 72.dp, end = 14.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f), thickness = .5.dp)
         }
     }
 }

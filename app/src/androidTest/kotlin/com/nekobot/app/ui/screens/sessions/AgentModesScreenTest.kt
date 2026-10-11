@@ -64,22 +64,23 @@ class AgentModesScreenTest {
         compose.onNodeWithText(text(R.string.agent_character_memories)).performClick()
         assertTrue(opened)
     }
-    @Test fun narrowLargeFontFiltersScrollAndSelectAgentCharacterSeparately() {
+    @Test fun narrowLargeFontFiltersAndSecondaryControlsRemainReachable() {
         var selected by mutableStateOf(SessionFilter.ALL)
         compose.setContent { Theme {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
-                Box(Modifier.width(320.dp)) {
+                Column(Modifier.width(320.dp)) {
                     SessionStatFilters(SessionOverview(characterSessions = 2, agentSessions = 3, agentCharacterSessions = 7, archived = 4), selected, { selected = it })
+                    SessionRecentControls(selected, { selected = it })
                 }
             }
         } }
-        compose.onNodeWithText(text(R.string.sessions_filter_agent_characters)).performScrollTo().performClick()
+        compose.onNodeWithText(text(R.string.sessions_filter_agent_characters)).performClick()
         assertEquals(SessionFilter.AGENT_CHARACTERS, selected)
         capture("agent-character-filter-large-text")
-        compose.onNodeWithText(text(R.string.sessions_archive)).performScrollTo().performClick()
+        compose.onNodeWithText(text(R.string.sessions_archive)).performClick()
         assertEquals(SessionFilter.ARCHIVED, selected)
-        compose.onNodeWithText(text(R.string.sessions_filter_agent_sessions)).performScrollTo().performClick()
+        compose.onNodeWithText(text(R.string.sessions_filter_agent_sessions)).performClick()
         assertEquals(SessionFilter.AGENT_SESSIONS, selected)
     }
 }

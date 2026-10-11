@@ -42,7 +42,16 @@ data class SessionListRow(
     /** 群聊会话：列表项无立绘时回退到群聊图标而非默认聊天图标。 */
     val isGroupSession: Boolean = false,
     val modeLabel: SessionModeLabel = SessionModeLabel.CHARACTER
-)
+) {
+    /** Tool chats are tasks; companion and character chats are people. */
+    val listTitle: String get() = when (modeLabel) {
+        SessionModeLabel.CHARACTER, SessionModeLabel.COMPANION -> characterLabel?.takeIf(String::isNotBlank) ?: displayName
+        SessionModeLabel.AGENT, SessionModeLabel.GROUP -> displayName
+    }
+    val listDate: String? get() = updatedAt?.let {
+        if (it.length == 10 && it[4] == '-' && it[7] == '-') it.substring(5) else it
+    }
+}
 
 /**
  * 列表只展示日期部分，避免完整 ISO 时间戳挤占会话标题和消息预览的空间。
@@ -150,7 +159,7 @@ fun buildSessionListRows(
         val isGroupSession =
             session.sessionMode == "group" || !session.characterIds.isNullOrEmpty()
         val characterLabel = when {
-            isAgentSession && !inheritCharacter -> null
+            isAgentSession && !inheritCharacter && !session.isAgentCharacterSession() -> null
             isGroupSession -> fallbackCharacterName
             else -> session.characterName?.takeIf { it.isNotBlank() }
                 ?: senderCharacterName

@@ -52,6 +52,38 @@ class SessionJournalLayoutTest {
         }
     }
 
+    @Test fun twoLineRowsKeepSeparateDetailsAndMenuTargets() {
+        var details = false
+        var opened = false
+        val rows = listOf(
+            SessionListRow("a", "a", "手帐与生活日常记录", "手帐与生活日常记录", null, "林小满（转换测试）", "2026-10-11", "看你笑得这么开心，今天有什么好事？", 918, pinned = false, favorite = false, archived = false, modeLabel = SessionModeLabel.COMPANION),
+            SessionListRow("b", "b", "初次相识", "初次相识", null, "沈清和", "2026-10-11", "（微微收敛了些许笑意）我在听。", 9, pinned = false, favorite = false, archived = false),
+            SessionListRow("c", "c", "九月日报整理", "九月日报整理", null, null, "2026-10-11", "已整理今天的测试记录。", 38, pinned = false, favorite = false, archived = false, isAgentSession = true, modeLabel = SessionModeLabel.AGENT),
+            SessionListRow("d", "d", "测试", "测试", null, "test", "2026-10-11", "在呢在呢！怎么啦？", 7, pinned = false, favorite = false, archived = false, modeLabel = SessionModeLabel.COMPANION)
+        )
+        compose.setContent { Theme {
+            Surface(Modifier.fillMaxSize()) {
+                Column(Modifier.statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
+                    Text("会话", style = MaterialTheme.typography.headlineSmall)
+                    SessionModeFilters(SessionOverview(characterSessions = 2, agentSessions = 1, agentCharacterSessions = 2), SessionFilter.ALL, {})
+                    SessionRecentControls(SessionFilter.ALL, {})
+                    rows.forEachIndexed { index, row ->
+                        SessionItem(row, first = index == 0, last = index == rows.lastIndex,
+                            onClick = { opened = true }, onOpenDetail = { details = true }, onRename = {}, onDelete = {}, onToggleFavorite = {}, onTogglePinned = {})
+                    }
+                }
+            }
+        } }
+        compose.onNodeWithText("林小满（转换测试）", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("九月日报整理", useUnmergedTree = true).assertIsDisplayed()
+        compose.onAllNodesWithText("918 条").assertCountEquals(0)
+        capture("sessions-two-line-native")
+        compose.onAllNodesWithContentDescription("更多")[0].performClick()
+        compose.onNodeWithText("会话详情").performClick()
+        assertTrue(details)
+        assertFalse(opened)
+    }
+
     @Test fun sevenSkinsRenderAndFeelingTabsKeepTheirContent() {
         var scene by mutableStateOf(RelationshipBackground.COAST)
         val values = listOf(JournalFeeling("心情", "轻松随和，带有一点好奇", {}),

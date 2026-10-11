@@ -132,6 +132,24 @@ class SessionListPresentationTest {
     }
 
     @Test
+    fun listTitle_usesPeopleForRolesAndTasksForAgentEvenWithInheritedCharacter() {
+        val characters = listOf(CharacterPreset(id = "lin", name = "林小满"))
+        val rows = buildSessionListRows(listOf(
+            Session(id = "role", name = "手帐记录", characterId = "lin", messageCount = 918),
+            Session(id = "companion", name = "唯一会话", characterId = "lin", sessionMode = "agent", companionMode = true, inheritCharacter = false),
+            Session(id = "agent", name = "九月日报整理", characterId = "lin", sessionMode = "agent", inheritCharacter = true),
+            Session(id = "fallback", name = "无绑定角色")
+        ), characters)
+        assertEquals("林小满", rows[0].listTitle)
+        assertEquals("林小满", rows[1].listTitle)
+        assertEquals("九月日报整理", rows[2].listTitle)
+        assertEquals("无绑定角色", rows[3].listTitle)
+        // Presentation does not replace the stored title or drop the message total.
+        assertEquals("手帐记录", rows[0].name)
+        assertEquals(918, rows[0].messageCount)
+    }
+
+    @Test
     fun buildSessionListRows_mapsTagsTrimDeduplicatesAndIgnoresBlank() {
         val sessions = listOf(
             Session(id = "tagged", tags = listOf("  省钱  ", "喵", "  ", "喵")),
