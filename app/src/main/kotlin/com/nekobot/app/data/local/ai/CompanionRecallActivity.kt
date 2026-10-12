@@ -10,6 +10,13 @@ object CompanionRecallActivity {
     private val running = MutableStateFlow<Map<String, Int>>(emptyMap())
     val active: StateFlow<Map<String, Int>> = running.asStateFlow()
 
+    /** “回忆一下”至少显示的时长，避免查找太快一闪而过。 */
+    const val MIN_VISIBLE_MS = 1200L
+
+    /** 回忆结束后还需继续显示多久。 */
+    fun remainingHoldMs(startedAtMs: Long, nowMs: Long, minMs: Long = MIN_VISIBLE_MS): Long =
+        (minMs - (nowMs - startedAtMs)).coerceIn(0L, minMs)
+
     fun isActive(sessionId: String): Boolean = (running.value[sessionId] ?: 0) > 0
 
     suspend fun <T> track(sessionId: String, block: suspend () -> T): T {

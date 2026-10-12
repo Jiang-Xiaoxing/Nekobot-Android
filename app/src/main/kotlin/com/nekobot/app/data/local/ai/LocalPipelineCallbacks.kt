@@ -473,6 +473,9 @@ internal class LocalPipelineCallbacks(
                             onReasoningChunk(ctx, event.chunk, streamMessageId)
                         }
                     }
+                    is RealtimeEvent.StreamStart -> {
+                        if (CompanionStreamTurnGate.shouldEmitStart(session.companionMode, ctx.metadata)) emitEvent(event)
+                    }
                     else -> emitEvent(event)
                 }
             }
@@ -1428,7 +1431,9 @@ internal class LocalPipelineCallbacks(
 
     override fun onStreamStart(ctx: PipelineContext, message: Map<String, Any>) {
         streamMessageId = (message["id"] as? String) ?: java.util.UUID.randomUUID().toString()
-        emitEvent(RealtimeEvent.StreamStart(null))
+        if (CompanionStreamTurnGate.shouldEmitStart(session.companionMode, ctx.metadata)) {
+            emitEvent(RealtimeEvent.StreamStart(null))
+        }
     }
 
     override fun onStreamChunk(ctx: PipelineContext, chunk: String, messageId: String) {
@@ -1457,6 +1462,11 @@ internal class LocalPipelineCallbacks(
     // 非 agent 模式返回空实现，避免无意义的事件吞吐
     override fun getProgressReporter(ctx: PipelineContext): ProgressReporter {
         if (!session.sessionMode.equals("agent", ignoreCase = true)) return ProgressReporter()
+        // 伴侣会话不显示 Agent 进度卡片，避免进度事件反复改动消息列表导致闪烁
+        if (session.companionMode) {
+            activeAgentProgressReporter = null
+            return ProgressReporter()
+        }
         return LocalAgentProgressReporter(
             parentMessageId = parentMessageId,
             onUpdate = { card -> emitEvent(RealtimeEvent.ThinkingCardUpdate(card)) },

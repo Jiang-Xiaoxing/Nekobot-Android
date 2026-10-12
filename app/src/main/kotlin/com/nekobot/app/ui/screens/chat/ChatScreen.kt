@@ -2638,12 +2638,12 @@ private fun StreamingAssistantBubble(
     val reasoning by reasoningFlow.collectAsStateWithLifecycle()
     val companionChat = LocalCompanionChatName.current != null
     val visibleReasoning = reasoning.takeIf { !companionChat || LocalCompanionShowReasoning.current }.orEmpty()
+    // 实际在查找记忆时显示“回忆一下”，与思考内容无关，并至少显示一小段时间。
+    val showRecallPill = companionChat && rememberCompanionRecallPillVisible(sessionId)
     if (content.isBlank() && visibleReasoning.isBlank()) {
         // Companion waiting feedback lives only in the header, even when hidden reasoning is streaming.
         if (companionChat) {
-            // 实际在查找记忆时，在角色回复位置显示“回忆一下”。
-            val recalling by com.nekobot.app.data.local.ai.CompanionRecallActivity.active.collectAsStateWithLifecycle()
-            if ((recalling[sessionId] ?: 0) > 0) CompanionRecallingPill()
+            if (showRecallPill) CompanionRecallingPill()
             return
         }
         if (fuseTypingIndicator) return
@@ -2661,16 +2661,39 @@ private fun StreamingAssistantBubble(
             reasoningContent = reasoning.takeIf(String::isNotBlank)
         )
     }
-    MessageBubble(
-        message = liveMessage,
-        motionRegistry = motionRegistry,
-        motionKey = motionKey,
-        portraitUrl = portraitUrl,
-        showAiAvatar = showAiAvatar,
-        fillAiWidth = fillAiWidth,
-        onLongClick = {},
-        sessionId = sessionId
-    )
+    Column {
+        if (showRecallPill) CompanionRecallingPill()
+        MessageBubble(
+            message = liveMessage,
+            motionRegistry = motionRegistry,
+            motionKey = motionKey,
+            portraitUrl = portraitUrl,
+            showAiAvatar = showAiAvatar,
+            fillAiWidth = fillAiWidth,
+            onLongClick = {},
+            sessionId = sessionId
+        )
+    }
+}
+
+@Composable
+private fun rememberCompanionRecallPillVisible(sessionId: String): Boolean {
+    val recalling by com.nekobot.app.data.local.ai.CompanionRecallActivity.active.collectAsStateWithLifecycle()
+    val active = (recalling[sessionId] ?: 0) > 0
+    var visible by remember(sessionId) { mutableStateOf(active) }
+    var startedAt by remember(sessionId) { mutableStateOf(0L) }
+    LaunchedEffect(active) {
+        if (active) {
+            if (!visible) startedAt = System.currentTimeMillis()
+            if (startedAt == 0L) startedAt = System.currentTimeMillis()
+            visible = true
+        } else if (visible) {
+            delay(com.nekobot.app.data.local.ai.CompanionRecallActivity.remainingHoldMs(startedAt, System.currentTimeMillis()))
+            visible = false
+            startedAt = 0L
+        }
+    }
+    return visible
 }
 
 @Composable
