@@ -1365,6 +1365,7 @@ private fun ModernChatComposer(
                         reasoningEffort = effort
                         ServiceContainer.prefs.setReasoningEffort(isAgentSession, effort)
                     },
+                    reasoningAgentScope = isAgentSession,
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
                         if (companionChat) onDismissCompanionSettings()
@@ -2280,7 +2281,8 @@ private fun ModernPlotChoices(
 private fun ReasoningEffortSelector(
     selected: ReasoningEffort,
     enabled: Boolean,
-    onSelected: (ReasoningEffort) -> Unit
+    onSelected: (ReasoningEffort) -> Unit,
+    customAgentScope: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -2292,6 +2294,7 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max)
+        ReasoningEffort.CUSTOM -> "自定义"
     }
 
     @Composable
@@ -2302,6 +2305,7 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium_desc)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high_desc)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max_desc)
+        ReasoningEffort.CUSTOM -> "发送时用这组替换自动换算的思考参数"
     }
 
     Surface(
@@ -2416,6 +2420,12 @@ private fun ReasoningEffortSelector(
                     }
                 }
             }
+            if (selected == ReasoningEffort.CUSTOM) {
+                val customInitial = remember(customAgentScope) { ServiceContainer.prefs.getCustomReasoning(customAgentScope) }
+                CustomReasoningFields(customInitial, enabled,
+                    onChange = { ServiceContainer.prefs.setCustomReasoning(customAgentScope, it) },
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp))
+            }
         }
     }
 }
@@ -2442,6 +2452,7 @@ private fun ModernChatActionPanel(
     toolSetSummary: String,
     toolSetAvailable: Boolean,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
+    reasoningAgentScope: Boolean = false,
     onToggleYolo: () -> Unit,
     onOpenToolSet: () -> Unit,
     onCompress: () -> Unit,
@@ -2532,7 +2543,8 @@ private fun ModernChatActionPanel(
                 ReasoningEffortSelector(
                     selected = reasoningEffort,
                     enabled = !sending,
-                    onSelected = onReasoningEffortChange
+                    onSelected = onReasoningEffortChange,
+                    customAgentScope = reasoningAgentScope
                 )
             }
             if (toolSetAvailable) {

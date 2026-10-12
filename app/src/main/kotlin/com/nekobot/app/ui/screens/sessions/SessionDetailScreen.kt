@@ -1902,6 +1902,11 @@ fun SessionDetailScreen(
                                             }
                                         }
                                     }
+                                    if (effort == com.nekobot.app.data.model.ReasoningEffort.CUSTOM) {
+                                        val customInitial = remember(sessionId) { com.nekobot.app.ServiceContainer.localRepository.companionCustomReasoning(sessionId) }
+                                        com.nekobot.app.ui.screens.chat.CustomReasoningFields(customInitial, enabled = true,
+                                            onChange = { com.nekobot.app.ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) })
+                                    }
                                 }
                             }
                             // === 7. 只读元信息 ===

@@ -1341,6 +1341,34 @@ class PrefsManager(context: Context) {
         prefs.edit().putString(companionRecallKey(profile, sessionId) + ":reasoning", value.wireValue).apply()
     }
 
+    /** 伴侣会话的自定义思考参数；未设置时沿用 Agent 全局的自定义参数。 */
+    fun companionCustomReasoning(profile: String, sessionId: String): com.nekobot.app.data.model.CustomReasoningParam {
+        val key = companionRecallKey(profile, sessionId)
+        val global = getCustomReasoning(true)
+        return com.nekobot.app.data.model.CustomReasoningParam(
+            prefs.getString("$key:reasoning_custom_path", null) ?: global.path,
+            prefs.getString("$key:reasoning_custom_value", null) ?: global.value)
+    }
+    fun setCompanionCustomReasoning(profile: String, sessionId: String, value: com.nekobot.app.data.model.CustomReasoningParam) {
+        val key = companionRecallKey(profile, sessionId)
+        prefs.edit().putString("$key:reasoning_custom_path", value.path).putString("$key:reasoning_custom_value", value.value).apply()
+    }
+    /** 全局自定义思考参数，Agent 与角色会话各一份，与思考强度同一作用域。 */
+    fun getCustomReasoning(isAgentSession: Boolean): com.nekobot.app.data.model.CustomReasoningParam {
+        val suffix = if (isAgentSession) "agent" else "character"
+        return com.nekobot.app.data.model.CustomReasoningParam(
+            prefs.getString("reasoning_custom_path_$suffix", "").orEmpty(),
+            prefs.getString("reasoning_custom_value_$suffix", "").orEmpty())
+    }
+    fun setCustomReasoning(isAgentSession: Boolean, value: com.nekobot.app.data.model.CustomReasoningParam) {
+        val suffix = if (isAgentSession) "agent" else "character"
+        prefs.edit().putString("reasoning_custom_path_$suffix", value.path).putString("reasoning_custom_value_$suffix", value.value).apply()
+    }
+    /** 发送时按会话取自定义思考参数：伴侣会话按会话，其余按 Agent/角色全局。 */
+    fun customReasoningFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?): com.nekobot.app.data.model.CustomReasoningParam =
+        if (companionMode) companionCustomReasoning(profile, sessionId)
+        else getCustomReasoning(sessionMode.equals("agent", ignoreCase = true))
+
     /** Display only: never changes model settings or erases saved reasoning. */
     internal fun companionShowReasoning(profile: String, sessionId: String): Boolean =
         prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", false)

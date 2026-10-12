@@ -1645,6 +1645,9 @@ class LocalRepository(
         }
     }
 
+    internal fun companionCustomReasoning(sessionId: String) = ServiceContainer.prefs.companionCustomReasoning(db.dbName, sessionId)
+    internal fun setCompanionCustomReasoning(sessionId: String, value: com.nekobot.app.data.model.CustomReasoningParam) =
+        ServiceContainer.prefs.setCompanionCustomReasoning(db.dbName, sessionId, value)
     internal fun companionReasoningEffort(sessionId: String) = ServiceContainer.prefs.companionReasoningEffort(db.dbName, sessionId)
     internal fun setCompanionReasoningEffort(sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) =
         ServiceContainer.prefs.setCompanionReasoningEffort(db.dbName, sessionId, value)
@@ -6203,7 +6206,9 @@ class LocalRepository(
             activeModel.temperature?.let { put("temperature", it) }
             activeModel.maxTokens?.let { put("max_tokens", it) }
             activeModel.topP?.let { put("top_p", it) }
-            put("reasoning_effort", reasoningEffort.wireValue)
+            com.nekobot.app.data.local.ai.putReasoningParams(this, reasoningEffort) {
+                ServiceContainer.prefs.customReasoningFor(db.dbName, session.id, session.companionMode, session.sessionMode)
+            }
         }
 
         // 5. 构造故障转移队列：activeModel 优先，附加同 purpose 其他启用模型
@@ -6468,7 +6473,9 @@ class LocalRepository(
             activeModel.temperature?.let { put("temperature", it) }
             activeModel.maxTokens?.let { put("max_tokens", it) }
             activeModel.topP?.let { put("top_p", it) }
-            put("reasoning_effort", reasoningEffort.wireValue)
+            com.nekobot.app.data.local.ai.putReasoningParams(this, reasoningEffort) {
+                ServiceContainer.prefs.customReasoningFor(db.dbName, session.id, session.companionMode, session.sessionMode)
+            }
         }
 
         // 构造故障转移队列

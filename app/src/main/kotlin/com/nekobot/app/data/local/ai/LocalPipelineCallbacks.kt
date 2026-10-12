@@ -460,6 +460,9 @@ internal class LocalPipelineCallbacks(
         return total
     }
     private var activeAgentProgressReporter: LocalAgentProgressReporter? = null
+    private val customReasoning by lazy {
+        com.nekobot.app.ServiceContainer.prefs.customReasoningFor(db.dbName, session.id, session.companionMode, session.sessionMode)
+    }
 
     private fun createStreamEventCoalescer(ctx: PipelineContext): LocalStreamEventCoalescer =
         LocalStreamEventCoalescer(
@@ -1124,7 +1127,7 @@ internal class LocalPipelineCallbacks(
                 activeModel.maxTokens?.let { put("max_tokens", it) }
                 activeModel.topP?.let { put("top_p", it) }
                 if (requestTools.isNotEmpty()) put("tools", requestTools)
-                put("reasoning_effort", reasoningEffort.wireValue)
+                putReasoningParams(this, reasoningEffort) { customReasoning }
             }
             val streamRelay = if (session.sessionMode.equals("agent", ignoreCase = true)) {
                 createStreamEventCoalescer(ctx)
@@ -1242,7 +1245,7 @@ internal class LocalPipelineCallbacks(
                 activeModel.temperature?.let { put("temperature", it) }
                 activeModel.maxTokens?.let { put("max_tokens", it) }
                 activeModel.topP?.let { put("top_p", it) }
-                put("reasoning_effort", reasoningEffort.wireValue)
+                putReasoningParams(this, reasoningEffort) { customReasoning }
             }
 
             val fullContent = StringBuilder()
@@ -2890,7 +2893,7 @@ internal class LocalPipelineCallbacks(
                 activeModel.maxTokens?.let { put("max_tokens", it) }
                 activeModel.topP?.let { put("top_p", it) }
                 if (requestTools.isNotEmpty()) put("tools", requestTools)
-                put("reasoning_effort", reasoningEffort.wireValue)
+                putReasoningParams(this, reasoningEffort) { customReasoning }
             }
             val startedAt = System.currentTimeMillis()
             val rawResult = try {

@@ -742,6 +742,17 @@ class LocalAiClient(
             withStops
         }
         val effort = ReasoningEffort.fromValue(normalized["reasoning_effort"] as? String)
+        if (effort == ReasoningEffort.CUSTOM) {
+            // 自定义思考参数：不做服务商自动换算，由 buildRequest 原样写入请求体。
+            val custom = normalized[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY] as? com.nekobot.app.data.model.CustomReasoningParam
+            return normalized.toMutableMap().apply {
+                remove("reasoning_effort")
+                if (custom == null || !custom.isValid) {
+                    remove(com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY)
+                    runCatching { LocalLogger.w(TAG, "自定义思考参数无效，已不发送思考参数：" + (custom?.validationError() ?: "未设置")) }
+                }
+            }
+        }
         val provider = model.provider.orEmpty().lowercase()
         val endpoint = model.baseUrl.lowercase()
         val deepSeek = provider.contains("deepseek") || endpoint.contains("deepseek")
@@ -804,7 +815,10 @@ class LocalAiClient(
                 messages,
                 stream = stream,
                 extra = normalizedExtra
-            )
+            ).let { built ->
+                (normalizedExtra[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY]
+                    as? com.nekobot.app.data.model.CustomReasoningParam)?.applyTo(built) ?: built
+            }
             return Request.Builder()
                 .url(url)
                 .post(gson.toJson(payload).toRequestBody(JSON_TYPE))
@@ -833,6 +847,10 @@ class LocalAiClient(
         response.close()
         runCatching {
             LocalLogger.w(TAG, R.string.log_laic_400_minimal_retry, firstError.take(160))
+        }
+        // 自定义思考参数在兼容重试中保留（不在可省略参数内），并记录便于排查。
+        (fallbackExtra[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY] as? com.nekobot.app.data.model.CustomReasoningParam)?.let {
+            runCatching { LocalLogger.w(TAG, "400 重试仍保留自定义思考参数：${it.path}") }
         }
         return clientFor(model).newCall(buildRequest(fallbackExtra)).awaitResponse()
     }
