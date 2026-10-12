@@ -144,6 +144,7 @@
     <string name="localai_set_active">已设为当前模型</string>
     <string name="localai_test_failed">失败: %1$s</string>
     <string name="localai_test_success">成功: %1$s</string>
+    <string name="localai_image_generation_test_success">图片生成接口响应成功，返回 %1$d 条图片数据</string>
     <string name="localai_test_exception">异常: %1$s</string>
     <string name="localai_local_logs">本地日志</string>
     <string name="localai_empty_hint">暂无 AI 模型，点击右上角 + 添加</string>

@@ -133,6 +133,7 @@
     <string name="localai_set_active">現在のモデルに設定</string>
     <string name="localai_test_failed">失敗: %1$s</string>
     <string name="localai_test_success">成功: %1$s</string>
+    <string name="localai_image_generation_test_success">画像生成 API の応答に成功しました（画像データ %1$d 件）</string>
     <string name="localai_test_exception">エラー: %1$s</string>
     <string name="localai_local_logs">ローカルログ</string>
     <string name="localai_empty_hint">AI モデルがありません。右上の + をタップして追加してください。</string>

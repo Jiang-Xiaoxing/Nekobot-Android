@@ -133,6 +133,7 @@
     <string name="localai_set_active">현재 모델로 설정</string>
     <string name="localai_test_failed">실패: %1$s</string>
     <string name="localai_test_success">성공: %1$s</string>
+    <string name="localai_image_generation_test_success">이미지 생성 API 응답 성공 (%1$d개 이미지 데이터)</string>
     <string name="localai_test_exception">오류: %1$s</string>
     <string name="localai_local_logs">로컬 로그</string>
     <string name="localai_empty_hint">AI 모델이 없어요. 오른쪽 위 +를 눌러 추가해 주세요.</string>
