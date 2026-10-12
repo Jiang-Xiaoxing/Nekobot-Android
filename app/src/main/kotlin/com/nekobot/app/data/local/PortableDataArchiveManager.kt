@@ -388,6 +388,8 @@ class PortableDataArchiveManager(private val context: Context) {
             val db = activeDatabase()
             requirePortableTableCoverage(db)
             var importedRows = 0
+            val restoredRelationshipSessions = linkedSetOf<String>()
+            val restoredCompanionScopes = linkedSetOf<String>()
             db.withTransaction {
                 PortableDataCategory.entries.filter(selected::contains).forEach { category ->
                     if (category.tables.isEmpty()) return@forEach
@@ -399,19 +401,14 @@ class PortableDataArchiveManager(private val context: Context) {
                         preserveExistingSecrets = PortableDataCategory.CREDENTIALS !in selected,
                         rewriteMediaReferences = PortableDataCategory.MEDIA in selected ||
                             PortableDataCategory.WORLD_BOOKS in selected ||
-                            PortableDataCategory.STICKERS in selected
+                            PortableDataCategory.STICKERS in selected,
+                        restoredRelationshipSessions = restoredRelationshipSessions,
+                        restoredCompanionScopes = restoredCompanionScopes
                     )
                 }
                 if (PortableDataCategory.CONVERSATIONS in selected) {
                     invalidateExperiencesWithoutVisibleSources(db)
-                    // Imported state stays visible, but never starts paid evaluations on another device.
-                    db.openHelper.writableDatabase.execSQL("UPDATE companion_relationship_state SET enabled = 0, version = version + 1, awaitingHistory = 1, notice = NULL")
-                    // Explicit portable import retains the independent data within the selected
-                    // conversation category. Row IDs and database names are local to the destination.
-                    db.openHelper.writableDatabase.execSQL(
-                        "UPDATE companion_scopes SET profile = ?, baselineRowId = 0, " +
-                            "archiveRowId = COALESCE((SELECT rowid FROM local_messages WHERE id = companion_scopes.archiveMessageId), 0), " +
-                            "revision = revision + 1", arrayOf(db.dbName))
+                    rebaseRestoredCompanionRows(db, restoredRelationshipSessions, restoredCompanionScopes)
                 }
                 if (PortableDataCategory.CREDENTIALS in selected) {
                     require(password.trim().length >= MIN_PASSWORD_LENGTH) {
@@ -579,7 +576,9 @@ class PortableDataArchiveManager(private val context: Context) {
         category: PortableDataCategory,
         raw: ByteArray,
         preserveExistingSecrets: Boolean,
-        rewriteMediaReferences: Boolean
+        rewriteMediaReferences: Boolean,
+        restoredRelationshipSessions: MutableSet<String>,
+        restoredCompanionScopes: MutableSet<String>
     ): Int {
         var restored = 0
         category.tables.forEach { table ->
@@ -616,11 +615,50 @@ class PortableDataArchiveManager(private val context: Context) {
                 }
                 if (values.size() > 0) {
                     mergeRow(database, table, values, primaryKeys)
+                    // 只记录成功恢复的行；旧归档缺少这些表时，目标库既有记录保持原样。
+                    when (table) {
+                        "companion_relationship_state" -> restoredRelationshipSessions += requireNotNull(values.getAsString("sessionId"))
+                        "companion_scopes" -> restoredCompanionScopes += requireNotNull(values.getAsString("id"))
+                    }
                     restored++
                 }
             }
         }
         return restored
+    }
+
+    private fun rebaseRestoredCompanionRows(
+        database: NekobotDatabase,
+        relationshipSessions: Set<String>,
+        companionScopes: Set<String>
+    ) {
+        val writable = database.openHelper.writableDatabase
+        if (relationshipSessions.isNotEmpty()) {
+            // 仅暂停本次导入的关系评估，避免换设备后直接调用模型；不触碰其他角色。
+            writable.compileStatement(
+                "UPDATE companion_relationship_state SET enabled = 0, version = version + 1, " +
+                    "awaitingHistory = 1, notice = NULL WHERE sessionId = ?"
+            ).use { statement ->
+                relationshipSessions.forEach { sessionId ->
+                    statement.bindString(1, sessionId)
+                    statement.executeUpdateDelete()
+                }
+            }
+        }
+        if (companionScopes.isNotEmpty()) {
+            // 仅重定位本次恢复的独立记忆；未导入角色的整理游标和缓存版本保持原样。
+            writable.compileStatement(
+                "UPDATE companion_scopes SET profile = ?, baselineRowId = 0, " +
+                    "archiveRowId = COALESCE((SELECT rowid FROM local_messages " +
+                    "WHERE id = companion_scopes.archiveMessageId), 0), revision = revision + 1 WHERE id = ?"
+            ).use { statement ->
+                statement.bindString(1, database.dbName)
+                companionScopes.forEach { scopeId ->
+                    statement.bindString(2, scopeId)
+                    statement.executeUpdateDelete()
+                }
+            }
+        }
     }
 
     /**

@@ -23,11 +23,12 @@ class PortableDataArchiveManagerTest {
     @Test fun relationshipTextHistoryAndLegacyValuesSurvivePortableRestore() = runBlocking {
         var db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
         val stamp = "2026-10-11T02:00:00Z"
-        db.sessionDao().upsert(LocalSessionEntity(mergeSessionId, "文字关系备份", characterId = "relation-test", companionMode = true,
+        val characterId = "$mergeSessionId-character"
+        db.sessionDao().upsert(LocalSessionEntity(mergeSessionId, "文字关系备份", characterId = characterId, companionMode = true,
             sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true, createdAt = stamp, updatedAt = stamp))
         val words = "{\"description\":\"愿意分享日常，但对承诺仍有保留\"}"
         val oldWords = "{\"origin\":\"旧版记录\"}"
-        val state = com.nekobot.app.data.local.db.CompanionRelationshipEntity(mergeSessionId, "relation-test", version = 20,
+        val state = com.nekobot.app.data.local.db.CompanionRelationshipEntity(mergeSessionId, characterId, version = 20,
             baselineJson = "{\"trust\":50}", moodIntensity = 0.35f, narrativeJson = words, legacySnapshotJson = oldWords)
         db.companionRelationshipDao().save(state)
         val event = com.nekobot.app.data.local.db.CompanionRelationshipEventEntity("$mergeSessionId-event", mergeSessionId, "promise", 20,
