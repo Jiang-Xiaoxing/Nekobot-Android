@@ -317,8 +317,7 @@ fun ChatScreen(
     // Agent 会话开启「继承完整角色能力」后按角色会话渲染：显示角色头像，气泡不再占满整宽。
     val inheritsCharacter = session?.sessionMode == "agent" && session?.inheritCharacter == true
     val companionChat = session?.companionMode == true
-    val companionName = session?.characterName?.takeIf { it.isNotBlank() }
-        ?: session?.senderName?.takeIf { it.isNotBlank() } ?: session?.displayName.orEmpty()
+    val companionName = companionChatTitle(session)
     val showAiAvatar = companionChat || session?.sessionMode != "agent" || inheritsCharacter
     val fillAiWidth = !companionChat && session?.sessionMode == "agent" && !inheritsCharacter
     val groupCharacters by viewModel.groupCharacters.collectAsStateWithLifecycle()

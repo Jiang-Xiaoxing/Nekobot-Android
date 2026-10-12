@@ -242,11 +242,7 @@ fun ModernChatScreen(
     // Agent 会话目标/规格任务（/goal、/spec 命令设置，输入框上方横幅展示）
     val agentGoal by viewModel.agentGoal.collectAsStateWithLifecycle()
     val agentSpec by viewModel.agentSpec.collectAsStateWithLifecycle()
-    val companionName = if (session?.companionMode == true) {
-        session?.characterName?.takeIf { it.isNotBlank() }
-            ?: session?.senderName?.takeIf { it.isNotBlank() }
-            ?: session?.displayName.orEmpty()
-    } else null
+    val companionName = if (session?.companionMode == true) companionChatTitle(session) else null
     var companionSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
     var companionSearchRequest by remember(sessionId) { mutableStateOf(0) }
     var companionFavoritesRequest by remember(sessionId) { mutableStateOf(0) }
