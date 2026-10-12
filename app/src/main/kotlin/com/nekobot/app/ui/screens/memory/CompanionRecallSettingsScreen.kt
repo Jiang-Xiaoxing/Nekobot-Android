@@ -29,11 +29,12 @@ import com.nekobot.app.data.local.CompanionEmbeddingSettings
 @Composable
 internal fun CompanionRecallSettingsScreen(
     sessionId: String, ownerName: String, ownerAvatar: String?, initial: CompanionRecallSettings,
-    busy: Boolean, error: String?, onBack: () -> Unit, onSave: (Int, Int, Boolean, String?) -> Unit,
+    busy: Boolean, error: String?, onBack: () -> Unit, onSave: (Int, Int, Int, Boolean, String?) -> Unit,
     embedding: CompanionEmbeddingSettings, onAddModel: () -> Unit, addedModelId: String? = null
 ) {
     var rounds by rememberSaveable(sessionId) { mutableIntStateOf(initial.rounds) }
     var tokens by rememberSaveable(sessionId) { mutableIntStateOf(initial.tokens) }
+    var perCall by rememberSaveable(sessionId) { mutableIntStateOf(initial.effectivePerCall) }
     var vectorEnabled by rememberSaveable(sessionId) { mutableStateOf(embedding.enabled) }
     var embeddingId by rememberSaveable(sessionId) { mutableStateOf(embedding.selectedId) }
     var choosingModel by rememberSaveable { mutableStateOf(false) }
@@ -48,7 +49,7 @@ internal fun CompanionRecallSettingsScreen(
         IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }) }, bottomBar = {
         Surface {
-            Button(onClick = { onSave(rounds, tokens, vectorEnabled, embeddingId) },
+            Button(onClick = { onSave(rounds, tokens, perCall.coerceAtMost(tokens), vectorEnabled, embeddingId) },
                 enabled = !busy && (!vectorEnabled || chosen != null), shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(20.dp).heightIn(min = 52.dp)) {
                 Text(if (busy) "正在保存…" else "保存设置")
@@ -109,7 +110,7 @@ internal fun CompanionRecallSettingsScreen(
                         Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 3.dp, shadowElevation = 6.dp,
                             color = MaterialTheme.colorScheme.surface, modifier = Modifier.widthIn(max = 280.dp).testTag("recall-quota-popover")) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                recallQuotaExplanation(rounds, tokens).forEach {
+                                recallQuotaExplanation(rounds, tokens, perCall).forEach {
                                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
@@ -122,6 +123,8 @@ internal fun CompanionRecallSettingsScreen(
                     LimitRow("最多回查", "$rounds 轮", !busy) { draftLimit = rounds.toString(); editingLimit = "rounds" }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     LimitRow("资料上限", "$tokens Token", !busy) { draftLimit = tokens.toString(); editingLimit = "tokens" }
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    LimitRow("单次上限", "${perCall.coerceAtMost(tokens)} Token", !busy) { draftLimit = perCall.coerceAtMost(tokens).toString(); editingLimit = "perCall" }
                 }
             }
             Text("额度仅对当前角色生效。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -148,14 +151,22 @@ internal fun CompanionRecallSettingsScreen(
         }
     }
     editingLimit?.let { kind ->
-        val range = if (kind == "rounds") 1..100 else 256..64000
+        val range = when (kind) {
+            "rounds" -> 1..100
+            "perCall" -> CompanionRecallSettings.MIN_PER_CALL..tokens
+            else -> 256..64000
+        }
         val number = draftLimit.toIntOrNull()
-        AlertDialog(onDismissRequest = { editingLimit = null }, title = { Text(if (kind == "rounds") "最多回查" else "资料上限") },
+        AlertDialog(onDismissRequest = { editingLimit = null }, title = { Text(when (kind) { "rounds" -> "最多回查"; "perCall" -> "单次上限"; else -> "资料上限" }) },
             text = { OutlinedTextField(draftLimit, { if (it.length <= 5 && it.all { c -> c in '0'..'9' }) draftLimit = it },
                 singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = number == null || number !in range, supportingText = { Text("请输入 ${range.first} 至 ${range.last} 的整数") }) },
             confirmButton = { TextButton(onClick = {
-                if (kind == "rounds") rounds = requireNotNull(number) else tokens = requireNotNull(number)
+                when (kind) {
+                    "rounds" -> rounds = requireNotNull(number)
+                    "perCall" -> perCall = requireNotNull(number)
+                    else -> { tokens = requireNotNull(number); perCall = perCall.coerceAtMost(tokens) }
+                }
                 editingLimit = null
             }, enabled = number != null && number in range) { Text("确定") } },
             dismissButton = { TextButton(onClick = { editingLimit = null }) { Text("取消") } })
@@ -192,8 +203,11 @@ internal fun CompanionRecallSettingsScreen(
 }
 
 /** 回查额度说明，数字跟随当前设置。 */
-internal fun recallQuotaExplanation(rounds: Int, tokens: Int): List<String> {
-    val perCall = minOf(tokens, com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS)
+internal fun recallQuotaExplanation(
+    rounds: Int, tokens: Int,
+    perCallSetting: Int = com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS
+): List<String> {
+    val perCall = minOf(tokens, perCallSetting)
     val items = if (perCall == 1500) "七八条" else "约 ${(perCall / 200).coerceAtLeast(1)} 条"
     val essay = if (tokens in 2500..6000) "，约一篇短文" else ""
     return listOf(

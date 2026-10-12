@@ -142,8 +142,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val editable = ready && !busy && error == null && repo === ServiceContainer.localRepository
     if (recallSettingsOpen) {
         CompanionRecallSettingsScreen(sessionId, ownerName, ownerAvatar, recallSettings, busy, actionError,
-            onBack = { recallSettingsOpen = false; actionError = null; addedEmbeddingId = null }, onSave = { rounds, tokens, enabled, modelId -> action {
-                repo.saveCompanionMemorySettings(sessionId, rounds, tokens, enabled, modelId)
+            onBack = { recallSettingsOpen = false; actionError = null; addedEmbeddingId = null }, onSave = { rounds, tokens, perCall, enabled, modelId -> action {
+                repo.saveCompanionMemorySettings(sessionId, rounds, tokens, perCall, enabled, modelId)
                 recallSettings = repo.companionRecallSettings(sessionId)
                 embeddingSettings = repo.companionEmbeddingSettings(sessionId)
                 recallSettingsOpen = false

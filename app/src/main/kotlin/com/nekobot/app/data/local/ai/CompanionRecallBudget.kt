@@ -6,8 +6,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
-internal data class CompanionRecallSettings(val rounds: Int = 3, val tokens: Int = 4000) {
-    fun valid() = rounds in 1..100 && tokens in 256..64000
+internal data class CompanionRecallSettings(
+    val rounds: Int = 3, val tokens: Int = 4000,
+    /** 单次上限；0 表示旧记录未保存此项，按默认值处理。 */
+    val perCall: Int = CompanionRecallBudget.PER_CALL_TOKENS
+) {
+    fun valid() = rounds in 1..100 && tokens in 256..64000 && (perCall == 0 || perCall in MIN_PER_CALL..64000)
+
+    /** 实际生效的单次上限：始终不超过资料上限（超出部分按资料上限计）。 */
+    val effectivePerCall: Int get() = (if (perCall <= 0) CompanionRecallBudget.PER_CALL_TOKENS else perCall).coerceAtMost(tokens)
+
+    companion object { const val MIN_PER_CALL = 128 }
 }
 
 /** 只保存计数，不保存原话、可见编号或模型响应。按资料库、会话、本轮玩家消息隔离。 */
@@ -98,7 +107,7 @@ internal class CompanionRecallBudget(
         }
         if (newRound) { state.rounds++; state.requests += request.id }
         // 单次最多取一部分份额，一次大结果不会把整轮额度用光。
-        val allowance = perCallAllowance(request.limit - state.tokens, request.room)
+        val allowance = perCallAllowance(request.limit - state.tokens, request.room, state.settings.effectivePerCall)
         val previouslyUsed = state.tokens
         // 先保留额度再读取。进程被杀时不会把尚未确认完成的调用当成免费重试。
         state.tokens += allowance
@@ -257,7 +266,7 @@ internal class CompanionRecallBudget(
         const val CONTEXT_SHARE = 0.15
         const val EMPTY_NOTE = "这次没有找到相关内容；没找到不代表这件事没有发生过。"
         internal fun totalLimit(tokens: Int, maxContext: Int) = minOf(tokens, (maxContext * CONTEXT_SHARE).toInt())
-        internal fun perCallAllowance(remaining: Int, room: Int) = minOf(remaining, room, PER_CALL_TOKENS)
+        internal fun perCallAllowance(remaining: Int, room: Int, perCall: Int = PER_CALL_TOKENS) = minOf(remaining, room, perCall)
         internal fun recallStatus(result: Map<*, *>, rows: List<Map<*, *>>): String = when {
             result["success"] == false -> "error"
             result["recall_stopped"] == true -> (result["status"] as? String) ?: "quota_exhausted"

@@ -94,19 +94,21 @@ class PrefsManager(context: Context) {
         val localKey = companionRecallKey(profile, session)
         check(prefs.edit().putBoolean("$key:enabled", enabled).putString("$key:model", selected)
             .putLong("$key:revision", updated.revision).putInt("$localKey:rounds", recall.rounds)
-            .putInt("$localKey:tokens", recall.tokens).commit()) { "记忆设置保存失败，请重试" }
+            .putInt("$localKey:tokens", recall.tokens).putInt("$localKey:perCall", recall.perCall).commit()) { "记忆设置保存失败，请重试" }
         updated
     }
 
     internal fun companionRecallSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRecallSettings {
         val key = companionRecallKey(profile, session)
-        return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 4000))
+        return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 4000),
+            prefs.getInt("$key:perCall", com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS))
+            .let { it.copy(perCall = it.perCall.coerceAtMost(it.tokens)) }
     }
 
     internal fun saveCompanionRecallSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRecallSettings) {
-        require(value.valid()) { "回查轮数须为1至100，资料上限须为256至64000 Token" }
+        require(value.valid()) { "回查轮数须为1至100，资料上限须为256至64000 Token，单次上限不能超过资料上限" }
         val key = companionRecallKey(profile, session)
-        check(prefs.edit().putInt("$key:rounds", value.rounds).putInt("$key:tokens", value.tokens).commit()) { "回查设置保存失败，请重试" }
+        check(prefs.edit().putInt("$key:rounds", value.rounds).putInt("$key:tokens", value.tokens).putInt("$key:perCall", value.perCall).commit()) { "回查设置保存失败，请重试" }
     }
 
     internal fun companionRecallUsage(profile: String, session: String, turn: String): String? =

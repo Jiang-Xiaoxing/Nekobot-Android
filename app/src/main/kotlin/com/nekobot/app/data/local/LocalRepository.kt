@@ -1671,11 +1671,11 @@ class LocalRepository(
         CompanionEmbeddingSettings(shared.enabled, shared.modelId, options)
     }
 
-    internal suspend fun saveCompanionMemorySettings(sessionId: String, rounds: Int, tokens: Int,
+    internal suspend fun saveCompanionMemorySettings(sessionId: String, rounds: Int, tokens: Int, perCall: Int,
         vectorEnabled: Boolean, embeddingId: String?) = withContext(Dispatchers.IO) {
         require(sessionDao.getById(sessionId)?.companionMode == true)
-        val settings = com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens)
-        require(settings.valid()) { "回查轮数或资料上限不在有效范围内" }
+        val settings = com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens, perCall)
+        require(settings.valid()) { "回查轮数、资料上限或单次上限不在有效范围内" }
         val before = ServiceContainer.prefs.companionRetrievalSettings(db.dbName)
         if (vectorEnabled) {
             require(!embeddingId.isNullOrBlank() && aiModelDao.getById(embeddingId)?.let { it.enabled && it.purpose == "embedding" } == true) {
@@ -1698,10 +1698,11 @@ class LocalRepository(
         }
     }
 
-    internal suspend fun saveCompanionRecallSettings(sessionId: String, rounds: Int, tokens: Int) = withContext(Dispatchers.IO) {
+    internal suspend fun saveCompanionRecallSettings(sessionId: String, rounds: Int, tokens: Int,
+        perCall: Int = com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS.coerceAtMost(tokens)) = withContext(Dispatchers.IO) {
         require(sessionDao.getById(sessionId)?.companionMode == true) { "请在单会话角色中设置回查额度" }
         ServiceContainer.prefs.saveCompanionRecallSettings(db.dbName, sessionId,
-            com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens))
+            com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens, perCall))
     }
     internal fun selectCompanionConversionModel(id: String) = ServiceContainer.prefs.setCompanionConversionModel(db.dbName, id)
     internal suspend fun companionConversionErrorReports(jobId: String) = companionTransfer.errorReports(jobId)
