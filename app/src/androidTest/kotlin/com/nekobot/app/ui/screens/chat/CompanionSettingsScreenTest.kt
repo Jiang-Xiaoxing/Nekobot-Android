@@ -117,7 +117,7 @@ class CompanionSettingsScreenTest {
         try {
             compose.setContent { Theme { ContextAnalysisScreen(ids.first, {}) } }
             compose.waitUntil(10_000) { compose.onAllNodesWithText("聊天用量").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("本会话缓存命中").assertIsDisplayed()
+            compose.onNodeWithText("本会话累计缓存命中").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("服务商未上报缓存数据").assertIsDisplayed()
             capture("usage-empty")
         } finally { cleanup(ids) }

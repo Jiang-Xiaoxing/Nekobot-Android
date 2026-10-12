@@ -173,11 +173,12 @@ class CompanionSettingsLayoutTest {
         compose.setContent { Theme {
             CompanionUsageContent(1200, 64000, breakdown, SessionCacheStats(), true, 1791690420000, 1350, true, { summary++ }, Modifier.systemBarsPadding())
         } }
-        compose.onNodeWithText("服务商未上报缓存数据").assertIsDisplayed()
-        compose.onNodeWithText("—").assertIsDisplayed()
-        compose.onNodeWithText("1350 Token").assertIsDisplayed()
+        compose.onNodeWithText("服务商未上报缓存数据").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("usage-cache-rate").assertTextEquals("—")
+        compose.onNodeWithText("1,350 Token").performScrollTo().assertIsDisplayed()
         capture("usage")
-        compose.onNodeWithText("点开查看摘要原文", substring = true).performScrollTo().performClick()
+        compose.onNodeWithTag("usage-row-SUMMARY").performScrollTo().performClick()
+        compose.onNodeWithText("查看摘要原文").performScrollTo().performClick()
         assertEquals(1, summary)
     }
 

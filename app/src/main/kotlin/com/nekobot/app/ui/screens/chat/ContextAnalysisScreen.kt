@@ -154,8 +154,9 @@ fun ContextAnalysisScreen(
 
     LaunchedEffect(sessionId, refreshKey) { load() }
 
+    MaterialTheme(colorScheme = if (companionUi) companionUsageScheme(MaterialTheme.colorScheme) else MaterialTheme.colorScheme) {
     Scaffold(
-        containerColor = if (companionUi) companionSettingsBackground() else MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             if (companionUi) Column(Modifier.statusBarsPadding()) {
                 CompanionReadingHeader("聊天用量", onBack) {
@@ -289,6 +290,7 @@ fun ContextAnalysisScreen(
                 }
             }
         }
+    }
     }
 }
 
