@@ -2640,7 +2640,12 @@ private fun StreamingAssistantBubble(
     val visibleReasoning = reasoning.takeIf { !companionChat || LocalCompanionShowReasoning.current }.orEmpty()
     if (content.isBlank() && visibleReasoning.isBlank()) {
         // Companion waiting feedback lives only in the header, even when hidden reasoning is streaming.
-        if (companionChat) return
+        if (companionChat) {
+            // 实际在查找记忆时，在角色回复位置显示“回忆一下”。
+            val recalling by com.nekobot.app.data.local.ai.CompanionRecallActivity.active.collectAsStateWithLifecycle()
+            if ((recalling[sessionId] ?: 0) > 0) CompanionRecallingPill()
+            return
+        }
         if (fuseTypingIndicator) return
         ThinkingIndicator(
             portraitUrl = portraitUrl,

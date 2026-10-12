@@ -18,7 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.nekobot.app.data.local.ai.CompanionRecallSettings
 import com.nekobot.app.data.local.CompanionEmbeddingSettings
 
@@ -36,7 +39,7 @@ internal fun CompanionRecallSettingsScreen(
     var choosingModel by rememberSaveable { mutableStateOf(false) }
     var editingLimit by rememberSaveable { mutableStateOf<String?>(null) }
     var draftLimit by rememberSaveable { mutableStateOf("") }
-    var details by rememberSaveable { mutableStateOf(false) }
+    var quotaInfo by rememberSaveable { mutableStateOf(false) }
     var chooseFirst by rememberSaveable { mutableStateOf(false) }
     val chosen = embedding.options.firstOrNull { it.id == embeddingId }
     LaunchedEffect(addedModelId) { if (addedModelId != null) { embeddingId = addedModelId; chooseFirst = false } }
@@ -95,7 +98,25 @@ internal fun CompanionRecallSettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(4.dp))
-            Text("${ownerName.ifBlank { "当前角色" }}的回查额度", style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("回查额度 · ${ownerName.ifBlank { "当前角色" }}", style = MaterialTheme.typography.titleSmall)
+                Box {
+                    IconButton(onClick = { quotaInfo = true }, modifier = Modifier.size(32.dp).testTag("recall-quota-info")) {
+                        Icon(Icons.Outlined.Info, "回查额度说明", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (quotaInfo) Popup(onDismissRequest = { quotaInfo = false }, offset = IntOffset(0, 96),
+                        properties = PopupProperties(focusable = true)) {
+                        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 3.dp, shadowElevation = 6.dp,
+                            color = MaterialTheme.colorScheme.surface, modifier = Modifier.widthIn(max = 280.dp).testTag("recall-quota-popover")) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                recallQuotaExplanation(rounds, tokens).forEach {
+                                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
                 Column {
                     LimitRow("最多回查", "$rounds 轮", !busy) { draftLimit = rounds.toString(); editingLimit = "rounds" }
@@ -104,9 +125,6 @@ internal fun CompanionRecallSettingsScreen(
                 }
             }
             Text("额度仅对当前角色生效。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { details = !details }) { Text(if (details) "收起说明" else "额度怎么算？") }
-            if (details) Text("一轮指模型发起一批查询、软件返回结果，再由模型继续判断。同一条回复内共用额度，暂停后继续也不会清零。\n\n画像、经历、约定、旧记录和原话共用额度；自动提供的记忆不扣这里的额度。达到上限后根据已有资料回答。\n\n资料按 Token 估算，并受模型剩余上下文限制；它不是整次请求的费用上限。调高数值可能增加等待和模型用量。额度从下一条新消息开始使用。",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             error?.let { CompanionMemoryNotice("设置尚未保存", it) }
         }
     }
@@ -171,4 +189,17 @@ internal fun CompanionRecallSettingsScreen(
             Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** 回查额度说明，数字跟随当前设置。 */
+internal fun recallQuotaExplanation(rounds: Int, tokens: Int): List<String> {
+    val perCall = minOf(tokens, com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS)
+    val items = if (perCall == 1500) "七八条" else "约 ${(perCall / 200).coerceAtLeast(1)} 条"
+    val essay = if (tokens in 2500..6000) "，约一篇短文" else ""
+    return listOf(
+        "回查次数 $rounds：角色每句最多翻几次记忆",
+        "总份额 $tokens ≈ ${tokens * 3 / 4}～$tokens 个汉字$essay",
+        "单次 $perCall ≈ ${items}普通记忆",
+        "只算查回来的资料，不算角色回复"
+    )
 }
