@@ -457,7 +457,7 @@ private fun BuiltinBrowserScreen(
                     moreDesc = moreDesc,
                 )
 
-                BoxWithConstraints(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
