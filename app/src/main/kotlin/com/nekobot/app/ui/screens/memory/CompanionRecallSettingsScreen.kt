@@ -77,7 +77,7 @@ internal fun CompanionRecallSettingsScreen(
             }
             RetrievalCard {
                 RetrievalHeading(Icons.Outlined.Hub, "向量模型", when {
-                    chosen != null -> chosen.name + "\n" + chosen.model
+                    chosen != null -> embeddingModelSubtitle(chosen.name, chosen.model)
                     !embeddingId.isNullOrBlank() -> "原来选择的模型已不可用"
                     else -> "尚未选择"
                 }) {}
@@ -202,4 +202,14 @@ internal fun recallQuotaExplanation(rounds: Int, tokens: Int): List<String> {
         "单次 $perCall ≈ ${items}普通记忆",
         "只算查回来的资料，不算角色回复"
     )
+}
+
+/** 显示名与模型 ID 相同时只显示一行，避免重复。 */
+internal fun embeddingModelSubtitle(name: String, model: String): String {
+    val n = name.trim(); val m = model.trim()
+    return when {
+        n.isEmpty() -> m
+        m.isEmpty() || n.equals(m, ignoreCase = true) -> n
+        else -> n + "\n" + m
+    }
 }
