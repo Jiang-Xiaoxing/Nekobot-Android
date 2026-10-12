@@ -162,7 +162,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         val initial = ensureScope(session)
         var changed = 0
         try {
-            val baseBudgets = FusedCompanionPolicy.budgets(inputTokens)
+            val consolidation = consolidationSettingsFor(db.dbName, session.id)
+            val baseBudgets = FusedCompanionPolicy.budgets(inputTokens, consolidation)
             val budgets = baseBudgets.copy(recent = recentTokenBudget?.coerceIn(1, baseBudgets.recent) ?: baseBudgets.recent)
             while (true) {
                 val scope = dao.scope(initial.id) ?: return changed
@@ -192,8 +193,20 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 val old = validatedMemories(scope).filter { it.current || it.status in setOf("conflict", "locked_conflict") }
                 val questions = dao.clarifications(scope.id).associateBy { it.factKey }
                 val query = target.joinToString(" ") { it.content }
-                val relevance = old.associate { it.id to CompanionMemoryPolicy.score(query, searchItem(it).text) }
+                val items = old.associate { it.id to searchItem(it) }
+                // 开启“向量用于总结”且向量可用时，按关键词＋意思混合打分；失败则记录并回退关键词。
+                val vectorScores = if (consolidation.vectorEnabled) {
+                    semanticSearch.cachedScoresOrNull(scope, query, items.values.toList(), 10_000L) ?: run {
+                        runCatching { com.nekobot.app.data.local.LocalLogger.w("CompanionMemoryStore", "记忆整理向量打分失败，本批改用关键词") }
+                        emptyMap()
+                    }
+                } else emptyMap()
+                val relevance = old.associate { fact ->
+                    fact.id to CompanionConsolidationScoring.hybrid(CompanionMemoryPolicy.score(query, items.getValue(fact.id).text),
+                        vectorScores[items.getValue(fact.id).cacheId])
+                }
                 val existing = mutableListOf<Map<String, Any?>>()
+                var skipped = 0
                 for (fact in old.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked || it.factKey in questions }
                     .thenByDescending { CompanionCoreMemory.contains(it) }
                     .thenByDescending { relevance[it.id] ?: 0f }.thenBy { it.factKey })) {
@@ -202,8 +215,11 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                         "content" to fact.content, "status" to fact.status, "current" to fact.current, "locked" to fact.locked,
                         "kind" to fact.kind, "always_provide" to fact.alwaysProvide, "core_excluded" to fact.coreExcluded,
                         "conflict_id" to q?.memoryId, "question_id" to q?.questionMessageId, "question" to q?.question)
-                    if (estimateLocalTextTokens(gson.toJson(existing + value)) > budgets.recall) continue
+                    if (estimateLocalTextTokens(gson.toJson(existing + value)) > budgets.existing) { skipped++; continue }
                     existing += value
+                }
+                if (skipped > 0) runCatching {
+                    com.nekobot.app.data.local.LocalLogger.d("CompanionMemoryStore", "记忆整理：参考旧记忆超出上限，跳过 $skipped 条")
                 }
                 fun rows(rows: List<LocalMessageEntity>) = rows.map { mapOf("id" to it.id, "role" to it.role,
                     "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content) }

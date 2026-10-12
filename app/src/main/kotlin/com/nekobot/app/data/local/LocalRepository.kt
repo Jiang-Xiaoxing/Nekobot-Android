@@ -1663,6 +1663,7 @@ class LocalRepository(
                 model.failoverTimeout.takeIf { it > 0 } ?: com.nekobot.app.data.local.ai.defaultFailoverTimeout("companion_conversion").inWholeSeconds.toInt())
         }
     internal fun selectedCompanionConversionModel() = ServiceContainer.prefs.companionConversionModel(db.dbName)
+    internal fun companionConsolidationSettings(sessionId: String) = ServiceContainer.prefs.companionConsolidationSettings(db.dbName, sessionId)
     internal fun companionRecallSettings(sessionId: String) = ServiceContainer.prefs.companionRecallSettings(db.dbName, sessionId)
     internal suspend fun companionEmbeddingSettings(sessionId: String): CompanionEmbeddingSettings = withContext(Dispatchers.IO) {
         require(sessionDao.getById(sessionId)?.companionMode == true)
@@ -1675,8 +1676,10 @@ class LocalRepository(
     }
 
     internal suspend fun saveCompanionMemorySettings(sessionId: String, rounds: Int, tokens: Int, perCall: Int,
-        vectorEnabled: Boolean, embeddingId: String?) = withContext(Dispatchers.IO) {
+        vectorEnabled: Boolean, embeddingId: String?,
+        consolidation: com.nekobot.app.data.local.ai.CompanionConsolidationSettings? = null) = withContext(Dispatchers.IO) {
         require(sessionDao.getById(sessionId)?.companionMode == true)
+        consolidation?.let { require(it.valid()) { "记忆整理数值不在有效范围内" } }
         val settings = com.nekobot.app.data.local.ai.CompanionRecallSettings(rounds, tokens, perCall)
         require(settings.valid()) { "回查轮数、资料上限或单次上限不在有效范围内" }
         val before = ServiceContainer.prefs.companionRetrievalSettings(db.dbName)
@@ -1686,6 +1689,7 @@ class LocalRepository(
             }
         }
         val saved = ServiceContainer.prefs.saveCompanionMemorySettings(db.dbName, sessionId, settings, vectorEnabled, embeddingId)
+        consolidation?.let { ServiceContainer.prefs.saveCompanionConsolidationSettings(db.dbName, sessionId, it) }
         if (saved != before && saved.enabled) {
             // 共享服务商，正文仍按角色逐一索引；不提取旧聊天，不触发聊天模型。
             ServiceContainer.applicationScope.launch(Dispatchers.IO) {
@@ -9308,7 +9312,8 @@ class LocalRepository(
         val chat = aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
         val available = (chat?.maxContextLength ?: DEFAULT_AGENT_CONTEXT_TOKENS) - (chat?.maxTokens ?: 4000) -
             sessionSystemPromptTokens(session) - estimateToolDefinitionsTokens(sessionAgentToolDefinitions(session.id)) - 1024
-        return com.nekobot.app.data.local.ai.FusedCompanionPolicy.budgets(available).recent
+        return com.nekobot.app.data.local.ai.FusedCompanionPolicy.budgets(available,
+            ServiceContainer.prefs.companionConsolidationSettings(db.dbName, session.id)).recent
     }
 
     private suspend fun archiveCompanionContext(

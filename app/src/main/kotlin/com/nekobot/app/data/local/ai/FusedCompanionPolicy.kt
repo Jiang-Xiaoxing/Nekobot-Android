@@ -3,7 +3,24 @@ package com.nekobot.app.data.local.ai
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import java.time.ZonedDateTime
 
-internal data class CompanionBudgets(val recent: Int, val pinned: Int, val recall: Int, val trigger: Int, val batch: Int)
+internal data class CompanionBudgets(val recent: Int, val pinned: Int, val recall: Int, val trigger: Int, val batch: Int,
+    /** 整理时参考旧记忆的上限。 */
+    val existing: Int = recall)
+
+/** 记忆整理设置（按角色保存）。数值为上限，模型上下文较小时仍按比例缩小。 */
+internal data class CompanionConsolidationSettings(
+    val vectorEnabled: Boolean = true,
+    val recent: Int = 8000,
+    val trigger: Int = 2000,
+    val existing: Int = 3000
+) {
+    fun valid() = recent in 1000..64000 && trigger in 256..64000 && existing in 256..64000
+}
+
+/** 读取角色的记忆整理设置；偏好不可用（如单元测试）时用默认值。 */
+internal fun consolidationSettingsFor(profile: String, sessionId: String): CompanionConsolidationSettings =
+    runCatching { com.nekobot.app.ServiceContainer.prefs.companionConsolidationSettings(profile, sessionId) }
+        .getOrDefault(CompanionConsolidationSettings())
 
 /** Budgets count estimated tokens, never characters. Source rows are never truncated. */
 internal object FusedCompanionPolicy {
@@ -13,11 +30,13 @@ internal object FusedCompanionPolicy {
     // 日常整理和旧聊天转换共用经历范围，避免两条路径对参与者的理解不同。
     const val episodeScope = "经历档案包括独自经历和共同经历，按原话写清参与者；独自经历不得写成双方共同经历，参与者不明时不要猜。"
 
-    fun budgets(availableInput: Int): CompanionBudgets {
+    fun budgets(availableInput: Int, settings: CompanionConsolidationSettings = CompanionConsolidationSettings()): CompanionBudgets {
         require(availableInput >= 512) { "系统提示、工具和预留输出已占满模型容量，请选更大上下文模型" }
         val scale = minOf(1.0, availableInput / 14_000.0)
-        return CompanionBudgets((8000 * scale).toInt(), (1000 * scale).toInt(),
-            (2000 * scale).toInt(), (2000 * scale).toInt(), (4000 * scale).toInt())
+        // 每批 4000 上限保持不变；其余数值按用户设置为上限并随上下文等比缩小。
+        return CompanionBudgets((settings.recent * scale).toInt(), (1000 * scale).toInt(),
+            (2000 * scale).toInt(), (settings.trigger * scale).toInt(), (4000 * scale).toInt(),
+            existing = (settings.existing * scale).toInt())
     }
     fun tokens(rows: List<LocalMessageEntity>) = rows.sumOf { estimateLocalTextTokens(it.content) + 24 }
     fun turns(rows: List<LocalMessageEntity>) = CompanionMemoryPolicy.batches(rows, 1)

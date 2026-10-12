@@ -19,7 +19,8 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val retrieval = com.nekobot.app.ServiceContainer.prefs.companionRetrievalSettings(db.dbName)
         val configuration = CompanionMemoryPolicy.digest(retrieval.toString() + stateKey + FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + expired)
         val available = maxContext - outputReserve - estimateLocalTextTokens(system) - estimateLocalTextTokens(Gson().toJson(tools)) - 256
-        val budgets = FusedCompanionPolicy.budgets(available)
+        val budgets = FusedCompanionPolicy.budgets(available,
+            consolidationSettingsFor(db.dbName, session.id))
         val (recall, mode) = store.fusedRecall(session, currentMessage["content"].toString(), budgets)
         val old = dao.contextMaterials(scope.id)
         var cached = old.takeIf { rows -> rows.all { it.revision == scope.revision && it.configuration == configuration } }.orEmpty()

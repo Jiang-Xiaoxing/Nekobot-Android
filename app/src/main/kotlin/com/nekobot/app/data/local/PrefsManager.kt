@@ -105,6 +105,22 @@ class PrefsManager(context: Context) {
             .let { it.copy(perCall = it.perCall.coerceAtMost(it.tokens)) }
     }
 
+    internal fun companionConsolidationSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionConsolidationSettings {
+        val key = companionRecallKey(profile, session)
+        val d = com.nekobot.app.data.local.ai.CompanionConsolidationSettings()
+        return com.nekobot.app.data.local.ai.CompanionConsolidationSettings(
+            prefs.getBoolean("$key:consolidate_vector", d.vectorEnabled), prefs.getInt("$key:consolidate_recent", d.recent),
+            prefs.getInt("$key:consolidate_trigger", d.trigger), prefs.getInt("$key:consolidate_existing", d.existing))
+            .takeIf { it.valid() } ?: d
+    }
+
+    internal fun saveCompanionConsolidationSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionConsolidationSettings) {
+        require(value.valid()) { "记忆整理数值不在有效范围内" }
+        val key = companionRecallKey(profile, session)
+        check(prefs.edit().putBoolean("$key:consolidate_vector", value.vectorEnabled).putInt("$key:consolidate_recent", value.recent)
+            .putInt("$key:consolidate_trigger", value.trigger).putInt("$key:consolidate_existing", value.existing).commit()) { "记忆整理设置保存失败，请重试" }
+    }
+
     internal fun saveCompanionRecallSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRecallSettings) {
         require(value.valid()) { "回查轮数须为1至100，资料上限须为256至64000 Token，单次上限不能超过资料上限" }
         val key = companionRecallKey(profile, session)

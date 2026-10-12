@@ -47,7 +47,7 @@ class CompanionRetrievalSettingsUiTest {
     @Test fun choosingModelDoesNotEnableAndSaveIncludesDraftAndOnlyCurrentRoleLimit() {
         var result: List<Any?>? = null
         compose.setContent { Theme { CompanionRecallSettingsScreen("s", "林小满", null, CompanionRecallSettings(), false, null, {},
-            { a,b,_,c,d -> result = listOf(a,b,c,d) }, CompanionEmbeddingSettings(false,null,listOf(option)), {}) } }
+            { a,b,_,c,d,_ -> result = listOf(a,b,c,d) }, CompanionEmbeddingSettings(false,null,listOf(option)), {}) } }
         compose.onNodeWithTag("companion-vector-switch").assertIsOff()
         capture("memory-off")
         compose.onNodeWithText("选择已有模型").performClick()
@@ -69,7 +69,7 @@ class CompanionRetrievalSettingsUiTest {
         var modelAdded by mutableStateOf<String?>(null)
         var settings by mutableStateOf(CompanionEmbeddingSettings(false,null,emptyList()))
         compose.setContent { Theme { CompanionRecallSettingsScreen("s","林小满",null,CompanionRecallSettings(),false,null,{},
-            {_,_,_,_,_->},settings,{adds++},modelAdded) } }
+            {_,_,_,_,_,_->},settings,{adds++},modelAdded) } }
         compose.onNodeWithTag("companion-vector-switch").performClick()
         compose.onNodeWithText("还没有可用的向量模型。").assertIsDisplayed()
         compose.onAllNodesWithText("添加向量模型").onLast().performClick()
@@ -81,7 +81,7 @@ class CompanionRetrievalSettingsUiTest {
     @Test fun missingModelCanBeTurnedOffAndLargeTypeCanReachSave() {
         var enabled: Boolean? = null
         compose.setContent { Theme(dark=true,scale=1.6f) { CompanionRecallSettingsScreen("s","很长的角色名称测试",null,
-            CompanionRecallSettings(),false,null,{}, {_,_,_,v,_->enabled=v}, CompanionEmbeddingSettings(true,"gone",emptyList()),{}) } }
+            CompanionRecallSettings(),false,null,{}, {_,_,_,v,_,_->enabled=v}, CompanionEmbeddingSettings(true,"gone",emptyList()),{}) } }
         compose.onNodeWithText("保存设置").assertIsNotEnabled()
         compose.onNodeWithTag("companion-vector-switch").performScrollTo().performClick()
         compose.onNodeWithText("添加向量模型").performScrollTo().assertIsDisplayed()

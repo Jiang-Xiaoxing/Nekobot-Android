@@ -58,10 +58,17 @@ internal class CompanionHybridSearch(
     }
 
     /** No document embedding or wait on the indexing mutex on the foreground path. */
-    suspend fun cachedScores(scope: CompanionScopeEntity, query: String, items: List<CompanionSearchItem>): Map<String, Float> {
+    suspend fun cachedScores(scope: CompanionScopeEntity, query: String, items: List<CompanionSearchItem>): Map<String, Float> =
+        cachedScoresOrNull(scope, query, items, 1_500L) ?: emptyMap()
+
+    /**
+     * 只用已保存的记忆向量、只嵌入一次查询文本。未配置向量返回空表；失败或超时返回 null，由调用方记录后回退关键词。
+     */
+    suspend fun cachedScoresOrNull(scope: CompanionScopeEntity, query: String, items: List<CompanionSearchItem>,
+        timeoutMs: Long): Map<String, Float>? {
         if (query.isBlank() || items.isEmpty()) return emptyMap()
         return try {
-            withTimeoutOrNull(1_500L) {
+            withTimeoutOrNull(timeoutMs) {
                 val model = backend(scope) ?: return@withTimeoutOrNull emptyMap()
                 val cached = dao.vectors(scope.id, model.modelKey).associateBy { "${it.itemType}:${it.itemId}" }
                 if (cached.isEmpty() || !current(scope)) return@withTimeoutOrNull emptyMap()
@@ -74,9 +81,9 @@ internal class CompanionHybridSearch(
                         ?.let { decode(it.vectorJson) }?.takeIf { it.size == q.size } ?: return@mapNotNull null
                     item.cacheId to LocalKnowledgeSearch.cosine(q, vector).coerceIn(0f, 1f)
                 }.toMap()
-            } ?: emptyMap()
+            }
         } catch (cancelled: CancellationException) { throw cancelled
-        } catch (_: Exception) { emptyMap() }
+        } catch (_: Exception) { null }
     }
 
     suspend fun scores(scope: CompanionScopeEntity, query: String, items: List<CompanionSearchItem>, completeInventory: Boolean = false): Map<String, Float> {

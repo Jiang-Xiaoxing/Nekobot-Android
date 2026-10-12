@@ -23,18 +23,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.nekobot.app.data.local.ai.CompanionRecallSettings
+import com.nekobot.app.data.local.ai.CompanionConsolidationSettings
 import com.nekobot.app.data.local.CompanionEmbeddingSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CompanionRecallSettingsScreen(
     sessionId: String, ownerName: String, ownerAvatar: String?, initial: CompanionRecallSettings,
-    busy: Boolean, error: String?, onBack: () -> Unit, onSave: (Int, Int, Int, Boolean, String?) -> Unit,
-    embedding: CompanionEmbeddingSettings, onAddModel: () -> Unit, addedModelId: String? = null
+    busy: Boolean, error: String?, onBack: () -> Unit, onSave: (Int, Int, Int, Boolean, String?, CompanionConsolidationSettings) -> Unit,
+    embedding: CompanionEmbeddingSettings, onAddModel: () -> Unit, addedModelId: String? = null,
+    initialConsolidation: CompanionConsolidationSettings = CompanionConsolidationSettings()
 ) {
     var rounds by rememberSaveable(sessionId) { mutableIntStateOf(initial.rounds) }
     var tokens by rememberSaveable(sessionId) { mutableIntStateOf(initial.tokens) }
     var perCall by rememberSaveable(sessionId) { mutableIntStateOf(initial.effectivePerCall) }
+    var summaryVector by rememberSaveable(sessionId) { mutableStateOf(initialConsolidation.vectorEnabled) }
+    var recentLimit by rememberSaveable(sessionId) { mutableIntStateOf(initialConsolidation.recent) }
+    var triggerLimit by rememberSaveable(sessionId) { mutableIntStateOf(initialConsolidation.trigger) }
+    var existingLimit by rememberSaveable(sessionId) { mutableIntStateOf(initialConsolidation.existing) }
     var vectorEnabled by rememberSaveable(sessionId) { mutableStateOf(embedding.enabled) }
     var embeddingId by rememberSaveable(sessionId) { mutableStateOf(embedding.selectedId) }
     var choosingModel by rememberSaveable { mutableStateOf(false) }
@@ -49,7 +55,8 @@ internal fun CompanionRecallSettingsScreen(
         IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
     }) }, bottomBar = {
         Surface {
-            Button(onClick = { onSave(rounds, tokens, perCall.coerceAtMost(tokens), vectorEnabled, embeddingId) },
+            Button(onClick = { onSave(rounds, tokens, perCall.coerceAtMost(tokens), vectorEnabled, embeddingId,
+                CompanionConsolidationSettings(summaryVector, recentLimit, triggerLimit, existingLimit)) },
                 enabled = !busy && (!vectorEnabled || chosen != null), shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(20.dp).heightIn(min = 52.dp)) {
                 Text(if (busy) "正在保存…" else "保存设置")
@@ -128,6 +135,34 @@ internal fun CompanionRecallSettingsScreen(
                 }
             }
             Text("额度仅对当前角色生效。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            // 向量就绪（已开启向量检索且模型可用）时总结才可用向量，否则回退关键词。
+            val summaryVectorReady = vectorEnabled && chosen != null
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("记忆整理", style = MaterialTheme.typography.titleSmall)
+                InfoPopoverButton("记忆整理说明", "consolidation-info", listOf(
+                    "整理：把较早的聊天归纳成记忆", "近期原话只给模型参考，不会被整理", "整理在后台进行，不影响聊天"))
+            }
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
+                Column {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("启用向量用于总结", style = MaterialTheme.typography.bodyMedium)
+                        InfoPopoverButton("向量用于总结说明", "summary-vector-info", listOf(
+                            "默认已经用关键词找；打开后再按意思找，换种说法也能认出是同一件事。"))
+                        Spacer(Modifier.weight(1f))
+                        Switch(summaryVector && summaryVectorReady, onCheckedChange = { summaryVector = it },
+                            enabled = !busy && summaryVectorReady, modifier = Modifier.testTag("summary-vector-switch"))
+                    }
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    LimitRow("保留近期原话", "$recentLimit Token", !busy) { draftLimit = recentLimit.toString(); editingLimit = "recent" }
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    LimitRow("攒够多少开始整理", "$triggerLimit Token", !busy) { draftLimit = triggerLimit.toString(); editingLimit = "trigger" }
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    LimitRow("参考旧记忆上限", "$existingLimit Token", !busy) { draftLimit = existingLimit.toString(); editingLimit = "existing" }
+                }
+            }
+            Text("整理在后台进行，不影响聊天。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             error?.let { CompanionMemoryNotice("设置尚未保存", it) }
         }
     }
@@ -154,10 +189,12 @@ internal fun CompanionRecallSettingsScreen(
         val range = when (kind) {
             "rounds" -> 1..100
             "perCall" -> CompanionRecallSettings.MIN_PER_CALL..tokens
+            "recent" -> 1000..64000
+            "trigger", "existing" -> 256..64000
             else -> 256..64000
         }
         val number = draftLimit.toIntOrNull()
-        AlertDialog(onDismissRequest = { editingLimit = null }, title = { Text(when (kind) { "rounds" -> "最多回查"; "perCall" -> "单次上限"; else -> "资料上限" }) },
+        AlertDialog(onDismissRequest = { editingLimit = null }, title = { Text(when (kind) { "rounds" -> "最多回查"; "perCall" -> "单次上限"; "recent" -> "保留近期原话"; "trigger" -> "攒够多少开始整理"; "existing" -> "参考旧记忆上限"; else -> "资料上限" }) },
             text = { OutlinedTextField(draftLimit, { if (it.length <= 5 && it.all { c -> c in '0'..'9' }) draftLimit = it },
                 singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = number == null || number !in range, supportingText = { Text("请输入 ${range.first} 至 ${range.last} 的整数") }) },
@@ -165,6 +202,9 @@ internal fun CompanionRecallSettingsScreen(
                 when (kind) {
                     "rounds" -> rounds = requireNotNull(number)
                     "perCall" -> perCall = requireNotNull(number)
+                    "recent" -> recentLimit = requireNotNull(number)
+                    "trigger" -> triggerLimit = requireNotNull(number)
+                    "existing" -> existingLimit = requireNotNull(number)
                     else -> { tokens = requireNotNull(number); perCall = perCall.coerceAtMost(tokens) }
                 }
                 editingLimit = null
@@ -189,6 +229,25 @@ internal fun CompanionRecallSettingsScreen(
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         trailing()
+    }
+}
+
+/** 与“回查额度”说明相同样式的 i 图标气泡。 */
+@Composable private fun InfoPopoverButton(description: String, tag: String, lines: List<String>) {
+    var open by rememberSaveable(tag) { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(32.dp).testTag(tag)) {
+            Icon(Icons.Outlined.Info, description, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (open) Popup(onDismissRequest = { open = false }, offset = IntOffset(0, 96),
+            properties = PopupProperties(focusable = true)) {
+            Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 3.dp, shadowElevation = 6.dp,
+                color = MaterialTheme.colorScheme.surface, modifier = Modifier.widthIn(max = 280.dp).testTag("$tag-popover")) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface) }
+                }
+            }
+        }
     }
 }
 
