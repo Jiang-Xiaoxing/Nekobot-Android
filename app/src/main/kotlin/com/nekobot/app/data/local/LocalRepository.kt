@@ -6402,6 +6402,10 @@ class LocalRepository(
             return@flow
         }
 
+        // 重新生成是一次新的回答：这句话的回查额度回到满额。
+        if (session?.companionMode == true) lastUserBefore?.id?.let {
+            ServiceContainer.prefs.clearCompanionRecallUsage(db.dbName, sessionId, it)
+        }
         // swipes：不再删除任何消息。旧回复由 appendMessageVariant 备份为候选 0，
         // 历史只在管线内截到目标消息之前（variantTargetMessageId），落库后仍然完整。
         chatWithPipeline(

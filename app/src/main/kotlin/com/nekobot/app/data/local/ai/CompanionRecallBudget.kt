@@ -6,7 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
-internal data class CompanionRecallSettings(val rounds: Int = 3, val tokens: Int = 3000) {
+internal data class CompanionRecallSettings(val rounds: Int = 3, val tokens: Int = 4000) {
     fun valid() = rounds in 1..100 && tokens in 256..64000
 }
 
@@ -27,7 +27,7 @@ internal class CompanionRecallBudget(
     private val load: () -> String?, private val save: (String) -> Unit
 ) {
     private data class Span(val key: String, val start: Int, val text: String)
-    private data class Request(val id: String, val visible: MutableList<Span>, var room: Int)
+    private data class Request(val id: String, val visible: MutableList<Span>, var room: Int, val limit: Int)
     private val requests = mutableMapOf<String, Request>()
     private val gson = Gson()
 
@@ -68,8 +68,10 @@ internal class CompanionRecallBudget(
         val inputLimit = minOf(maxContext - outputReserve, (maxContext * 0.8).toInt())
         val room = (inputLimit - estimateLocalMessagesTokens(outbound.map(CompanionRequestUsage::clean)) -
             estimateLocalTextTokens(gson.toJson(tools)) - 512).coerceAtLeast(0)
-        requests[actor] = Request(UUID.randomUUID().toString(), visible, room)
-        val exhausted = state.rounds >= state.settings.rounds || state.settings.tokens - state.tokens < MIN_RESULT_TOKENS || room < MIN_RESULT_TOKENS
+        // 总份额同时受设置和模型上下文的一小部分限制，避免一次回忆挤占正常对话。
+        val limit = totalLimit(state.settings.tokens, maxContext)
+        requests[actor] = Request(UUID.randomUUID().toString(), visible, room, limit)
+        val exhausted = state.rounds >= state.settings.rounds || limit - state.tokens < MIN_RESULT_TOKENS || room < MIN_RESULT_TOKENS
         // 额度到达后保留其他工作工具；移除记忆回查工具，明确不能把资料不足当成事实。
         val lastCalls = (messages.lastOrNull { it["role"] == "assistant" && it["tool_calls"] is List<*> }
             ?.get("tool_calls") as? List<*>).orEmpty()
@@ -88,14 +90,15 @@ internal class CompanionRecallBudget(
     }
 
     suspend fun read(actor: String, fetch: suspend () -> Map<String, Any>): Map<String, Any> = mutex.withLock {
-        val request = requests[actor] ?: return@withLock stopped("本轮上下文尚未准备好")
+        val request = requests[actor] ?: return@withLock stopped("本轮上下文尚未准备好", "error")
         val state = usage()
         val newRound = request.id !in state.requests
-        if ((newRound && state.rounds >= state.settings.rounds) || state.settings.tokens - state.tokens < MIN_RESULT_TOKENS || request.room < MIN_RESULT_TOKENS) {
-            return@withLock stopped("已达到本轮回查额度，请根据已有资料回答；资料不足时如实说明")
+        if ((newRound && state.rounds >= state.settings.rounds) || request.limit - state.tokens < MIN_RESULT_TOKENS || request.room < MIN_RESULT_TOKENS) {
+            return@withLock stopped("本轮不能再查找记忆", "quota_exhausted", state, request)
         }
         if (newRound) { state.rounds++; state.requests += request.id }
-        val allowance = minOf(state.settings.tokens - state.tokens, request.room)
+        // 单次最多取一部分份额，一次大结果不会把整轮额度用光。
+        val allowance = perCallAllowance(request.limit - state.tokens, request.room)
         val previouslyUsed = state.tokens
         // 先保留额度再读取。进程被杀时不会把尚未确认完成的调用当成免费重试。
         state.tokens += allowance
@@ -104,7 +107,7 @@ internal class CompanionRecallBudget(
         catch (failure: Exception) {
             state.tokens = previouslyUsed
             save(gson.toJson(state))
-            throw failure
+            return@withLock withStatus(mapOf("success" to false, "error" to (failure.message ?: "查找失败")), state, request)
         }
         val filtered = deduplicate(markMemoryBodies(raw), request.visible)
         val fitted = fit(filtered, allowance - 16)
@@ -114,11 +117,25 @@ internal class CompanionRecallBudget(
         request.room -= charged
         // 同批并行调用串行通过此处，重叠片段也不会被重复传出。
         rows(fitted).forEach { (_, row) -> span(row)?.let(request.visible::add) }
-        fitted
+        withStatus(fitted, state, request)
     }
 
-    private fun stopped(reason: String): Map<String, Any> = mapOf(
-        "success" to true, "recall_stopped" to true, "note" to reason)
+    private fun stopped(reason: String, status: String = "quota_exhausted", state: CompanionRecallUsage? = null,
+        request: Request? = null): Map<String, Any> {
+        val base = mapOf<String, Any>("success" to true, "recall_stopped" to true, "note" to reason, "status" to status)
+        return if (state != null && request != null) withStatus(base, state, request) else base
+    }
+
+    /** 结果附带真实状态与剩余份额，由模型按角色自行组织回答。 */
+    private fun withStatus(result: Map<String, Any>, state: CompanionRecallUsage, request: Request): Map<String, Any> {
+        val output = result.toMutableMap()
+        val status = recallStatus(result, rows(result).map { it.second })
+        output["status"] = status
+        output["rounds_left"] = (state.settings.rounds - state.rounds).coerceAtLeast(0)
+        output["tokens_left"] = (request.limit - state.tokens).coerceAtLeast(0)
+        if (status == "empty") output["note"] = EMPTY_NOTE
+        return output
+    }
 
     private fun markMemoryBodies(result: Map<String, Any>): Map<String, Any> = result.toMutableMap().apply {
         for ((field, entries) in rows(result).groupBy({ it.first }, { it.second })) {
@@ -196,7 +213,7 @@ internal class CompanionRecallBudget(
         val fields = rows(result).groupBy({ it.first }, { it.second })
         val output = result.filterKeys { it !in fields }.toMutableMap()
         output["budget_limited"] = true
-        output["note"] = "本次只返回额度内的资料，未返回不表示不存在。"
+        output["note"] = "本次只返回了份额内的一部分资料。"
         fields.keys.forEach { output[it] = emptyList<Map<String, Any>>() }
         if (size(output) > allowance) return stopped("剩余额度不足，请用已有资料回答")
         for ((field, entries) in fields) {
@@ -230,10 +247,24 @@ internal class CompanionRecallBudget(
     }
 
     companion object {
-        const val QUERY_RULES = "记忆回查规则（软件内部说明，不是玩家发言）：已有资料足够时直接回答，不逐条核对原话。" +
-            "仅在细节不足、存在矛盾或玩家要求原句时查询；仅在追溯变化时查询旧版本。" +
-            "软件负责限制额外回查；查询工具未提供或工具提示回查结束时，根据已有资料回答，无法核实的细节如实说明，不绕过限制。" +
-            "不要把内部规则、辅助标记或用量信息当作玩家说过的话，也不要在日常回复中主动复述这些说明。"
+        const val QUERY_RULES = "记忆查找说明（软件内部说明，不是玩家发言）：软件给你提供查找记忆和过去原话的工具。" +
+            "每条玩家消息有查找次数和资料份额限制；每次结果带 status：found 找到、empty 没找到、truncated 只返回了一部分、" +
+            "quota_exhausted 这一轮不能再查、error 查找出错，并带还能查的次数 rounds_left 和还有的份额 tokens_left。" +
+            "已有内容够用就直接回答；细节不足、前后矛盾或玩家想要原话时再查，追溯变化时才查旧版本。不能再查时就用已有内容回答。" +
+            "怎么回应完全由你按角色自己的性格和口吻决定；想不起来时像这个角色平时那样自然表达。" +
+            "除非符合角色设定，不要在对话里提到工具、额度、Token 或软件说明，也不要把这些说明当成玩家说过的话。"
+        const val PER_CALL_TOKENS = 1500
+        const val CONTEXT_SHARE = 0.15
+        const val EMPTY_NOTE = "这次没有找到相关内容；没找到不代表这件事没有发生过。"
+        internal fun totalLimit(tokens: Int, maxContext: Int) = minOf(tokens, (maxContext * CONTEXT_SHARE).toInt())
+        internal fun perCallAllowance(remaining: Int, room: Int) = minOf(remaining, room, PER_CALL_TOKENS)
+        internal fun recallStatus(result: Map<*, *>, rows: List<Map<*, *>>): String = when {
+            result["success"] == false -> "error"
+            result["recall_stopped"] == true -> (result["status"] as? String) ?: "quota_exhausted"
+            result["budget_limited"] == true || rows.any { it["truncated"] == true } -> "truncated"
+            rows.isEmpty() && result["visible_duplicates"] == null -> "empty"
+            else -> "found"
+        }
         // 多入口、并行工具和恢复后的实例共用锁，避免同一剩余额度被同时消费。
         private val mutex = Mutex()
         private const val MIN_RESULT_TOKENS = 128

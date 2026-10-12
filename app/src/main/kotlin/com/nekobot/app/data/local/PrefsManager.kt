@@ -100,7 +100,7 @@ class PrefsManager(context: Context) {
 
     internal fun companionRecallSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRecallSettings {
         val key = companionRecallKey(profile, session)
-        return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 3000))
+        return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 4000))
     }
 
     internal fun saveCompanionRecallSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRecallSettings) {
@@ -115,6 +115,12 @@ class PrefsManager(context: Context) {
     internal fun saveCompanionRecallUsage(profile: String, session: String, turn: String, value: String) {
         check(prefs.edit().putString(companionRecallKey(profile, session) + ":turn:" +
             com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn), value).commit()) { "回查用量保存失败，已停止本次读取" }
+    }
+
+    /** 重新生成同一句回复时，这句话的回查额度回到满额。 */
+    internal fun clearCompanionRecallUsage(profile: String, session: String, turn: String) {
+        prefs.edit().remove(companionRecallKey(profile, session) + ":turn:" +
+            com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn)).commit()
     }
 
     internal fun clearCompanionRecallSession(profile: String, session: String) {

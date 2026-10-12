@@ -10,6 +10,11 @@ internal object FusedCompanionTools {
     )
     val readNames = setOf("agent_memory_read", "db_list_memories")
     val writeNames = setOf("agent_memory_update", "db_save_memory", "db_delete_memory")
+    const val READ_LIMIT = 10
+    const val VECTOR_MIN_SCORE = 0.5f
+    /** 只保留与问题相关的条目，不把零分记忆塞给模型。 */
+    fun <T> relevant(scored: List<Pair<T, Float>>, limit: Int = READ_LIMIT): List<T> =
+        scored.filter { it.second > 0f }.sortedByDescending { it.second }.map { it.first }.take(limit)
     fun definitions(original: List<Map<String, Any>>): List<Map<String, Any>> = original.filter {
         toolNameOf(it) in allowedNames
     }.map { definition ->

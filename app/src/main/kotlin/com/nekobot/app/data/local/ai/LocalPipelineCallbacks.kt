@@ -1140,7 +1140,7 @@ internal class LocalPipelineCallbacks(
             }
 
             // 优先走 coordinator（持久化健康状态 + token 限额 + 超时）；为空时回退到内存版
-            val result = try {
+            val rawResult = try {
                 if (coordinator != null) {
                     kotlinx.coroutines.runBlocking {
                         try {
@@ -1184,8 +1184,13 @@ internal class LocalPipelineCallbacks(
                 streamRelay?.flush()
             }
 
-            if (result.error != null) {
-                throw RuntimeException(result.error)
+            if (rawResult.error != null) {
+                throw RuntimeException(rawResult.error)
+            }
+            val result = kotlinx.coroutines.runBlocking {
+                CompanionRecallFinal.resolve(rawResult, recallRequest?.mustAnswer == true) {
+                    callWithoutTools(modelQueueFor(ctx), CompanionRecallFinal.finalMessages(requestMessages), extra) { generationController.isStopped }
+                }
             }
 
             if (session.companionMode && db.isOpen) {
@@ -1198,9 +1203,9 @@ internal class LocalPipelineCallbacks(
             triggerModelAfterCallHook(ctx, result.usedModelName ?: activeModel.name)
 
             buildMap<String, Any> {
-                val forcedFinal = recallRequest?.mustAnswer == true && result.toolCalls.isNotEmpty()
-                put("content", if (forcedFinal)
-                    "现有资料还不足以核实这些细节，本轮回查已结束。你可以把想确认的事情说得更具体一些。" else result.content)
+                // 回查结束时已由 CompanionRecallFinal 改为无工具回答，这里不再写死台词。
+                val forcedFinal = false
+                put("content", result.content)
                 put("usage", result.usage)
                 put("finish_reason", if (forcedFinal) "stop" else result.finishReason.ifBlank {
                     if (result.toolCalls.isNotEmpty()) "tool_calls" else "stop"
@@ -1324,6 +1329,25 @@ internal class LocalPipelineCallbacks(
             triggerModelAfterCallHook(ctx, usedModelName)
             chunks
         }
+    }
+
+    /** 回查结束后不带任何工具再请求一次，让角色根据已有内容自己回答。 */
+    private suspend fun callWithoutTools(
+        queue: List<LocalAiModelEntity>, messages: List<Map<String, Any>>, extra: Map<String, Any?>, stopped: () -> Boolean
+    ): LocalAiResult {
+        val plain = extra - "tools"
+        val required = estimateLocalMessagesTokens(messages)
+        return coordinator?.let { c ->
+            try {
+                val exec = c.execute(models = queue, purpose = "agent", requiredContextTokens = required) { model ->
+                    chatOnceForGeneration(model, messages, plain, null)
+                }
+                exec.value.copy(usedModelId = exec.model.id, usedModelName = exec.model.name, usedModelActualName = exec.model.model)
+            } catch (e: FailoverAllFailedException) {
+                LocalAiResult("", error = e.message ?: "所有模型均失败")
+            }
+        } ?: aiClient.chatOnceWithFailover(queue, messages, plain, requestTag = session.id, shouldStop = stopped,
+            streamCallbacks = null, requiredContextTokens = required)
     }
 
     private suspend fun chatOnceForGeneration(
@@ -1784,7 +1808,10 @@ internal class LocalPipelineCallbacks(
             if (allowed?.contains(toolName) != true || isSessionToolEnabled?.invoke(toolName) != true) {
                 return mapOf("success" to false, "error" to "当前会话未启用或未提供此工具")
             }
-            return guard.read(owner ?: "main") { executeToolWithPolicies(toolName, args, toolContext) }
+            // 主回复查找记忆时让界面显示“回忆一下”。
+            return if (owner == null) CompanionRecallActivity.track(session.id) {
+                guard.read("main") { executeToolWithPolicies(toolName, args, toolContext) }
+            } else guard.read(owner) { executeToolWithPolicies(toolName, args, toolContext) }
         }
         return executeToolWithPolicies(toolName, args, toolContext)
     }
@@ -2856,7 +2883,7 @@ internal class LocalPipelineCallbacks(
                 put("reasoning_effort", reasoningEffort.wireValue)
             }
             val startedAt = System.currentTimeMillis()
-            val result = try {
+            val rawResult = try {
                 kotlinx.coroutines.runBlocking {
                     coordinator?.let { c ->
                         try {
@@ -2886,13 +2913,20 @@ internal class LocalPipelineCallbacks(
             } finally {
                 // 子代理模型输入不流式到 UI；无需 coalescer。
             }
-            if (result.error != null) {
-                throw RuntimeException(result.error)
+            if (rawResult.error != null) {
+                throw RuntimeException(rawResult.error)
+            }
+            val result = kotlinx.coroutines.runBlocking {
+                CompanionRecallFinal.resolve(rawResult, recallRequest?.mustAnswer == true) {
+                    callWithoutTools(modelQueue, CompanionRecallFinal.finalMessages(requestMessages), extra) {
+                        generationController.isStopped || subagentShouldStop()
+                    }
+                }
             }
             recordSubagentModelUsage(requestMessages, result, (System.currentTimeMillis() - startedAt).toDouble())
             buildMap<String, Any> {
-                val forcedFinal = recallRequest?.mustAnswer == true && result.toolCalls.isNotEmpty()
-                put("content", if (forcedFinal) "本轮回查已结束，现有资料不足的部分尚未核实。" else result.content)
+                val forcedFinal = false
+                put("content", result.content)
                 put("usage", result.usage)
                 put("finish_reason", if (forcedFinal) "stop" else result.finishReason.ifBlank {
                     if (result.toolCalls.isNotEmpty()) "tool_calls" else "stop"

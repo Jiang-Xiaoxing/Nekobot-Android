@@ -6,6 +6,9 @@ import com.nekobot.app.data.local.ai.AgentRecallReader
 import com.nekobot.app.data.local.ai.MemoryTags
 import com.nekobot.app.data.local.ai.CompanionMemoryStore
 import com.nekobot.app.data.local.ai.CompanionMemoryPolicy
+import com.nekobot.app.data.local.ai.CompanionHybridSearch
+import com.nekobot.app.data.local.ai.FusedCompanionTools
+import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import com.nekobot.app.data.local.ai.usesCompanionMemory
 import com.nekobot.app.data.local.db.NekobotDatabase
 
@@ -41,22 +44,7 @@ internal class LocalAgentRecallReader(private val db: NekobotDatabase) : AgentRe
         for (query in queries) {
             if (session.usesCompanionMemory()) {
                 facts.filter { CompanionMemoryPolicy.score(query, it.content + it.factKey + it.tagsJson + it.eventDate) > 0.04f }
-                    .forEach { memory ->
-                        val sources = db.companionMemoryDao().sources(memory.id)
-                        candidates["memory:${memory.id}"] = AgentRecallCandidate(
-                            id = memory.id,
-                            sourceType = "companion_memory",
-                            title = "${memory.factKey} · v${memory.version} · ${if (memory.current) "当前" else "历史"}",
-                            content = "${memory.content} [状态:${memory.status}; ${CompanionMemoryPolicy.temporalHint(memory.eventDate, java.time.LocalDate.now())}]",
-                            tags = MemoryTags.fromJson(memory.tagsJson),
-                            sourceSessionId = sessionId,
-                            startMessageId = sources.firstOrNull()?.messageId,
-                            endMessageId = sources.lastOrNull()?.messageId,
-                            startedAt = sources.firstOrNull()?.spokenDate,
-                            endedAt = sources.lastOrNull()?.spokenDate,
-                            current = memory.current
-                        )
-                    }
+                    .forEach { memory -> candidates["memory:${memory.id}"] = memoryCandidate(memory, sessionId) }
             }
             experiences.searchReadyBySession(sessionId, query, bounded)
                 .filter { it.characterId == session.characterId && experiences.sourceMessageIds(it.id).none { id -> id in forgotten } }
@@ -76,7 +64,34 @@ internal class LocalAgentRecallReader(private val db: NekobotDatabase) : AgentRe
                     )
                 }
         }
-        return candidates.values.take(48)
+        // 单会话角色开启向量时，按意思相近补充记忆；不可用时只用上面的关键词结果。
+        if (session.companionMode && facts.isNotEmpty()) {
+            val pool = facts.filter { it.current }
+            val scores = CompanionHybridSearch(db).cachedScores(scope, terms.firstOrNull().orEmpty(), pool.map(store::searchItem))
+            for (memory in pool) {
+                val score = scores["fact:${memory.id}"]?.takeIf { it >= FusedCompanionTools.VECTOR_MIN_SCORE } ?: continue
+                val key = "memory:${memory.id}"
+                candidates[key] = (candidates[key] ?: memoryCandidate(memory, sessionId)).copy(vectorScore = score)
+            }
+        }
+        return candidates.values.take(96)
+    }
+
+    private suspend fun memoryCandidate(memory: CompanionMemoryEntity, sessionId: String): AgentRecallCandidate {
+        val sources = db.companionMemoryDao().sources(memory.id)
+        return AgentRecallCandidate(
+            id = memory.id,
+            sourceType = "companion_memory",
+            title = "${memory.factKey} · v${memory.version} · ${if (memory.current) "当前" else "历史"}",
+            content = "${memory.content} [状态:${memory.status}; ${CompanionMemoryPolicy.temporalHint(memory.eventDate, java.time.LocalDate.now())}]",
+            tags = MemoryTags.fromJson(memory.tagsJson),
+            sourceSessionId = sessionId,
+            startMessageId = sources.firstOrNull()?.messageId,
+            endMessageId = sources.lastOrNull()?.messageId,
+            startedAt = sources.firstOrNull()?.spokenDate,
+            endedAt = sources.lastOrNull()?.spokenDate,
+            current = memory.current
+        )
     }
 
     override suspend fun searchHistory(

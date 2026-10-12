@@ -43,7 +43,9 @@ internal data class AgentRecallCandidate(
     val startedAt: String? = null,
     val endedAt: String? = null,
     val importance: Int = 0,
-    val current: Boolean = true
+    val current: Boolean = true,
+    /** 向量相似度（0～1），未开启向量或未命中时为 0。 */
+    val vectorScore: Float = 0f
 )
 
 internal data class AgentHistoryMessage(
@@ -173,8 +175,7 @@ internal class AgentRecallToolHandler(
         return success(
             "query" to query,
             "results" to matches,
-            "more_candidates" to (candidates.size > matches.size),
-            "note" to "历史资料仅供回忆；不确定的具体细节请查原话，查不到不表示从未发生。"
+            "more_candidates" to (candidates.size > matches.size)
         )
     }
 
@@ -309,7 +310,7 @@ private fun recallScore(candidate: AgentRecallCandidate, terms: List<String>): I
             (if (term in title) 5 else 0) +
             (if (term in content) 2 else 0) +
             (if (term in date) 3 else 0)
-    } + candidate.importance.coerceIn(0, 10)
+    } + candidate.importance.coerceIn(0, 10) + (candidate.vectorScore * 20).toInt()
 }
 
 private fun textScore(content: String, terms: List<String>): Int {

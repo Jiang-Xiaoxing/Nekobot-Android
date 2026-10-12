@@ -345,8 +345,13 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         fun arg(key: String) = args[key]?.toString().orEmpty()
         if (name in FusedCompanionTools.readNames) {
             val query = arg("query")
-            val facts = validatedMemories(scope).filter { it.current || it.status == "conflict" }
-                .sortedByDescending { CompanionMemoryPolicy.score(query, searchItem(it).text) }.take(24)
+            val pool = validatedMemories(scope).filter { it.current || it.status == "conflict" }
+            // 关键词＋向量（向量未开启或不可用时只用关键词）。
+            val vectors = if (query.isBlank()) emptyMap() else CompanionHybridSearch(db).cachedScores(scope, query, pool.map(::searchItem))
+            val facts = if (query.isBlank()) pool.take(FusedCompanionTools.READ_LIMIT) else FusedCompanionTools.relevant(pool.map {
+                it to CompanionMemoryPolicy.score(query, searchItem(it).text) +
+                    (vectors["fact:${it.id}"]?.takeIf { s -> s >= FusedCompanionTools.VECTOR_MIN_SCORE } ?: 0f)
+            })
             return mapOf("success" to true, "scope" to "当前长久陪伴窗口", "memories" to facts.map {
                 mapOf("key" to it.factKey, "id" to it.id, "category" to it.category, "content" to it.content,
                     "status" to it.status, "only_user_can_edit" to it.locked,
@@ -476,7 +481,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         }
     }
 
-    private fun searchItem(fact: CompanionMemoryEntity) = CompanionSearchItem("fact", fact.id,
+    internal fun searchItem(fact: CompanionMemoryEntity) = CompanionSearchItem("fact", fact.id,
         "${fact.subject} ${fact.kind} ${FusedCompanionPolicy.categories[fact.category].orEmpty()} ${fact.content} ${fact.tagsJson} ${fact.eventDate.orEmpty()}")
 
     private suspend fun clearClarification(scope: CompanionScopeEntity, key: String) {
