@@ -267,6 +267,14 @@ object ServiceContainer {
         }
     }
 
+    private val _sessionChanged = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /** 会话资料（名称等）保存后广播会话 ID，会话列表与聊天页据此立即刷新。 */
+    val sessionChanged: SharedFlow<String> = _sessionChanged
+
+    fun notifySessionChanged(sessionId: String) {
+        _sessionChanged.tryEmit(sessionId)
+    }
+
     /** 广播角色卡数据变化（id 为变化的角色卡 ID，null/blank 时广播通配符 ""）。 */
     fun notifyCharacterChanged(characterId: String?) {
         _characterChanged.tryEmit(characterId?.takeIf { it.isNotBlank() } ?: "")

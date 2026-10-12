@@ -99,7 +99,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             records = loadedRecords
             overview = loadedOverview
             embeddingSettings = loadedEmbedding
-            ownerName = session.characterName?.takeIf { it.isNotBlank() } ?: session.name.orEmpty()
+            ownerName = com.nekobot.app.data.model.sessionTitle(session.listTitleOverride, session.characterName?.takeIf { it.isNotBlank() } ?: session.name.orEmpty())
             ownerAvatar = session.portrait?.takeIf(String::isNotBlank) ?: session.characterAvatar
             error = null
             ready = true

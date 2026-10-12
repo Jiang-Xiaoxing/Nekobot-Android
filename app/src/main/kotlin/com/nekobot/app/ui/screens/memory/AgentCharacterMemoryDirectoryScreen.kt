@@ -66,8 +66,9 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { owners = emptyList(); error = failure.message ?: "暂时无法读取角色，请重试" }
     }
-    fun ownerName(session: LocalSessionEntity) = names[session.characterId]?.takeIf(String::isNotBlank)
-        ?: session.characterName?.takeIf(String::isNotBlank) ?: session.name.ifBlank { "未命名角色" }
+    fun ownerName(session: LocalSessionEntity) = com.nekobot.app.data.model.sessionTitle(session.listTitleOverride,
+        names[session.characterId]?.takeIf(String::isNotBlank)
+            ?: session.characterName?.takeIf(String::isNotBlank) ?: session.name.ifBlank { "未命名角色" })
     val filtered = owners.orEmpty().filter { query.isBlank() ||
         "${ownerName(it)} ${it.name}".contains(query.trim(), ignoreCase = true) }
     Scaffold(topBar = { TopAppBar(title = {

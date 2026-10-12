@@ -462,6 +462,13 @@ fun SessionsScreen(
         }
     }
 
+    // 会话改名等资料保存后立即刷新列表，避免列表显示旧名称
+    LaunchedEffect(Unit) {
+        ServiceContainer.sessionChanged.collect {
+            viewModel.loadSessions()
+        }
+    }
+
     // 弹窗状态
     var showCreateModeMenu by remember { mutableStateOf(false) }
     var createConfigMode by rememberSaveable { mutableStateOf<String?>(null) }

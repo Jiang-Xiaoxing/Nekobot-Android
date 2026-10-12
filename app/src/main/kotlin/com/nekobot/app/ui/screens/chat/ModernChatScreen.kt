@@ -1781,7 +1781,7 @@ private fun ModernChatComposer(
 
     if (showSearch) {
         if (companionChat) CompanionMessageSearch(
-            messages, searchQuery, { searchQuery = it }, session?.characterName,
+            messages, searchQuery, { searchQuery = it }, companionChatTitle(session),
             onDismiss = { showSearch = false }, onResultClick = { message ->
                 onDismissCompanionSettings()
                 onJumpToMessage(message)
@@ -1799,7 +1799,7 @@ private fun ModernChatComposer(
     if (showFavorites) {
         ModernFavoritesDialog(
             companion = companionChat,
-            characterName = session?.characterName,
+            characterName = if (companionChat) companionChatTitle(session) else session?.characterName,
             favorites = favorites,
             loading = favoritesLoading,
             sessionId = sessionId,

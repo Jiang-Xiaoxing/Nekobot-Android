@@ -45,10 +45,10 @@ data class SessionListRow(
     val listTitleOverride: String? = null
 ) {
     /** Tool chats are tasks; companion and character chats are people. */
-    val listTitle: String get() = listTitleOverride?.takeIf(String::isNotBlank) ?: when (modeLabel) {
+    val listTitle: String get() = com.nekobot.app.data.model.sessionTitle(listTitleOverride, when (modeLabel) {
         SessionModeLabel.CHARACTER, SessionModeLabel.COMPANION -> characterLabel?.takeIf(String::isNotBlank) ?: displayName
         SessionModeLabel.AGENT, SessionModeLabel.GROUP -> displayName
-    }
+    })
     val listDate: String? get() = updatedAt?.let {
         if (it.length == 10 && it[4] == '-' && it[7] == '-') it.substring(5) else it
     }

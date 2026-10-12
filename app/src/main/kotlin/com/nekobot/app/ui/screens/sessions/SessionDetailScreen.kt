@@ -320,7 +320,7 @@ class SessionDetailViewModel : BaseViewModel() {
             },
             onSuccess = { s ->
                 _session.value = s
-                name.value = s.listTitleOverride ?: s.name.orEmpty()
+                name.value = com.nekobot.app.data.model.sessionTitle(s.listTitleOverride, s.name.orEmpty())
                 tagsText.value = s.tags?.joinToString(", ").orEmpty()
                 pinned.value = s.pinned == true
                 favorite.value = s.favorite == true
@@ -1147,7 +1147,7 @@ fun SessionDetailScreen(
                                                 modifier = Modifier.fillMaxSize()
                                             )
                                         } else if (singleSessionRole) {
-                                            Text(s.characterName?.trim()?.takeIf { it.isNotEmpty() }?.take(1) ?: s.displayName.take(1),
+                                            Text(com.nekobot.app.data.model.sessionTitle(s.listTitleOverride, s.characterName?.trim()?.takeIf { it.isNotEmpty() } ?: s.displayName).take(1),
                                                 style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
                                         } else {
                                             Icon(Icons.Filled.SmartToy, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))

@@ -710,6 +710,12 @@ fun ChatScreen(
             viewModel.refreshSession()
         }
     }
+    // 当前会话改名等资料保存后立即刷新顶栏标题
+    LaunchedEffect(sessionId) {
+        ServiceContainer.sessionChanged.collect { changedId ->
+            if (changedId == sessionId) viewModel.refreshSession()
+        }
+    }
     // 生命周期绑定：聊天界面可见性追踪（用于通知提醒判断）
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -1248,9 +1254,8 @@ fun ChatScreen(
                         stringResource(
                             R.string.chat_send_prompt,
                             // 优先显示角色名：characterName（本地模式）→ senderName（远程模式后端字段）→ displayName（会话名）→ AI
-                            session?.characterName?.takeIf { it.isNotBlank() }
-                                ?: session?.senderName?.takeIf { it.isNotBlank() }
-                                ?: session?.displayName?.takeIf { it.isNotBlank() }
+                            // 自定义标题优先，与顶栏、列表一致
+                            companionChatTitle(session).takeIf { it.isNotBlank() }
                                 ?: stringResource(R.string.chat_ai_label)
                         ),
                         style = MaterialTheme.typography.bodySmall,

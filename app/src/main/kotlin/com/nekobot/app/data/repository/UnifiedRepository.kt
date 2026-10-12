@@ -180,6 +180,9 @@ class UnifiedRepository(
         } else remote.getSession(id)
 
     suspend fun updateSession(id: String, req: UpdateSessionRequest): Resource<Session> =
+        updateSessionInternal(id, req).also { if (it is Resource.Success) ServiceContainer.notifySessionChanged(id) }
+
+    private suspend fun updateSessionInternal(id: String, req: UpdateSessionRequest): Resource<Session> =
         if (isLocal) {
             // 本地模式：proactive_chat / tts_config 以 JSON 字符串形式存入 Room
             local.updateSession(

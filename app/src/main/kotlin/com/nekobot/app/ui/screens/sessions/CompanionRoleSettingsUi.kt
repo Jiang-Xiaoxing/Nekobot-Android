@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
+import com.nekobot.app.data.model.userFacingTitle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,7 +39,7 @@ internal fun CompanionRoleSettingsContent(
 ) {
     CompanionPreferenceGroup {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            val character = session.characterName?.takeIf(String::isNotBlank) ?: session.displayName
+            val character = session.userFacingTitle()
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)) {
                 Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                     val portrait = resolveAvatarUrl(session.portraitUrl)
