@@ -320,7 +320,7 @@ class SessionDetailViewModel : BaseViewModel() {
             },
             onSuccess = { s ->
                 _session.value = s
-                name.value = s.name.orEmpty()
+                name.value = s.listTitleOverride ?: s.name.orEmpty()
                 tagsText.value = s.tags?.joinToString(", ").orEmpty()
                 pinned.value = s.pinned == true
                 favorite.value = s.favorite == true
@@ -518,6 +518,7 @@ class SessionDetailViewModel : BaseViewModel() {
                     s.id.orEmpty(),
                     UpdateSessionRequest(
                         name = nameVal,
+                        updateListTitle = nameVal != s.displayName,
                         tags = tagsList,
                         pinned = pinned.value,
                         favorite = favorite.value,

@@ -127,9 +127,12 @@ data class Session(
     val delayReplyEnabled: Boolean? = null,
     /** 本地会话延迟回复等待秒数。 */
     @SerializedName(value = "delay_reply_delay_seconds", alternate = ["delayReplyDelaySeconds"])
-    val delayReplyDelaySeconds: Int? = null
+    val delayReplyDelaySeconds: Int? = null,
+    /** 仅本地使用的明确重命名标题，与角色名及自动生成的会话名分开。 */
+    @SerializedName("list_title_override") val listTitleOverride: String? = null
 ) {
-    val displayName: String get() = name?.takeIf { it.isNotBlank() } ?: "未命名会话"
+    val displayName: String get() = listTitleOverride?.takeIf { it.isNotBlank() }
+        ?: name?.takeIf { it.isNotBlank() } ?: "未命名会话"
     /** 角色立绘 URL：优先 portrait，回退 characterAvatar */
     val portraitUrl: String? get() = portrait ?: characterAvatar
 }
@@ -187,7 +190,9 @@ data class UpdateSessionRequest(
     /** 仅本地普通角色和继承角色能力的 Agent 会话使用。 */
     @SerializedName("delay_reply_enabled") val delayReplyEnabled: Boolean? = null,
     /** 仅本地会话使用，单位为秒。 */
-    @SerializedName("delay_reply_delay_seconds") val delayReplyDelaySeconds: Int? = null
+    @SerializedName("delay_reply_delay_seconds") val delayReplyDelaySeconds: Int? = null,
+    /** 只有用户明确改名时设置；其他设置保存不覆盖默认角色标题。 */
+    @Transient val updateListTitle: Boolean = false
 )
 
 /** 创建或更新公开分享时提交给独立 public API 的配置。 */

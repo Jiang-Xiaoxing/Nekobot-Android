@@ -150,6 +150,24 @@ class SessionListPresentationTest {
     }
 
     @Test
+    fun explicitRenameWinsWithoutPromotingOldAutomaticTitlesOrChangingOtherRows() {
+        val character = CharacterPreset(id = "lin", name = "林小满")
+        val rows = buildSessionListRows(listOf(
+            Session(id = "renamed", name = "新的自动标题", characterId = "lin", listTitleOverride = "午后读书会"),
+            Session(id = "other", name = "旧的自动标题", characterId = "lin"),
+            Session(id = "companion", name = "唯一会话", characterId = "lin", sessionMode = "agent", companionMode = true,
+                listTitleOverride = "小满的聊天"),
+            Session(id = "agent", name = "整理报告", sessionMode = "agent")
+        ), listOf(character))
+        assertEquals("午后读书会", rows[0].listTitle)
+        assertEquals("新的自动标题", rows[0].name)
+        assertEquals("林小满", rows[1].listTitle)
+        assertEquals("小满的聊天", rows[2].listTitle)
+        assertEquals("整理报告", rows[3].listTitle)
+        assertEquals("林小满", rows[0].characterLabel)
+    }
+
+    @Test
     fun buildSessionListRows_mapsTagsTrimDeduplicatesAndIgnoresBlank() {
         val sessions = listOf(
             Session(id = "tagged", tags = listOf("  省钱  ", "喵", "  ", "喵")),

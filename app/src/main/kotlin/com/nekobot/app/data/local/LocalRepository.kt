@@ -2161,15 +2161,20 @@ class LocalRepository(
         inheritCharacterGreeting: Boolean? = null,
         longConversationEnabled: Boolean? = null,
         delayReplyEnabled: Boolean? = null,
-        delayReplyDelaySeconds: Int? = null
+        delayReplyDelaySeconds: Int? = null,
+        updateListTitle: Boolean = false
     ) = withContext(Dispatchers.IO) {
         val entity = sessionDao.getById(id) ?: run {
             LocalLogger.d(TAG, "updateSession: entity not found for id=$id")
             return@withContext
         }
         LocalLogger.d(TAG, "updateSession: isPublic=$isPublic, entity.isPublic=${entity.isPublic}, ttsConfig=$ttsConfig, shareConfig=$shareConfig")
+        val explicitTitle = if (updateListTitle) {
+            requireNotNull(name?.trim()?.takeIf(String::isNotEmpty)) { "会话名称不能为空" }
+        } else null
         val updated = entity.copy(
-            name = name ?: entity.name,
+            name = explicitTitle ?: name ?: entity.name,
+            listTitleOverride = explicitTitle ?: entity.listTitleOverride,
             systemPrompt = systemPrompt ?: entity.systemPrompt,
             favorite = favorite ?: entity.favorite,
             pinned = pinned ?: entity.pinned,
@@ -11301,6 +11306,7 @@ ${AiOutputLanguage.directive()}
     private fun LocalSessionEntity.toSession(): Session = Session(
         id = id,
         name = name,
+        listTitleOverride = listTitleOverride,
         type = "local",
         systemPrompt = systemPrompt,
         characterId = characterId,

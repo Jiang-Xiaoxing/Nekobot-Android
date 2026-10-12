@@ -207,7 +207,8 @@ class UnifiedRepository(
                 inheritCharacterGreeting = req.inheritCharacterGreeting,
                 longConversationEnabled = req.longConversationEnabled,
                 delayReplyEnabled = req.delayReplyEnabled,
-                delayReplyDelaySeconds = req.delayReplyDelaySeconds
+                delayReplyDelaySeconds = req.delayReplyDelaySeconds,
+                updateListTitle = req.updateListTitle
             )
             local.getSession(id)?.let { Resource.Success(it) } ?: Resource.Error("会话不存在")
         } else remote.updateSession(id, req)

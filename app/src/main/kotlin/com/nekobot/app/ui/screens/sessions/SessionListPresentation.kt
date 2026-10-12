@@ -41,10 +41,11 @@ data class SessionListRow(
     val inheritCharacter: Boolean = false,
     /** 群聊会话：列表项无立绘时回退到群聊图标而非默认聊天图标。 */
     val isGroupSession: Boolean = false,
-    val modeLabel: SessionModeLabel = SessionModeLabel.CHARACTER
+    val modeLabel: SessionModeLabel = SessionModeLabel.CHARACTER,
+    val listTitleOverride: String? = null
 ) {
     /** Tool chats are tasks; companion and character chats are people. */
-    val listTitle: String get() = when (modeLabel) {
+    val listTitle: String get() = listTitleOverride?.takeIf(String::isNotBlank) ?: when (modeLabel) {
         SessionModeLabel.CHARACTER, SessionModeLabel.COMPANION -> characterLabel?.takeIf(String::isNotBlank) ?: displayName
         SessionModeLabel.AGENT, SessionModeLabel.GROUP -> displayName
     }
@@ -178,6 +179,7 @@ fun buildSessionListRows(
             id = sessionId,
             name = session.name.orEmpty(),
             displayName = session.displayName,
+            listTitleOverride = session.listTitleOverride,
             portraitUrl = rawPortraitUrl?.let(portraitUrlResolver),
             characterLabel = characterLabel,
             updatedAt = formatSessionListDate(session.updatedAt),

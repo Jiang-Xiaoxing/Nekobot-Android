@@ -869,7 +869,7 @@ fun SessionsScreen(
 
     // 重命名弹窗
     renaming?.let { row ->
-        var name by rememberSaveable(row.key) { mutableStateOf(row.name) }
+        var name by rememberSaveable(row.key) { mutableStateOf(row.listTitle) }
         NekoDialog(
             onDismiss = { renaming = null },
             title = renameTitle,
@@ -2370,7 +2370,7 @@ class SessionsViewModel : BaseViewModel() {
             return
         }
         launchResult(
-            block = { unified.updateSession(id, UpdateSessionRequest(name = name)) },
+            block = { unified.updateSession(id, UpdateSessionRequest(name = name.trim(), updateListTitle = true)) },
             onSuccess = {
                 showToast(string(R.string.sessions_renamed_toast))
                 loadSessions()
