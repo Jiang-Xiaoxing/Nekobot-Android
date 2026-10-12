@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.StartOffset
@@ -2643,14 +2644,40 @@ private fun StreamingAssistantBubble(
     val reasoning by reasoningFlow.collectAsStateWithLifecycle()
     val companionChat = LocalCompanionChatName.current != null
     val visibleReasoning = reasoning.takeIf { !companionChat || LocalCompanionShowReasoning.current }.orEmpty()
-    // 实际在查找记忆时显示“回忆一下”，与思考内容无关，并至少显示一小段时间。
-    val showRecallPill = companionChat && rememberCompanionRecallPillVisible(sessionId)
-    if (content.isBlank() && visibleReasoning.isBlank()) {
-        // Companion waiting feedback lives only in the header, even when hidden reasoning is streaming.
-        if (companionChat) {
-            if (showRecallPill) CompanionRecallingPill()
-            return
+    if (companionChat) {
+        // 本轮一旦开始回忆，“回忆一下”持续显示，直到第一段正文出现时淡出。
+        val recalling by com.nekobot.app.data.local.ai.CompanionRecallActivity.active.collectAsStateWithLifecycle()
+        val recallActive = (recalling[sessionId] ?: 0) > 0
+        var recallLatched by remember(sessionId, motionKey) { mutableStateOf(false) }
+        if (recallActive && !recallLatched) recallLatched = true
+        val showRecallPill = com.nekobot.app.data.local.ai.CompanionRecallActivity
+            .pillVisible(recallLatched, recallActive, content.isBlank())
+        val liveMessage = remember(placeholder, content, reasoning) {
+            placeholder.copy(content = content, reasoningContent = reasoning.takeIf(String::isNotBlank))
         }
+        Column {
+            AnimatedVisibility(
+                visible = showRecallPill,
+                enter = EnterTransition.None,
+                exit = fadeOut(tween(300))
+            ) { CompanionRecallingPill() }
+            // Companion waiting feedback lives only in the header, even when hidden reasoning is streaming.
+            if (content.isNotBlank() || visibleReasoning.isNotBlank()) {
+                MessageBubble(
+                    message = liveMessage,
+                    motionRegistry = motionRegistry,
+                    motionKey = motionKey,
+                    portraitUrl = portraitUrl,
+                    showAiAvatar = showAiAvatar,
+                    fillAiWidth = fillAiWidth,
+                    onLongClick = {},
+                    sessionId = sessionId
+                )
+            }
+        }
+        return
+    }
+    if (content.isBlank() && visibleReasoning.isBlank()) {
         if (fuseTypingIndicator) return
         ThinkingIndicator(
             portraitUrl = portraitUrl,
@@ -2666,39 +2693,16 @@ private fun StreamingAssistantBubble(
             reasoningContent = reasoning.takeIf(String::isNotBlank)
         )
     }
-    Column {
-        if (showRecallPill) CompanionRecallingPill()
-        MessageBubble(
-            message = liveMessage,
-            motionRegistry = motionRegistry,
-            motionKey = motionKey,
-            portraitUrl = portraitUrl,
-            showAiAvatar = showAiAvatar,
-            fillAiWidth = fillAiWidth,
-            onLongClick = {},
-            sessionId = sessionId
-        )
-    }
-}
-
-@Composable
-private fun rememberCompanionRecallPillVisible(sessionId: String): Boolean {
-    val recalling by com.nekobot.app.data.local.ai.CompanionRecallActivity.active.collectAsStateWithLifecycle()
-    val active = (recalling[sessionId] ?: 0) > 0
-    var visible by remember(sessionId) { mutableStateOf(active) }
-    var startedAt by remember(sessionId) { mutableStateOf(0L) }
-    LaunchedEffect(active) {
-        if (active) {
-            if (!visible) startedAt = System.currentTimeMillis()
-            if (startedAt == 0L) startedAt = System.currentTimeMillis()
-            visible = true
-        } else if (visible) {
-            delay(com.nekobot.app.data.local.ai.CompanionRecallActivity.remainingHoldMs(startedAt, System.currentTimeMillis()))
-            visible = false
-            startedAt = 0L
-        }
-    }
-    return visible
+    MessageBubble(
+        message = liveMessage,
+        motionRegistry = motionRegistry,
+        motionKey = motionKey,
+        portraitUrl = portraitUrl,
+        showAiAvatar = showAiAvatar,
+        fillAiWidth = fillAiWidth,
+        onLongClick = {},
+        sessionId = sessionId
+    )
 }
 
 @Composable

@@ -1,4 +1,4 @@
-﻿package com.nekobot.app.data.local.ai
+package com.nekobot.app.data.local.ai
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,10 +29,14 @@ class CompanionStreamTurnGateTest {
     }
 
     @Test
-    fun recallPillHoldsForMinimumDuration() {
-        assertEquals(1200L, CompanionRecallActivity.remainingHoldMs(1000L, 1000L))
-        assertEquals(900L, CompanionRecallActivity.remainingHoldMs(1000L, 1300L))
-        assertEquals(0L, CompanionRecallActivity.remainingHoldMs(1000L, 5000L))
-        assertEquals(1200L, CompanionRecallActivity.remainingHoldMs(5000L, 1000L))
+    fun recallPillStaysUntilFirstBodyText() {
+        // 回忆开始：显示
+        assertTrue(CompanionRecallActivity.pillVisible(latched = false, active = true, contentBlank = true))
+        // 回忆结束但正文未到：继续显示，不留空档
+        assertTrue(CompanionRecallActivity.pillVisible(latched = true, active = false, contentBlank = true))
+        // 正文出现：隐藏（界面淡出）
+        assertFalse(CompanionRecallActivity.pillVisible(latched = true, active = false, contentBlank = false))
+        // 本轮未回忆：不显示
+        assertFalse(CompanionRecallActivity.pillVisible(latched = false, active = false, contentBlank = true))
     }
 }
