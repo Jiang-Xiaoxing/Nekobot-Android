@@ -2644,7 +2644,6 @@ private fun SafePlainMessageText(
         SelectionContainer {
             Text(
                 text = visibleText,
-                modifier = Modifier.fillMaxWidth(),
                 color = color,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -3142,12 +3141,12 @@ private fun MessageBubble(
                             }
                         } else {
                             // 文本内容：用 Markdown 渲染
-                            // 用户气泡：宽度跟随实际内容（短消息不撑满）；AI 气泡：填满最大宽度
+                            // 角色和用户文字都按内容定宽；无角色 Agent 的整宽模式由外层保留。
                             if (useSafePlainText) {
                                 SafePlainMessageText(
                                     text = segment,
                                     color = textColor,
-                                    modifier = if (isUser) Modifier.widthIn(max = maxBubbleWidth) else Modifier.fillMaxWidth()
+                                    modifier = Modifier.widthIn(max = maxBubbleWidth)
                                 )
                             } else {
                                 MarkdownText(
@@ -3156,7 +3155,7 @@ private fun MessageBubble(
                                     style = MaterialTheme.typography.bodyMedium,
                                     chatMode = true,
                                     processParens = !isUser,
-                                    modifier = if (isUser) Modifier.widthIn(max = maxBubbleWidth) else Modifier.fillMaxWidth()
+                                    modifier = Modifier.widthIn(max = maxBubbleWidth)
                                 )
                             }
                         }

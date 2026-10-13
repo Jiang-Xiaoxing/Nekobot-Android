@@ -94,7 +94,11 @@ fun MarkdownText(
         visibleMarkdownBlocks(preprocessed, chatMode, showInner)
     }
 
-    Column(modifier = modifier) {
+    // 先按最长可见文本/折叠标题定宽，再让独白条、引用等填满这一宽度。
+    // 图片、代码和表格保留原来的专用测量，避免对含子组合的内容请求固有尺寸。
+    Column(modifier = modifier.then(
+        if (chatMode && chatMarkdownWrapsWidth(blocks)) Modifier.width(IntrinsicSize.Max) else Modifier
+    )) {
         blocks.forEachIndexed { index, block ->
             RenderBlock(
                 block = block,
@@ -105,6 +109,10 @@ fun MarkdownText(
             )
         }
     }
+}
+
+internal fun chatMarkdownWrapsWidth(blocks: List<MdBlock>): Boolean = blocks.none {
+    it is MdBlock.CodeBlock || it is MdBlock.Table || it is MdBlock.Image
 }
 
 /**
