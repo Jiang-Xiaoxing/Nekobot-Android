@@ -327,6 +327,12 @@ class UnifiedRepository(
     suspend fun listMessages(id: String): Resource<List<Message>> =
         if (isLocal) Resource.Success(local.listMessages(id)) else remote.listMessages(id)
 
+    suspend fun searchMessages(query: String, limit: Int = 60): Resource<List<Message>> =
+        if (isLocal) Resource.Success(local.searchMessages(query, limit)) else Resource.Success(emptyList())
+
+    suspend fun listWorkspaceSearchEntries(sessionIds: List<String>) =
+        if (isLocal) local.listWorkspaceSearchEntries(sessionIds) else emptyList()
+
     /**
      * 聊天界面分页：取最近的一页消息（升序）。
      *

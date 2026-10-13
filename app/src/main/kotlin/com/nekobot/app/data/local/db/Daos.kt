@@ -206,10 +206,13 @@ interface MessageDao {
 
     @Query(
         "SELECT * FROM local_messages " +
-            "WHERE deleted = 0 AND (content LIKE '%' || :query || '%' OR reasoning_content LIKE '%' || :query || '%') " +
+            "WHERE deleted = 0 AND (instr(lower(content), lower(:query)) > 0 OR instr(lower(reasoning_content), lower(:query)) > 0) " +
             "ORDER BY created_at DESC LIMIT :limit"
     )
     suspend fun searchContent(query: String, limit: Int): List<LocalMessageEntity>
+
+    @Query("SELECT * FROM local_messages WHERE id IN (:ids) AND deleted = 0 ORDER BY created_at DESC, rowid DESC")
+    suspend fun searchRowsByIds(ids: List<String>): List<LocalMessageEntity>
 
     @Query("SELECT * FROM local_messages WHERE session_id = :sessionId AND deleted = 0 ORDER BY created_at ASC")
     fun observeBySession(sessionId: String): Flow<List<LocalMessageEntity>>

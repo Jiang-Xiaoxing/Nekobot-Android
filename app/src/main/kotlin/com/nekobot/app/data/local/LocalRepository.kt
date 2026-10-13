@@ -503,6 +503,7 @@ class LocalRepository(
         LocalAutomationScheduler(it, db.dbName.removeSuffix(".db"))
     }
     private val knowledgeManager by lazy { LocalKnowledgeManager(db, aiClient) }
+    private val messageSearchIndex by lazy { LocalMessageSearchIndex(db) }
     /** 路由决策日志记录器 */
     val routingDecisionLogger by lazy { RoutingDecisionLogger(db) }
     /** A/B 测试分流器 */
@@ -2716,7 +2717,13 @@ class LocalRepository(
     suspend fun searchMessages(query: String, limit: Int = 60): List<Message> = withContext(Dispatchers.IO) {
         val normalized = query.trim()
         if (normalized.isBlank()) emptyList()
-        else messageDao.searchContent(normalized, limit.coerceIn(1, 200)).map { it.toMessage() }
+        else {
+            val ids = try { messageSearchIndex.searchIds(normalized, limit.coerceIn(1, 200)) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+            (if (ids == null) messageDao.searchContent(normalized, limit.coerceIn(1, 200))
+            else if (ids.isEmpty()) emptyList() else messageDao.searchRowsByIds(ids)).map { it.toMessage() }
+        }
     }
 
     /** 仅供 AI 调用链读取；命令输入和命令结果继续保留在聊天记录中。 */
@@ -13414,6 +13421,8 @@ ${AiOutputLanguage.directive()}
 
     suspend fun listWorkspaceFiles(sessionId: String, path: String?): JsonElement =
         workspaceRepository.listSessionFiles(sessionId, path)
+
+    suspend fun listWorkspaceSearchEntries(sessionIds: List<String>) = workspaceRepository.searchEntries(sessionIds)
 
     suspend fun uploadWorkspaceFile(sessionId: String, bytes: ByteArray, fileName: String): JsonElement =
         workspaceRepository.uploadSessionFile(sessionId, bytes, fileName)

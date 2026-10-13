@@ -1,34 +1,20 @@
 package com.nekobot.app.ui.screens.search
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -36,11 +22,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,15 +31,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.gson.JsonArray
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.model.LegacyMemory
 import com.nekobot.app.data.model.MemoryFile
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.navigation.Routes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -96,17 +78,47 @@ class GlobalSearchViewModel : BaseViewModel() {
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
     private var searchJob: Job? = null
+    private var searchRequest = 0
+    private data class Cached(val revision: Long, val expiresAt: Long, val value: Any)
+    private val catalogCache = mutableMapOf<String, Cached>()
+    private val _selectedKind = MutableStateFlow<GlobalSearchKind?>(null)
+    val selectedKind = _selectedKind.asStateFlow()
+    fun selectKind(kind: GlobalSearchKind?) { _selectedKind.value = kind }
+    fun refresh() { catalogCache.clear(); updateQuery(_query.value) }
 
-    fun updateQuery(value: String) {
-        _query.value = value
-        searchJob?.cancel()
-        searchJob = viewModelScope.launch {
-            delay(180)
-            search(value)
+    init {
+        viewModelScope.launch {
+            ServiceContainer.dataSourceRevision.collect {
+                catalogCache.clear()
+                _results.value = defaultCommands()
+                updateQuery(_query.value)
+            }
         }
     }
 
-    private suspend fun search(rawQuery: String) {
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun <T : Any> cached(key: String, load: suspend () -> T): T {
+        val revision = ServiceContainer.dataSourceRevision.value
+        catalogCache[key]?.takeIf { it.revision == revision && it.expiresAt > System.currentTimeMillis() }
+            ?.let { return it.value as T }
+        return load().also { value ->
+            if (revision == ServiceContainer.dataSourceRevision.value)
+                catalogCache[key] = Cached(revision, System.currentTimeMillis() + 30_000, value)
+        }
+    }
+
+    fun updateQuery(value: String) {
+        _query.value = value
+        val request = ++searchRequest
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(180)
+            search(value, request)
+        }
+    }
+
+    private suspend fun search(rawQuery: String, request: Int) {
+        val revision = ServiceContainer.dataSourceRevision.value
         val query = rawQuery.trim()
         if (query.isBlank()) {
             _results.value = defaultCommands()
@@ -116,13 +128,13 @@ class GlobalSearchViewModel : BaseViewModel() {
         _searching.value = true
         try {
             val result = coroutineScope {
-                val sessionsCall = async { unified.listSessions().successData().orEmpty() }
-                val charactersCall = async { unified.listCharacters().successData().orEmpty() }
-                val booksCall = async { unified.listWorldBooks().successData().orEmpty() }
+                val sessionsCall = async { cached("sessions") { unified.listSessions().successData().orEmpty() } }
+                val charactersCall = async { cached("characters") { unified.listCharacters().successData().orEmpty() } }
+                val booksCall = async { cached("books") { unified.listWorldBooks().successData().orEmpty() } }
                 val messagesCall = async {
-                    if (isLocalMode) ServiceContainer.localRepository.searchMessages(query, 60) else emptyList()
+                    unified.searchMessages(query, 120).successData().orEmpty()
                 }
-                val memoriesCall = async { loadMemories() }
+                val memoriesCall = async { cached("memories") { loadMemories() } }
 
                 val sessions = sessionsCall.await()
                 val commands = defaultCommands().mapNotNull { it.matching(query) }
@@ -151,9 +163,10 @@ class GlobalSearchViewModel : BaseViewModel() {
                     GlobalSearchResult(
                         key = "message:${message.id ?: "$sessionId:${message.timestamp}:${content.hashCode()}"}",
                         kind = GlobalSearchKind.MESSAGE,
-                        title = content.oneLine().take(90).ifBlank { string(R.string.global_search_message_fallback) },
+                        title = searchSnippet(if (content.contains(query, ignoreCase = true)) content else message.reasoningContent.orEmpty(), query)
+                            .ifBlank { string(R.string.global_search_message_fallback) },
                         subtitle = "${message.sender ?: message.role.orEmpty()} · ${message.timestamp.orEmpty()}",
-                        route = Routes.chat(sessionId),
+                        route = message.id?.let { Routes.chatLocation(sessionId, it) } ?: Routes.chat(sessionId),
                         score = score
                     )
                 }
@@ -196,13 +209,16 @@ class GlobalSearchViewModel : BaseViewModel() {
                 (commands + sessionResults + messageResults + characterResults + bookResults + memoryResults + workspaceResults)
                     .distinctBy(GlobalSearchResult::key)
                     .sortedWith(compareBy<GlobalSearchResult> { it.score }.thenBy { it.kind.ordinal }.thenBy { it.title })
-                    .take(MAX_RESULTS)
+                    .groupBy(GlobalSearchResult::kind).values.flatMap { it.take(MAX_RESULTS) }
             }
-            _results.value = result
+            if (request == searchRequest && revision == ServiceContainer.dataSourceRevision.value && rawQuery == _query.value) _results.value = result
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
-            showError(error.message ?: string(R.string.global_search_failed))
+            if (request == searchRequest && revision == ServiceContainer.dataSourceRevision.value)
+                showError(error.message ?: string(R.string.global_search_failed))
         } finally {
-            _searching.value = false
+            if (request == searchRequest) _searching.value = false
         }
     }
 
@@ -219,13 +235,10 @@ class GlobalSearchViewModel : BaseViewModel() {
     }
 
     private suspend fun searchWorkspaces(query: String, sessionIds: List<String>): List<GlobalSearchResult> {
-        return sessionIds.take(MAX_WORKSPACES).flatMap { sessionId ->
-            val entries = ServiceContainer.localRepository.listWorkspaceFiles(sessionId, null)
-            if (!entries.isJsonArray) return@flatMap emptyList()
-            entries.asJsonArray.mapNotNull { element ->
-                val item = element.asJsonObject
-                val name = item.get("name")?.asString.orEmpty()
-                val path = item.get("path")?.asString.orEmpty()
+        return cached("workspaces") { unified.listWorkspaceSearchEntries(sessionIds) }.mapNotNull { item ->
+                val sessionId = item.sessionId
+                val name = item.name
+                val path = item.path
                 val score = matchScore(query, name, path) ?: return@mapNotNull null
                 GlobalSearchResult(
                     key = "workspace:$sessionId:$path",
@@ -235,7 +248,6 @@ class GlobalSearchViewModel : BaseViewModel() {
                     route = Routes.workspace(sessionId),
                     score = score
                 )
-            }
         }
     }
 
@@ -324,7 +336,6 @@ class GlobalSearchViewModel : BaseViewModel() {
 
     private companion object {
         const val MAX_RESULTS = 120
-        const val MAX_WORKSPACES = 80
     }
 }
 
@@ -337,125 +348,54 @@ fun GlobalSearchScreen(
 ) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
+    val selectedKind by viewModel.selectedKind.collectAsStateWithLifecycle()
     val searching by viewModel.searching.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val focusRequester = androidx.compose.runtime.remember { FocusRequester() }
+    val filtered = results.filter { selectedKind == null || it.kind == selectedKind }
+    val grouped = filtered.groupBy(GlobalSearchResult::kind)
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.global_search_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                title = { Text(stringResource(R.string.global_search_title),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = { IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                } },
+                actions = { IconButton(onClick = viewModel::refresh) {
+                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.search_refresh), modifier = Modifier.size(22.dp))
+                } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
-        ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = viewModel::updateQuery,
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searching) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                },
-                placeholder = { Text(stringResource(R.string.global_search_placeholder)) },
-                shape = RoundedCornerShape(16.dp)
-            )
-            Spacer(Modifier.height(12.dp))
-            if (!error.isNullOrBlank()) {
-                Text(error.orEmpty(), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
-            }
-            if (!searching && results.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 64.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(10.dp))
-                    Text(stringResource(R.string.global_search_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            GlobalSearchInput(query, viewModel::updateQuery, searching, focusRequester,
+                onSearch = viewModel::refresh, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+            GlobalSearchCategories(selectedKind, viewModel::selectKind)
+            if (!error.isNullOrBlank()) Text(error.orEmpty(),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            if (!searching && filtered.isEmpty()) {
+                GlobalSearchEmpty(Modifier.weight(1f))
             } else {
-                val grouped = results.groupBy(GlobalSearchResult::kind)
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                LazyColumn(modifier = Modifier.weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
                     GlobalSearchKind.entries.forEach { kind ->
                         val items = grouped[kind].orEmpty()
                         if (items.isNotEmpty()) {
-                            item(key = "header:${kind.name}") {
-                                Text(
-                                    stringResource(kind.labelRes),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
-                                )
-                            }
-                            itemsIndexed(items, key = { index, item -> "${item.key}:$index" }) { _, item ->
-                                GlobalSearchRow(item) { onNavigate(item.route) }
+                            item(key = "header:${kind.name}") { GlobalSearchSectionHeader(kind, items.size) }
+                            itemsIndexed(items, key = { index, item -> "${item.key}:$index" }, contentType = { _, _ -> "search-result" }) { index, item ->
+                                GlobalSearchRow(item, query, first = index == 0, last = index == items.lastIndex) { onNavigate(item.route) }
                             }
                         }
                     }
-                    item { Spacer(Modifier.height(96.dp)) }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun GlobalSearchRow(result: GlobalSearchResult, onClick: () -> Unit) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = result.kind.icon(),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.size(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    result.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (result.subtitle.isNotBlank()) {
-                    Text(
-                        result.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun GlobalSearchKind.icon(): ImageVector = when (this) {
-    GlobalSearchKind.COMMAND -> Icons.Filled.Bolt
-    GlobalSearchKind.SESSION, GlobalSearchKind.MESSAGE -> Icons.Filled.Chat
-    GlobalSearchKind.CHARACTER -> Icons.Filled.Person
-    GlobalSearchKind.WORLD_BOOK -> Icons.Filled.MenuBook
-    GlobalSearchKind.MEMORY -> Icons.Filled.Memory
-    GlobalSearchKind.WORKSPACE -> Icons.Filled.Folder
 }
