@@ -49,4 +49,50 @@ class MessageMenuPositionTest {
         val pos = messageMenuPosition(IntRect(100, 800, 200, 900), IntSize(400, 2000), popup, 16, 24, 100)
         assertEquals(24, pos.x)
     }
+
+    @Test
+    fun rightEdgeStaysInsideMarginWhenPopupFits() {
+        val pos = messageMenuPosition(IntRect(900, 800, 1080, 900), window, popup, 16, 24, 100)
+        assertTrue(pos.x >= 24)
+        assertEquals(window.width - popup.width - 24, pos.x)
+        assertTrue(pos.x + popup.width <= window.width - 24)
+    }
+
+    @Test
+    fun menuDoesNotEnterTopInset() {
+        val topInset = 140
+        val pos = messageMenuPosition(IntRect(100, 90, 500, 180), window, popup, gap = 8, margin = 12, topInset = topInset)
+        assertTrue(pos.y >= topInset)
+        assertTrue(pos.y + popup.height <= window.height - 12)
+    }
+
+    @Test
+    fun nestedCorrectionIsZeroWhenAlreadyInHostWindow() {
+        val host = IntOffset(0, 60)
+        val windowPos = IntOffset(120, 400)
+        val screen = IntOffset(windowPos.x + host.x, windowPos.y + host.y)
+        assertEquals(IntOffset.Zero, nestedPopupPositionCorrection(windowPos, screen, host))
+    }
+
+    @Test
+    fun nestedCorrectionShiftsPopupLocalPointIntoHostWindow() {
+        val local = IntOffset(30, 8)
+        val screen = IntOffset(530, 908)
+        assertEquals(IntOffset(500, 900), nestedPopupPositionCorrection(local, screen, IntOffset.Zero))
+    }
+
+    @Test
+    fun nestedCorrectionSubtractsHostWindowOrigin() {
+        val local = IntOffset(30, 8)
+        val screen = IntOffset(580, 1008)
+        val host = IntOffset(50, 100)
+        assertEquals(IntOffset(500, 900), nestedPopupPositionCorrection(local, screen, host))
+    }
+
+    @Test
+    fun anchorKeyPrefersMessageId() {
+        assertEquals("m1#2", messageMenuAnchorKey("m1", "fallback", 2))
+        assertEquals("fallback#0", messageMenuAnchorKey(null, "fallback", 0))
+        assertEquals("fallback#1", messageMenuAnchorKey("  ", "fallback", 1))
+    }
 }

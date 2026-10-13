@@ -434,6 +434,7 @@ fun ChatScreen(
     var editingMessage by remember(sessionId) { mutableStateOf<Message?>(null) }
     var messageActionTarget by remember(sessionId) { mutableStateOf<Message?>(null) }
     var messageActionAnchor by remember(sessionId) { mutableStateOf<androidx.compose.ui.unit.IntRect?>(null) }
+    var messageActionSegmentKey by remember(sessionId) { mutableStateOf<String?>(null) }
     var messageDetailsText by remember(sessionId) { mutableStateOf<String?>(null) }
     var previewGeneratedImage by remember(sessionId) {
         mutableStateOf<LocalMessageImageEntity?>(null)
@@ -1412,7 +1413,16 @@ fun ChatScreen(
                                                 messageActionTarget = target
                                             }
                                         },
-                                        onLongPressBounds = { if (!selectionMode) messageActionAnchor = it },
+                                        menuAnchorKey = messageActionSegmentKey,
+                                        onLongPressAnchor = { key, bounds ->
+                                            if (!selectionMode) {
+                                                messageActionSegmentKey = key
+                                                messageActionAnchor = bounds
+                                            }
+                                        },
+                                        onAnchorMoved = { key, bounds ->
+                                            if (messageActionSegmentKey == key) messageActionAnchor = bounds
+                                        },
                                         onRegenerate = {
                                             // 首条 AI 消息（开场白）使用专用开场白重新生成
                                             if (index == 0 && !target.isUser) {
@@ -1625,7 +1635,11 @@ fun ChatScreen(
         val targetId = target.id?.takeIf {
             it.isNotBlank() && it != ChatViewModel.STREAMING_ID
         }
-        val dismissMenu = { messageActionTarget = null; messageActionAnchor = null }
+        val dismissMenu = {
+            messageActionTarget = null
+            messageActionAnchor = null
+            messageActionSegmentKey = null
+        }
         val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
             formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
         val actions = buildList {
@@ -2710,8 +2724,12 @@ private fun MessageBubble(
     showAiAvatar: Boolean = true,
     fillAiWidth: Boolean = false,
     onLongClick: () -> Unit,
-    /** 长按时回传被按气泡段在窗口中的位置，用于定位悬浮菜单。 */
-    onLongPressBounds: (androidx.compose.ui.unit.IntRect?) -> Unit = {},
+    /** 当前打开菜单的气泡段；只有这一段在移动时回写坐标。 */
+    menuAnchorKey: String? = null,
+    /** 长按选中这一段，并记下当时的窗口坐标。 */
+    onLongPressAnchor: (String, androidx.compose.ui.unit.IntRect?) -> Unit = { _, _ -> },
+    /** 菜单打开期间，气泡在窗口中的位置变化（例如键盘收起后布局下移）。 */
+    onAnchorMoved: (String, androidx.compose.ui.unit.IntRect) -> Unit = { _, _ -> },
     onRegenerate: () -> Unit = {},
     onRegenerateTts: () -> Unit = {},
     onFork: () -> Unit = {},
@@ -3020,6 +3038,11 @@ private fun MessageBubble(
                     val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
                     val segShape = chatBubbleShape(isUser, isLast)
+                    val segmentKey = messageMenuAnchorKey(
+                        message.id,
+                        "${message.timestamp}:${message.isUser}:${message.content.hashCode()}",
+                        idx
+                    )
                     val segBounds = remember { arrayOfNulls<androidx.compose.ui.unit.IntRect>(1) }
                     Box(
                         modifier = Modifier
@@ -3049,11 +3072,18 @@ private fun MessageBubble(
                             )
                             .onGloballyPositioned { coords ->
                                 val r = coords.boundsInWindow()
-                                segBounds[0] = androidx.compose.ui.unit.IntRect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+                                val rect = androidx.compose.ui.unit.IntRect(
+                                    r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt()
+                                )
+                                segBounds[0] = rect
+                                if (menuAnchorKey == segmentKey) onAnchorMoved(segmentKey, rect)
                             }
                             .combinedClickable(
                                 onClick = { if (selectionMode) onToggleSelection() },
-                                onLongClick = { onLongPressBounds(segBounds[0]); onLongClick() }
+                                onLongClick = {
+                                    onLongPressAnchor(segmentKey, segBounds[0])
+                                    onLongClick()
+                                }
                             )
                             .then(
                                 if (segHasUserImage) Modifier
