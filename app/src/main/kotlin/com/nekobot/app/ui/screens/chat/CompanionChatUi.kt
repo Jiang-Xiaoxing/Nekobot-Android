@@ -46,11 +46,11 @@ internal data class CompanionChatPalette(
 @Composable
 internal fun companionChatPalette(): CompanionChatPalette =
     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        CompanionChatPalette(Color(0xFF191A1C), Color(0xFF282A2E), Color(0xFF70B958),
-            Color(0xFFF3EFF1), Color(0xFFB8B2B6), Color(0xFF85CC75))
+        CompanionChatPalette(Color(0xFF191D1E), Color(0xFF2A3031), Color(0xFF355B45),
+            Color(0xFFF0F4F2), Color(0xFFB4BEBA), Color(0xFF92C5A9), Color(0xFFF0F6F2))
     } else {
-        CompanionChatPalette(Color(0xFFF2F3F4), Color.White, Color(0xFF95EC69),
-            Color(0xFF27282D), Color(0xFF73767E), Color(0xFF168144))
+        CompanionChatPalette(Color(0xFFF0F4F3), Color(0xFFFEFEFE), Color(0xFFD5EBD2),
+            Color(0xFF202927), Color(0xFF75807C), Color(0xFF547E68), Color(0xFF172A20))
     }
 
 /** A display preference only; NONE applies to new requests, never to saved messages. */

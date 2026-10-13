@@ -272,6 +272,7 @@ fun ModernChatScreen(
         LocalCompanionChatName provides companionName,
         LocalCompanionShowReasoning provides companionShowReasoning,
         com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue,
+        com.nekobot.app.ui.components.LocalCompactInnerMonologue provides (companionName != null),
         LocalOpenCompanionMemory provides if (companionName != null) ({ onOpenCompanionMemory(sessionId) }) else null
     ) {
     Box(Modifier.fillMaxSize()) {

@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -120,6 +121,8 @@ internal fun chatMarkdownWrapsWidth(blocks: List<MdBlock>): Boolean = blocks.non
  * 仅影响渲染；消息原文、复制与搜索不变。默认 true 保持原行为。
  */
 val LocalShowInnerMonologue = staticCompositionLocalOf { true }
+/** 单会话气泡采用紧凑淡灰独白条；正文和复制仍使用原文。 */
+val LocalCompactInnerMonologue = staticCompositionLocalOf { false }
 
 /** 按显示开关得到最终渲染区块；隐藏时去掉已闭合独白，以及流式输出中尚未闭合的尾巴。 */
 internal fun visibleMarkdownBlocks(text: String, chatMode: Boolean, showInnerMonologue: Boolean): List<MdBlock> {
@@ -1049,19 +1052,23 @@ private fun InnerMonologueRenderer(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val compact = LocalCompactInnerMonologue.current
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val stripColor = if (compact && !dark) androidx.compose.ui.graphics.Color(0xFFEDF0EF)
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (compact) 0.65f else 0.35f)
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .background(stripColor)
             .clickable { expanded = !expanded }
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = if (compact) 10.dp else 8.dp, vertical = if (compact) 8.dp else 4.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.markdown_inner_monologue),
-                style = MaterialTheme.typography.labelSmall,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )

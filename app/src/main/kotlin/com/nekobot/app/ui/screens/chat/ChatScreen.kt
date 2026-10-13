@@ -176,6 +176,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
@@ -324,6 +325,7 @@ fun ChatScreen(
     val inheritsCharacter = session?.sessionMode == "agent" && session?.inheritCharacter == true
     val companionChat = session?.companionMode == true
     val companionName = companionChatTitle(session)
+    val companionPortrait = companionPhotoPath(session?.portrait, session?.characterAvatar)
     val showAiAvatar = companionChat || session?.sessionMode != "agent" || inheritsCharacter
     val fillAiWidth = !companionChat && session?.sessionMode == "agent" && !inheritsCharacter
     val groupCharacters by viewModel.groupCharacters.collectAsStateWithLifecycle()
@@ -944,11 +946,10 @@ fun ChatScreen(
                     TopAppBar(
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (!companionChat) {
                                 ChatAvatar(
-                                    portraitUrl = session?.portraitUrl,
-                                    size = 34.dp,
-                                    ring = true,
+                                    portraitUrl = if (companionChat) companionPortrait else session?.portraitUrl,
+                                    size = if (companionChat) 42.dp else 34.dp,
+                                    ring = !companionChat,
                                     fallbackIcon = if (session?.sessionMode == "group") Icons.Outlined.Group else Icons.Outlined.SmartToy,
                                     fallbackPainter = if (session?.sessionMode.equals("agent", ignoreCase = true)) {
                                         painterResource(R.drawable.ic_agent_neko)
@@ -957,7 +958,6 @@ fun ChatScreen(
                                     }
                                 )
                                 Spacer(Modifier.width(10.dp))
-                                }
                                 Column {
                                     Text(
                                         text = if (companionChat) companionName else session?.displayName ?: conversationLabel,
@@ -968,8 +968,9 @@ fun ChatScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     // 陪伴聊天只在实际回复中显示输入状态，不展示消息统计。
-                                    if (!companionChat || sending) Text(
+                                    Text(
                                         text = if (sending) typingLabel
+                                        else if (companionChat) stringResource(R.string.sessions_filter_agent_characters)
                                         else stringResource(R.string.chat_message_count, totalMessageCount),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (companionChat) companionChatPalette().secondary
@@ -1341,17 +1342,17 @@ fun ChatScreen(
                             // 跨天消息之间插入日期分隔条
                             val day = dayKey(msg.timestamp)
                             val prevDay = renderMessages.getOrNull(index - 1)?.let { dayKey(it.timestamp) }
+                            val previousMessage = urgentBubblesAfter[index - 1]?.lastOrNull()
+                                ?: renderMessages.getOrNull(index - 1)
+                            val time = compactTime(msg.timestamp)
+                            val startsTimeSection = companionStartsTimeSection(
+                                first = index == 0,
+                                streaming = msg.id == ChatViewModel.STREAMING_ID,
+                                day = day, previousDay = prevDay, time = time,
+                                previousTime = renderMessages.getOrNull(index - 1)?.let { compactTime(it.timestamp) }
+                            )
                             if (companionChat) {
-                                val time = compactTime(msg.timestamp)
-                                val previousTime = renderMessages.getOrNull(index - 1)?.let { compactTime(it.timestamp) }
-                                fun minutes(value: String?): Int? = value?.split(":")?.let { parts ->
-                                    if (parts.size == 2) parts[0].toIntOrNull()?.let { h ->
-                                        parts[1].toIntOrNull()?.let { m -> h * 60 + m }
-                                    } else null
-                                }
-                                val gap = minutes(time)?.let { current -> minutes(previousTime)?.let { current - it } }
-                                if (msg.id != ChatViewModel.STREAMING_ID &&
-                                    (index == 0 || day != prevDay || gap == null || gap >= 5 || gap < 0)) {
+                                if (startsTimeSection) {
                                     val label = listOfNotNull(day?.takeIf { index == 0 || day != prevDay }?.let(::dayLabel), time).joinToString("  ")
                                     if (label.isNotBlank()) CompanionTimeLabel(label)
                                 }
@@ -1366,8 +1367,8 @@ fun ChatScreen(
                                     motionKey = motionKeys[index],
                                     contentFlow = viewModel.streamingContentPreview,
                                     reasoningFlow = viewModel.streamingReasoningPreview,
-                                    portraitUrl = session?.portraitUrl,
-                                    showAiAvatar = showAiAvatar,
+                                    portraitUrl = if (companionChat) companionPortrait else session?.portraitUrl,
+                                    showAiAvatar = if (companionChat) companionShowsAvatar(msg, previousMessage, startsTimeSection) else showAiAvatar,
                                     fillAiWidth = fillAiWidth,
                                     fallbackIcon = if (session?.sessionMode == "group") Icons.Outlined.Group else Icons.Outlined.SmartToy,
                                     sessionId = sessionId,
@@ -1400,9 +1401,9 @@ fun ChatScreen(
                                         onGeneratedImageClick = { previewGeneratedImage = it },
                                         onFailedGeneratedImageLongClick = { viewModel.deleteMessageImage(it.id) },
                                         ttsState = target.id?.let { ttsStates[it] },
-                                        portraitUrl = groupIdentity.portraitUrl ?: session?.portraitUrl,
+                                        portraitUrl = if (companionChat) companionPortrait else groupIdentity.portraitUrl ?: session?.portraitUrl,
                                         senderName = groupIdentity.name,
-                                        showAiAvatar = showAiAvatar,
+                                        showAiAvatar = if (companionChat) companionShowsAvatar(target, previousMessage, startsTimeSection) else showAiAvatar,
                                         fillAiWidth = fillAiWidth,
                                         onLongClick = {
                                             if (selectionMode) {
@@ -2719,9 +2720,13 @@ private fun MessageBubble(
     val userBubble = bubbleAppearance.userColor
     val userBrush = bubbleAppearance.userBrush
     val aiBorder = Color.Transparent
-    val textColor = bubbleAppearance.textColor(isUser)
+    val textColor = if (companionChat) {
+        if (isUser) companionPalette.outgoingInk else companionPalette.ink
+    } else bubbleAppearance.textColor(isUser)
     // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
-    val linkColor = linkColorOnBubble(userBubble)
+    val linkColor = linkColorOnBubble(if (companionChat) {
+        if (isUser) companionPalette.outgoing else companionPalette.surface
+    } else userBubble)
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
     val clipboard = LocalClipboardManager.current
 
@@ -2757,7 +2762,7 @@ private fun MessageBubble(
     val hasMultimedia = parsedSegments.any { segs -> segs.any { it.type != SegmentType.TEXT } }
     val hasAudioUrl = !message.audioUrl.isNullOrBlank()
     val maxBubbleWidth = if (companionChat) {
-        (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp - 104.dp).coerceIn(120.dp, 360.dp)
+        companionBubbleMaxWidthDp(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp, isUser).dp
     } else if (hasMultimedia || hasAudioUrl || ttsState != null) 360.dp else 280.dp
 
     // swipes：有多份候选时，左右滑动气泡即可快速切换（左滑下一版、右滑上一版）。
@@ -2860,6 +2865,8 @@ private fun MessageBubble(
         if (!isUser && showAiAvatar) {
             ChatAvatar(portraitUrl = portraitUrl, size = if (companionChat) 36.dp else 34.dp, ring = !companionChat)
             Spacer(Modifier.width(8.dp))
+        } else if (!isUser && companionChat) {
+            Spacer(Modifier.width(44.dp))
         }
 
         Column(
@@ -2997,7 +3004,7 @@ private fun MessageBubble(
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
                     val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
-                    val segShape = chatBubbleShape(isUser, isLast)
+                    val segShape = if (companionChat) RoundedCornerShape(16.dp) else chatBubbleShape(isUser, isLast)
                     val segmentKey = messageMenuAnchorKey(
                         message.id,
                         "${message.timestamp}:${message.isUser}:${message.content.hashCode()}",
@@ -3010,10 +3017,14 @@ private fun MessageBubble(
                                 ServiceContainer.prefs.dynamicMessages, isUser))
                             .then(if (!isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
                             // 用户气泡带轻微投影，浮于背景之上
-                            .then(if (isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
+                            .then(if (!companionChat && isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
                             .then(variantSwipeModifier)
                             .then(
                                 when {
+                                    companionChat && !segHasUserImage -> Modifier.background(
+                                        color = if (isUser) companionPalette.outgoing else companionPalette.surface,
+                                        shape = segShape
+                                    )
                                     !companionChat && isUser && commandStyle != null && !segHasUserImage ->
                                         Modifier.background(brush = commandCapsuleBrush!!, shape = segShape)
                                     isUser && !segHasUserImage ->
@@ -3080,8 +3091,8 @@ private fun MessageBubble(
                                         Box(
                                             modifier = Modifier
                                                 .widthIn(max = maxBubbleWidth)
-                                                .shadow(2.dp, segShape, clip = false)
-                                                .background(brush = userBrush, shape = segShape)
+                                                .then(if (companionChat) Modifier.background(companionPalette.outgoing, segShape)
+                                                    else Modifier.shadow(2.dp, segShape, clip = false).background(brush = userBrush, shape = segShape))
                                                 .padding(horizontal = 14.dp, vertical = 9.dp)
                                         ) {
                                             RenderContentSegments(
@@ -3364,10 +3375,6 @@ private fun MessageBubble(
             }
             }
 
-        }
-        if (companionChat && isUser) {
-            Spacer(Modifier.width(8.dp))
-            ChatAvatar(portraitUrl = null, size = 36.dp, fallbackName = stringResource(R.string.chat_me))
         }
         // 多选模式：用户气泡右侧显示勾选框
         if (selectionMode && isUser) {
@@ -5690,16 +5697,17 @@ private fun ChatInlineNoticeDivider(notice: ChatInlineNotice, onDismissMemoryFai
     }
 }
 
-/** 记忆整理失败：居中淡琥珀色胶囊，警告图标 + 文案 + 「查看」链接 + 关闭。 */
+/** 记忆整理失败：与角色正文对齐，窄屏允许换行，保留查看和关闭。 */
 @Composable
 private fun CompanionMemoryFailurePill(onOpen: (() -> Unit)?, onDismiss: () -> Unit) {
-    val amberBg = androidx.compose.ui.graphics.Color(0xFFFFF4DC)
-    val amberFg = androidx.compose.ui.graphics.Color(0xFF8A5A00)
-    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+    val dark = companionChatPalette().background.luminance() < 0.5f
+    val amberBg = Color(if (dark) 0xFF3D3423 else 0xFFFFF5DE)
+    val amberFg = Color(if (dark) 0xFFEBCB8D else 0xFF9E6517)
+    Box(Modifier.fillMaxWidth().padding(start = 44.dp, top = 4.dp, bottom = 4.dp)) {
         androidx.compose.material3.Surface(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+            shape = RoundedCornerShape(12.dp),
             color = amberBg,
-            modifier = Modifier.testTag("companion-memory-failure-notice")
+            modifier = Modifier.fillMaxWidth().testTag("companion-memory-failure-notice")
         ) {
             Row(
                 Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
@@ -5709,6 +5717,7 @@ private fun CompanionMemoryFailurePill(onOpen: (() -> Unit)?, onDismiss: () -> U
                     tint = amberFg, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.chat_companion_memory_failed),
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium, color = amberFg)
                 if (onOpen != null) {
                     Spacer(Modifier.width(8.dp))
@@ -5716,9 +5725,9 @@ private fun CompanionMemoryFailurePill(onOpen: (() -> Unit)?, onDismiss: () -> U
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
-                            .clickable(onClick = onOpen).padding(horizontal = 2.dp, vertical = 4.dp))
+                            .clickable(onClick = onOpen).padding(horizontal = 4.dp, vertical = 12.dp))
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
                     Icon(androidx.compose.material.icons.Icons.Filled.Close,
                         stringResource(R.string.chat_companion_memory_failed_dismiss),
                         tint = amberFg.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
