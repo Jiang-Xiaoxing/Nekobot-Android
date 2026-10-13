@@ -434,7 +434,7 @@ fun ChatScreen(
     var messageActionTarget by remember(sessionId) { mutableStateOf<Message?>(null) }
     var messageActionAnchor by remember(sessionId) { mutableStateOf<androidx.compose.ui.unit.IntRect?>(null) }
     var messageActionSegmentKey by remember(sessionId) { mutableStateOf<String?>(null) }
-    var messageDetailsText by remember(sessionId) { mutableStateOf<String?>(null) }
+    var messageDetailsTarget by remember(sessionId) { mutableStateOf<Message?>(null) }
     var previewGeneratedImage by remember(sessionId) {
         mutableStateOf<LocalMessageImageEntity?>(null)
     }
@@ -1638,8 +1638,6 @@ fun ChatScreen(
             messageActionAnchor = null
             messageActionSegmentKey = null
         }
-        val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
-            formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
         val actions = buildList {
             add(MessageMenuAction(stringResource(R.string.common_copy), Icons.Filled.ContentCopy,
                 testTag = "message-action-copy", showInCompactToolbar = true) {
@@ -1666,7 +1664,7 @@ fun ChatScreen(
                 deletingMessage = target
             })
         }
-        val moreActions = messageMenuMoreActionTypes(details.isNotBlank()).map { actionType ->
+        val moreActions = messageMenuMoreActionTypes(true).map { actionType ->
             when (actionType) {
                 MessageMenuMoreAction.MULTI_SELECT -> MessageMenuAction(
                     stringResource(R.string.chat_multi_select), Icons.Filled.CheckCircle,
@@ -1678,19 +1676,18 @@ fun ChatScreen(
                 MessageMenuMoreAction.DETAILS -> MessageMenuAction(stringResource(R.string.chat_menu_details), Icons.Filled.Info,
                     testTag = "message-action-details") {
                     dismissMenu()
-                    messageDetailsText = details
+                    messageDetailsTarget = target
                 }
             }
         }
         MessageActionPopup(anchor = messageActionAnchor, actions = actions, moreActions = moreActions, onDismiss = dismissMenu)
     }
 
-    messageDetailsText?.let { text ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { messageDetailsText = null },
-            title = { Text(stringResource(R.string.chat_menu_details)) },
-            text = { Text(text, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { messageDetailsText = null }) { Text(stringResource(R.string.common_ok)) } }
+    messageDetailsTarget?.let { target ->
+        MessageDetailsSheet(
+            details = formatMessageDetails(target, java.time.ZoneId.systemDefault()),
+            subtitle = if (target.isUser) "你的消息" else (target.sender ?: target.name)?.takeIf { it.isNotBlank() }?.let { "${it}的回复" } ?: "角色的回复",
+            onDismiss = { messageDetailsTarget = null }
         )
     }
 
