@@ -20,7 +20,9 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.positionOnScreen
@@ -41,6 +44,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -60,6 +64,7 @@ internal data class MessageMenuAction(
     val enabled: Boolean = true,
     val destructive: Boolean = false,
     val testTag: String = "",
+    val showInCompactToolbar: Boolean = false,
     val onClick: () -> Unit
 )
 
@@ -181,65 +186,100 @@ internal fun MessageActionPopup(
     Popup(
         popupPositionProvider = provider,
         onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true, dismissOnBackPress = true, dismissOnClickOutside = true)
+        properties = PopupProperties(focusable = true, dismissOnBackPress = true, dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = MenuBackground,
-            shadowElevation = 6.dp,
-            modifier = Modifier.testTag("message-action-popup")
-        ) {
-            Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                actions.forEach { action -> MessageMenuToolItem(action) }
-                if (moreActions.isNotEmpty()) {
-                    val view = LocalView.current
-                    val moreAnchor = remember { arrayOfNulls<LayoutCoordinates>(1) }
-                    var moreCorrection by remember { mutableStateOf(IntOffset.Zero) }
-                    val moreOffset = with(density) { DpOffset(moreCorrection.x.toDp(), moreCorrection.y.toDp()) }
-                    Box(Modifier.onGloballyPositioned { coords ->
-                        moreAnchor[0] = coords
-                        val next = popupAnchorCorrection(coords, view)
-                        if (next != moreCorrection) moreCorrection = next
-                    }) {
-                        MessageMenuToolItem(MessageMenuAction(
-                            label = stringResource(R.string.chat_menu_more),
-                            icon = Icons.Filled.MoreHoriz,
-                            testTag = "message-action-more"
-                        ) {
-                            moreAnchor[0]?.let { coords ->
+        // Popup 的实际窗口约束包含分屏/旋转后的可用宽度；先扣除两侧各 12dp。
+        SubcomposeLayout { constraints ->
+            val availableWidth = (constraints.maxWidth - margin * 2).coerceAtLeast(0)
+            val measuredItems = subcompose("measure-tools") {
+                actions.forEach { MessageMenuToolItem(it) }
+                MessageMenuToolItem(MessageMenuAction(
+                    label = stringResource(R.string.chat_menu_more), icon = Icons.Filled.MoreHoriz
+                ) {})
+            }.map { it.measure(Constraints(maxHeight = constraints.maxHeight)) }
+            val actionWidths = measuredItems.dropLast(1).map { it.width }
+            val moreWidth = measuredItems.last().width
+            val horizontalPadding = 8.dp.roundToPx()
+            val visibleCount = messageToolbarVisibleActionCount(
+                availableWidth, actionWidths, moreWidth, horizontalPadding,
+                actions.takeWhile { it.showInCompactToolbar }.size.coerceAtLeast(1)
+            )
+            val overflowActions = actions.drop(visibleCount)
+            val dropdownActions = overflowActions + moreActions
+            val wrapItems = actionWidths.take(visibleCount).sumOf { it.toLong() } + moreWidth + horizontalPadding > availableWidth
+            val toolbar = subcompose("toolbar") {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MenuBackground,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.testTag("message-action-popup")
+                ) {
+                    Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        actions.take(visibleCount).forEach { action ->
+                            MessageMenuToolItem(action, if (wrapItems) Modifier.weight(1f) else Modifier)
+                        }
+                        if (dropdownActions.isNotEmpty()) {
+                            val view = LocalView.current
+                            val moreAnchor = remember { arrayOfNulls<LayoutCoordinates>(1) }
+                            var moreCorrection by remember { mutableStateOf(IntOffset.Zero) }
+                            val moreOffset = with(density) { DpOffset(moreCorrection.x.toDp(), moreCorrection.y.toDp()) }
+                            Box((if (wrapItems) Modifier.weight(1f) else Modifier).onGloballyPositioned { coords ->
+                                moreAnchor[0] = coords
                                 val next = popupAnchorCorrection(coords, view)
                                 if (next != moreCorrection) moreCorrection = next
-                            }
-                            moreOpen = true
-                        })
-                        DropdownMenu(
-                            expanded = moreOpen,
-                            onDismissRequest = { moreOpen = false },
-                            offset = moreOffset
-                        ) {
-                            moreActions.forEach { action ->
-                                DropdownMenuItem(
-                                    text = { Text(action.label) },
-                                    leadingIcon = { Icon(action.icon, null) },
-                                    enabled = action.enabled,
-                                    modifier = if (action.testTag.isNotBlank()) Modifier.testTag(action.testTag) else Modifier,
-                                    onClick = { moreOpen = false; action.onClick() }
-                                )
+                            }) {
+                                MessageMenuToolItem(MessageMenuAction(
+                                    label = stringResource(R.string.chat_menu_more),
+                                    icon = Icons.Filled.MoreHoriz,
+                                    testTag = "message-action-more"
+                                ) {
+                                    moreAnchor[0]?.let { coords ->
+                                        val next = popupAnchorCorrection(coords, view)
+                                        if (next != moreCorrection) moreCorrection = next
+                                    }
+                                    moreOpen = true
+                                })
+                                DropdownMenu(
+                                    expanded = moreOpen,
+                                    onDismissRequest = { moreOpen = false },
+                                    offset = moreOffset
+                                ) {
+                                    dropdownActions.forEachIndexed { index, action ->
+                                        if (index == overflowActions.size && overflowActions.isNotEmpty() && moreActions.isNotEmpty()) {
+                                            HorizontalDivider()
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text(action.label) },
+                                            leadingIcon = { Icon(action.icon, null) },
+                                            enabled = action.enabled,
+                                            colors = MenuDefaults.itemColors(
+                                                textColor = if (action.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                                leadingIconColor = if (action.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledTextColor = if (action.destructive) MaterialTheme.colorScheme.error.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                                disabledLeadingIconColor = if (action.destructive) MaterialTheme.colorScheme.error.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                            ),
+                                            modifier = if (action.testTag.isNotBlank()) Modifier.testTag(action.testTag) else Modifier,
+                                            onClick = { moreOpen = false; action.onClick() }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
+            }.single().measure(Constraints(maxWidth = availableWidth, maxHeight = constraints.maxHeight))
+            layout(toolbar.width, toolbar.height) { toolbar.placeRelative(0, 0) }
         }
     }
 }
 
 @Composable
-private fun MessageMenuToolItem(action: MessageMenuAction) {
+private fun MessageMenuToolItem(action: MessageMenuAction, modifier: Modifier = Modifier) {
     val base = if (action.destructive) MenuDestructive else MenuContent
     val color = if (action.enabled) base else base.copy(alpha = 0.35f)
     Column(
-        Modifier
+        modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = action.enabled, onClick = action.onClick)
             .then(if (action.testTag.isNotBlank()) Modifier.testTag(action.testTag) else Modifier)

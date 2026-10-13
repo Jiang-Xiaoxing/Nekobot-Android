@@ -45,9 +45,19 @@ class MessageMenuPositionTest {
     }
 
     @Test
-    fun popupWiderThanWindowStaysAtMargin() {
-        val pos = messageMenuPosition(IntRect(100, 800, 200, 900), IntSize(400, 2000), popup, 16, 24, 100)
-        assertEquals(24, pos.x)
+    fun collapsedToolbarKeepsBothMarginsOnNarrowWindow() {
+        val narrowWindow = IntSize(400, 2000)
+        val margin = 24 // 12dp at density 2
+        val widths = listOf(80, 128, 80, 80)
+        val count = messageToolbarVisibleActionCount(narrowWindow.width - margin * 2,
+            widths, moreWidth = 80, horizontalPadding = 16, compactActionCount = 2)
+        assertEquals(2, count)
+        val collapsedPopup = IntSize(widths.take(count).sum() + 80 + 16, 140)
+        for (anchor in listOf(IntRect(0, 800, 60, 900), IntRect(350, 800, 400, 900))) {
+            val pos = messageMenuPosition(anchor, narrowWindow, collapsedPopup, 16, margin, 100)
+            assertTrue(pos.x >= margin)
+            assertTrue(pos.x + collapsedPopup.width <= narrowWindow.width - margin)
+        }
     }
 
     @Test

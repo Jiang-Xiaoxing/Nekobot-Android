@@ -1643,13 +1643,15 @@ fun ChatScreen(
         val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
             formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
         val actions = buildList {
-            add(MessageMenuAction(stringResource(R.string.common_copy), Icons.Filled.ContentCopy, testTag = "message-action-copy") {
+            add(MessageMenuAction(stringResource(R.string.common_copy), Icons.Filled.ContentCopy,
+                testTag = "message-action-copy", showInCompactToolbar = true) {
                 clipboard.setText(AnnotatedString(target.displayContent))
                 dismissMenu()
             })
             if (companionChat && !target.isUser && !target.isLocalCommandMessage()) {
                 add(MessageMenuAction(stringResource(R.string.chat_menu_regenerate), Icons.Filled.Refresh,
-                    enabled = targetId != null && !sending, testTag = "message-action-regenerate") {
+                    enabled = targetId != null && !sending, testTag = "message-action-regenerate",
+                    showInCompactToolbar = true) {
                     dismissMenu()
                     if (renderMessages.firstOrNull()?.id == target.id && !hasOlderMessages) viewModel.regenerateGreeting()
                     else viewModel.regenerateMessage(target)
