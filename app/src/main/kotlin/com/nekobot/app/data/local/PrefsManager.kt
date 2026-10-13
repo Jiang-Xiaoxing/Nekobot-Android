@@ -1393,6 +1393,14 @@ class PrefsManager(context: Context) {
         prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", show).apply()
     }
 
+    /** Display only: hides （内心：...） blocks in bubbles; default shown, never changes prompts or message text. */
+    internal fun companionShowInnerMonologue(profile: String, sessionId: String): Boolean =
+        prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", true)
+
+    internal fun setCompanionShowInnerMonologue(profile: String, sessionId: String, show: Boolean) {
+        prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", show).apply()
+    }
+
     fun getReasoningEffort(isAgentSession: Boolean): com.nekobot.app.data.model.ReasoningEffort =
         com.nekobot.app.data.model.ReasoningEffort.fromValue(
             prefs.getString(

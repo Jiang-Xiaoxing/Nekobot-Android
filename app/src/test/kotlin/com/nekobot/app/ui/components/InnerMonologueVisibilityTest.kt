@@ -1,7 +1,5 @@
 package com.nekobot.app.ui.components
 
-import com.google.gson.Gson
-import com.nekobot.app.data.local.db.LocalSessionEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,16 +51,5 @@ class InnerMonologueVisibilityTest {
     @Test
     fun nonChatModeUnaffected() {
         assertEquals(parseBlocks(text, false), visibleMarkdownBlocks(text, chatMode = false, showInnerMonologue = false))
-    }
-
-    @Test
-    fun oldBackupWithoutFieldDefaultsToShow() {
-        val gson = Gson()
-        val json = """{"id":"s1","name":"n","created_at":"t","updated_at":"t","session_mode":"character"}"""
-        val entity = gson.fromJson(json, LocalSessionEntity::class.java)
-        assertFalse(entity.hideInnerMonologue)
-        val hidden = LocalSessionEntity(id = "s2", name = "n", createdAt = "t", updatedAt = "t", hideInnerMonologue = true)
-        val roundTrip = gson.fromJson(gson.toJson(hidden), LocalSessionEntity::class.java)
-        assertTrue(roundTrip.hideInnerMonologue)
     }
 }

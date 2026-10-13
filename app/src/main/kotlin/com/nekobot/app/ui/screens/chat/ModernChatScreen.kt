@@ -250,9 +250,8 @@ fun ModernChatScreen(
     var companionShowReasoning by remember(sessionId, companionName != null) {
         mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
     }
-    var showInnerMonologue by remember(sessionId) { mutableStateOf(session?.hideInnerMonologue != true) }
-    LaunchedEffect(sessionId, session?.hideInnerMonologue) {
-        session?.let { showInnerMonologue = it.hideInnerMonologue != true }
+    var showInnerMonologue by remember(sessionId) {
+        mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
     }
     var companionUtilityRequest by remember(sessionId) { mutableStateOf<CompanionChatUtility?>(null) }
     val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
@@ -387,10 +386,8 @@ fun ModernChatScreen(
             onUsage = { onOpenContextAnalysis(sessionId) },
             showInnerMonologue = showInnerMonologue,
             onShowInnerMonologueChange = { show ->
+                ServiceContainer.localRepository.setCompanionShowInnerMonologue(sessionId, show)
                 showInnerMonologue = show
-                composerScope.launch {
-                    runCatching { ServiceContainer.localRepository.setHideInnerMonologue(sessionId, !show) }
-                }
             },
             onArchive = if (!session?.archiveSessionId.isNullOrBlank()) {
                 { companionUtilityRequest = CompanionChatUtility.VIEW_ARCHIVE }

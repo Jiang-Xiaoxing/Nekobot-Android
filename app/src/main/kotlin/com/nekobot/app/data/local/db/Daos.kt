@@ -32,10 +32,6 @@ interface SessionDao {
     @Query("SELECT * FROM local_sessions WHERE id = :id")
     suspend fun getById(id: String): LocalSessionEntity?
 
-    /** 只改显示开关，不触碰 updated_at，避免会话列表因切换显示而重新排序。 */
-    @Query("UPDATE local_sessions SET hide_inner_monologue = :hide WHERE id = :id")
-    suspend fun setHideInnerMonologue(id: String, hide: Boolean)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(session: LocalSessionEntity)
 
