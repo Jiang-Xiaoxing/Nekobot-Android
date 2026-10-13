@@ -1882,6 +1882,38 @@ class LocalAiClient(
         }
     }
 
+    /** 上传兼容 SiliconFlow 的自定义音色；仅在提供商支持时由试验场开放。 */
+    suspend fun uploadTtsVoice(
+        model: LocalAiModelEntity,
+        file: MultipartBody.Part,
+        customName: okhttp3.RequestBody,
+        text: okhttp3.RequestBody
+    ): String {
+        val url = model.ttsUploadUrl.ifBlank {
+            "${model.baseUrl.trimEnd('/')}/uploads/audio/voice"
+        }
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addPart(file)
+            .addFormDataPart("customName", null, customName)
+            .addFormDataPart("text", null, text)
+            .addFormDataPart("model", model.ttsModel.ifBlank { model.model })
+            .build()
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer ${model.apiKey}")
+            .post(body).build()
+        return clientFor(model).newCall(request).awaitResponse().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw FailoverHttpException(response.code, "TTS HTTP ${response.code}: ${raw.take(500)}")
+            }
+            val json = JsonParser.parseString(raw).asJsonObject
+            sequenceOf("uri", "voice_id", "id")
+                .mapNotNull { json.get(it)?.takeUnless { value -> value.isJsonNull }?.asString }
+                .firstOrNull { it.isNotBlank() }
+                ?: throw IllegalStateException("TTS 服务未返回音色 ID")
+        }
+    }
+
     private suspend fun executeTtsRequest(
         model: LocalAiModelEntity,
         request: Request,
@@ -2307,7 +2339,7 @@ class LocalAiClient(
             if (image.bytes != null || url.isNullOrBlank()) {
                 image
             } else {
-                val bytes = runCatching {
+                val bytes = try {
                     val request = Request.Builder().url(url).get().build()
                     clientFor(model).newCall(request).awaitResponse().use { response ->
                         if (!response.isSuccessful) {
@@ -2318,11 +2350,22 @@ class LocalAiClient(
                         }
                         response.body?.bytes()
                     }
-                }.getOrNull()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw IllegalStateException("下载生成图片失败", e)
+                }
                 image.copy(bytes = bytes)
             }
         }
     }
+
+    suspend fun downloadGeneratedImage(url: String, proxyUrl: String = ""): ByteArray =
+        clientFor(proxyUrl).newCall(Request.Builder().url(url).build()).awaitResponse().use { response ->
+            if (!response.isSuccessful) throw FailoverHttpException(response.code, "图片下载 HTTP ${response.code}")
+            response.body?.bytes()?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalStateException("图片下载返回空内容")
+        }
 
     /**
      * 调用 OpenAI 兼容 `/embeddings` 接口。
@@ -2406,6 +2449,19 @@ class LocalAiClient(
     ): List<GeneratedImage> {
         val finalPrompt = appendImagePrompt(prompt, additionalPrompt)
         val normalizedProvider = provider.trim().lowercase()
+        require(referenceImage == null || MultimodalProviderSupport.supportsImageReference(provider, modelName)) {
+            com.nekobot.app.ServiceContainer.getString(R.string.playground_reference_unsupported)
+                .ifBlank { "当前图片生成接口不支持参考图" }
+        }
+        // 原生单图接口按用户要求串行生成，避免数量选项被静默忽略。
+        if (n > 1 && normalizedProvider in setOf("gemini", "google", "google_gemini", "minimax")) {
+            return buildList {
+                repeat(n) {
+                    addAll(generateImage(baseUrl, apiKey, modelName, prompt, additionalPrompt, size, 1,
+                        appendBaseUrlPath, proxyUrl, provider, referenceImage))
+                }
+            }
+        }
         when (normalizedProvider) {
             "gemini", "google", "google_gemini" -> return generateImageGemini(
                 baseUrl, apiKey, modelName, finalPrompt, appendBaseUrlPath, proxyUrl, referenceImage

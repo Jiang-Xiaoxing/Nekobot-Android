@@ -1201,6 +1201,19 @@ class PrefsManager(context: Context) {
     // ==================== 自定义工具集模式 ====================
 
     /** 读取用户自定义的工具集模式列表（JSON 数组，损坏时返回空列表）。 */
+    fun getCustomTtsVoices(modelId: String): List<com.nekobot.app.data.model.TtsVoice> =
+        runCatching {
+            Gson().fromJson<List<com.nekobot.app.data.model.TtsVoice>>(
+                prefs.getString("custom_tts_voices_$modelId", "[]"),
+                object : TypeToken<List<com.nekobot.app.data.model.TtsVoice>>() {}.type
+            ).orEmpty()
+        }.getOrDefault(emptyList())
+
+    fun addCustomTtsVoice(modelId: String, voice: com.nekobot.app.data.model.TtsVoice) {
+        val voices = getCustomTtsVoices(modelId).filterNot { it.id == voice.id } + voice
+        prefs.edit().putString("custom_tts_voices_$modelId", Gson().toJson(voices)).apply()
+    }
+
     fun getCustomToolSetModes(): List<CustomToolSetModeRecord> =
         ToolSetModeCatalog.decodeCustomModes(prefs.getString(KEY_CUSTOM_TOOLSET_MODES, null))
 

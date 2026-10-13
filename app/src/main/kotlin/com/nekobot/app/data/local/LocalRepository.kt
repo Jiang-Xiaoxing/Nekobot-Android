@@ -9851,18 +9851,14 @@ ${AiOutputLanguage.directive()}
         }
         val filesDir = appContext?.filesDir
             ?: throw IllegalStateException("应用上下文未初始化，无法保存 TTS 音频")
-        val format = exec.model.ttsFormat.lowercase().takeIf { it in setOf("mp3", "wav", "opus", "flac", "ogg") }
-            ?: "mp3"
-        val cacheFile = File(filesDir, "tts/${UUID.randomUUID()}.$format").apply {
+        val format = com.nekobot.app.data.local.ai.generatedAudioFormat(exec.value, exec.model.ttsFormat)
+        val cacheFile = File(filesDir, "tts/${UUID.randomUUID()}.${format.extension}").apply {
             parentFile?.mkdirs()
             writeBytes(exec.value)
         }
         LocalAudioResult(
             cacheUri = android.net.Uri.fromFile(cacheFile).toString(),
-            mimeType = when (format) {
-                "mp3" -> "audio/mpeg"
-                else -> "audio/$format"
-            },
+            mimeType = format.mimeType,
             usedModelId = exec.model.id,
             usedModelName = exec.model.name
         )
@@ -9873,55 +9869,29 @@ ${AiOutputLanguage.directive()}
             messageDao.updateAudioUrl(messageId, audioUrl, nowIso())
         }
 
-    /** 根据当前 TTS 模型提供商返回与原仓库一致的内置音色。 */
-    suspend fun listLocalTtsVoices(): List<TtsVoice> = withContext(Dispatchers.IO) {
-        val active = aiModelDao.getActiveByPurpose("tts")
-            ?: aiModelDao.listByPurpose("tts").firstOrNull()
-            ?: return@withContext emptyList()
-        val provider = active.ttsProvider.ifBlank {
-            active.provider?.takeIf { it.isNotBlank() } ?: active.protocol
-        }.lowercase()
-        when (provider) {
-            "xiaomi", "mimo" -> listOf(
-                "mimo_default" to "MiMo 默认",
-                "冰糖" to "冰糖",
-                "茉莉" to "茉莉",
-                "苏打" to "苏打",
-                "白桦" to "白桦",
-                "Mia" to "Mia",
-                "Chloe" to "Chloe",
-                "Milo" to "Milo",
-                "Dean" to "Dean"
-            )
-            "doubao", "volcengine", "bytedance" -> listOf(
-                "zh_female_shuangkuaisisi_moon_bigtts" to "爽快思思",
-                "zh_male_bvlazysheep" to "懒羊羊",
-                "zh_male_ahu_conversation_wvae_bigtts" to "阿虎",
-                "zh_female_vv_uranus_bigtts" to "VV",
-                "zh_female_cancan_mars_bigtts" to "灿灿",
-                "zh_male_chongchong_mars_bigtts" to "冲冲",
-                "zh_female_dandan_mars_bigtts" to "丹丹",
-                "zh_male_haoyu_mars_bigtts" to "浩宇",
-                "zh_female_wanwan_mars_bigtts" to "婉婉",
-                "zh_male_yunxi_mars_bigtts" to "云希"
-            )
-            else -> listOf(
-                "alloy" to "Alloy",
-                "echo" to "Echo",
-                "fable" to "Fable",
-                "onyx" to "Onyx",
-                "nova" to "Nova",
-                "shimmer" to "Shimmer",
-                "coral" to "Coral",
-                "verse" to "Verse",
-                "ballad" to "Ballad",
-                "ash" to "Ash",
-                "sage" to "Sage",
-                "marin" to "Marin",
-                "cedar" to "Cedar"
-            )
-        }.map { (id, name) ->
-            TtsVoice(id = id, name = name, provider = provider)
+    /** 按实际选择的 TTS 模型加载目录及已上传的自定义音色。 */
+    suspend fun listLocalTtsVoices(modelId: String? = null): List<TtsVoice> = withContext(Dispatchers.IO) {
+        val model = modelId?.takeIf { it.isNotBlank() }?.let { aiModelDao.getById(it) }
+            ?: queueFor("tts").firstOrNull() ?: return@withContext emptyList()
+        val provider = com.nekobot.app.data.local.ai.MultimodalProviderSupport.ttsProvider(model)
+        (com.nekobot.app.data.local.ai.TtsVoiceCatalog.voices(provider, model.ttsVoice) +
+            ServiceContainer.prefs.getCustomTtsVoices(model.id)).distinctBy { it.id }
+    }
+
+    suspend fun uploadLocalTtsVoice(
+        file: okhttp3.MultipartBody.Part,
+        customName: okhttp3.RequestBody,
+        text: okhttp3.RequestBody,
+        modelId: String?,
+        displayName: String
+    ): TtsVoice = withContext(Dispatchers.IO) {
+        val model = modelId?.takeIf { it.isNotBlank() }?.let { aiModelDao.getById(it) }
+            ?: queueFor("tts").firstOrNull()
+            ?: throw IllegalStateException("未配置 TTS 模型")
+        val id = aiClient.uploadTtsVoice(model, file, customName, text)
+        TtsVoice(id = id, name = displayName, custom = true,
+            provider = com.nekobot.app.data.local.ai.MultimodalProviderSupport.ttsProvider(model)).also {
+            ServiceContainer.prefs.addCustomTtsVoice(model.id, it)
         }
     }
 
@@ -9989,9 +9959,11 @@ ${AiOutputLanguage.directive()}
         prompt: String,
         size: String = "1024x1024",
         n: Int = 1,
-        referenceImage: ImageGenerationReference? = null
+        referenceImage: ImageGenerationReference? = null,
+        modelId: String? = null
     ): List<LocalImageResult> = withContext(Dispatchers.IO) {
-        val queue = queueFor("image_generation")
+        val defaults = queueFor("image_generation")
+        val queue = if (modelId.isNullOrBlank()) defaults else defaults.filter { it.id == modelId }
         if (queue.isEmpty()) {
             throw IllegalStateException("未配置图片生成模型，请在 AI 配置中心启用 purpose=image_generation 的模型")
         }
@@ -10004,26 +9976,17 @@ ${AiOutputLanguage.directive()}
         }
         val cacheDir = appContext?.cacheDir
             ?: throw IllegalStateException("应用上下文未初始化，无法缓存生成图片")
-        exec.value.mapNotNull { img ->
-            val bytes = img.bytes ?: run {
-                // 通过 URL 下载
-                val url = img.url ?: return@mapNotNull null
-                try {
-                    val resp = okhttp3.OkHttpClient().newCall(
-                        okhttp3.Request.Builder().url(url).build()
-                    ).execute()
-                    resp.body?.bytes() ?: return@mapNotNull null
-                } catch (_: Exception) {
-                    null
-                } ?: return@mapNotNull null
-            }
-            val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.png").apply {
+        exec.value.map { img ->
+            val bytes = img.bytes ?: aiClient.downloadGeneratedImage(
+                img.url ?: throw IllegalStateException("服务未返回图片"), exec.model.proxyUrl)
+            val format = com.nekobot.app.data.local.ai.generatedImageFormat(bytes)
+            val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.${format.extension}").apply {
                 parentFile?.mkdirs()
                 writeBytes(bytes)
             }
             LocalImageResult(
                 cacheUri = android.net.Uri.fromFile(cacheFile).toString(),
-                mimeType = "image/png",
+                mimeType = format.mimeType,
                 usedModelId = exec.model.id,
                 usedModelName = exec.model.name
             )
@@ -10034,7 +9997,7 @@ ${AiOutputLanguage.directive()}
      * 远程模式图片生成：直接调用远程 AI 模型列表中 purpose=image_generation 的模型供应商 API。
      * 绕过后端（后端目前无通用图片生成端点），复用 [aiClient] 的 OpenAI 兼容 /images/generations 调用逻辑。
      *
-     * 简单故障转移：按 priority 降序遍历模型，第一个成功即返回；全部失败则抛出聚合错误。
+     * 简单故障转移：按 priority 升序遍历模型，第一个成功即返回；全部失败则抛出聚合错误。
      *
      * @param models 远程模型列表（调用方需预先筛选 purpose=image_generation 且 enabled=true）
      * @param prompt 图片描述
@@ -10069,32 +10032,28 @@ ${AiOutputLanguage.directive()}
                     size = size,
                     n = n,
                     referenceImage = referenceImage,
-                    provider = model.provider ?: model.protocol.orEmpty()
+                    appendBaseUrlPath = model.appendBaseUrlPath ?: true,
+                    provider = model.provider.orEmpty().ifBlank { model.protocol.orEmpty() }
                 )
                 if (images.isNotEmpty()) {
-                    return@withContext images.mapNotNull { img ->
-                        val bytes = img.bytes ?: run {
-                            val url = img.url ?: return@mapNotNull null
-                            try {
-                                okhttp3.OkHttpClient().newCall(
-                                    okhttp3.Request.Builder().url(url).build()
-                                ).execute().body?.bytes() ?: return@mapNotNull null
-                            } catch (_: Exception) {
-                                null
-                            } ?: return@mapNotNull null
-                        }
-                        val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.png").apply {
+                    return@withContext images.map { img ->
+                        val bytes = img.bytes ?: aiClient.downloadGeneratedImage(
+                            img.url ?: throw IllegalStateException("服务未返回图片"))
+                        val format = com.nekobot.app.data.local.ai.generatedImageFormat(bytes)
+                        val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.${format.extension}").apply {
                             parentFile?.mkdirs()
                             writeBytes(bytes)
                         }
                         LocalImageResult(
                             cacheUri = android.net.Uri.fromFile(cacheFile).toString(),
-                            mimeType = "image/png",
+                            mimeType = format.mimeType,
                             usedModelId = model.id ?: "",
                             usedModelName = model.displayName
                         )
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errors.add("${model.displayName}: ${e.message}")
             }

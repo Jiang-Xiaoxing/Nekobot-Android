@@ -885,10 +885,10 @@ fun NekobotNavGraph() {
                 MessageFilterScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.TTS_PLAYGROUND) {
-                TtsPlaygroundScreen(onBack = { navController.popBackStack() })
+                TtsPlaygroundScreen(onBack = { navController.popBackStack() }, onConfigureModels = { navController.navigate(Routes.AI_CONFIG_CENTER) })
             }
             composable(Routes.IMAGE_GENERATION_PLAYGROUND) {
-                ImageGenerationPlaygroundScreen(onBack = { navController.popBackStack() })
+                ImageGenerationPlaygroundScreen(onBack = { navController.popBackStack() }, onConfigureModels = { navController.navigate(Routes.AI_CONFIG_CENTER) })
             }
             composable(Routes.LOGIN_TOKENS) {
                 LoginTokensScreen(onBack = { navController.popBackStack() })

@@ -13,6 +13,12 @@ internal object MultimodalProviderSupport {
     fun imageProvider(model: LocalAiModelEntity): String =
         firstNonBlank(model.provider, model.protocol)
 
+    fun supportsImageReference(provider: String, modelName: String): Boolean = when (provider.trim().lowercase()) {
+        "minimax", "doubao", "seed", "seedream", "volcengine", "ark", "volces" -> false
+        "qwen", "dashscope", "tongyi" -> modelName.trim().equals("qwen-image-3.0", true)
+        else -> true
+    }
+
     fun endpoint(
         baseUrl: String,
         suffix: String,

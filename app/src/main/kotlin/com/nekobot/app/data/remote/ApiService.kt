@@ -633,10 +633,14 @@ interface ApiService {
 
     // ==================== TTS 试验场 ====================
     @GET("api/tts/voices")
-    suspend fun listTtsVoices(): Response<TtsVoiceListResponse>
+    suspend fun listTtsVoices(@Query("model_id") modelId: String? = null): Response<TtsVoiceListResponse>
 
     @POST("api/tts/preview")
     suspend fun ttsPreview(@Body body: TtsPreviewRequest): Response<TtsPreviewResponse>
+
+    @retrofit2.http.Streaming
+    @GET
+    suspend fun downloadTtsPreview(@retrofit2.http.Url url: String): Response<okhttp3.ResponseBody>
 
     @POST("api/tts/synthesize")
     suspend fun synthesizeTts(@Body body: TtsPreviewRequest): Response<TtsPreviewResponse>

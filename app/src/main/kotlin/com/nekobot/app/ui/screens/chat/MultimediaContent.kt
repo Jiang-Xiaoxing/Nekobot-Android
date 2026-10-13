@@ -498,7 +498,9 @@ fun VideoRenderer(url: String, modifier: Modifier = Modifier) {
 fun AudioRenderer(
     url: String,
     onRegenerate: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    autoPlay: Boolean = false,
+    onAutoPlay: () -> Unit = {}
 ) {
     var isPlaying by remember(url) { mutableStateOf(false) }
     var currentPosition by remember(url) { mutableStateOf(0) }
@@ -527,6 +529,13 @@ fun AudioRenderer(
                 duration = mp.duration.coerceAtLeast(0)
                 prepared = true
                 loadFailed = false
+                if (autoPlay) {
+                    runCatching {
+                        mp.start()
+                        isPlaying = true
+                        onAutoPlay()
+                    }.onFailure { loadFailed = true }
+                }
             }
             mediaPlayer.setOnCompletionListener {
                 isPlaying = false

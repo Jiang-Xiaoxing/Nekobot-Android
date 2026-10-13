@@ -58,6 +58,8 @@ class NekobotRepository(
             } else {
                 Resource.Error(parseError(resp.code(), resp.errorBody()?.string()), resp.code())
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Resource.Error(e.message ?: "网络异常", null)
         }
@@ -1094,9 +1096,13 @@ class NekobotRepository(
         safeCall { api.toggleMessageFilter(mapOf("enabled" to enabled)) }
 
     // ==================== TTS 试验场 ====================
-    suspend fun listTtsVoices(): Resource<List<TtsVoice>> =
-        safeCall { api.listTtsVoices() }.mapData { it.voices }
+    suspend fun listTtsVoices(modelId: String? = null): Resource<List<TtsVoice>> =
+        safeCall { api.listTtsVoices(modelId) }.mapData { it.voices }
     suspend fun ttsPreview(req: TtsPreviewRequest): Resource<TtsPreviewResponse> = safeCall { api.ttsPreview(req) }
+    suspend fun downloadTtsPreview(url: String): Resource<ByteArray> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            safeCall { api.downloadTtsPreview(url) }.mapData { body -> body.use { it.bytes() } }
+        }
     suspend fun synthesizeTts(req: TtsPreviewRequest): Resource<TtsPreviewResponse> =
         safeCall { api.synthesizeTts(req) }
     /**
@@ -1105,7 +1111,7 @@ class NekobotRepository(
      */
     suspend fun uploadTtsVoice(file: MultipartBody.Part, customName: RequestBody, text: RequestBody): Resource<TtsVoice> =
         safeCall { api.uploadTtsVoice(file, customName, text) }.mapData { res ->
-            TtsVoice(id = res.voiceId ?: "", name = res.name ?: "")
+            TtsVoice(id = res.voiceId ?: "", name = res.name ?: "", custom = true)
         }
 
     /** 上传角色立绘/头像图片到服务器，返回服务器相对 URL 字符串 */

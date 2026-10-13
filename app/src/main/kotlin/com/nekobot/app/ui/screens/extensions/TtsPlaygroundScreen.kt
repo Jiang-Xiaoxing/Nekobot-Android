@@ -1,56 +1,28 @@
 package com.nekobot.app.ui.screens.extensions
 
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
+import android.content.Context
+import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import com.nekobot.app.ui.components.GlassExposedDropdownMenu as ExposedDropdownMenu
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
@@ -58,385 +30,279 @@ import com.nekobot.app.data.local.LocalAudioResult
 import com.nekobot.app.data.model.TtsPreviewRequest
 import com.nekobot.app.data.model.TtsVoice
 import com.nekobot.app.data.repository.Resource
-import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.EmptyState
+import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
 import com.nekobot.app.ui.components.ErrorBanner
-import com.nekobot.app.ui.components.GlassCard
-import com.nekobot.app.ui.components.LoadingOverlay
-import com.nekobot.app.ui.components.SectionHeader
+import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.screens.chat.AudioRenderer
-import com.nekobot.app.ui.theme.SuccessGreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
-/**
- * TTS 试验场 ViewModel：管理音色列表加载与语音预览生成。
- */
-class TtsPlaygroundViewModel : BaseViewModel() {
-
+class TtsPlaygroundViewModel : MediaPlaygroundViewModel("tts") {
     private val _voices = MutableStateFlow<List<TtsVoice>>(emptyList())
-    val voices: StateFlow<List<TtsVoice>> = _voices.asStateFlow()
+    val voices = _voices.asStateFlow()
+    private val _audio = MutableStateFlow<LocalAudioResult?>(null)
+    val audio = _audio.asStateFlow()
+    private val _uploadedVoiceId = MutableStateFlow<String?>(null)
+    val uploadedVoiceId = _uploadedVoiceId.asStateFlow()
+    val uploadUsesDefaultModel get() = !isLocalMode
+    val canUpload get() = (if (isLocalMode) currentModel else models.value.firstOrNull())?.canUploadVoice == true
 
-    /** 远程模式：预览音频 URL；本地模式不使用 */
-    private val _previewUrl = MutableStateFlow<String?>(null)
-    val previewUrl: StateFlow<String?> = _previewUrl.asStateFlow()
-
-    /** 本地模式：合成的音频缓存结果（含 cacheUri + 实际使用模型） */
-    private val _localAudio = MutableStateFlow<LocalAudioResult?>(null)
-    val localAudio: StateFlow<LocalAudioResult?> = _localAudio.asStateFlow()
-
-    init {
-        load()
+    override suspend fun loadModelDetails() {
+        when (val result = unified.listTtsVoices(requestedModelId)) {
+            is Resource.Success -> _voices.value = result.data.orEmpty()
+            is Resource.Error -> { _voices.value = emptyList(); showError(result.message) }
+            is Resource.Loading -> Unit
+        }
     }
 
-    /** 加载音色列表 */
-    fun load() {
-        launchResult(
-            block = { unified.listTtsVoices() },
-            onSuccess = { _voices.value = it ?: emptyList() }
-        )
+    override fun clearResult() {
+        _audio.value = null
+        _voices.value = emptyList()
+        _uploadedVoiceId.value = null
     }
 
-    /** 生成语音预览：本地模式走 synthesizeAudio 播放缓存 URI，远程模式走 ttsPreview 返回 URL */
     fun preview(text: String, voice: String, speed: Float, pitch: Float, volume: Float) {
-        // 清空上一次结果
-        _previewUrl.value = null
-        _localAudio.value = null
-        if (isLocalMode) {
-            launchResult(
-                block = {
-                    unified.synthesizeAudio(
-                        text = text,
-                        voice = voice,
-                        speed = speed,
-                        pitch = pitch,
-                        volume = volume
-                    )
-                },
-                onSuccess = { res -> _localAudio.value = res },
-                onError = { msg -> showToast(msg) }
-            )
-        } else {
-            val req = TtsPreviewRequest(
-                text = text,
-                voice = voice,
-                speed = speed,
-                pitch = pitch,
-                volume = volume
-            )
-            launchResult(
-                block = { unified.ttsPreview(req) },
-                onSuccess = { res ->
-                    _previewUrl.value = res.audioUrl
-                    if (res.audioUrl.isNullOrBlank()) {
-                        showToast(res.message ?: string(R.string.tts_no_audio_url))
-                    }
+        if (text.isBlank()) { showToast(string(R.string.tts_prompt_input_text)); return }
+        if (voice.isBlank()) { showToast(string(R.string.tts_prompt_select_voice)); return }
+        val modelId = requestedModelId
+        val modelName = currentModel?.name.orEmpty()
+        runOperation {
+            if (isLocalMode) {
+                when (val result = unified.synthesizeAudio(text.trim(), voice.trim(), speed, pitch, volume, modelId)) {
+                    is Resource.Success -> _audio.value = result.data
+                    is Resource.Error -> showError(result.message)
+                    is Resource.Loading -> Unit
                 }
-            )
+            } else {
+                when (val result = unified.ttsPreview(TtsPreviewRequest(text.trim(), modelId, voice.trim(), speed, pitch, volume))) {
+                    is Resource.Success -> {
+                        val url = result.data.audioUrl
+                        if (url.isNullOrBlank() || result.data.success == false) {
+                            showError(result.data.message ?: string(R.string.tts_no_audio_url))
+                        } else when (val cached = unified.cacheTtsPreview(url)) {
+                            is Resource.Success -> _audio.value = cached.data.copy(usedModelId = modelId.orEmpty(), usedModelName = modelName)
+                            is Resource.Error -> showError(cached.message)
+                            is Resource.Loading -> Unit
+                        }
+                    }
+                    is Resource.Error -> showError(result.message)
+                    is Resource.Loading -> Unit
+                }
+            }
+        }
+    }
+
+    fun upload(context: Context, uri: Uri, name: String, sampleText: String, onSuccess: () -> Unit) {
+        if (!canUpload || name.isBlank() || sampleText.isBlank()) return
+        val modelId = requestedModelId
+        runOperation {
+            val bytes = readPlaygroundFile(context, uri, 10 * 1024 * 1024)
+            val mimeType = withContext(Dispatchers.IO) { context.contentResolver.getType(uri) ?: "audio/wav" }
+            when (val result = unified.uploadPlaygroundVoice(bytes, mimeType, name.trim(), sampleText.trim(), modelId)) {
+                is Resource.Success -> {
+                    if (result.data.id.isBlank()) { showError(string(R.string.playground_voice_upload_failed)); return@runOperation }
+                    // 服务器上传使用默认 TTS 模型，切回默认目录后选中新音色。
+                    if (!isLocalMode) useDefaultModel()
+                    _voices.value = (_voices.value + result.data).distinctBy { it.id }
+                    _uploadedVoiceId.value = result.data.id
+                    showToast(string(R.string.playground_voice_uploaded))
+                    onSuccess()
+                }
+                is Resource.Error -> showError(result.message)
+                is Resource.Loading -> Unit
+            }
         }
     }
 }
 
-/**
- * TTS 试验场页：顶部试验区生成预览音频地址，下方列出所有音色。
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TtsPlaygroundScreen(onBack: () -> Unit) {
+fun TtsPlaygroundScreen(onBack: () -> Unit, onConfigureModels: () -> Unit) {
     val vm: TtsPlaygroundViewModel = viewModel()
+    val models by vm.models.collectAsStateWithLifecycle()
+    val modelId by vm.selectedModelId.collectAsStateWithLifecycle()
     val voices by vm.voices.collectAsStateWithLifecycle()
-    val previewUrl by vm.previewUrl.collectAsStateWithLifecycle()
-    val localAudio by vm.localAudio.collectAsStateWithLifecycle()
-    val loading by vm.loading.collectAsStateWithLifecycle()
+    val audio by vm.audio.collectAsStateWithLifecycle()
+    val uploadedVoiceId by vm.uploadedVoiceId.collectAsStateWithLifecycle()
+    val busy by vm.loading.collectAsStateWithLifecycle()
+    val configLoading by vm.configLoading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val toast by vm.toast.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-
-    // 试验区表单状态
-    val defaultText = stringResource(R.string.tts_default_test_text)
-    var text by remember { mutableStateOf(defaultText) }
-    var selectedVoice by remember { mutableStateOf("") }
-    var speed by remember { mutableStateOf(1.0f) }
-    var pitch by remember { mutableStateOf(1.0f) }
-    var volume by remember { mutableStateOf(1.0f) }
-
-    // 音色列表加载后默认选中第一个
-    LaunchedEffect(voices) {
-        if (selectedVoice.isBlank() && voices.isNotEmpty()) {
-            selectedVoice = voices.first().id
-        }
-    }
-
-    // 模式切换时自动刷新
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
-    LaunchedEffect(appMode) { vm.load() }
-
-    LaunchedEffect(toast) {
-        if (toast != null) {
-            Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
-            vm.clearToast()
+    val revision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val defaultText = stringResource(R.string.tts_default_test_text)
+    var text by rememberSaveable { mutableStateOf(defaultText) }
+    var voice by rememberSaveable { mutableStateOf("") }
+    var speed by rememberSaveable { mutableFloatStateOf(1f) }
+    var pitch by rememberSaveable { mutableFloatStateOf(1f) }
+    var volume by rememberSaveable { mutableFloatStateOf(1f) }
+    var parametersExpanded by rememberSaveable { mutableStateOf(false) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var uploadDialog by rememberSaveable { mutableStateOf(false) }
+    var initializedModel by rememberSaveable { mutableStateOf("") }
+    var playedAudio by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val selectedModel = models.firstOrNull { it.id == modelId } ?: models.firstOrNull()
+    val modelKey = "$appMode:$revision:${selectedModel?.id}:$modelId"
+    key(appMode, revision) {
+        androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.updateSource("$appMode:$revision") }
+    }
+    LaunchedEffect(modelKey, voices) {
+        if (selectedModel != null && voices.isNotEmpty() && initializedModel != modelKey) {
+            voice = uploadedVoiceId?.takeIf { uploaded -> voices.any { it.id == uploaded } }
+                ?: selectedModel.voice.takeIf { configured -> voices.any { it.id == configured } } ?: voices.first().id
+            speed = selectedModel.speed.coerceIn(0.25f, 4f)
+            pitch = selectedModel.pitch.coerceIn(0.5f, 2f)
+            volume = selectedModel.volume.coerceIn(0f, 2f)
+            initializedModel = modelKey
         }
     }
+    LaunchedEffect(uploadedVoiceId) { uploadedVoiceId?.let { voice = it } }
+    LaunchedEffect(audio?.cacheUri) {
+        if (audio != null && audio?.cacheUri != playedAudio) listState.animateScrollToItem(if (error == null) 2 else 3)
+    }
+    LaunchedEffect(toast) { toast?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); vm.clearToast() } }
+    val visibleVoices = remember(voices, search) { voices.filter { search.isBlank() || it.displayName.contains(search, true) || it.id.contains(search, true) } }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.tts_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { vm.load() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.tts_refresh), tint = MaterialTheme.colorScheme.onSurface)
-                    }
+    PlaygroundScaffold(stringResource(R.string.tts_title), stringResource(R.string.tts_generate_preview),
+        busy, text.isNotBlank() && voice.isNotBlank() && models.isNotEmpty() && !configLoading,
+        onBack, { vm.refresh() }, { vm.preview(text, voice, speed, pitch, volume) }, vm::cancel, onConfigureModels) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding), state = listState, contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            error?.let { message -> item { ErrorBanner(message, onRetry = { vm.clearError(); vm.refresh() }) } }
+            item {
+                PlaygroundSection(stringResource(R.string.playground_input), trailing = {
+                    TextButton(onClick = { text = defaultText }, enabled = !busy) { Text(stringResource(R.string.playground_sample)) }
+                }) {
+                    OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.tts_text_content)) }, minLines = 4, maxLines = 8,
+                        supportingText = { Text(stringResource(R.string.playground_character_count, text.length)) })
+                    PlaygroundModelPicker(models, modelId, !busy && !configLoading, vm::selectModel)
+                    PlaygroundDropdown(stringResource(R.string.tts_voice), voice, voices.map { it.id to it.displayName },
+                        { voice = it }, !busy && !configLoading)
+                    if (configLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 错误提示
-                error?.let {
-                    ErrorBanner(message = it, onRetry = {
-                        vm.clearError()
-                        vm.load()
-                    })
-                }
-
-                // 试验区
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(title = stringResource(R.string.tts_voice_preview), subtitle = stringResource(R.string.tts_voice_preview_subtitle))
-                    Spacer(Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        label = { Text(stringResource(R.string.tts_text_content)) },
-                        minLines = 3,
-                        maxLines = 6,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    // 音色选择下拉
-                    TtsVoiceDropdown(
-                        voices = voices,
-                        selected = selectedVoice,
-                        onSelect = { selectedVoice = it }
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    // 语速 / 音调 / 音量滑块
-                    SliderField(label = stringResource(R.string.tts_speed), value = speed, onValueChange = { speed = it })
-                    Spacer(Modifier.height(8.dp))
-                    SliderField(label = stringResource(R.string.tts_pitch), value = pitch, onValueChange = { pitch = it })
-                    Spacer(Modifier.height(8.dp))
-                    SliderField(label = stringResource(R.string.tts_volume), value = volume, onValueChange = { volume = it })
-
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            val voice = selectedVoice.ifBlank { voices.firstOrNull()?.id ?: "" }
-                            when {
-                                text.isBlank() -> vm.showToast(context.getString(R.string.tts_prompt_input_text))
-                                voice.isBlank() -> vm.showToast(context.getString(R.string.tts_prompt_select_voice))
-                                else -> vm.preview(text, voice, speed, pitch, volume)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text(stringResource(R.string.tts_generate_preview), color = MaterialTheme.colorScheme.onPrimary)
+            }
+            item {
+                PlaygroundSection(stringResource(R.string.playground_parameters), trailing = {
+                    IconButton(onClick = { parametersExpanded = !parametersExpanded }) {
+                        Icon(if (parametersExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            stringResource(if (parametersExpanded) R.string.playground_collapse else R.string.playground_expand))
                     }
-                }
-
-                // 预览结果：本地模式播放缓存音频，远程模式显示 URL
-                localAudio?.let { audio ->
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(title = stringResource(R.string.tts_preview_result))
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.tts_model_label, audio.usedModelName),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        AudioRenderer(url = audio.cacheUri, modifier = Modifier.fillMaxWidth())
-                    }
-                } ?: previewUrl?.let { url ->
-                    if (url.isNotBlank()) {
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            SectionHeader(title = stringResource(R.string.tts_preview_result))
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = url,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                IconButton(onClick = {
-                                    clipboard.setText(AnnotatedString(url))
-                                    Toast.makeText(context, context.getString(R.string.tts_audio_url_copied), Toast.LENGTH_SHORT).show()
-                                }) {
-                                    Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.tts_copy_url), tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
+                }) {
+                    if (parametersExpanded) {
+                        SliderField(stringResource(R.string.tts_speed), speed, 0.25f..4f, !busy) { speed = it }
+                        SliderField(stringResource(R.string.tts_pitch), pitch, 0.5f..2f, !busy) { pitch = it }
+                        SliderField(stringResource(R.string.tts_volume), volume, 0f..2f, !busy) { volume = it }
+                        OutlinedTextField(voice, { voice = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                            enabled = !busy, label = { Text(stringResource(R.string.playground_voice_id)) })
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(stringResource(R.string.playground_provider_parameters), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { speed = 1f; pitch = 1f; volume = 1f }, enabled = !busy) { Text(stringResource(R.string.playground_reset)) }
                         }
-                    }
-                }
-
-                // 音色列表
-                SectionHeader(title = stringResource(R.string.tts_voice_list), subtitle = stringResource(R.string.tts_voice_count, voices.size))
-                if (voices.isEmpty() && !loading) {
-                    EmptyState(title = stringResource(R.string.tts_no_voices))
-                } else {
-                    voices.forEach { voice ->
-                        TtsVoiceItem(voice = voice)
+                    } else {
+                        Text(stringResource(R.string.playground_voice_parameters, speed, pitch, volume),
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
+            audio?.let { result -> item(key = "audio") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.tts_preview_result), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (result.usedModelName.isNotBlank()) Text(result.usedModelName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AudioRenderer(result.cacheUri, modifier = Modifier.fillMaxWidth(),
+                        autoPlay = playedAudio != result.cacheUri, onAutoPlay = { playedAudio = result.cacheUri })
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { PlaygroundMediaActions(result.cacheUri, result.mimeType) }
+                }
+            } }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.tts_voice_list), style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.tts_voice_count, voices.size), style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (vm.canUpload) IconButton(onClick = { uploadDialog = true }, enabled = !busy) {
+                        Icon(Icons.Default.Upload, stringResource(R.string.playground_upload_voice))
+                    }
+                }
+                OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text(stringResource(R.string.playground_search_voices)) }, leadingIcon = { Icon(Icons.Default.Search, null) })
+            }
+            if (visibleVoices.isEmpty() && !configLoading) item {
+                Text(stringResource(if (voices.isEmpty()) R.string.tts_no_voices else R.string.playground_no_matches),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            }
+            items(visibleVoices, key = { it.id }) { item ->
+                VoiceRow(item, voice == item.id, !busy && !configLoading,
+                    { voice = item.id }, { voice = item.id; vm.preview(defaultText, item.id, speed, pitch, volume) })
+            }
+        }
+    }
+    if (uploadDialog) VoiceUploadDialog(vm, onDismiss = { uploadDialog = false })
+}
 
-            LoadingOverlay(visible = loading && voices.isEmpty())
+@Composable
+private fun VoiceRow(voice: TtsVoice, selected: Boolean, enabled: Boolean, onSelect: () -> Unit, onPreview: () -> Unit) {
+    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) {
+        Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onSelect).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected, onClick = onSelect, enabled = enabled)
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(voice.displayName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                if (!voice.description.isNullOrBlank()) Text(voice.description, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (voice.custom) Text(stringResource(R.string.tts_custom), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onPreview, enabled = enabled) { Icon(Icons.Default.PlayArrow, stringResource(R.string.playground_listen)) }
         }
     }
 }
 
-/** 单个音色卡片：名称 + 自定义标记 + 提供商 + 描述 */
 @Composable
-private fun TtsVoiceItem(voice: TtsVoice) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = voice.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (!voice.description.isNullOrBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = voice.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                if (!voice.provider.isNullOrBlank()) {
-                    Text(stringResource(R.string.tts_provider_label, voice.provider), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            // 自定义音色标记
-            if (voice.custom) {
-                Box(
-                    modifier = Modifier
-                        .background(SuccessGreen.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(stringResource(R.string.tts_custom), style = MaterialTheme.typography.labelSmall, color = SuccessGreen)
-                }
-            }
+private fun SliderField(label: String, value: Float, range: ClosedFloatingPointRange<Float>, enabled: Boolean, onChange: (Float) -> Unit) {
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(String.format(java.util.Locale.getDefault(), "%.2f", value), style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary)
         }
+        Slider(value, onChange, valueRange = range, enabled = enabled)
     }
 }
 
-/** 音色选择下拉框 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TtsVoiceDropdown(
-    voices: List<TtsVoice>,
-    selected: String,
-    onSelect: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedVoice = voices.firstOrNull { it.id == selected }
-    val displayValue = selectedVoice?.displayName ?: ""
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        @Suppress("DEPRECATION")
-        OutlinedTextField(
-            value = displayValue,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(stringResource(R.string.tts_voice)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth()
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            if (voices.isEmpty()) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.tts_no_voices)) }, onClick = { expanded = false })
-            } else {
-                voices.forEach { voice ->
-                    DropdownMenuItem(
-                        text = { Text(voice.displayName) },
-                        onClick = {
-                            onSelect(voice.id)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
+private fun VoiceUploadDialog(vm: TtsPlaygroundViewModel, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val busy by vm.loading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    var uri by rememberSaveable { mutableStateOf<String?>(null) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var sampleText by rememberSaveable { mutableStateOf("") }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { selected ->
+        uri = selected?.toString()
+        selected?.let { runCatching { context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
     }
-}
-
-/** 带数值显示的滑块字段 */
-@Composable
-private fun SliderField(label: String, value: Float, onValueChange: (Float) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-            Text("%.2f".format(value), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    NekoDialog(onDismiss = { if (!busy) onDismiss() }, title = stringResource(R.string.playground_upload_voice),
+        confirmText = stringResource(if (busy) R.string.playground_working else R.string.playground_upload),
+        confirmEnabled = !busy && uri != null && name.isNotBlank() && sampleText.isNotBlank(),
+        onConfirm = { uri?.let { vm.upload(context.applicationContext, Uri.parse(it), name, sampleText, onDismiss) } },
+        onCancel = { vm.cancel(); onDismiss() }, contentScrollable = true) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(if (vm.uploadUsesDefaultModel) R.string.playground_upload_default_model else R.string.playground_upload_hint),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            OutlinedButton(onClick = { picker.launch(arrayOf("audio/*")) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (uri == null) R.string.playground_select_audio else R.string.playground_audio_selected))
+            }
+            OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.playground_voice_name)) },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
+            OutlinedTextField(sampleText, { sampleText = it }, label = { Text(stringResource(R.string.playground_sample_text)) },
+                modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4, enabled = !busy)
         }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = 0.0f..2.0f
-        )
     }
 }
