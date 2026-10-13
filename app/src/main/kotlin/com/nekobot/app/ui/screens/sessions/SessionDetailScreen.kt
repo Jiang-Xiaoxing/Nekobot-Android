@@ -48,6 +48,11 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Info
+import com.nekobot.app.data.local.ai.PromptSection
+import com.nekobot.app.data.model.ReasoningEffort
 import androidx.compose.material3.TextButton
 import com.nekobot.app.ui.screens.chat.companionSettingsBackground
 import com.nekobot.app.ui.components.BorderlessAssistChip as AssistChip
@@ -865,6 +870,12 @@ fun SessionDetailScreen(
     }
     val singleSessionRole = session?.companionMode == true
     val advancedPage = singleSessionRole && advancedOpen
+    var promptSectionUsage by remember(sessionId) { mutableStateOf<Map<PromptSection, Int>?>(null) }
+    LaunchedEffect(sessionId, advancedPage) {
+        if (advancedPage && ServiceContainer.prefs.isLocalMode) {
+            promptSectionUsage = ServiceContainer.localRepository.companionPromptSectionCounts(sessionId)
+        }
+    }
     val showMain = !singleSessionRole || !advancedOpen
     val showAdvanced = !singleSessionRole || advancedOpen
     if (singleSessionRole && relationshipOpen) {
@@ -1079,8 +1090,69 @@ fun SessionDetailScreen(
                     session?.let { s ->
                         if (advancedPage) {
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("这里可以调整思考强度并查看调试信息。思考强度选择后立即保存。",
+                            Text("调整思考强度，按需查看调试信息",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            var effort by remember(sessionId) { mutableStateOf(ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }
+                            AdvancedReasoningCard(effort, onSelect = { option ->
+                                ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
+                                effort = option
+                            }) {
+                                val customInitial = remember(sessionId) { ServiceContainer.localRepository.companionCustomReasoning(sessionId) }
+                                com.nekobot.app.ui.screens.chat.CustomReasoningFields(customInitial, enabled = true,
+                                    onChange = { ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) })
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("调试信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("默认收起，点击展开", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            AdvancedDebugCard(sessionId, runtimeSystemPromptTitle,
+                                "查看实际发送给模型的系统提示词", Icons.Outlined.Description) {
+                                Text("这里只显示系统提示词部分；独立记忆与动态辅助资料在请求的其他部分。",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (composedSystemPrompt.isBlank()) {
+                                    Text("暂无运行时记录，完成一次聊天后可查看", style = MaterialTheme.typography.bodyMedium)
+                                } else {
+                                    TextButton(onClick = { clipboard.setText(AnnotatedString(composedSystemPrompt)) }) {
+                                        Icon(Icons.Filled.ContentCopy, copyDesc, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(copyDesc)
+                                    }
+                                    SelectionContainer {
+                                        Text(composedSystemPrompt, style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                                                .verticalScroll(rememberScrollState()))
+                                    }
+                                }
+                            }
+                            AdvancedDebugCard(sessionId, promptStackTitle,
+                                "查看各段内容、顺序与启用状态", Icons.Outlined.Layers) {
+                                Text(promptStackDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (promptStackDebug.isEmpty()) {
+                                    Text("暂无注入记录，完成一次聊天后可查看", style = MaterialTheme.typography.bodyMedium)
+                                } else {
+                                    Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        promptStackDebug.forEach { inj ->
+                                            PromptStackChip(item = inj, disabled = !inj.enabled || inj.key in disabledPromptKeys,
+                                                onClick = { selectedPromptStackItem = inj })
+                                        }
+                                    }
+                                    if (disabledPromptKeys.isNotEmpty()) Text(disabledPromptsCountFmt.format(disabledPromptKeys.size),
+                                        style = MaterialTheme.typography.labelSmall, color = WarningAmber)
+                                }
+                            }
+                            AdvancedPromptUsageCard(promptSectionUsage)
+                            AdvancedDebugCard(sessionId, "会话元信息", "编号、创建时间等只读记录", Icons.Outlined.Info) {
+                                DetailLine(label = sessionIdLabel, value = s.id.orEmpty())
+                                DetailLine(label = userIdLabel, value = s.userId ?: "—")
+                                DetailLine(label = createdAtLabel, value = s.createdAt?.take(19) ?: "—")
+                                DetailLine(label = updatedAtLabel, value = s.updatedAt?.take(19) ?: "—")
+                                DetailLine(label = publicLabel, value = if (isPublic) yesText else noText)
+                                DetailLine(label = archivedLabel, value = if (s.archived == true) yesText else noText)
+                                DetailLine(label = readonlyLabel, value = if (s.readOnly == true) yesText else noText)
+                                s.lastMessage?.let { DetailLine(label = lastMessageLabel, value = it.take(50)) }
+                            }
                         }
                         if (showMain && singleSessionRole) {
                             CompanionRoleSettingsContent(
@@ -1276,7 +1348,7 @@ fun SessionDetailScreen(
                             }
 
                             // === 3.4 运行时系统提示词（composed_system_prompt，只读） ===
-                            if (composedSystemPrompt.isNotBlank()) {
+                            if (!singleSessionRole && composedSystemPrompt.isNotBlank()) {
                                 GlassCard(modifier = Modifier.fillMaxWidth()) {
                                     SectionHeader(
                                         title = runtimeSystemPromptTitle,
@@ -1344,7 +1416,7 @@ fun SessionDetailScreen(
                             }
 
                             // === 3.6 提示词注入栈（prompt_stack_debug，只读 + 可禁用） ===
-                            if (promptStackDebug.isNotEmpty()) {
+                            if (!singleSessionRole && promptStackDebug.isNotEmpty()) {
                                 GlassCard(modifier = Modifier.fillMaxWidth()) {
                                     SectionHeader(title = promptStackTitle)
                                     Spacer(Modifier.height(8.dp))
@@ -1885,32 +1957,8 @@ fun SessionDetailScreen(
                             }
                         }
                         if (showAdvanced) {
-                            if (singleSessionRole) {
-                                var effort by remember(sessionId) { mutableStateOf(com.nekobot.app.ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }
-                                var effortMenu by remember { mutableStateOf(false) }
-                                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                    SectionHeader(title = "思考强度")
-                                    Text("只影响这个会话，模型需要支持对应选项。", style = MaterialTheme.typography.bodySmall)
-                                    Box {
-                                        OutlinedButton(onClick = { effortMenu = true }) { Text(effort.displayName) }
-                                        DropdownMenu(expanded = effortMenu, onDismissRequest = { effortMenu = false }) {
-                                            com.nekobot.app.data.model.ReasoningEffort.entries.forEach { option ->
-                                                DropdownMenuItem(text = { Text(option.displayName) }, onClick = {
-                                                    com.nekobot.app.ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
-                                                    effort = option; effortMenu = false
-                                                })
-                                            }
-                                        }
-                                    }
-                                    if (effort == com.nekobot.app.data.model.ReasoningEffort.CUSTOM) {
-                                        val customInitial = remember(sessionId) { com.nekobot.app.ServiceContainer.localRepository.companionCustomReasoning(sessionId) }
-                                        com.nekobot.app.ui.screens.chat.CustomReasoningFields(customInitial, enabled = true,
-                                            onChange = { com.nekobot.app.ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) })
-                                    }
-                                }
-                            }
                             // === 7. 只读元信息 ===
-                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            if (!singleSessionRole) GlassCard(modifier = Modifier.fillMaxWidth()) {
                                 SectionHeader(title = metaTitle)
                                 Spacer(Modifier.height(8.dp))
                                 DetailLine(label = sessionIdLabel, value = s.id.orEmpty())

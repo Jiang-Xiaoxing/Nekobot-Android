@@ -8,7 +8,9 @@ internal data class CompanionRequestSnapshot(
     val breakdown: ContextUsageBreakdown,
     val sentAt: Long,
     val maxContext: Int,
-    val reportedInput: Int? = null
+    val reportedInput: Int? = null,
+    /** 新请求记录五类提示词计数；旧快照缺失时由页面明确显示未记录。 */
+    val promptSections: Map<PromptSection, Int>? = null
 )
 
 internal object CompanionRequestUsage {
@@ -73,6 +75,6 @@ internal object CompanionRequestUsage {
             ?: (usage["input_tokens"] as? Number)?.toInt()
         return CompanionRequestSnapshot(ContextUsageBreakdown(sums.map { (part, values) ->
             ContextUsagePartTokens(part, values.first, values.second)
-        }), sentAt, maxContext, reported)
+        }), sentAt, maxContext, reported, promptSectionCounts(messages))
     }
 }

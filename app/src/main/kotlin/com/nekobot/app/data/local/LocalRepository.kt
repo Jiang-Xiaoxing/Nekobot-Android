@@ -10849,6 +10849,11 @@ ${AiOutputLanguage.directive()}
      *
      * 运行状态（stage / 工具名 / 已完成工具数）仍来自 agent_run，未运行时为非活跃。
      */
+    internal suspend fun companionPromptSectionCounts(sessionId: String): Map<com.nekobot.app.data.local.ai.PromptSection, Int>? =
+        withContext(Dispatchers.IO) {
+            ServiceContainer.prefs.companionRequestSnapshot(db.dbName, sessionId)?.promptSections
+        }
+
     suspend fun agentLiveContextUsage(sessionId: String): AgentLiveContextUsage = withContext(Dispatchers.IO) {
         val session = sessionDao.getById(sessionId)
         val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
