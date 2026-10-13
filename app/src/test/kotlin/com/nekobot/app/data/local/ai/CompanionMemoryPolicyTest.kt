@@ -84,6 +84,17 @@ class CompanionMemoryPolicyTest {
         assertTrue(CompanionMemoryPolicy.supportsOperation("cancel", "复诊不去了"))
         assertTrue(CompanionMemoryPolicy.supportsOperation("update", "改成星期五复诊"))
     }
+    @Test fun keywordAndVectorShareTheSameTextWindow() {
+        val window = CompanionMemoryPolicy.HYBRID_TEXT_CHARS
+        val filler = "甲".repeat(window)
+        assertEquals(filler, CompanionMemoryPolicy.matchText(filler + "怕辣"))
+        assertEquals(0f, CompanionMemoryPolicy.score(filler + "怕辣", "用户怕辣"), 0.001f)
+        assertEquals(0f, CompanionMemoryPolicy.score(filler + "2026年1月1日", "2026-01-01 我怕辣"), 0.001f)
+        assertTrue(CompanionMemoryPolicy.score("怕辣$filler", "用户怕辣") > 0f)
+        val (keyword, date) = CompanionMemoryPolicy.keywordParts("2026年1月1日怕辣", "2026-01-01 我怕辣")
+        assertEquals(1f, date, 0f)
+        assertEquals(CompanionMemoryPolicy.score("2026年1月1日怕辣", "2026-01-01 我怕辣"), keyword + date, 1e-5f)
+    }
     @Test fun chineseDatesNormalizeAndAmbiguousAnnualBirthdayStaysUnknown() {
         assertEquals(listOf("2026-01-01"), CompanionMemoryPolicy.dateTerms("2026年1月1日说了什么"))
         assertTrue(CompanionMemoryPolicy.score("2026年1月1日原话", "2026-01-01 我怕辣") > 1f)

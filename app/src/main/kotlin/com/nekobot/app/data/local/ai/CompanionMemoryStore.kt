@@ -92,7 +92,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 val unitQuery = firstUnit.joinToString(" ") { row -> row.content }
                 val semantic = semanticSearch.scores(scope, unitQuery, old.map(::searchItem))
                 val relevant = old.filter { it.current || it.status == "conflict" }.sortedByDescending {
-                    CompanionMemoryPolicy.score(unitQuery, searchItem(it).text) + (semantic["fact:${it.id}"] ?: 0f) +
+                    val (keyword, dateBonus) = CompanionMemoryPolicy.keywordParts(unitQuery, searchItem(it).text)
+                    CompanionConsolidationScoring.hybrid(keyword, semantic["fact:${it.id}"], dateBonus) +
                         (if (clarifications.any { pending -> pending.factKey == it.factKey }) 2f else 0f)
                 }
                 // Only a bounded old-fact view is sent. Omitted stored facts are not deleted.
@@ -204,7 +205,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 if (target.isEmpty()) break
                 val old = validatedMemories(scope).filter { it.current || it.status in setOf("conflict", "locked_conflict") }
                 val questions = dao.clarifications(scope.id).associateBy { it.factKey }
-                val query = target.joinToString(" ") { it.content }
+                // 向量只嵌入这段窗口；关键词打分走同一窗口，避免一侧看见全文。
+                val query = CompanionMemoryPolicy.matchText(target.joinToString(" ") { it.content })
                 val items = old.associate { it.id to searchItem(it) }
                 // 开启“向量用于总结”且向量可用时，按关键词＋意思混合打分；失败则记录并回退关键词。
                 val vectorScores = if (consolidation.vectorEnabled) {
@@ -214,8 +216,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                     }
                 } else emptyMap()
                 val relevance = old.associate { fact ->
-                    fact.id to CompanionConsolidationScoring.hybrid(CompanionMemoryPolicy.score(query, items.getValue(fact.id).text),
-                        vectorScores[items.getValue(fact.id).cacheId])
+                    val (keyword, dateBonus) = CompanionMemoryPolicy.keywordParts(query, items.getValue(fact.id).text)
+                    fact.id to CompanionConsolidationScoring.hybrid(keyword, vectorScores[items.getValue(fact.id).cacheId], dateBonus)
                 }
                 val existing = mutableListOf<Map<String, Any?>>()
                 var skipped = 0

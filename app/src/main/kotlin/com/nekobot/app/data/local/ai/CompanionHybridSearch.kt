@@ -41,7 +41,7 @@ internal class CompanionHybridSearch(
                         row.fingerprint == it.fingerprint && decode(row.vectorJson) != null
                     } != true }.take(32)
                     for (batch in missing.chunked(16)) {
-                        val vectors = model.embed(batch.map { it.text })
+                        val vectors = model.embed(batch.map { CompanionMemoryPolicy.matchText(it.text) })
                         require(vectors.size == batch.size && vectors.all(::validVector) && vectors.map { it.size }.distinct().size == 1)
                         db.withTransaction {
                             if (current(scope)) dao.saveVectors(batch.zip(vectors).map { (item, vector) ->
@@ -72,7 +72,8 @@ internal class CompanionHybridSearch(
                 val model = backend(scope) ?: return@withTimeoutOrNull emptyMap()
                 val cached = dao.vectors(scope.id, model.modelKey).associateBy { "${it.itemType}:${it.itemId}" }
                 if (cached.isEmpty() || !current(scope)) return@withTimeoutOrNull emptyMap()
-                val vectors = model.embed(listOf(query.take(2_000)))
+                // 与关键词打分共用 CompanionMemoryPolicy.HYBRID_TEXT_CHARS，查询向量只覆盖这段。
+                val vectors = model.embed(listOf(CompanionMemoryPolicy.matchText(query)))
                 require(vectors.size == 1 && validVector(vectors.single()))
                 val q = vectors.single()
                 if (!current(scope)) return@withTimeoutOrNull emptyMap()
@@ -99,7 +100,7 @@ internal class CompanionHybridSearch(
                         cached[it.cacheId]?.let { row -> row.fingerprint != it.fingerprint || decode(row.vectorJson) == null } != false
                     }.take(32)
                     for (batch in missing.chunked(16)) {
-                        val vectors = model.embed(batch.map { it.text.take(4_000) })
+                        val vectors = model.embed(batch.map { CompanionMemoryPolicy.matchText(it.text) })
                         require(vectors.size == batch.size && vectors.all(::validVector))
                         require(vectors.map { it.size }.distinct().size == 1)
                         val rows = batch.zip(vectors).map { (item, vector) ->
@@ -111,7 +112,7 @@ internal class CompanionHybridSearch(
                         rows.forEach { cached["${it.itemType}:${it.itemId}"] = it }
                     }
                     // Only the question is sent here; the saved memory vectors stay on the device.
-                    val queryVectors = model.embed(listOf(query.take(2_000)))
+                    val queryVectors = model.embed(listOf(CompanionMemoryPolicy.matchText(query)))
                     require(queryVectors.size == 1 && validVector(queryVectors.single()))
                     val vector = queryVectors.single()
                     val result = items.mapNotNull { item ->

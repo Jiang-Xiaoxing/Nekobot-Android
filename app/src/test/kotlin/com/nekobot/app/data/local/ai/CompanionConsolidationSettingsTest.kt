@@ -46,9 +46,17 @@ class CompanionConsolidationSettingsTest {
         assertFalse(CompanionConsolidationSettings(existing = 70000).valid())
     }
 
-    @Test fun hybridAddsVectorAndFallsBackToKeyword() {
-        assertEquals(1.5f, CompanionConsolidationScoring.hybrid(1f, .5f), 1e-6f)
+    @Test fun hybridAveragesVectorAndDoesNotPenalizeMissingVector() {
+        assertEquals(0.75f, CompanionConsolidationScoring.hybrid(1f, .5f), 1e-6f)
         assertEquals(1f, CompanionConsolidationScoring.hybrid(1f, null), 1e-6f)
+        assertEquals(1f, CompanionConsolidationScoring.hybrid(1f, 1f), 1e-6f)
+        assertEquals(0.4f, CompanionConsolidationScoring.hybrid(.4f, null), 1e-6f)
+        assertEquals(0.4f, CompanionConsolidationScoring.hybrid(.4f, .4f), 1e-6f)
+        val weakerKeywordWithVector = CompanionConsolidationScoring.hybrid(.4f, .9f)
+        val strongerKeywordWithoutVector = CompanionConsolidationScoring.hybrid(.8f, null)
+        assertTrue(strongerKeywordWithoutVector > weakerKeywordWithVector)
+        assertEquals(1.4f, CompanionConsolidationScoring.hybrid(.4f, null, dateBonus = 1f), 1e-6f)
+        assertEquals(1.4f, CompanionConsolidationScoring.hybrid(.4f, .4f, dateBonus = 1f), 1e-6f)
     }
 
     @Test fun settingsFallBackToDefaultWithoutPrefs() {

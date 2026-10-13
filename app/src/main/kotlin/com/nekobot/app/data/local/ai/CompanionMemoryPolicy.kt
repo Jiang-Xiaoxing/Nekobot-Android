@@ -53,9 +53,28 @@ internal object CompanionMemoryPolicy {
         .findAll(text).mapNotNull { match -> runCatching {
             LocalDate.of(match.groupValues[1].toInt(), match.groupValues[2].toInt(), match.groupValues[3].toInt()).toString()
         }.getOrNull() }.distinct().toList()
-    fun score(query: String, text: String): Float = LocalKnowledgeSearch.lexicalScore(
-        expand(query) + " " + dateTerms(query).joinToString(" "), expand(text) + " " + dateTerms(text).joinToString(" ")) +
-        if (dateTerms(query).any { it in dateTerms(text) }) 1f else 0f
+
+    /**
+     * 关键词和向量共用的文本窗口。嵌入接口只发送这段，关键词也只对这段打分，
+     * 避免向量只看见开头、关键词仍用全文。
+     */
+    const val HYBRID_TEXT_CHARS = 2_000
+    fun matchText(value: String): String = value.take(HYBRID_TEXT_CHARS)
+
+    /** 第一项是 0～1 的关键词余弦，第二项是日期相符时的 1 分，否则为 0。 */
+    fun keywordParts(query: String, text: String): Pair<Float, Float> {
+        val q = matchText(query)
+        val t = matchText(text)
+        val lexical = LocalKnowledgeSearch.lexicalScore(
+            expand(q) + " " + dateTerms(q).joinToString(" "), expand(t) + " " + dateTerms(t).joinToString(" "))
+        val date = if (dateTerms(q).any { it in dateTerms(t) }) 1f else 0f
+        return lexical to date
+    }
+
+    fun score(query: String, text: String): Float {
+        val (lexical, date) = keywordParts(query, text)
+        return lexical + date
+    }
     fun fingerprint(message: LocalMessageEntity): String = fingerprint(
         message.id, message.role, message.createdAt, message.timestamp, message.content, message.deleted)
     fun fingerprint(id: String, role: String, createdAt: String, timestamp: String?, content: String, deleted: Boolean): String =
