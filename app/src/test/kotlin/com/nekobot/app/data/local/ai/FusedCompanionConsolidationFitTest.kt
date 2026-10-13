@@ -1,5 +1,6 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -112,6 +113,56 @@ class FusedCompanionConsolidationFitTest {
         assertEquals(0, second.skipMessages)
         assertFalse(second.needsLargerModel)
     }
+
+    @Test fun lockedMemoryIsKeptWhenASmallerOrdinaryOneWouldFitInstead() {
+        val rows = listOf(slot("locked", 8, protected = true), slot("small", 3, protected = false), slot("later", 3, protected = false))
+        val packed = FusedCompanionPolicy.packExistingMemories(rows, { it.protected }) { kept -> kept.sumOf { it.size } <= 6 }
+        assertEquals(listOf("locked"), packed.kept.map { it.id })
+        assertEquals(1, packed.protectedKept)
+        assertEquals(1, packed.protectedOverBudget)
+        assertEquals(2, packed.skippedOrdinary)
+    }
+
+    @Test fun ordinaryMemoriesStopAtTheFirstOneThatDoesNotFit() {
+        val rows = listOf(slot("a", 4, false), slot("b", 4, false), slot("c", 2, false))
+        val packed = FusedCompanionPolicy.packExistingMemories(rows, { it.protected }) { kept -> kept.sumOf { it.size } <= 6 }
+        assertEquals(listOf("a"), packed.kept.map { it.id })
+        assertEquals(0, packed.protectedKept)
+        assertEquals(2, packed.skippedOrdinary)
+    }
+
+    @Test fun protectedMemoriesComeFirstEvenIfListedAfterOrdinaryOnes() {
+        val rows = listOf(slot("ordinary", 3, false), slot("core", 3, true), slot("tail", 3, false))
+        val packed = FusedCompanionPolicy.packExistingMemories(rows, { it.protected }) { kept -> kept.sumOf { it.size } <= 5 }
+        assertEquals(listOf("core"), packed.kept.map { it.id })
+        assertEquals(1, packed.protectedKept)
+        assertEquals(2, packed.skippedOrdinary)
+    }
+
+    @Test fun memoriesThatFitStayInProtectedThenOrdinaryOrder() {
+        val rows = listOf(slot("note", 2, false), slot("locked", 2, true))
+        val packed = FusedCompanionPolicy.packExistingMemories(rows, { it.protected }) { kept -> kept.sumOf { it.size } <= 6 }
+        assertEquals(listOf("locked", "note"), packed.kept.map { it.id })
+        assertEquals(0, packed.protectedOverBudget)
+        assertEquals(0, packed.skippedOrdinary)
+    }
+
+    @Test fun lockedCoreAndOpenQuestionsAreProtectedFromBeingDropped() {
+        assertTrue(consolidationReferenceProtected(memory("locked", locked = true), emptySet()))
+        assertTrue(consolidationReferenceProtected(memory("fixed", alwaysProvide = true), emptySet()))
+        assertTrue(consolidationReferenceProtected(memory("core", kind = "core"), emptySet()))
+        assertTrue(consolidationReferenceProtected(memory("asked"), setOf("asked")))
+        assertFalse(consolidationReferenceProtected(memory("plain"), emptySet()))
+        assertFalse(consolidationReferenceProtected(memory("removed", kind = "core", coreExcluded = true), emptySet()))
+    }
+
+    private fun slot(id: String, size: Int, protected: Boolean) = MemorySlot(id, size, protected)
+    private data class MemorySlot(val id: String, val size: Int, val protected: Boolean)
+    private fun memory(key: String, locked: Boolean = false, kind: String = "fact", alwaysProvide: Boolean = false,
+        coreExcluded: Boolean = false) = CompanionMemoryEntity(
+        id = key, scopeId = "s", factKey = key, version = 1, kind = kind, subject = "用户", content = "正文",
+        status = "active", locked = locked, alwaysProvide = alwaysProvide, coreExcluded = coreExcluded,
+        createdAt = "now", updatedAt = "now")
 
     private fun row(id: Int, role: String, text: String) = LocalMessageEntity(
         id = "$id", sessionId = "s", role = role, content = text,

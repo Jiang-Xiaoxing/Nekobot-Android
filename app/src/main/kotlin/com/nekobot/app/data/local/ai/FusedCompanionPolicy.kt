@@ -88,6 +88,42 @@ internal object FusedCompanionPolicy {
         }
     }
 
+    /**
+     * 整理时参考旧记忆的装入结果。锁定、待确认和核心在前，放不下也先占位，不让更小的普通记忆顶掉。
+     * 普通记忆按原顺序装入，第一条放不下即停止。
+     */
+    internal data class ExistingMemoryPack<T>(
+        val kept: List<T>,
+        val protectedKept: Int,
+        val skippedOrdinary: Int,
+        val protectedOverBudget: Int
+    )
+
+    fun <T> packExistingMemories(
+        ordered: List<T>,
+        isProtected: (T) -> Boolean,
+        fits: (List<T>) -> Boolean
+    ): ExistingMemoryPack<T> {
+        val protected = ordered.filter(isProtected)
+        val ordinary = ordered.filterNot(isProtected)
+        val kept = mutableListOf<T>()
+        var protectedOverBudget = 0
+        for (item in protected) {
+            if (!fits(kept + item)) protectedOverBudget++
+            kept += item
+        }
+        val protectedKept = kept.size
+        var skippedOrdinary = 0
+        for ((index, item) in ordinary.withIndex()) {
+            if (!fits(kept + item)) {
+                skippedOrdinary = ordinary.size - index
+                break
+            }
+            kept += item
+        }
+        return ExistingMemoryPack(kept, protectedKept, skippedOrdinary, protectedOverBudget)
+    }
+
     /** 已回执的原话留在回合结构里，但不再进入下一批正文，避免一条放不下的消息反复挡住同回合其余原话。 */
     fun pendingConsolidationTurns(
         turns: List<List<LocalMessageEntity>>,

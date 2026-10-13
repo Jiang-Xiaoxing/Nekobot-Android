@@ -219,21 +219,27 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                     val (keyword, dateBonus) = CompanionMemoryPolicy.keywordParts(query, items.getValue(fact.id).text)
                     fact.id to CompanionConsolidationScoring.hybrid(keyword, vectorScores[items.getValue(fact.id).cacheId], dateBonus)
                 }
-                val existing = mutableListOf<Map<String, Any?>>()
-                var skipped = 0
-                for (fact in old.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked || it.factKey in questions }
+                val orderedFacts = old.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked || it.factKey in questions }
                     .thenByDescending { CompanionCoreMemory.contains(it) }
-                    .thenByDescending { relevance[it.id] ?: 0f }.thenBy { it.factKey })) {
+                    .thenByDescending { relevance[it.id] ?: 0f }.thenBy { it.factKey })
+                val factViews = orderedFacts.associate { fact ->
                     val q = questions[fact.factKey]
-                    val value = mapOf("key" to fact.factKey, "id" to fact.id, "category" to fact.category,
+                    fact.id to mapOf("key" to fact.factKey, "id" to fact.id, "category" to fact.category,
                         "content" to fact.content, "status" to fact.status, "current" to fact.current, "locked" to fact.locked,
                         "kind" to fact.kind, "always_provide" to fact.alwaysProvide, "core_excluded" to fact.coreExcluded,
                         "conflict_id" to q?.memoryId, "question_id" to q?.questionMessageId, "question" to q?.question)
-                    if (estimateLocalTextTokens(gson.toJson(existing + value)) > budgets.existing) { skipped++; continue }
-                    existing += value
                 }
-                if (skipped > 0) runCatching {
-                    com.nekobot.app.data.local.LocalLogger.d("CompanionMemoryStore", "记忆整理：参考旧记忆超出上限，跳过 $skipped 条")
+                val packed = FusedCompanionPolicy.packExistingMemories(orderedFacts,
+                    isProtected = { consolidationReferenceProtected(it, questions.keys) },
+                    fits = { rows -> estimateLocalTextTokens(gson.toJson(rows.map { factViews.getValue(it.id) })) <= budgets.existing })
+                val existing = packed.kept.map { factViews.getValue(it.id) }
+                if (packed.skippedOrdinary > 0 || packed.protectedOverBudget > 0) runCatching {
+                    val notice = buildString {
+                        append("记忆整理：参考旧记忆超出上限")
+                        if (packed.protectedOverBudget > 0) append("，${packed.protectedOverBudget} 条锁定或核心记忆已优先放入")
+                        if (packed.skippedOrdinary > 0) append("，跳过 ${packed.skippedOrdinary} 条")
+                    }
+                    com.nekobot.app.data.local.LocalLogger.d("CompanionMemoryStore", notice)
                 }
                 fun rows(rows: List<LocalMessageEntity>) = rows.map { mapOf("id" to it.id, "role" to it.role,
                     "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content) }
@@ -277,6 +283,11 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 target = target.take(fit.targetMessages)
                 val fittedReference = reference.takeLast(fit.referenceMessages)
                 val fittedExisting = existing.take(fit.existingCount)
+                val droppedProtected = (packed.protectedKept - fittedExisting.size).coerceAtLeast(0)
+                if (droppedProtected > 0) runCatching {
+                    com.nekobot.app.data.local.LocalLogger.w("CompanionMemoryStore",
+                        "记忆整理：模型容量仍装不下 $droppedProtected 条锁定或核心记忆，本批参考资料未包含它们")
+                }
                 val material = gson.toJson(mapOf("target" to rows(target), "reference" to rows(fittedReference), "existing" to fittedExisting))
                 val drafts = parse(generate(FusedCompanionPolicy.extractionPrompt, material))
                 val skipReason = if (skippedTotal > 0) "有${skippedTotal}条原话超过整理模型容量，已跳过，原话仍保留" else null
@@ -1008,3 +1019,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         """.trimIndent()
     }
 }
+
+/** 锁定、待玩家确认、核心或用户固定保留的记忆，整理时不能被普通记忆顶掉。 */
+internal fun consolidationReferenceProtected(fact: CompanionMemoryEntity, questionKeys: Set<String>): Boolean =
+    fact.locked || fact.factKey in questionKeys || CompanionCoreMemory.contains(fact)
