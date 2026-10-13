@@ -7,14 +7,14 @@ plugins {
 
 android {
     namespace = "com.nekobot.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.nekobot.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 65
-        versionName = "0.8.3"
+        versionCode = 66
+        versionName = "0.8.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // 内置 Linux 沙盒当前使用 arm64 PRoot。
@@ -70,11 +70,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "21"
     }
     buildFeatures {
         compose = true
@@ -98,6 +98,8 @@ android {
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.incremental", "true")
+    // 保持现有的 Java 代码生成方式，适配新版 KSP。
+    arg("room.generateKotlin", "false")
 }
 
 dependencies {
@@ -110,6 +112,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
+    implementation(libs.backdrop)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)

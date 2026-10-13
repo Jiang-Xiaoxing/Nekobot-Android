@@ -761,6 +761,15 @@ class PrefsManager(context: Context) {
         prefs.edit().remove("session_exec_allow_$sessionId").apply()
     }
 
+    /** 读取某会话的 YOLO 模式状态。 */
+    fun isSessionYoloEnabled(sessionId: String): Boolean =
+        prefs.getBoolean("session_yolo_enabled_$sessionId", false)
+
+    /** 保存某会话的 YOLO 模式状态，进程重启或 APK 更新后仍然有效。 */
+    fun setSessionYoloEnabled(sessionId: String, enabled: Boolean) {
+        prefs.edit().putBoolean("session_yolo_enabled_$sessionId", enabled).apply()
+    }
+
     // ============ RAG 检索配置 ============
 
     /** 语义检索权重（0.0~1.0） */

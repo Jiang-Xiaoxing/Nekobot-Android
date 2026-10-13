@@ -214,6 +214,9 @@ class LocalAiModelsViewModel : BaseViewModel() {
                 val result = ServiceContainer.unified.testLocalModel(model)
                 if (result?.error != null) {
                     onResult(string(R.string.localai_test_failed, result.error))
+                } else if (model.purpose == "image_generation") {
+                    val imageCount = result?.content?.toIntOrNull() ?: 0
+                    onResult(string(R.string.localai_image_generation_test_success, imageCount))
                 } else {
                     onResult(string(R.string.localai_test_success, result?.content?.take(50) ?: ""))
                 }

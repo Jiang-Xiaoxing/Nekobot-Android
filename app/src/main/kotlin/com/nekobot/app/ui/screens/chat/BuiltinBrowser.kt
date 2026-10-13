@@ -14,14 +14,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -32,21 +27,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -62,15 +53,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.nekobot.app.ui.components.GlassDropdownMenu as DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -88,26 +77,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -115,9 +95,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -127,10 +104,12 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocalWorkspaceStorage
 import com.nekobot.app.data.local.ai.LocalBrowserConfig
+import com.nekobot.app.ui.components.GlassBackdrop
+import com.nekobot.app.ui.components.glassDialogTint
+import com.nekobot.app.ui.components.liquidGlassMenuSurface
+import com.nekobot.app.ui.components.rememberLiquidGlassAvailable
+import com.nekobot.app.ui.components.rememberWindowGlassBackdrop
 import java.io.File
-import kotlin.math.roundToInt
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 
 /** 内置浏览器可加载的目标。 */
 internal sealed interface BrowserTarget {
@@ -260,26 +239,6 @@ internal object BuiltinBrowserTargets {
 /** 顶栏固定高度：永远只有这一行。 */
 private val TopBarHeight = 56.dp
 
-/** 抽屉收起态露出的把手条高度（不含系统导航栏）。 */
-private val DrawerHandleHeight = 52.dp
-
-/** 把手条与系统导航栏之间留出的间距：避开底部手势区，避免上滑被系统接管。 */
-private val DrawerBottomGap = 12.dp
-
-/**
- * 抽屉展开态最多占屏幕高度的比例。
- *
- * 上限只在内容超长时才生效（卡片本身 wrapContent）：取 0.75 是为了让 5~6 行这种
- * 常见数量能一次看全，不被卡片底边切掉最后一行。
- */
-private const val DrawerExpandedFraction = 0.75f
-
-/** 松手吸附的速度阈值（px/s）：超过则按方向直接吸附。 */
-private const val DrawerSnapVelocity = 600f
-
-/** 位移小于展开行程的这个比例时，松手回到拖动前的锚点（避免误触改状态）。 */
-private const val DrawerMinDragFraction = 0.2f
-
 // ── 粉色主题（跟随系统深浅色） ───────────────────────────────────────────
 
 private val BrowserPinkLight = lightColorScheme(
@@ -389,9 +348,9 @@ private fun BuiltinBrowserScreen(
     val attemptedUrls = remember(sessionId) { mutableMapOf<String, String>() }
     var showTabManager by remember { mutableStateOf(false) }
 
-    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // 收起态可见高度 = 把手条 + 与导航栏的间距 + 导航栏本身（卡片背景铺到屏幕底）
-    val drawerPeek = DrawerHandleHeight + DrawerBottomGap + navBarInset
+    var showWorkspaceHtmlDialog by remember { mutableStateOf(false) }
+    val glassAvailable = rememberLiquidGlassAvailable()
+    val workspaceBackdrop = rememberWindowGlassBackdrop(showWorkspaceHtmlDialog && glassAvailable)
 
     val invalidUrlText = stringResource(R.string.chat_browser_invalid_url)
     val closeDesc = stringResource(R.string.chat_browser_close)
@@ -464,7 +423,7 @@ private fun BuiltinBrowserScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    // 顶栏避开状态栏；底部留给抽屉卡片自己贴到屏幕底部
+                    // 顶栏避开状态栏。
                     .statusBarsPadding()
             ) {
                 BrowserTopBar(
@@ -472,8 +431,10 @@ private fun BuiltinBrowserScreen(
                     loading = selectedTab?.loading == true,
                     tabCount = tabs.size,
                     canGoBack = selectedTab?.canGoBack == true,
+                    hasWorkspacePages = workspacePages.isNotEmpty(),
                     onSubmit = { raw -> selectedTab?.let { openInTab(it.id, raw) } },
                     onOpenTabs = { showTabManager = true },
+                    onOpenWorkspace = { showWorkspaceHtmlDialog = true },
                     onNewTab = { viewModel.newTab() },
                     onReload = { selectedTab?.let { webViews[it.id]?.reload() } },
                     onBack = { selectedTab?.let { webViews[it.id]?.goBack() } },
@@ -496,27 +457,13 @@ private fun BuiltinBrowserScreen(
                     moreDesc = moreDesc,
                 )
 
-                BoxWithConstraints(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .clipToBounds()
                 ) {
-                    // 展开高度按「屏幕高度的 60%」算：内容区 + 状态栏 + 顶栏 = 整窗高度，
-                    // 再受内容区高度约束，避免超过可用空间
-                    val statusBarInset = WindowInsets.statusBars
-                        .asPaddingValues()
-                        .calculateTopPadding()
-                    val windowHeight = maxHeight + statusBarInset + TopBarHeight
-                    val sheetMaxHeight = minOf(maxHeight, windowHeight * DrawerExpandedFraction)
-                    val showDrawer = workspacePages.isNotEmpty()
-
-                    // 网页区：底部让出把手条，页面内容不被抽屉遮挡
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = if (showDrawer) drawerPeek else 0.dp)
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         val tab = selectedTab
                         if (tab != null && tab.url.isNotBlank()) {
                             BrowserWebView(
@@ -554,18 +501,20 @@ private fun BuiltinBrowserScreen(
                             BrowserStartPage()
                         }
                     }
-
-                    if (showDrawer) {
-                        WorkspaceDrawer(
-                            files = workspacePages,
-                            workspaceRoot = workspaceRoot,
-                            maxSheetHeight = sheetMaxHeight,
-                            peekHeight = drawerPeek,
-                            onOpen = { entry -> selectedTab?.let { openInTab(it.id, entry) } },
-                            modifier = Modifier.matchParentSize(),
-                        )
-                    }
                 }
+            }
+
+            if (showWorkspaceHtmlDialog && workspacePages.isNotEmpty()) {
+                WorkspaceHtmlDialog(
+                    files = workspacePages,
+                    workspaceRoot = workspaceRoot,
+                    backdrop = workspaceBackdrop,
+                    onDismiss = { showWorkspaceHtmlDialog = false },
+                    onOpen = { entry ->
+                        selectedTab?.let { openInTab(it.id, entry) }
+                        showWorkspaceHtmlDialog = false
+                    },
+                )
             }
 
             if (showTabManager) {
@@ -611,8 +560,10 @@ private fun BrowserTopBar(
     loading: Boolean,
     tabCount: Int,
     canGoBack: Boolean,
+    hasWorkspacePages: Boolean,
     onSubmit: (String) -> Unit,
     onOpenTabs: () -> Unit,
+    onOpenWorkspace: () -> Unit,
     onNewTab: () -> Unit,
     onReload: () -> Unit,
     onBack: () -> Unit,
@@ -765,6 +716,16 @@ private fun BrowserTopBar(
                         onReload()
                     },
                 )
+                if (hasWorkspacePages) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_browser_workspace_html)) },
+                        leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenWorkspace()
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.chat_browser_copy_url)) },
                     leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
@@ -948,261 +909,113 @@ private fun BrowserTabCard(
     }
 }
 
-/**
- * 底部工作区抽屉：悬浮在网页之上，两个锚点（收起 48dp 把手 / 展开 min(60% 高度, 内容高度)）。
- *
- * - 卡片顶圆角 24dp、底部贴死屏幕底，内部按导航栏与输入法留白；
- * - 松手按速度与位置吸附到最近锚点，不会停在中间；
- * - 列表滚到顶部后继续下拉才拖动抽屉（nestedScroll），点遮罩或下滑即收起。
- */
+/** 从浏览器三点菜单打开的工作区 HTML 列表。 */
 @Composable
-private fun WorkspaceDrawer(
+private fun WorkspaceHtmlDialog(
     files: List<File>,
     workspaceRoot: File?,
-    maxSheetHeight: Dp,
-    peekHeight: Dp,
+    backdrop: GlassBackdrop?,
+    onDismiss: () -> Unit,
     onOpen: (String) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    val peekPx = with(density) { peekHeight.toPx() }
-    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // 列表显式限高：把手条 + 与导航栏的留白之外的剩余高度，内容超长时必然可滚动
-    val listMaxHeight = (maxSheetHeight - DrawerHandleHeight - navBarInset - DrawerBottomGap)
-        .coerceAtLeast(120.dp)
-
-    var cardHeightPx by remember { mutableIntStateOf(0) }
-    var offsetPx by remember { mutableFloatStateOf(0f) }
-    var initialized by remember { mutableStateOf(false) }
-    var settleJob by remember { mutableStateOf<Job?>(null) }
-    var movedByList by remember { mutableStateOf(false) }
-    /** 本次拖动开始时的位置：松手后据此判断用户意图，避免「拖一点就跳走」。 */
-    var dragStartOffset by remember { mutableFloatStateOf(0f) }
-
-    val maxOffset = (cardHeightPx - peekPx).coerceAtLeast(0f)
-
-    // 首次测量后落到「收起」锚点；内容高度变化时收敛回两端之间
-    LaunchedEffect(maxOffset, cardHeightPx) {
-        if (cardHeightPx <= 0) return@LaunchedEffect
-        if (!initialized) {
-            initialized = true
-            offsetPx = maxOffset
-        } else {
-            offsetPx = offsetPx.coerceIn(0f, maxOffset)
-        }
-    }
-
-    fun animateTo(target: Float) {
-        settleJob?.cancel()
-        settleJob = scope.launch {
-            animate(offsetPx, target, animationSpec = tween(durationMillis = 260)) { value, _ ->
-                offsetPx = value
-            }
-        }
-    }
-
-    fun dragBy(delta: Float) {
-        settleJob?.cancel()
-        offsetPx = (offsetPx + delta).coerceIn(0f, maxOffset)
-    }
-
-    /** 松手吸附：速度够快按方向，否则按「相对起点的位移」决定去哪个锚点，绝不停在中间。 */
-    fun settle(velocity: Float, startOffset: Float = dragStartOffset) {
-        val moved = kotlin.math.abs(offsetPx - startOffset)
-        val target = when {
-            velocity > DrawerSnapVelocity -> maxOffset
-            velocity < -DrawerSnapVelocity -> 0f
-            maxOffset <= 0f -> 0f
-            moved < maxOffset * DrawerMinDragFraction -> startOffset
-            offsetPx > startOffset -> maxOffset
-            else -> 0f
-        }
-        animateTo(target.coerceIn(0f, maxOffset))
-    }
-
-    val progress = if (maxOffset > 0f) (1f - offsetPx / maxOffset).coerceIn(0f, 1f) else 0f
-    val dragState = rememberDraggableState { delta -> dragBy(delta) }
-    val nestedScroll = object : NestedScrollConnection {
-        override fun onPostScroll(
-            consumed: Offset,
-            available: Offset,
-            source: NestedScrollSource,
-        ): Offset {
-            // 列表已经到顶（下拉没被消费），这段位移交给抽屉
-            if (available.y <= 0f) return Offset.Zero
-            if (!movedByList) {
-                movedByList = true
-                dragStartOffset = offsetPx
-            }
-            dragBy(available.y)
-            return Offset(0f, available.y)
-        }
-
-        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-            if (movedByList) {
-                movedByList = false
-                settle(available.y)
-            }
-            return Velocity.Zero
-        }
-    }
-
-    Box(modifier = modifier.nestedScroll(nestedScroll)) {
-        // 遮罩：展开时压在网页上，点击收起
-        if (initialized && progress > 0.01f) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color.Black.copy(alpha = 0.32f * progress))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { animateTo(maxOffset) },
-                    )
-            )
-        }
-
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .heightIn(max = maxSheetHeight)
-                .offset { IntOffset(0, offsetPx.roundToInt()) }
-                .onSizeChanged { cardHeightPx = it.height }
-                .alpha(if (initialized) 1f else 0f),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 14.dp,
+    val shape = RoundedCornerShape(24.dp)
+    val surface = MaterialTheme.colorScheme.surface
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth()
+            val maxPanelHeight = maxHeight * 0.78f
+            val panelHeight = minOf(120.dp + 60.dp * files.size.toFloat(), maxPanelHeight)
+                .coerceAtLeast(minOf(168.dp, maxPanelHeight))
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .height(panelHeight)
+                    .then(
+                        backdrop?.let {
+                            Modifier.liquidGlassMenuSurface(it, shape, glassDialogTint(surface))
+                        } ?: Modifier
+                    ),
+                shape = shape,
+                color = if (backdrop == null) surface else Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
             ) {
-                // 把手条：拖动指示条 + 标题 + 展开/收起按钮，整条可拖可点
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(DrawerHandleHeight)
-                        .draggable(
-                            state = dragState,
-                            orientation = Orientation.Vertical,
-                            onDragStarted = { dragStartOffset = offsetPx },
-                            onDragStopped = { velocity -> settle(velocity) },
-                        )
-                        .clickable {
-                            if (progress > 0.5f) animateTo(maxOffset) else animateTo(0f)
-                        },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Spacer(Modifier.height(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(width = 40.dp, height = 4.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
-                    )
-                    Spacer(Modifier.height(6.dp))
+                Column(Modifier.fillMaxSize()) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Folder,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.chat_browser_workspace_html),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f),
                         )
-                        // 明确的展开/收起按钮：拖动之外还有一处可点
-                        IconButton(
-                            onClick = {
-                                if (progress > 0.5f) animateTo(maxOffset) else animateTo(0f)
-                            },
-                            modifier = Modifier.size(32.dp),
-                        ) {
+                        IconButton(onClick = onDismiss) {
                             Icon(
-                                imageVector = if (progress > 0.5f) {
-                                    Icons.Filled.ExpandMore
-                                } else {
-                                    Icons.Filled.ExpandLess
-                                },
-                                contentDescription = stringResource(
-                                    if (progress > 0.5f) R.string.common_expand else R.string.common_collapse
-                                ),
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.common_close),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
                             )
                         }
                     }
-                }
-
-                // 收起态：这段留白正好是把手条到屏幕底的间距，收起时不会露出半行列表
-                Spacer(Modifier.height(navBarInset + DrawerBottomGap))
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = listMaxHeight),
-                    contentPadding = PaddingValues(
-                        start = 10.dp,
-                        end = 10.dp,
-                        bottom = navBarInset + DrawerBottomGap,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(files, key = { it.path }) { file ->
-                        val label = workspaceLabel(file, workspaceRoot)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                                .clickable {
-                                    onOpen(label)
-                                    animateTo(maxOffset)
-                                }
-                                .padding(horizontal = 12.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Language,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(19.dp),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(17.dp),
-                            )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(files, key = { it.path }) { file ->
+                            val label = workspaceLabel(file, workspaceRoot)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 52.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                                    .clickable { onOpen(label) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Language,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
                         }
                     }
-                    // 末尾空白行：给最后一项留出滚动余量，避免被卡片底边裁掉
-                    item {
-                        Spacer(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(end = 12.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = onDismiss) {
+                            Text(stringResource(R.string.common_close))
+                        }
                     }
                 }
             }

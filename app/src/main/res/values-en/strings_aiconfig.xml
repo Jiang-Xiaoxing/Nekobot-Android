@@ -133,6 +133,7 @@
     <string name="localai_set_active">Set as current model</string>
     <string name="localai_test_failed">Failed: %1$s</string>
     <string name="localai_test_success">Success: %1$s</string>
+    <string name="localai_image_generation_test_success">Image generation endpoint responded successfully (%1$d image results)</string>
     <string name="localai_test_exception">Error: %1$s</string>
     <string name="localai_local_logs">Local Logs</string>
     <string name="localai_empty_hint">No AI models. Tap + at the top right to add one.</string>

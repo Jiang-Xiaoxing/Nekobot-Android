@@ -2905,6 +2905,12 @@ class ChatViewModel : BaseViewModel() {
                 val sender = _session.value?.senderName ?: _session.value?.characterName ?: "AI"
                 val preview = content.take(100) + if (content.length > 100) "..." else ""
                 val mgr = androidx.core.app.NotificationManagerCompat.from(ctx)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        ctx,
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) return@launch
                 if (!mgr.areNotificationsEnabled()) return@launch
                 val channelId = "nekobot_chat_reply"
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -2961,6 +2967,12 @@ class ChatViewModel : BaseViewModel() {
                     ?: _session.value?.characterName
                     ?: string(R.string.chat_notification_channel)
                 val mgr = androidx.core.app.NotificationManagerCompat.from(ctx)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        ctx,
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) return@launch
                 if (!mgr.areNotificationsEnabled()) return@launch
                 // 复用 chat_reply 渠道，避免新建渠道打扰用户
                 val channelId = "nekobot_chat_reply"

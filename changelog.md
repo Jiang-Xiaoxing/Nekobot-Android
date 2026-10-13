@@ -2,6 +2,31 @@
 
 本文件记录 Nekobot Android 应用的版本变更。
 
+## v0.8.4 - 2026-10-13
+
+### 新增
+
+- 本地图片生成模型支持连通性测试，并显示返回图片数量。
+- 内置浏览器将工作区 HTML 管理移至菜单弹窗，简化浏览操作。
+- WebDAV 备份与恢复页面展示传输进度，并增强条件写入与兼容回退。
+- 导航栏、菜单和弹窗接入液态玻璃样式。
+
+### 修复
+
+- 修复 Android 13+ 通知及录音权限检查，避免无授权时发送通知或启动录音。
+- 修复本地 Agent 会话 YOLO 授权未持久保存及 exec 结果重复返回。
+- 修复液态玻璃菜单的背景采样显示。
+
+### English
+
+- Local image generation models can be connectivity-tested, with the number of returned images shown.
+- Workspace HTML management in the built-in browser now lives in a menu popup for simpler browsing.
+- WebDAV backup and restore screens show transfer progress, with improved conditional writes and compatibility fallbacks.
+- Liquid-glass styling is now used for navigation bars, menus and dialogs.
+- Fixed Android 13+ notification and recording permission checks to prevent unauthorized notifications or recording.
+- Fixed local Agent YOLO authorization not persisting across sessions and duplicate exec command results.
+- Fixed background sampling in liquid-glass menus.
+
 ## v0.8.3 - 2026-10-09
 
 ### 新增

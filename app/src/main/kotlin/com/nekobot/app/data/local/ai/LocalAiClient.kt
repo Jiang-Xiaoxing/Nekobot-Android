@@ -36,6 +36,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 private const val TAG = "LocalAiClient"
+private const val IMAGE_GENERATION_TEST_PROMPT = "a test image"
 
 /**
  * AI 请求结果（非流式）。
@@ -903,6 +904,46 @@ class LocalAiClient(
                 throw e
             } catch (e: Exception) {
                 LocalAiResult("", error = e.message ?: "TTS 请求异常")
+            }
+        }
+        if (model.purpose == "image_generation") {
+            return try {
+                val images = generateImage(
+                    baseUrl = model.baseUrl,
+                    apiKey = model.apiKey,
+                    modelName = model.model,
+                    prompt = IMAGE_GENERATION_TEST_PROMPT,
+                    additionalPrompt = model.promptTemplate,
+                    n = 1,
+                    appendBaseUrlPath = model.appendBaseUrlPath,
+                    proxyUrl = model.proxyUrl,
+                    provider = MultimodalProviderSupport.imageProvider(model)
+                )
+                LocalAiResult(
+                    content = images.size.toString(),
+                    usedModelId = model.id,
+                    usedModelName = model.name,
+                    usedModelActualName = model.model
+                )
+            } catch (e: FailoverHttpException) {
+                LocalAiResult(
+                    "",
+                    error = e.message ?: "HTTP ${e.statusCode}",
+                    statusCode = e.statusCode,
+                    usedModelId = model.id,
+                    usedModelName = model.name,
+                    usedModelActualName = model.model
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LocalAiResult(
+                    "",
+                    error = e.message ?: "图片生成请求异常",
+                    usedModelId = model.id,
+                    usedModelName = model.name,
+                    usedModelActualName = model.model
+                )
             }
         }
         val testMessages = listOf(

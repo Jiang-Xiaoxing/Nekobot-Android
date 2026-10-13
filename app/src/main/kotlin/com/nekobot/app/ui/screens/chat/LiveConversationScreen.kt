@@ -1,6 +1,8 @@
 package com.nekobot.app.ui.screens.chat
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -77,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nekobot.app.R
@@ -1037,6 +1040,12 @@ private class LiveAudioController(
     fun startRealtimeRecording(): Boolean {
         stopPlayback()
         cancelRecording()
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            onError(context.getString(R.string.chat_voice_permission_required))
+            return false
+        }
         return try {
             // 录音使用 16000Hz（Qwen Realtime 官方默认输入采样率，更稳定）
             val minBuffer = AudioRecord.getMinBufferSize(
