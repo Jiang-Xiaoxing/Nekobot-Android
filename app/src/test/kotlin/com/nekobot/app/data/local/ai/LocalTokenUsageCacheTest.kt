@@ -51,6 +51,21 @@ class LocalTokenUsageCacheTest {
         assertEquals(48, detail.completionTokens)
         assertEquals(1374, detail.totalTokens)
         assertEquals(1152, detail.cachedPromptTokens)
+        assertEquals(46, detail.reasoningTokens)
+        assertEquals(46, usageMapToDetail(detail.toUsageMap()).reasoningTokens)
+    }
+
+    @Test
+    fun `chat and responses map usage preserve reasoning tokens without adding to totals`() {
+        for (detailsKey in listOf("completion_tokens_details", "output_tokens_details")) {
+            val detail = openAiStyleUsageFromMap(mapOf(
+                "input_tokens" to 10, "output_tokens" to 20, "total_tokens" to 30,
+                detailsKey to mapOf("reasoning_tokens" to "12")
+            ))
+            assertEquals(12, detail.reasoningTokens)
+            assertEquals(30, detail.totalTokens)
+            assertEquals(12, detail.toUsageMap()[LocalModelUsage.KEY_REASONING])
+        }
     }
 
     @Test

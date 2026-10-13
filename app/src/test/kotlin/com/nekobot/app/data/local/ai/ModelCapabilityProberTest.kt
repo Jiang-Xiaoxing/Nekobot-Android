@@ -2,6 +2,7 @@ package com.nekobot.app.data.local.ai
 
 import com.google.gson.JsonParser
 import com.nekobot.app.data.local.db.LocalAiModelEntity
+import com.nekobot.app.data.local.oauth.OAuthRuntimeCredential
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -18,6 +19,61 @@ class ModelCapabilityProberTest {
         apiKey = "test-key", baseUrl = "https://api.example.com/v1", model = "custom-model",
         supportsStream = false, supportsTools = false, supportsReasoning = false, supportsVision = false,
         createdAt = "2026-10-13T00:00:00Z")
+
+    @Test fun codexProbesUseRuntimeCredentialsAndResponsesRequestShapes() = runBlocking {
+        val bodies = mutableListOf<com.google.gson.JsonObject>()
+        val client = LocalAiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("https://chatgpt.com/backend-api/codex/responses", request.url.toString())
+            assertEquals("Bearer runtime-token", request.header("Authorization"))
+            assertEquals("account-id", request.header("ChatGPT-Account-ID"))
+            val json = JsonParser.parseString(Buffer().also { request.body!!.writeTo(it) }.readUtf8()).asJsonObject
+                .also { bodies += it }
+            assertTrue(json.get("stream").asBoolean)
+            assertFalse(json.get("store").asBoolean)
+            assertFalse(json.has("max_output_tokens"))
+            assertFalse(json.has("temperature"))
+            assertFalse(json.has("top_p"))
+            if (bodies.size < 4) assertFalse(json.has("reasoning"))
+            val output = when (bodies.size) {
+                2 -> {
+                    assertEquals("required", json.get("tool_choice").asString)
+                    val tool = json.getAsJsonArray("tools").single().asJsonObject
+                    assertEquals("probe_echo", tool.get("name").asString)
+                    assertFalse(tool.getAsJsonObject("parameters").get("additionalProperties").asBoolean)
+                    """[{"type":"function_call","call_id":"call","name":"probe_echo","arguments":"{\"marker\":\"capability_ok\"}"}]"""
+                }
+                3 -> {
+                    val content = json.getAsJsonArray("input").single().asJsonObject.getAsJsonArray("content")
+                    assertEquals("input_text", content[0].asJsonObject.get("type").asString)
+                    assertEquals("input_image", content[1].asJsonObject.get("type").asString)
+                    assertEquals("data:image/png;base64,AA==", content[1].asJsonObject.get("image_url").asString)
+                    """[{"type":"message","content":[{"type":"output_text","text":"1234"}]}]"""
+                }
+                4 -> {
+                    assertEquals("low", json.getAsJsonObject("reasoning").get("effort").asString)
+                    assertEquals("auto", json.getAsJsonObject("reasoning").get("summary").asString)
+                    """[{"type":"reasoning","summary":[]},{"type":"message","content":[{"type":"output_text","text":"323"}]}]"""
+                }
+                else -> """[{"type":"message","content":[{"type":"output_text","text":"alpha beta gamma"}]}]"""
+            }
+            val reasoningTokens = if (bodies.size == 4) 12 else 0
+            val response = "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":$output," +
+                "\"usage\":{\"input_tokens\":10,\"output_tokens\":20,\"output_tokens_details\":{\"reasoning_tokens\":$reasoningTokens}}}}\n\n"
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(response.toResponseBody("text/event-stream".toMediaType())).build()
+        }.build())
+        client.setOAuthCredentialResolver { account ->
+            assertEquals("oauth-account", account)
+            OAuthRuntimeCredential("runtime-token", mapOf("ChatGPT-Account-ID" to "account-id"))
+        }
+        val codex = model().copy(protocol = OpenAIResponsesProtocol.name, provider = "openai-codex",
+            baseUrl = "https://chatgpt.com/backend-api/codex", oauthAccountId = "oauth-account")
+        val report = ModelCapabilityProber(client) { VisionChallenge("data:image/png;base64,AA==", "1234") }
+            .run(codex, "probe")
+        assertEquals(4, bodies.size)
+        assertTrue(report.results.all { it.observation == CapabilityObservation.OBSERVED })
+    }
 
     @Test fun testsRealRequestShapesAndDoesNotInferHiddenReasoning() = runBlocking {
         val bodies = mutableListOf<com.google.gson.JsonObject>()

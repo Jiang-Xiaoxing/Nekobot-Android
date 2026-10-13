@@ -77,7 +77,7 @@ object OpenAIResponsesProtocol : LocalProtocol {
                 ?.takeIf(List<*>::isNotEmpty)
                 ?.let {
                     put("tools", it)
-                    put("tool_choice", "auto")
+                    put("tool_choice", extra["tool_choice"] ?: "auto")
                 }
         }
     }
@@ -312,14 +312,44 @@ object OpenAIResponsesProtocol : LocalProtocol {
                 }
             )
         }
-        val text = extractText(message["content"])
-        if (!text.isNullOrBlank()) {
+        val content = toResponseContent(message["content"], role == "assistant")
+        if (content != null) {
             result += mapOf(
                 "role" to if (role == "assistant") "assistant" else "user",
-                "content" to text
+                "content" to content
             )
         }
         return result
+    }
+
+    /** 保留多模态块；Chat Completions 的 image_url 需要翻译为 Responses 的 input_image。 */
+    private fun toResponseContent(raw: Any?, assistant: Boolean): Any? {
+        if (raw is String) return raw.takeIf(String::isNotBlank)
+        val blocks = when (raw) {
+            is List<*> -> raw
+            is Map<*, *> -> listOf(raw)
+            else -> return null
+        }
+        return blocks.mapNotNull { block ->
+            val value = block as? Map<*, *>
+            when (value?.get("type")) {
+                "image_url" -> {
+                    val image = value["image_url"]
+                    val url = (image as? Map<*, *>)?.get("url") as? String ?: image as? String
+                    url?.takeIf(String::isNotBlank)?.let {
+                        buildMap<String, Any> {
+                            put("type", "input_image")
+                            put("image_url", it)
+                            (image as? Map<*, *>)?.get("detail")?.let { detail -> put("detail", detail) }
+                        }
+                    }
+                }
+                "input_image", "input_file" -> value.entries.associate { it.key.toString() to (it.value ?: "") }
+                else -> extractText(block)?.takeIf(String::isNotBlank)?.let {
+                    mapOf("type" to if (assistant) "output_text" else "input_text", "text" to it)
+                }
+            }
+        }.takeIf(List<*>::isNotEmpty)
     }
 
     private fun flattenTool(tool: Map<String, Any>): Map<String, Any>? {
@@ -331,6 +361,7 @@ object OpenAIResponsesProtocol : LocalProtocol {
                 put("type", "function")
                 put("name", name)
                 function["description"]?.let { put("description", it) }
+                function["strict"]?.let { put("strict", it) }
                 put(
                     "parameters",
                     sanitizeSchema(function["parameters"] ?: emptyMap<String, Any>())

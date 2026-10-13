@@ -777,7 +777,10 @@ class LocalAiClient(
             modelName.startsWith("o1") || modelName.startsWith("o3") || modelName.startsWith("o4") ||
             modelName.startsWith("gpt-5")
         return normalized.toMutableMap().apply {
-            if (effort != ReasoningEffort.NONE || knownReasoningTarget) {
+            // Responses 的默认推理强度由模型决定；未指定时不能强行发送 none。
+            val useResponsesDefault = model.protocol == OpenAIResponsesProtocol.name &&
+                !normalized.containsKey("reasoning_effort")
+            if (!useResponsesDefault && (effort != ReasoningEffort.NONE || knownReasoningTarget)) {
                 put("reasoning_effort", mappedEffort)
             } else {
                 remove("reasoning_effort")
