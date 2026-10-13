@@ -19,8 +19,8 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val retrieval = com.nekobot.app.ServiceContainer.prefs.companionRetrievalSettings(db.dbName)
         val configuration = CompanionMemoryPolicy.digest(retrieval.toString() + stateKey + FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + expired)
         val available = maxContext - outputReserve - estimateLocalTextTokens(system) - estimateLocalTextTokens(Gson().toJson(tools)) - 256
-        val budgets = FusedCompanionPolicy.budgets(available,
-            consolidationSettingsFor(db.dbName, session.id))
+        val consolidation = consolidationSettingsFor(db.dbName, session.id)
+        val budgets = FusedCompanionPolicy.budgets(available, consolidation)
         val (recall, mode) = store.fusedRecall(session, currentMessage["content"].toString(), budgets)
         val old = dao.contextMaterials(scope.id)
         var cached = old.takeIf { rows -> rows.all { it.revision == scope.revision && it.configuration == configuration } }.orEmpty()
@@ -51,13 +51,12 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val rebuild = selected.isEmpty() || size(selected, cached, auxiliary) > available
         if (rebuild) {
             cached = emptyList()
-            selected = FusedCompanionPolicy.recent(history, budgets.recent)
-            // Unprocessed messages cannot disappear merely because they fell out of the recent tail.
-            val pendingIds = dao.pending(scope.id, Int.MAX_VALUE).map { it.id }.toSet()
-            val oldestPending = history.indexOfFirst { it.id in pendingIds }
-            val start = history.indexOfFirst { it.id == selected.firstOrNull()?.id }
-            if (oldestPending >= 0 && (start < 0 || oldestPending < start)) selected = history.drop(oldestPending)
             auxiliary = material()
+            // 近期额度取设定与上下文份额的较小值。积压的未整理消息不扩大本轮窗口，留给后台整理。
+            val recentCap = FusedCompanionPolicy.chatRecentBudget(available, consolidation)
+            selected = FusedCompanionPolicy.selectChatHistory(history, recentCap) { rows ->
+                size(rows, cached, auxiliary) <= available
+            }
         }
         require(size(selected, cached, auxiliary) <= available) {
             "本轮原话、核心记忆及其他资料合计超过模型容量，尚未发送。请等待待整理内容处理完毕、精简核心记忆，或选择更大上下文的模型后重试；原资料保留。"

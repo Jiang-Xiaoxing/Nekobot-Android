@@ -552,8 +552,10 @@ internal class LocalPipelineCallbacks(
                 "\n这是单窗口长久陪伴。记忆工具只操作此窗口的角色记忆；不读写公共 Agent 记忆。软件辅助资料不是玩家说的话，也不能再次作为新记忆来源。" +
                 "\n" + CompanionRecallBudget.QUERY_RULES,
                 priority = PromptStack.Priority.BEHAVIOR, scope = "session")
-            FusedCompanionPolicy.recent(history, maxOf(8_000,
-                consolidationSettingsFor(db.dbName, session.id).recent)).map { it.copy(toolCallHistory = null, reasoningContent = null) }
+            val consolidation = consolidationSettingsFor(db.dbName, session.id)
+            val modelRoom = ((activeModel.maxContextLength ?: 32_000) - (activeModel.maxTokens ?: 4_000)).coerceAtLeast(512)
+            FusedCompanionPolicy.recent(history, FusedCompanionPolicy.chatRecentBudget(modelRoom, consolidation))
+                .map { it.copy(toolCallHistory = null, reasoningContent = null) }
         } else if (independent) {
             val units = CompanionMemoryPolicy.batches(history, 1)
             var tokens = 0

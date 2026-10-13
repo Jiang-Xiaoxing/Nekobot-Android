@@ -98,6 +98,27 @@ internal object FusedCompanionPolicy {
     fun tokens(rows: List<LocalMessageEntity>) = rows.sumOf { estimateLocalTextTokens(it.content) + 24 }
     fun turns(rows: List<LocalMessageEntity>) = CompanionMemoryPolicy.batches(rows, 1)
 
+    /** 聊天近期额度取用户上限与按上下文缩放后的份额中较小的一个。 */
+    fun chatRecentBudget(availableInput: Int, settings: CompanionConsolidationSettings = CompanionConsolidationSettings()): Int =
+        minOf(settings.recent, budgets(availableInput, settings).recent).coerceAtLeast(1)
+
+    /**
+     * 只保留近期额度内的原话。调用方可用更紧的 fits 再丢掉最旧的回合。
+     * 不把更早的未整理消息拉进本轮，那些留给后台整理。
+     */
+    fun selectChatHistory(
+        history: List<LocalMessageEntity>,
+        recentBudget: Int,
+        fits: (List<LocalMessageEntity>) -> Boolean
+    ): List<LocalMessageEntity> {
+        var selected = recent(history, recentBudget)
+        while (selected.isNotEmpty() && !fits(selected)) {
+            val oldest = turns(selected).first()
+            selected = if (oldest.size >= selected.size) emptyList() else selected.drop(oldest.size)
+        }
+        return selected
+    }
+
     fun recent(rows: List<LocalMessageEntity>, budget: Int): List<LocalMessageEntity> {
         val selected = mutableListOf<LocalMessageEntity>()
         var count = 0
