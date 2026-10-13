@@ -1401,6 +1401,13 @@ class PrefsManager(context: Context) {
         prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", show).apply()
     }
 
+    internal fun companionRelationshipNoticeToken(profile: String, sessionId: String): String? =
+        prefs.getString(companionRecallKey(profile, sessionId) + ":relationship_notice", null)
+
+    internal fun setCompanionRelationshipNoticeToken(profile: String, sessionId: String, token: String) {
+        prefs.edit().putString(companionRecallKey(profile, sessionId) + ":relationship_notice", token).apply()
+    }
+
     fun getReasoningEffort(isAgentSession: Boolean): com.nekobot.app.data.model.ReasoningEffort =
         com.nekobot.app.data.model.ReasoningEffort.fromValue(
             prefs.getString(

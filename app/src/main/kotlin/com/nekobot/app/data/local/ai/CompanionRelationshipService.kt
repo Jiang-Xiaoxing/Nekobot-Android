@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.net.SocketTimeoutException
 
 internal data class CompanionRelationshipView(
     val state: CompanionRelationshipEntity,
@@ -43,6 +44,20 @@ internal class CompanionRelationshipService(
     val running = active.asStateFlow()
     fun observe(id: String) = dao.observe(id)
     private val tags = ConcurrentHashMap<String, String>()
+    private val interruptedSessions = ConcurrentHashMap.newKeySet<String>()
+    private val startupRecovery = scope.async(start = CoroutineStart.LAZY) {
+        val recoverable = lock.withLock {
+            dao.statesWithNotice().mapNotNull { state ->
+                if (CompanionRelationshipRecovery.interrupted(state.notice)) {
+                    dao.save(CompanionRelationshipRecovery.clearInterruptedNotice(state))
+                    interruptedSessions.add(state.sessionId)
+                    state.sessionId
+                } else state.sessionId.takeIf { CompanionRelationshipRecovery.retryable(state.notice) }
+            }
+        }
+        recoverable.forEach { afterChat(it, afterEvaluation = true) }
+    }
+    init { startupRecovery.start() }
     private suspend fun session(id: String) = requireNotNull(db.sessionDao().getById(id)?.takeIf { it.companionMode && it.characterId != null }) { "当前会话不是单会话角色" }
     private suspend fun rows(id: String): List<LocalMessageEntity> {
         val s = session(id)
@@ -128,10 +143,12 @@ internal class CompanionRelationshipService(
     suspend fun view(id: String) = withContext(Dispatchers.IO) { lock.withLock { viewUnlocked(id) } }
 
     suspend fun configure(id: String, enabled: Boolean, automatic: Boolean, modelId: String?, interval: Int) = withContext(Dispatchers.IO) {
+        startupRecovery.await()
         require(interval in 1..100) { "更新间隔请填写 1—100 轮" }
         if (enabled) require(db.aiModelDao().getById(modelId.orEmpty())?.let { it.enabled && it.purpose in setOf("chat", "compression") } == true) { "请先选择可用的状态评估模型" }
         lock.withLock {
             val old = ensure(id)
+            interruptedSessions.remove(id)
             val count = runCatching { CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), old.cursorId).size }.getOrDefault(1)
             tags[id]?.let(client::cancelRequests); jobs.remove(id)?.cancel(); active.update { it - id }
             dao.save(old.copy(version = old.version + 1, enabled = enabled, automatic = automatic, interval = interval, modelId = modelId,
@@ -141,20 +158,26 @@ internal class CompanionRelationshipService(
 
     /** 不补评明确推进到此刻，后续新聊天才累计；不改旧事件、不清空聊天。 */
     suspend fun skipPending(id: String) = withContext(Dispatchers.IO) {
+        startupRecovery.await()
         lock.withLock {
             val old = ensure(id)
+            interruptedSessions.remove(id)
             tags[id]?.let(client::cancelRequests); jobs.remove(id)?.cancel(); active.update { it - id }
             dao.save(old.copy(cursorId = CompanionRelationshipPolicy.turns(rows(id)).lastOrNull()?.endId,
                 version = old.version + 1, awaitingHistory = false, historyReviewRequired = false, notice = null))
         }
     }
 
-    fun afterChat(id: String) { scope.launch {
+    fun afterChat(id: String, afterEvaluation: Boolean = false) { scope.launch {
         runCatching {
+            startupRecovery.await()
             val ready = lock.withLock {
                 val state = ensure(id)
-                state.enabled && state.automatic && !state.awaitingHistory && state.notice == null &&
-                    CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), state.cursorId).size >= state.interval
+                val pending = CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), state.cursorId).size
+                if (pending == 0) interruptedSessions.remove(id)
+                jobs[id]?.isActive != true && CompanionRelationshipRecovery.automaticReady(state,
+                    pending,
+                    interrupted = id in interruptedSessions, afterEvaluation = afterEvaluation)
             }
             if (ready) start(id, false)
         }
@@ -162,11 +185,16 @@ internal class CompanionRelationshipService(
 
     /** 手动补评以点击时的消息为上限；不会把后续源源不断的新聊天一并追到后台。 */
     suspend fun start(id: String, manual: Boolean = true, correctionKey: String? = null, claim: String? = null) = withContext(Dispatchers.IO) {
+        startupRecovery.await()
         lock.withLock {
             val state = ensure(id)
             require(state.enabled) { "请先开启关系状态" }
             require(jobs[id]?.isActive != true) { "正在评估，请等待完成" }
-            if (!manual) require(state.automatic && !state.awaitingHistory && state.notice == null)
+            if (!manual) require(CompanionRelationshipRecovery.automaticReady(state,
+                CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), state.cursorId).size,
+                interrupted = id in interruptedSessions))
+            val recovering = !manual && (id in interruptedSessions || CompanionRelationshipRecovery.retryable(state.notice))
+            interruptedSessions.remove(id)
             if (state.historyReviewRequired) {
                 require(manual && correctionKey == null) { "请先确认是否补评旧历史" }
                 // 仅“补评这些对话”的明确操作才会回到历史开头；原游标在确认之前保持原样。
@@ -175,11 +203,17 @@ internal class CompanionRelationshipService(
             }
             val boundary = CompanionRelationshipPolicy.turns(rows(id)).lastOrNull()?.endId
             val job = scope.launch(start = CoroutineStart.LAZY) {
-                try { evaluate(id, boundary, correctionKey, claim) }
+                try {
+                    runRelationshipEvaluation(recovering) { retrying ->
+                        evaluate(id, boundary, correctionKey, claim, retrying)
+                    }
+                } catch (_: SocketTimeoutException) {
+                    // 第二次网络超时已保存原因，后台作业正常收尾，不能升级成未捕获崩溃。
+                }
                 finally {
                     if (jobs.remove(id, currentCoroutineContext()[Job])) {
                         active.update { it - id }
-                        if (db.isOpen) afterChat(id)
+                        if (db.isOpen) afterChat(id, afterEvaluation = true)
                     }
                 }
             }
@@ -189,9 +223,10 @@ internal class CompanionRelationshipService(
         }
     }
 
-    private suspend fun evaluate(id: String, boundary: String?, correctionKey: String?, claim: String?) {
+    private suspend fun evaluate(id: String, boundary: String?, correctionKey: String?, claim: String?, retrying: Boolean) {
         var expected: CompanionRelationshipEntity? = null
         var requestTag: String? = null
+        var batchSizer: RelationshipBatchSizer? = null
         try {
             while (currentCoroutineContext().isActive) {
                 val input = lock.withLock {
@@ -211,12 +246,9 @@ internal class CompanionRelationshipService(
                         dao.save(state.copy(awaitingHistory = false, notice = null)); return
                     }
                     val maxChars = (((model.maxContextLength ?: 32000) - 6500).coerceAtLeast(1000) * 2).coerceAtMost(22000)
-                    val batch = mutableListOf<RelationshipTurn>(); var length = 0
-                    for (turn in pending) {
-                        val chars = turn.rows.sumOf { it.content.length + 100 }
-                        if (length + chars > maxChars) break
-                        batch.add(turn); length += chars
-                    }
+                    val sizer = batchSizer ?: RelationshipBatchSizer(model.failoverTimeout.takeIf { it > 0 } ?: 120)
+                        .also { batchSizer = it }
+                    val batch = sizer.select(pending, maxChars, retrying)
                     require(correctionKey != null || batch.isNotEmpty()) { "单轮对话超过所选评估模型的输入预算，请选择上下文更大的评估模型；原状态保留。" }
                     val target = correctionKey?.let { key -> requireNotNull(events.firstOrNull { it.eventKey == key }) { "需要纠正的记录已不存在" } }
                     val evidence = if (target != null) {
@@ -224,7 +256,8 @@ internal class CompanionRelationshipService(
                         (all.filter { it.id in sourceIds } + available.takeLast(10).flatMap { it.rows }).distinctBy { it.id }
                     } else batch.flatMap { it.rows }
                     // 合并旧备份可恢复较早的状态版本；历史记录保留，后续评估编号不能与其碰撞。
-                    val inFlight = state.copy(version = maxOf(state.version, dao.latestRevision(id) ?: 0) + 1, notice = "上次评估未完成，可手动重试；已有状态保留。")
+                    val inFlight = state.copy(version = maxOf(state.version, dao.latestRevision(id) ?: 0) + 1,
+                        notice = if (retrying) CompanionRelationshipRecovery.RETRY_IN_FLIGHT else CompanionRelationshipRecovery.IN_FLIGHT)
                     dao.save(inFlight); expected = inFlight
                     EvaluationInput(inFlight, model, all, events, batch, evidence, target)
                 }
@@ -260,10 +293,12 @@ internal class CompanionRelationshipService(
                 require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
                 requestTag = "relationship-${UUID.randomUUID()}"
                 tags[id] = requestTag!!
-                // 同一次独立评估写出文字；不加一次润色调用，不切换到聊天模型或自动重试。
+                // 沿用原评估模型和等待时限；超时最多缩小批次重试一次。
+                val requestStarted = System.nanoTime()
                 val result = withTimeout((input.model.failoverTimeout.takeIf { it > 0 } ?: 120) * 1000L) {
                     client.chatOnce(input.model.copy(maxTokens = outputBudget), messages, requestTag = requestTag)
                 }
+                batchSizer?.completed((System.nanoTime() - requestStarted) / 1_000_000L, input.batch.size)
                 val usage = resolveLocalTokenUsage(result.usage, messages, result.content)
                 onUsage(id, input.model, result.copy(usage = result.usage + mapOf("prompt" to usage.inputTokens,
                     "completion" to usage.outputTokens, "estimated" to if (usage.estimated) 1 else 0)))
@@ -334,9 +369,15 @@ internal class CompanionRelationshipService(
                 if (correctionKey != null || input.batch.last().endId == boundary) return
             }
         } catch (e: CancellationException) {
-            if (e is TimeoutCancellationException) saveError(id, expected, "状态评估超时，旧状态保留。可手动重试，不会切换聊天模型。")
+            saveError(id, expected, if (e is TimeoutCancellationException) {
+                if (retrying) CompanionRelationshipRecovery.TIMEOUT_EXHAUSTED else CompanionRelationshipRecovery.TIMEOUT
+            } else if (retrying) CompanionRelationshipRecovery.RETRY_IN_FLIGHT else CompanionRelationshipRecovery.IN_FLIGHT)
             throw e
         } catch (e: Exception) {
+            if (e is SocketTimeoutException) {
+                saveError(id, expected, if (retrying) CompanionRelationshipRecovery.TIMEOUT_EXHAUSTED else CompanionRelationshipRecovery.TIMEOUT)
+                throw e
+            }
             val safe = if (e is IllegalArgumentException || e is IllegalStateException) e.message?.takeIf { it.length <= 150 && !it.contains("http", true) } else null
             saveError(id, expected, safe ?: "状态评估失败，旧状态保留。请检查评估模型后手动重试。")
         } finally {

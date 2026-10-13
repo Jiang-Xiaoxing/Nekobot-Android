@@ -1645,6 +1645,16 @@ class LocalRepository(
         }
     }
 
+    /** 按资料库、会话与失败版本持久去重，离开页面或重启也不重复弹同一条提示。 */
+    @Synchronized
+    internal fun claimCompanionRelationshipNotice(state: com.nekobot.app.data.local.db.CompanionRelationshipEntity, busy: Boolean): String? {
+        val prefs = ServiceContainer.prefs
+        val notice = com.nekobot.app.data.local.ai.CompanionRelationshipRecovery.noticeToShow(state, busy,
+            prefs.companionRelationshipNoticeToken(db.dbName, state.sessionId)) ?: return null
+        prefs.setCompanionRelationshipNoticeToken(db.dbName, state.sessionId, notice.first)
+        return notice.second
+    }
+
     internal fun companionCustomReasoning(sessionId: String) = ServiceContainer.prefs.companionCustomReasoning(db.dbName, sessionId)
     internal fun setCompanionCustomReasoning(sessionId: String, value: com.nekobot.app.data.model.CustomReasoningParam) =
         ServiceContainer.prefs.setCompanionCustomReasoning(db.dbName, sessionId, value)

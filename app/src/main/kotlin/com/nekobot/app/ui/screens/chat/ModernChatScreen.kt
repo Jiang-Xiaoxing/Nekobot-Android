@@ -219,13 +219,11 @@ fun ModernChatScreen(
         val relationship by remember(sessionId) { stateService.observe(sessionId) }.collectAsStateWithLifecycle(null)
         val evaluating by stateService.running.collectAsStateWithLifecycle()
         val noticeContext = LocalContext.current
-        var lastNotice by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
-        LaunchedEffect(relationship?.notice, evaluating) {
-            val notice = relationship?.notice
-            if (notice == null || sessionId in evaluating) lastNotice = null
-            if (relationship?.enabled == true && sessionId !in evaluating && notice != null && notice != lastNotice) {
-                lastNotice = notice
-                android.widget.Toast.makeText(noticeContext, "状态未更新，旧状态保留。可在会话详情的关系状态中查看。", android.widget.Toast.LENGTH_LONG).show()
+        LaunchedEffect(relationship?.version, relationship?.notice, evaluating) {
+            relationship?.let { state ->
+                ServiceContainer.localRepository.claimCompanionRelationshipNotice(state, sessionId in evaluating)?.let { reason ->
+                    android.widget.Toast.makeText(noticeContext, reason, android.widget.Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

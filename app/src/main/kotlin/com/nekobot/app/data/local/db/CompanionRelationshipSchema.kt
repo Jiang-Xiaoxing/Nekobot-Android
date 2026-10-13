@@ -76,6 +76,8 @@ interface CompanionRelationshipDao {
     fun observe(id: String): kotlinx.coroutines.flow.Flow<CompanionRelationshipEntity?>
     @Query("SELECT * FROM companion_relationship_state WHERE sessionId = :id")
     suspend fun state(id: String): CompanionRelationshipEntity?
+    @Query("SELECT * FROM companion_relationship_state WHERE notice IS NOT NULL")
+    suspend fun statesWithNotice(): List<CompanionRelationshipEntity>
     @Upsert suspend fun save(state: CompanionRelationshipEntity)
     @Insert suspend fun append(events: List<CompanionRelationshipEventEntity>)
     @Insert suspend fun appendAssessment(assessment: CompanionRelationshipAssessmentEntity)
