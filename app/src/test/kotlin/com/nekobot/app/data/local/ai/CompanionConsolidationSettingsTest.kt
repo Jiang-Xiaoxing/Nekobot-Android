@@ -20,12 +20,24 @@ class CompanionConsolidationSettingsTest {
 
     @Test fun smallContextScalesProportionally() {
         val b = FusedCompanionPolicy.budgets(7_000)
-        assertEquals(4000, b.recent); assertEquals(1000, b.trigger); assertEquals(1500, b.existing); assertEquals(2000, b.batch)
+        assertEquals(2800, b.recent); assertEquals(700, b.trigger); assertEquals(1050, b.existing); assertEquals(1400, b.batch)
+        assertEquals(350, b.pinned); assertEquals(700, b.recall)
+        assertTrue(b.recent + b.pinned + b.recall + b.trigger + b.batch + b.existing <= 7_000)
     }
 
-    @Test fun defaultBudgetsUnchangedExceptExisting() {
+    @Test fun defaultBudgetsFitTheBaselineContext() {
         val b = FusedCompanionPolicy.budgets(14_000)
-        assertEquals(CompanionBudgets(8000, 1000, 2000, 2000, 4000, existing = 3000), b)
+        assertEquals(CompanionBudgets(5600, 700, 1400, 1400, 2800, existing = 2100), b)
+        assertEquals(14_000, b.recent + b.pinned + b.recall + b.trigger + b.batch + b.existing)
+    }
+
+    @Test fun oversizedUserSettingsShrinkTogether() {
+        val b = FusedCompanionPolicy.budgets(14_000, CompanionConsolidationSettings(true, 8000, 2000, 3000))
+        val sum = b.recent + b.pinned + b.recall + b.trigger + b.batch + b.existing
+        assertTrue(sum <= 14_000)
+        assertEquals(b.recent * 2_000, b.trigger * 8_000)
+        assertEquals(b.recent * 4_000, b.batch * 8_000)
+        assertEquals(b.recent * 3_000, b.existing * 8_000)
     }
 
     @Test fun invalidValuesRejected() {

@@ -165,6 +165,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             val consolidation = consolidationSettingsFor(db.dbName, session.id)
             val baseBudgets = FusedCompanionPolicy.budgets(inputTokens, consolidation)
             val budgets = baseBudgets.copy(recent = recentTokenBudget?.coerceIn(1, baseBudgets.recent) ?: baseBudgets.recent)
+            var skippedTotal = 0
+            val promptTokens = estimateLocalTextTokens(FusedCompanionPolicy.extractionPrompt)
             while (true) {
                 val scope = dao.scope(initial.id) ?: return changed
                 require(active(scope)) { "窗口归属已变化，整理停止" }
@@ -184,12 +186,22 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 }
                 if (units.isEmpty()) break
                 if (!force && FusedCompanionPolicy.tokens(units.flatten()) < budgets.trigger) break
-                val target = mutableListOf<LocalMessageEntity>()
-                for (unit in units) {
-                    if (target.isNotEmpty() && FusedCompanionPolicy.tokens(target + unit) > budgets.batch) break
-                    target += unit
-                    if (FusedCompanionPolicy.tokens(target) >= budgets.batch) break
+                if (promptTokens + 64 > inputTokens) {
+                    val reason = "整理提示已超过模型输入容量，原话未跳过，请换更大上下文的模型"
+                    if (db.isOpen) dao.scope(initial.id)?.let {
+                        dao.saveScope(it.copy(error = reason, updatedAt = Instant.now().toString()))
+                    }
+                    break
                 }
+                val chosenUnits = mutableListOf<List<LocalMessageEntity>>()
+                for (unit in units) {
+                    if (chosenUnits.isNotEmpty() && FusedCompanionPolicy.tokens(chosenUnits.flatten() + unit) > budgets.batch) break
+                    chosenUnits += unit
+                    if (FusedCompanionPolicy.tokens(chosenUnits.flatten()) >= budgets.batch) break
+                }
+                val pendingUnits = FusedCompanionPolicy.pendingConsolidationTurns(chosenUnits, pendingIds)
+                var target = pendingUnits.flatten()
+                if (target.isEmpty()) break
                 val old = validatedMemories(scope).filter { it.current || it.status in setOf("conflict", "locked_conflict") }
                 val questions = dao.clarifications(scope.id).associateBy { it.factKey }
                 val query = target.joinToString(" ") { it.content }
@@ -223,26 +235,64 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 }
                 fun rows(rows: List<LocalMessageEntity>) = rows.map { mapOf("id" to it.id, "role" to it.role,
                     "spoken_day" to agentUtteranceDay(it)?.toString(), "text" to it.content) }
-                val material = gson.toJson(mapOf("target" to rows(target), "reference" to rows(reference), "existing" to existing))
-                require(estimateLocalTextTokens(material) + estimateLocalTextTokens(FusedCompanionPolicy.extractionPrompt) <= inputTokens) {
-                    "完整回合及近期参考超过整理模型容量；原话和待处理位置保留，请增大模型上下文"
+                fun payloadCost(messages: List<LocalMessageEntity>, refs: List<LocalMessageEntity>, facts: List<Map<String, Any?>>) =
+                    estimateLocalTextTokens(gson.toJson(mapOf("target" to rows(messages), "reference" to rows(refs), "existing" to facts))) + promptTokens
+                val fit = FusedCompanionPolicy.fitConsolidationPayload(
+                    targetTurnSizes = pendingUnits.map { it.size },
+                    referenceTurnSizes = FusedCompanionPolicy.turns(reference).map { it.size },
+                    existingCount = existing.size,
+                    fits = { count, refs, facts ->
+                        count > 0 && payloadCost(target.take(count), reference.takeLast(refs), existing.take(facts)) <= inputTokens
+                    },
+                    messageFitsAlone = { index ->
+                        index in target.indices && payloadCost(listOf(target[index]), emptyList(), emptyList()) <= inputTokens
+                    })
+                if (fit.needsLargerModel) {
+                    val reason = "整理内容超过模型输入容量，原话未跳过，请换更大上下文的模型"
+                    if (db.isOpen) dao.scope(initial.id)?.let {
+                        dao.saveScope(it.copy(error = reason, updatedAt = Instant.now().toString()))
+                    }
+                    break
                 }
+                if (fit.targetMessages <= 0 && fit.skipMessages <= 0) break
+                if (fit.skipMessages > 0) {
+                    val skipped = target.take(fit.skipMessages)
+                    skippedTotal += skipped.size
+                    val reason = "有${skippedTotal}条原话超过整理模型容量，已跳过，原话仍保留"
+                    db.withTransaction {
+                        require(active(scope)) { "整理期间记忆被修改，本批将重试" }
+                        dao.saveReceipts(skipped.map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) })
+                        val end = skipped.last()
+                        dao.saveScope(scope.copy(archiveMessageId = end.id,
+                            archiveRowId = db.messageDao().cursorOf(end.id)?.rowId ?: scope.archiveRowId,
+                            error = reason.take(300), updatedAt = Instant.now().toString()))
+                    }
+                    runCatching {
+                        com.nekobot.app.data.local.LocalLogger.w("CompanionMemoryStore", "记忆整理跳过放不下的原话 ${skipped.size} 条")
+                    }
+                    continue
+                }
+                target = target.take(fit.targetMessages)
+                val fittedReference = reference.takeLast(fit.referenceMessages)
+                val fittedExisting = existing.take(fit.existingCount)
+                val material = gson.toJson(mapOf("target" to rows(target), "reference" to rows(fittedReference), "existing" to fittedExisting))
                 val drafts = parse(generate(FusedCompanionPolicy.extractionPrompt, material))
+                val skipReason = if (skippedTotal > 0) "有${skippedTotal}条原话超过整理模型容量，已跳过，原话仍保留" else null
                 db.withTransaction {
                     require(active(scope)) { "整理期间记忆被修改，本批将重试" }
-                    for (row in target + reference) require(db.messageDao().getById(row.id)?.let {
+                    for (row in target + fittedReference) require(db.messageDao().getById(row.id)?.let {
                         !it.deleted && it.sessionId == session.id && CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row)
                     } == true) { "整理期间目标或参考原话发生变化，本批未提交" }
                     var count = 0
                     for (draft in drafts) {
-                        require(draft.targetKey.isBlank() || existing.any { it["key"] == draft.targetKey }) { "更新目标不属于本次已有记忆资料" }
+                        require(draft.targetKey.isBlank() || fittedExisting.any { it["key"] == draft.targetKey }) { "更新目标不属于本次已有记忆资料" }
                         count += apply(scope, target, draft, fused = true, updateCore = true)
                     }
                     dao.saveReceipts(target.map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) })
                     val end = target.last()
                     dao.saveScope(scope.copy(revision = scope.revision + 1, archiveMessageId = end.id,
                         archiveRowId = db.messageDao().cursorOf(end.id)?.rowId ?: scope.archiveRowId,
-                        error = null, updatedAt = Instant.now().toString()))
+                        error = skipReason, updatedAt = Instant.now().toString()))
                     changed += count
                 }
             }

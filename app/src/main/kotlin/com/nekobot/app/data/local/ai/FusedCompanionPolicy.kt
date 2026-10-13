@@ -32,12 +32,69 @@ internal object FusedCompanionPolicy {
 
     fun budgets(availableInput: Int, settings: CompanionConsolidationSettings = CompanionConsolidationSettings()): CompanionBudgets {
         require(availableInput >= 512) { "系统提示、工具和预留输出已占满模型容量，请选更大上下文模型" }
-        val scale = minOf(1.0, availableInput / 14_000.0)
-        // 每批 4000 上限保持不变；其余数值按用户设置为上限并随上下文等比缩小。
-        return CompanionBudgets((settings.recent * scale).toInt(), (1000 * scale).toInt(),
-            (2000 * scale).toInt(), (settings.trigger * scale).toInt(), (4000 * scale).toInt(),
-            existing = (settings.existing * scale).toInt())
+        // 用户设置和固定上限是各自的上限。它们的和可能大于旧的 14000 基准，
+        // 这时按同一比例收紧，使各分项之和不超过本次可用上下文。
+        val requested = intArrayOf(settings.recent, 1_000, 2_000, settings.trigger, 4_000, settings.existing)
+        val sum = requested.sum().coerceAtLeast(1)
+        val scale = minOf(1.0, availableInput.toDouble() / sum.toDouble())
+        fun scaled(value: Int) = maxOf(1, (value * scale).toInt())
+        return CompanionBudgets(scaled(requested[0]), scaled(requested[1]), scaled(requested[2]),
+            scaled(requested[3]), scaled(requested[4]), existing = scaled(requested[5]))
     }
+
+    /**
+     * 整理请求仍超限时，先丢掉批次末尾的回合，再减少参考原话和旧记忆。
+     * 只剩一条且它本身放不下时，返回要从批次开头跳过的条数，调用方写回执并继续。
+     */
+    internal data class ConsolidationPayloadFit(
+        val targetMessages: Int,
+        val referenceMessages: Int,
+        val existingCount: Int,
+        val skipMessages: Int = 0,
+        val needsLargerModel: Boolean = false
+    )
+
+    fun fitConsolidationPayload(
+        targetTurnSizes: List<Int>,
+        referenceTurnSizes: List<Int>,
+        existingCount: Int,
+        fits: (targetMessages: Int, referenceMessages: Int, existing: Int) -> Boolean,
+        messageFitsAlone: (targetMessageIndex: Int) -> Boolean
+    ): ConsolidationPayloadFit {
+        val turns = targetTurnSizes.toMutableList()
+        var referenceTurns = referenceTurnSizes.size
+        var keptExisting = existingCount
+        fun targetMessages(): Int = turns.sum()
+        fun referenceMessages(): Int = referenceTurnSizes.takeLast(referenceTurns).sum()
+        if (targetMessages() == 0) return ConsolidationPayloadFit(0, 0, 0)
+        while (true) {
+            val count = targetMessages()
+            if (count > 0 && fits(count, referenceMessages(), keptExisting)) {
+                return ConsolidationPayloadFit(count, referenceMessages(), keptExisting)
+            }
+            when {
+                turns.size > 1 -> turns.removeAt(turns.lastIndex)
+                turns.size == 1 && turns[0] > 1 -> turns[0] = turns[0] - 1
+                referenceTurns > 0 -> referenceTurns--
+                keptExisting > 0 -> keptExisting--
+                else -> {
+                    val total = targetTurnSizes.sum()
+                    var skip = 0
+                    while (skip < total && !messageFitsAlone(skip)) skip++
+                    if (skip == 0) return ConsolidationPayloadFit(0, 0, 0, needsLargerModel = true)
+                    return ConsolidationPayloadFit(0, 0, 0, skipMessages = skip)
+                }
+            }
+        }
+    }
+
+    /** 已回执的原话留在回合结构里，但不再进入下一批正文，避免一条放不下的消息反复挡住同回合其余原话。 */
+    fun pendingConsolidationTurns(
+        turns: List<List<LocalMessageEntity>>,
+        pendingIds: Set<String>
+    ): List<List<LocalMessageEntity>> =
+        turns.map { turn -> turn.filter { it.id in pendingIds } }.filter { it.isNotEmpty() }
+
     fun tokens(rows: List<LocalMessageEntity>) = rows.sumOf { estimateLocalTextTokens(it.content) + 24 }
     fun turns(rows: List<LocalMessageEntity>) = CompanionMemoryPolicy.batches(rows, 1)
 
