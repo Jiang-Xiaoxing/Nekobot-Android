@@ -134,7 +134,8 @@ internal object CompanionRelationshipNarrative {
         lastTurnIds: Set<String>,
         observedAt: String,
         assessedAt: Long,
-        correctionTarget: CompanionRelationshipEventEntity? = null
+        correctionTarget: CompanionRelationshipEventEntity? = null,
+        discardedEventKeys: Set<String> = emptySet()
     ): RelationshipNarrative {
         require(json["format"]?.asString == FORMAT) { "评估模型没有使用新的文字格式，旧状态保留" }
         val relations = json["relationships"]
@@ -169,6 +170,8 @@ internal object CompanionRelationshipNarrative {
                     val eventKeys = obj["event_keys"]
                     require(eventKeys?.isJsonArray == true) { "关系描述缺少事件引用" }
                     val keys = eventKeys.asJsonArray.map { require(it.isJsonPrimitive && it.asJsonPrimitive.isString); it.asString }.distinct()
+                    // 丢弃的事件不能成为新关系的依据；只保留该维度旧值，其他合法结果继续保存。
+                    if (keys.any { it in discardedEventKeys }) return@associateWith prior
                     require(keys.size <= 40 && keys.all { k -> currentEvents.any { it.eventKey == k } }) { "关系引用了不存在的事件" }
                     // 继承的文字仍依赖旧依据；撤销事件时只移除该事件的依赖，保留其他依据。
                     val inheritedSources = (priorValid ?: prior?.takeIf { correctionTarget != null })?.sources.orEmpty()

@@ -194,6 +194,7 @@ internal class CompanionRelationshipService(
                 CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), state.cursorId).size,
                 interrupted = id in interruptedSessions))
             val recovering = !manual && (id in interruptedSessions || CompanionRelationshipRecovery.retryable(state.notice))
+            val timedOutRecovery = CompanionRelationshipRecovery.timedOut(state.notice)
             interruptedSessions.remove(id)
             if (state.historyReviewRequired) {
                 require(manual && correctionKey == null) { "请先确认是否补评旧历史" }
@@ -205,7 +206,7 @@ internal class CompanionRelationshipService(
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     runRelationshipEvaluation(recovering) { retrying ->
-                        evaluate(id, boundary, correctionKey, claim, retrying)
+                        evaluate(id, boundary, correctionKey, claim, retrying, splitBatches = retrying && (!recovering || timedOutRecovery))
                     }
                 } catch (_: SocketTimeoutException) {
                     // 第二次网络超时已保存原因，后台作业正常收尾，不能升级成未捕获崩溃。
@@ -223,10 +224,9 @@ internal class CompanionRelationshipService(
         }
     }
 
-    private suspend fun evaluate(id: String, boundary: String?, correctionKey: String?, claim: String?, retrying: Boolean) {
+    private suspend fun evaluate(id: String, boundary: String?, correctionKey: String?, claim: String?, retrying: Boolean, splitBatches: Boolean) {
         var expected: CompanionRelationshipEntity? = null
         var requestTag: String? = null
-        var batchSizer: RelationshipBatchSizer? = null
         try {
             while (currentCoroutineContext().isActive) {
                 val input = lock.withLock {
@@ -245,10 +245,9 @@ internal class CompanionRelationshipService(
                     if (correctionKey == null && pending.isEmpty()) {
                         dao.save(state.copy(awaitingHistory = false, notice = null)); return
                     }
-                    val maxChars = (((model.maxContextLength ?: 32000) - 6500).coerceAtLeast(1000) * 2).coerceAtMost(22000)
-                    val sizer = batchSizer ?: RelationshipBatchSizer(model.failoverTimeout.takeIf { it > 0 } ?: 120)
-                        .also { batchSizer = it }
-                    val batch = sizer.select(pending, maxChars, retrying)
+                    val maxChars = (((model.maxContextLength ?: 32000) - 6500).coerceAtLeast(1000).coerceAtMost(Int.MAX_VALUE / 2) * 2)
+                    val sizer = RelationshipBatchSizer()
+                    val batch = sizer.select(pending, maxChars, splitBatches)
                     require(correctionKey != null || batch.isNotEmpty()) { "单轮对话超过所选评估模型的输入预算，请选择上下文更大的评估模型；原状态保留。" }
                     val target = correctionKey?.let { key -> requireNotNull(events.firstOrNull { it.eventKey == key }) { "需要纠正的记录已不存在" } }
                     val evidence = if (target != null) {
@@ -293,42 +292,20 @@ internal class CompanionRelationshipService(
                 require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
                 requestTag = "relationship-${UUID.randomUUID()}"
                 tags[id] = requestTag!!
-                // 沿用原评估模型和等待时限；超时最多缩小批次重试一次。
-                val requestStarted = System.nanoTime()
-                val result = withTimeout((input.model.failoverTimeout.takeIf { it > 0 } ?: 120) * 1000L) {
+                // 关系评估独立等待 300 秒，不修改模型的全局设置。
+                val result = withTimeout(CompanionRelationshipRecovery.TIMEOUT_SECONDS * 1000L) {
                     client.chatOnce(input.model.copy(maxTokens = outputBudget), messages, requestTag = requestTag)
                 }
-                batchSizer?.completed((System.nanoTime() - requestStarted) / 1_000_000L, input.batch.size)
                 val usage = resolveLocalTokenUsage(result.usage, messages, result.content)
                 onUsage(id, input.model, result.copy(usage = result.usage + mapOf("prompt" to usage.inputTokens,
                     "completion" to usage.outputTokens, "estimated" to if (usage.estimated) 1 else 0)))
                 require(result.error == null && result.content.isNotBlank()) { "评估模型没有返回有效结果" }
-                val json = JsonParser.parseString(result.content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()).asJsonObject
-                require(json["format"]?.asString == CompanionRelationshipNarrative.FORMAT) { "评估模型没有使用新的文字格式，旧状态保留" }
-                val proposals = requireNotNull(json["events"]?.asJsonArray) { "评估结果缺少事件列表" }
-                require(proposals.size() <= 6) { "单次评估事件过多" }
+                val json = CompanionRelationshipResponse.json(result.content)
                 val evidenceMap = input.evidence.associateBy { it.id }
-                val usedKeys = mutableSetOf<String>()
                 val now = System.currentTimeMillis()
-                val effects = proposals.map { item ->
-                    val obj = item.asJsonObject
-                    val key = CompanionRelationshipNarrative.text(obj, "key", 100)
-                    require(usedKeys.add(key)) { "事件标识重复" }
-                    val prior = input.events.firstOrNull { it.eventKey == key }
-                    if (correctionKey != null) require(key == correctionKey) { "纠错不能改动其他事件" }
-                    if (prior != null) require(correctionKey == key) { "已处理的事件不重复记录；请使用指出错误修正旧判断" }
-                    val kind = CompanionRelationshipNarrative.text(obj, "kind", 20)
-                    require(kind in setOf("reliability", "comfort", "familiarity", "boundary", "other")) { "事件类型无效" }
-                    val impacts = CompanionRelationshipNarrative.impacts(obj)
-                    require(correctionKey != null || impacts.isNotEmpty()) { "没有关系影响时不必新增事件" }
-                    val reason = CompanionRelationshipNarrative.text(obj, "reason", 500)
-                    val summary = CompanionRelationshipNarrative.text(obj, "summary", 200)
-                    val sources = CompanionRelationshipNarrative.sources(obj["sources"], evidenceMap)
-                    require(prior != null || input.events.none { old -> refs(old.sourcesJson).map { it.id }.sorted() == sources.map { it.id }.sorted() }) { "这份原话已有关系记录，不能重复新增事件" }
-                    CompanionRelationshipEventEntity(UUID.randomUUID().toString(), id, key, input.state.version + 1,
-                        summary, reason, kind, "{}", gson.toJson(sources), now, prior != null, gson.toJson(impacts))
-                }
-                require(effects.map { refs(it.sourcesJson).map { source -> source.id }.sorted() }.distinct().size == effects.size) { "本次评估重复引用同一份材料新增事件" }
+                val parsedEvents = CompanionRelationshipResponse.events(json, evidenceMap, input.events,
+                    id, input.state.version + 1, now, correctionKey)
+                val effects = parsedEvents.accepted
                 val correctionReason = if (correctionKey != null) CompanionRelationshipNarrative.text(json, "correction_reason", 500) else null
                 if (correctionKey != null) {
                     require(json["verdict"]?.asString in setOf("corrected", "unchanged")) { "纠错结论无效" }
@@ -337,7 +314,7 @@ internal class CompanionRelationshipService(
                 }
                 val narrative = CompanionRelationshipNarrative.parse(json, previous, evidenceMap, byId, input.events,
                     effects, input.batch.lastOrNull()?.rows?.map { it.id }?.toSet().orEmpty(),
-                    input.batch.lastOrNull()?.rows?.lastOrNull()?.createdAt.orEmpty(), now, input.target)
+                    input.batch.lastOrNull()?.rows?.lastOrNull()?.createdAt.orEmpty(), now, input.target, parsedEvents.discardedKeys)
                 val allowedKeys = (selectedEvents + effects).map { it.eventKey }.toSet()
                 require(narrative.relationships.values.filterNotNull().all { field ->
                     field.eventRevisions.keys.all { it in allowedKeys || it in previous?.relationships?.values.orEmpty().filterNotNull().flatMap { old -> old.eventRevisions.keys } }

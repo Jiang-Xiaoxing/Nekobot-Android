@@ -116,32 +116,36 @@ class CompanionRelationshipRecoveryTest {
         assertFalse(CompanionRelationshipRecovery.automaticReady(failed, 0))
         assertFalse(CompanionRelationshipRecovery.automaticReady(state("所选评估模型已不可用，请重新选择"), 12))
     }
-    @Test fun twelveTurnsAreProcessedInOrderedSmallBatchesWithoutLosingCursorProgress() {
+    @Test fun allPendingTurnsUseOneRequestUntilAnActualTimeout() {
         val all = turns(12)
-        val sizer = RelationshipBatchSizer(120)
+        val sizer = RelationshipBatchSizer()
+        assertEquals(all, sizer.select(all, 22_000, false))
+        assertEquals(all, sizer.select(all, 100, false))
+        assertEquals(300, CompanionRelationshipRecovery.TIMEOUT_SECONDS)
+    }
+    @Test fun timeoutRecoveryProcessesOrderedSingleTurnsWithoutLosingProgress() {
+        val all = turns(12)
+        val sizer = RelationshipBatchSizer()
         var cursor: String? = null
         val seen = mutableListOf<String>()
         while (CompanionRelationshipPolicy.pending(all, cursor).isNotEmpty()) {
-            val batch = sizer.select(CompanionRelationshipPolicy.pending(all, cursor), 22_000, false)
-            assertTrue(batch.size in 1..3)
+            val batch = sizer.select(CompanionRelationshipPolicy.pending(all, cursor), 22_000, true)
+            assertEquals(1, batch.size)
             seen.addAll(batch.map { it.endId }); cursor = batch.last().endId
         }
         assertEquals(all.map { it.endId }, seen)
-        assertEquals(12, seen.distinct().size)
     }
-    @Test fun shortTimeoutAndSlowMeasuredResponseShrinkFollowingBatch() {
-        assertEquals(1, RelationshipBatchSizer(30).select(turns(12), 22_000, false).size)
-        val sizer = RelationshipBatchSizer(120)
-        assertEquals(3, sizer.select(turns(12), 22_000, false).size)
-        sizer.completed(110_000, 3)
-        assertEquals(1, sizer.select(turns(12), 22_000, false).size)
-        assertEquals(1, RelationshipBatchSizer(120).select(turns(12), 22_000, true).size)
-    }
-    @Test fun batchHonorsCharacterBudgetAndKeepsOversizedTurnPending() {
-        val sizer = RelationshipBatchSizer(120)
-        assertEquals(1, sizer.select(turns(12, 4_000), 22_000, false).size)
+    @Test fun retryKeepsOversizedTurnPendingInsteadOfTruncatingIt() {
+        val sizer = RelationshipBatchSizer()
         assertTrue(sizer.select(turns(1, 12_000), 22_000, true).isEmpty())
         assertEquals(1, sizer.select(turns(1, 4_000), 22_000, true).size)
+    }
+    @Test fun retryInterruptionPlaceholderIsAlsoClearedWithoutChangingProgress() {
+        val interrupted = state(CompanionRelationshipRecovery.RETRY_IN_FLIGHT).copy(cursorId = "a3", version = 9)
+        assertEquals(interrupted.copy(notice = null), CompanionRelationshipRecovery.clearInterruptedNotice(interrupted))
+        assertNull(CompanionRelationshipRecovery.noticeToShow(interrupted, false, null))
+        assertFalse(CompanionRelationshipRecovery.timedOut(interrupted.notice))
+        assertTrue(CompanionRelationshipRecovery.timedOut(CompanionRelationshipRecovery.TIMEOUT))
     }
     @Test fun noticeUsesRealReasonAndPersistsDeduplicationAcrossPageRecreation() {
         val state = state("所选评估模型已不可用，请重新选择").copy(version = 9)
