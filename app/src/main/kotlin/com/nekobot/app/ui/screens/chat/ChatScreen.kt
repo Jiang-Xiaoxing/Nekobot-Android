@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.ui.platform.testTag
 import android.Manifest
@@ -429,6 +433,8 @@ fun ChatScreen(
     var deletingMessage by remember { mutableStateOf<Message?>(null) }
     var editingMessage by remember(sessionId) { mutableStateOf<Message?>(null) }
     var messageActionTarget by remember(sessionId) { mutableStateOf<Message?>(null) }
+    var messageActionAnchor by remember(sessionId) { mutableStateOf<androidx.compose.ui.unit.IntRect?>(null) }
+    var messageDetailsText by remember(sessionId) { mutableStateOf<String?>(null) }
     var previewGeneratedImage by remember(sessionId) {
         mutableStateOf<LocalMessageImageEntity?>(null)
     }
@@ -1406,6 +1412,7 @@ fun ChatScreen(
                                                 messageActionTarget = target
                                             }
                                         },
+                                        onLongPressBounds = { if (!selectionMode) messageActionAnchor = it },
                                         onRegenerate = {
                                             // 首条 AI 消息（开场白）使用专用开场白重新生成
                                             if (index == 0 && !target.isUser) {
@@ -1613,101 +1620,67 @@ fun ChatScreen(
         }
     }
 
-    // 长按消息后的操作菜单
+    // 长按消息后的悬浮操作菜单（微信式，锚定在被按气泡上方/下方）
     messageActionTarget?.let { target ->
         val targetId = target.id?.takeIf {
             it.isNotBlank() && it != ChatViewModel.STREAMING_ID
         }
-        ModalBottomSheet(
-            onDismissRequest = { messageActionTarget = null },
-            containerColor = MaterialTheme.colorScheme.surface,
-            dragHandle = { BottomSheetDefaults.DragHandle() }
-        ) {
-            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-            Text(
-                text = stringResource(R.string.chat_message_actions),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-            )
-            if (companionChat) {
-                MessageActionSheetItem(text = stringResource(R.string.common_copy), icon = Icons.Filled.ContentCopy) {
-                    clipboard.setText(AnnotatedString(target.displayContent))
-                    messageActionTarget = null
-                }
-                if (!target.isUser && !target.isLocalCommandMessage()) {
-                    MessageActionSheetItem(text = stringResource(R.string.companion_chat_retry), icon = Icons.Filled.Refresh,
-                        enabled = targetId != null && !sending) {
-                        messageActionTarget = null
-                        if (renderMessages.firstOrNull()?.id == target.id && !hasOlderMessages) viewModel.regenerateGreeting()
-                        else viewModel.regenerateMessage(target)
-                    }
-                }
-                val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
-                    formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
-                if (details.isNotBlank()) Text(details, Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val dismissMenu = { messageActionTarget = null; messageActionAnchor = null }
+        val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
+            formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
+        val actions = buildList {
+            add(MessageMenuAction(stringResource(R.string.common_copy), Icons.Filled.ContentCopy, testTag = "message-action-copy") {
+                clipboard.setText(AnnotatedString(target.displayContent))
+                dismissMenu()
+            })
+            if (companionChat && !target.isUser && !target.isLocalCommandMessage()) {
+                add(MessageMenuAction(stringResource(R.string.chat_menu_regenerate), Icons.Filled.Refresh,
+                    enabled = targetId != null && !sending, testTag = "message-action-regenerate") {
+                    dismissMenu()
+                    if (renderMessages.firstOrNull()?.id == target.id && !hasOlderMessages) viewModel.regenerateGreeting()
+                    else viewModel.regenerateMessage(target)
+                })
             }
-            MessageActionSheetItem(
-                text = stringResource(R.string.chat_message_edit),
-                icon = Icons.Filled.Edit,
-                enabled = targetId != null && !sending,
-                onClick = {
-                    messageActionTarget = null
-                    editingMessage = target
-                }
-            )
-            MessageActionSheetItem(
-                text = stringResource(R.string.chat_message_generate_image),
-                icon = Icons.Filled.AutoAwesome,
-                enabled = targetId != null && target.displayContent.isNotBlank(),
-                onClick = {
-                    messageActionTarget = null
-                    viewModel.generateImageForMessage(target)
-                }
-            )
-            MessageActionSheetItem(
-                text = stringResource(R.string.common_delete),
-                icon = Icons.Filled.Delete,
-                tint = MaterialTheme.colorScheme.error,
-                enabled = targetId != null,
-                onClick = {
-                    messageActionTarget = null
-                    deletingMessage = target
-                }
-            )
-            MessageActionSheetItem(
-                text = stringResource(R.string.chat_multi_select),
-                icon = Icons.Filled.CheckCircle,
-                enabled = targetId != null,
-                onClick = {
-                    messageActionTarget = null
-                    targetId?.let(viewModel::enterSelectionMode)
-                }
-            )
-            MessageActionSheetItem(
-                text = stringResource(R.string.common_select),
-                icon = Icons.Filled.ContentCopy,
-                onClick = {
-                    messageActionTarget = null
-                    selectingTextMessage = target
-                }
-            )
-            MessageActionSheetItem(
-                text = stringResource(R.string.chat_fork),
-                icon = Icons.Filled.VerticalSplit,
-                enabled = targetId != null,
-                onClick = {
-                    messageActionTarget = null
-                    targetId?.let { messageId ->
-                        viewModel.forkFromMessage(messageId) { onOpenChat(it) }
-                    }
-                }
-            )
-            Spacer(Modifier.height(24.dp))
+            add(MessageMenuAction(stringResource(R.string.chat_menu_edit), Icons.Filled.Edit,
+                enabled = targetId != null && !sending, testTag = "message-action-edit") {
+                dismissMenu()
+                editingMessage = target
+            })
+            add(MessageMenuAction(stringResource(R.string.common_delete), Icons.Filled.Delete,
+                enabled = targetId != null, destructive = true, testTag = "message-action-delete") {
+                dismissMenu()
+                deletingMessage = target
+            })
+        }
+        val moreActions = buildList {
+            add(MessageMenuAction(stringResource(R.string.chat_multi_select), Icons.Filled.CheckCircle,
+                enabled = targetId != null, testTag = "message-action-multiselect") {
+                dismissMenu()
+                targetId?.let(viewModel::enterSelectionMode)
+            })
+            add(MessageMenuAction(stringResource(R.string.chat_menu_select_text), Icons.Filled.TextFields,
+                testTag = "message-action-select-text") {
+                dismissMenu()
+                selectingTextMessage = target
+            })
+            if (details.isNotBlank()) {
+                add(MessageMenuAction(stringResource(R.string.chat_menu_details), Icons.Filled.Info,
+                    testTag = "message-action-details") {
+                    dismissMenu()
+                    messageDetailsText = details
+                })
             }
         }
+        MessageActionPopup(anchor = messageActionAnchor, actions = actions, moreActions = moreActions, onDismiss = dismissMenu)
+    }
+
+    messageDetailsText?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { messageDetailsText = null },
+            title = { Text(stringResource(R.string.chat_menu_details)) },
+            text = { Text(text, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { messageDetailsText = null }) { Text(stringResource(R.string.common_ok)) } }
+        )
     }
 
     editingMessage?.let { message ->
@@ -2597,37 +2570,6 @@ private fun MessageSearchDialog(
 
 /** 单条消息气泡：用户靠右、AI 靠左。支持 <||> 分隔符拆分为多段气泡。 */
 @Composable
-private fun MessageActionSheetItem(
-    text: String,
-    icon: ImageVector,
-    tint: Color = MaterialTheme.colorScheme.onSurface,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    val contentColor = if (enabled) tint else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.width(16.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
-            color = contentColor
-        )
-    }
-}
-
-@Composable
 private fun StreamingAssistantBubble(
     placeholder: Message,
     motionRegistry: MessageMotionRegistry,
@@ -2768,6 +2710,8 @@ private fun MessageBubble(
     showAiAvatar: Boolean = true,
     fillAiWidth: Boolean = false,
     onLongClick: () -> Unit,
+    /** 长按时回传被按气泡段在窗口中的位置，用于定位悬浮菜单。 */
+    onLongPressBounds: (androidx.compose.ui.unit.IntRect?) -> Unit = {},
     onRegenerate: () -> Unit = {},
     onRegenerateTts: () -> Unit = {},
     onFork: () -> Unit = {},
@@ -3076,6 +3020,7 @@ private fun MessageBubble(
                     val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
                     val segShape = chatBubbleShape(isUser, isLast)
+                    val segBounds = remember { arrayOfNulls<androidx.compose.ui.unit.IntRect>(1) }
                     Box(
                         modifier = Modifier
                             .then(messageEntranceModifier(motionRegistry, motionKey, idx, message.timestamp,
@@ -3102,9 +3047,13 @@ private fun MessageBubble(
                                     else -> Modifier
                                 }
                             )
+                            .onGloballyPositioned { coords ->
+                                val r = coords.boundsInWindow()
+                                segBounds[0] = androidx.compose.ui.unit.IntRect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+                            }
                             .combinedClickable(
                                 onClick = { if (selectionMode) onToggleSelection() },
-                                onLongClick = onLongClick
+                                onLongClick = { onLongPressBounds(segBounds[0]); onLongClick() }
                             )
                             .then(
                                 if (segHasUserImage) Modifier

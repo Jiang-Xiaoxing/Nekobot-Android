@@ -346,6 +346,11 @@
     <string name="chat_edit_message_failed">编辑消息失败</string>
     <string name="chat_message_actions">消息操作</string>
     <string name="chat_multi_select">多选</string>
+    <string name="chat_menu_edit">编辑</string>
+    <string name="chat_menu_regenerate">重新回复</string>
+    <string name="chat_menu_more">更多</string>
+    <string name="chat_menu_select_text">选择文字</string>
+    <string name="chat_menu_details">详情</string>
     <string name="chat_select_text_title">选择文本</string>
     <string name="chat_clear_messages_title">清空消息</string>
     <string name="chat_clear_messages_confirm">将删除本会话所有消息，此操作不可撤销。</string>
