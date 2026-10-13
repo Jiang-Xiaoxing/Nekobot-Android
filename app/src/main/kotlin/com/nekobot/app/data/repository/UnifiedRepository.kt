@@ -330,6 +330,12 @@ class UnifiedRepository(
     suspend fun searchMessages(query: String, limit: Int = 60): Resource<List<Message>> =
         if (isLocal) Resource.Success(local.searchMessages(query, limit)) else Resource.Success(emptyList())
 
+    fun readGlobalAgentMemory() = local.readGlobalAgentMemory()
+    fun globalAgentMemoryVersions() = local.globalAgentMemoryVersions()
+    fun saveGlobalAgentMemory(content: String, expected: String) = local.saveGlobalAgentMemory(content, expected)
+    fun restoreGlobalAgentMemoryVersion(id: String, expected: String) = local.restoreGlobalAgentMemoryVersion(id, expected)
+    fun undoGlobalAgentMemory(expected: String) = local.undoGlobalAgentMemory(expected)
+
     suspend fun listWorkspaceSearchEntries(sessionIds: List<String>) =
         if (isLocal) local.listWorkspaceSearchEntries(sessionIds) else emptyList()
 

@@ -504,6 +504,13 @@ class LocalRepository(
     }
     private val knowledgeManager by lazy { LocalKnowledgeManager(db, aiClient) }
     private val messageSearchIndex by lazy { LocalMessageSearchIndex(db) }
+    private val agentMemoryStore = ServiceContainer.globalAgentMemory
+
+    fun readGlobalAgentMemory() = agentMemoryStore.read()
+    fun globalAgentMemoryVersions() = agentMemoryStore.versions()
+    fun saveGlobalAgentMemory(content: String, expected: String) = agentMemoryStore.replace(content, expected)
+    fun restoreGlobalAgentMemoryVersion(id: String, expected: String) = agentMemoryStore.restoreVersion(id, expected)
+    fun undoGlobalAgentMemory(expected: String) = agentMemoryStore.undo(expected)
     /** 路由决策日志记录器 */
     val routingDecisionLogger by lazy { RoutingDecisionLogger(db) }
     /** A/B 测试分流器 */
@@ -1232,7 +1239,7 @@ class LocalRepository(
     private val agentMemoryWriter by lazy {
         com.nekobot.app.data.local.ai.AgentMemoryWriter(
             aiClient = aiClient,
-            readMemory = { runCatching { ServiceContainer.globalAgentMemory.read().content }.getOrDefault("") },
+            readMemory = { runCatching { agentMemoryStore.read().content }.getOrDefault("") },
             writeMemory = { merged ->
                 // 记忆总量有上限（GlobalAgentMemoryStore.MAX_CONTENT_CHARS），
                 // 超出时保留最新的末尾内容，避免写入直接抛错。
@@ -1244,7 +1251,15 @@ class LocalRepository(
             },
             aiModelProvider = { aiModelDao.getActive() },
             failoverExecutor = chatFailoverExecutor,
-            onTokenUsage = ::recordSecondaryTokenUsage
+            onTokenUsage = ::recordSecondaryTokenUsage,
+            writeMemoryWithSource = { base, merged, sessionId, userMessage ->
+                agentMemoryStore.replace(
+                    merged.take(com.nekobot.app.data.local.ai.GlobalAgentMemoryStore.MAX_CONTENT_CHARS),
+                    expectedContent = base, source = "agent", sourceSessionId = sessionId,
+                    sourceMessageId = messageDao.findUserMessageId(sessionId, userMessage)
+                )
+                ServiceContainer.notifyMemoryChanged()
+            }
         )
     }
 

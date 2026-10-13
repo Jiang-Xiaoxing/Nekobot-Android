@@ -3,4 +3,23 @@
     <string name="search_filter_all">すべて</string>
     <string name="search_refresh">検索を更新</string>
     <string name="agent_foreground_timed_out">システムが処理を停止しました。チャットから再開できます。</string>
+    <string name="memory_history_title">変更履歴</string>
+    <string name="memory_history_restore">この版を復元</string>
+    <string name="memory_history_empty">変更履歴はありません</string>
+    <string name="memory_history_preview">版のプレビュー</string>
+    <string name="memory_history_source">出典を表示</string>
+    <string name="memory_history_before">変更前</string>
+    <string name="memory_history_after">変更後</string>
+    <string name="memory_history_empty_content">（空）</string>
+    <string name="memory_history_manual">手動編集</string>
+    <string name="memory_history_agent">自動メモリ</string>
+    <string name="memory_history_tool">Agent ツール</string>
+    <string name="memory_history_restored">版の復元</string>
+    <string name="memory_undo">直前の変更を戻す</string>
+    <string name="memory_merge_save">統合して保存</string>
+    <string name="memory_conflict_message">メモリが更新されました。下書きは保持されています。</string>
+    <string name="memory_merge_conflict">同じ箇所が競合しています。手動で統合してください。</string>
+    <string name="memory_conflict_review">変更を統合</string>
+    <string name="memory_conflict_latest">最新のメモリ</string>
+    <string name="memory_conflict_draft">下書きを編集</string>
 </resources>

@@ -40,6 +40,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.drop
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import com.nekobot.app.data.local.ai.MemoryVersion
+import com.nekobot.app.ui.components.NekoDialog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -56,85 +63,139 @@ data class GlobalAgentMemoryUiState(
     val loading: Boolean = true,
     val saving: Boolean = false,
     val message: String? = null,
-    val messageIsError: Boolean = false
+    val messageIsError: Boolean = false,
+    val versions: List<MemoryVersion> = emptyList(),
+    val conflict: Boolean = false,
+    val conflictLatest: String? = null,
+    val ownerRevision: Long = -1
 ) {
     val hasUnsavedChanges: Boolean get() = draft != savedContent
 }
 
-class GlobalAgentMemoryViewModel : ViewModel() {
-    private val store: GlobalAgentMemoryStore
-        get() = ServiceContainer.globalAgentMemory
-
+class GlobalAgentMemoryViewModel : com.nekobot.app.ui.BaseViewModel() {
     private val _uiState = MutableStateFlow(GlobalAgentMemoryUiState())
     val uiState: StateFlow<GlobalAgentMemoryUiState> = _uiState.asStateFlow()
 
     init {
         reload()
-        // 记忆按 Profile 隔离后，迁移写入可能在页面已打开时发生（用户在弹窗里选了「迁移过来」），
-        // 订阅该事件让编辑框重新对齐到磁盘内容。
+        viewModelScope.launch { ServiceContainer.memoryChanged.collect { reload(preserveDraft = true) } }
         viewModelScope.launch {
-            ServiceContainer.memoryChanged.collect { reload() }
+            ServiceContainer.dataSourceRevision.drop(1).collect {
+                _uiState.value = GlobalAgentMemoryUiState()
+                reload()
+            }
         }
     }
 
     fun updateDraft(content: String) {
-        if (content.length <= GlobalAgentMemoryStore.MAX_CONTENT_CHARS) {
+        if (content.length <= GlobalAgentMemoryStore.MAX_CONTENT_CHARS)
             _uiState.update { it.copy(draft = content, message = null, messageIsError = false) }
-        }
     }
 
-    fun reload() {
+    fun reload(preserveDraft: Boolean = false) {
+        val target = ServiceContainer.unified
+        val revision = ServiceContainer.dataSourceRevision.value
         viewModelScope.launch {
-            _uiState.update { it.copy(loading = true, message = null, messageIsError = false) }
-            runCatching { withContext(Dispatchers.IO) { store.read() } }
-                .onSuccess { snapshot ->
-                    _uiState.update {
-                        it.copy(
-                            draft = snapshot.content,
-                            savedContent = snapshot.content,
-                            updatedAt = snapshot.updatedAt,
-                            loading = false
-                        )
-                    }
+            if (revision != ServiceContainer.dataSourceRevision.value) return@launch
+            _uiState.update { it.copy(loading = true, ownerRevision = revision) }
+            try {
+                val (snapshot, versions) = withContext(Dispatchers.IO) {
+                    target.readGlobalAgentMemory() to target.globalAgentMemoryVersions()
                 }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            loading = false,
-                            message = error.message ?: ServiceContainer.getString(R.string.global_memory_read_failed),
-                            messageIsError = true
-                        )
-                    }
+                if (revision != ServiceContainer.dataSourceRevision.value) return@launch
+                _uiState.update { state ->
+                    val keep = preserveDraft && state.hasUnsavedChanges
+                    val conflict = keep && state.savedContent != snapshot.content
+                    state.copy(draft = if (keep) state.draft else snapshot.content,
+                        savedContent = if (keep) state.savedContent else snapshot.content,
+                        updatedAt = snapshot.updatedAt, loading = false, versions = versions,
+                        conflict = conflict,
+                        message = if (conflict) string(R.string.memory_conflict_message) else null,
+                        messageIsError = conflict)
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (revision == ServiceContainer.dataSourceRevision.value)
+                    _uiState.update { it.copy(loading = false, message = string(R.string.global_memory_read_failed), messageIsError = true) }
+            }
         }
     }
 
     fun save() {
-        val content = _uiState.value.draft
+        val state = _uiState.value
+        persist { it.saveGlobalAgentMemory(state.draft, state.savedContent) }
+    }
+
+    fun restore(id: String) {
+        val expected = _uiState.value.savedContent
+        persist { it.restoreGlobalAgentMemoryVersion(id, expected) }
+    }
+
+    fun undo() {
+        val expected = _uiState.value.savedContent
+        persist { it.undoGlobalAgentMemory(expected) }
+    }
+
+    fun mergeAndSave() {
+        val state = _uiState.value
+        if (state.ownerRevision != ServiceContainer.dataSourceRevision.value) return
+        val target = ServiceContainer.unified
+        val revision = ServiceContainer.dataSourceRevision.value
         viewModelScope.launch {
-            _uiState.update { it.copy(saving = true, message = null, messageIsError = false) }
-            runCatching { withContext(Dispatchers.IO) { store.replace(content) } }
-                .onSuccess { snapshot ->
-                    _uiState.update {
-                        it.copy(
-                            draft = snapshot.content,
-                            savedContent = snapshot.content,
-                            updatedAt = snapshot.updatedAt,
-                            saving = false,
-                            message = ServiceContainer.getString(R.string.global_memory_saved),
-                            messageIsError = false
-                        )
-                    }
+            if (revision != ServiceContainer.dataSourceRevision.value || _uiState.value.loading || _uiState.value.saving) return@launch
+            _uiState.update { it.copy(loading = true) }
+            try {
+                val latest = withContext(Dispatchers.IO) { target.readGlobalAgentMemory().content }
+                if (revision != ServiceContainer.dataSourceRevision.value) return@launch
+                val merged = com.nekobot.app.data.local.ai.mergeMemoryEdits(state.savedContent, state.draft, latest)
+                if (merged == null || merged.length > GlobalAgentMemoryStore.MAX_CONTENT_CHARS) {
+                    _uiState.update { it.copy(loading = false, conflict = true, conflictLatest = latest, message = string(R.string.memory_merge_conflict), messageIsError = true) }
+                } else {
+                    _uiState.update { it.copy(loading = false, draft = merged, savedContent = latest, conflict = false) }
+                    save()
                 }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            saving = false,
-                            message = error.message ?: ServiceContainer.getString(R.string.global_memory_save_failed),
-                            messageIsError = true
-                        )
-                    }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (revision == ServiceContainer.dataSourceRevision.value) _uiState.update {
+                    it.copy(loading = false, message = string(R.string.global_memory_read_failed), messageIsError = true)
                 }
+            }
+        }
+    }
+
+    fun dismissConflict() { _uiState.update { it.copy(conflictLatest = null) } }
+
+    fun confirmConflictMerge(content: String, expected: String) {
+        if (_uiState.value.ownerRevision != ServiceContainer.dataSourceRevision.value || content.length > GlobalAgentMemoryStore.MAX_CONTENT_CHARS) return
+        _uiState.update { it.copy(draft = content, savedContent = expected, conflictLatest = null, conflict = false) }
+        save()
+    }
+
+    private fun persist(action: (com.nekobot.app.data.repository.UnifiedRepository) -> GlobalAgentMemoryStore.Snapshot) {
+        if (_uiState.value.loading || _uiState.value.saving || _uiState.value.ownerRevision != ServiceContainer.dataSourceRevision.value) return
+        val target = ServiceContainer.unified
+        val revision = ServiceContainer.dataSourceRevision.value
+        viewModelScope.launch {
+            if (revision != ServiceContainer.dataSourceRevision.value) return@launch
+            _uiState.update { it.copy(saving = true, message = null) }
+            try {
+                val (snapshot, versions) = withContext(Dispatchers.IO) {
+                    action(target) to target.globalAgentMemoryVersions()
+                }
+                if (revision != ServiceContainer.dataSourceRevision.value) return@launch
+                _uiState.update { it.copy(draft = snapshot.content, savedContent = snapshot.content,
+                    updatedAt = snapshot.updatedAt, saving = false, versions = versions, conflict = false,
+                    message = string(R.string.global_memory_saved), messageIsError = false) }
+                ServiceContainer.notifyMemoryChanged()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (revision == ServiceContainer.dataSourceRevision.value) _uiState.update {
+                    val conflict = error is com.nekobot.app.data.local.ai.MemoryConflictException
+                    it.copy(saving = false, conflict = conflict,
+                        message = string(if (conflict) R.string.memory_conflict_message else R.string.global_memory_save_failed),
+                        messageIsError = true)
+                }
+            }
         }
     }
 }
@@ -162,9 +223,20 @@ internal fun formatGlobalMemorySavedAt(raw: String?, zoneId: ZoneId = ZoneId.sys
 @Composable
 fun GlobalAgentMemoryScreen(
     onBack: () -> Unit,
+    onLocate: (String, String?) -> Unit = { _, _ -> },
     viewModel: GlobalAgentMemoryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showHistory by remember { mutableStateOf(false) }
+    var preview by remember { mutableStateOf<MemoryVersion?>(null) }
+    val revision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
+    LaunchedEffect(revision) { showHistory = false; preview = null }
+    MemoryHistoryDialogs(showHistory, preview, uiState.versions, { showHistory = false },
+        { preview = it }, { preview = null }, { id -> viewModel.restore(id); preview = null; showHistory = false }, onLocate)
+    uiState.conflictLatest?.let { latest ->
+        MemoryConflictDialog(uiState.draft, latest, viewModel::dismissConflict,
+            onConfirm = { content -> viewModel.confirmConflictMerge(content, latest) })
+    }
 
     Scaffold(
         topBar = {
@@ -227,6 +299,17 @@ fun GlobalAgentMemoryScreen(
                         color = if (uiState.messageIsError) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.primary
                     )
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { showHistory = true }, enabled = !uiState.loading && !uiState.saving && !uiState.hasUnsavedChanges) {
+                        Text(stringResource(R.string.memory_history_title))
+                    }
+                    TextButton(onClick = viewModel::undo, enabled = !uiState.loading && !uiState.saving && !uiState.hasUnsavedChanges && uiState.versions.firstOrNull()?.content == uiState.savedContent) {
+                        Text(stringResource(R.string.memory_undo))
+                    }
+                    if (uiState.conflict) TextButton(onClick = viewModel::mergeAndSave, enabled = !uiState.loading && !uiState.saving) {
+                        Text(stringResource(R.string.memory_merge_save))
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

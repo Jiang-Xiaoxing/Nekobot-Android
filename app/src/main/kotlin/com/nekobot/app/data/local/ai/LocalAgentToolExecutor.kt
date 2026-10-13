@@ -593,13 +593,13 @@ internal class LocalAgentToolExecutor(
             return failure("用户拒绝修改 Agent 记忆")
         }
         val snapshot = when (mode) {
-            "replace" -> store.replace(args.string("content"))
-            "append" -> store.append(args.string("content"))
+            "replace" -> store.replace(args.string("content"), source = "tool", sourceSessionId = sessionId)
+            "append" -> store.append(args.string("content"), sourceSessionId = sessionId)
             "replace_text" -> store.replaceText(
                 oldText = args.string("old_text"),
-                newText = args.string("new_text")
+                newText = args.string("new_text"), sourceSessionId = sessionId
             )
-            else -> store.replace("")
+            else -> store.replace("", source = "tool", sourceSessionId = sessionId)
         }
         return memorySnapshotResult(snapshot) + ("mode" to mode)
     }

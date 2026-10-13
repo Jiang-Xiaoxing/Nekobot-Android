@@ -220,6 +220,7 @@ object ServiceContainer {
     /** Agent 记忆内容变化事件流：迁移写入后通知已打开的页面重新读取。 */
     private val _memoryChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val memoryChanged: SharedFlow<Unit> = _memoryChanged
+    fun notifyMemoryChanged() { _memoryChanged.tryEmit(Unit) }
 
     fun setPendingSessionId(id: String?) { _pendingSessionId.value = id }
 

@@ -3,4 +3,23 @@
     <string name="search_filter_all">All</string>
     <string name="search_refresh">Refresh search</string>
     <string name="agent_foreground_timed_out">Background work paused by the system. Open the chat to continue.</string>
+    <string name="memory_history_title">Change history</string>
+    <string name="memory_history_restore">Restore version</string>
+    <string name="memory_history_empty">No changes yet</string>
+    <string name="memory_history_preview">Version preview</string>
+    <string name="memory_history_source">View source</string>
+    <string name="memory_history_before">Before</string>
+    <string name="memory_history_after">After</string>
+    <string name="memory_history_empty_content">(Empty)</string>
+    <string name="memory_history_manual">Manual edit</string>
+    <string name="memory_history_agent">Automatic memory</string>
+    <string name="memory_history_tool">Agent tool</string>
+    <string name="memory_history_restored">Version restore</string>
+    <string name="memory_undo">Undo last change</string>
+    <string name="memory_merge_save">Merge and save</string>
+    <string name="memory_conflict_message">Memory changed. Your draft is preserved.</string>
+    <string name="memory_merge_conflict">Overlapping edits. Merge them manually.</string>
+    <string name="memory_conflict_review">Merge changes</string>
+    <string name="memory_conflict_latest">Latest memory</string>
+    <string name="memory_conflict_draft">Edit draft</string>
 </resources>

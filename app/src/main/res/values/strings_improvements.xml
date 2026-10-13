@@ -3,4 +3,23 @@
     <string name="search_filter_all">全部</string>
     <string name="search_refresh">刷新搜索</string>
     <string name="agent_foreground_timed_out">系统已暂停后台任务，请返回会话继续</string>
+    <string name="memory_history_title">修改历史</string>
+    <string name="memory_history_restore">恢复此版本</string>
+    <string name="memory_history_empty">暂无修改记录</string>
+    <string name="memory_history_preview">版本预览</string>
+    <string name="memory_history_source">查看来源</string>
+    <string name="memory_history_before">修改前</string>
+    <string name="memory_history_after">修改后</string>
+    <string name="memory_history_empty_content">（空）</string>
+    <string name="memory_history_manual">手动修改</string>
+    <string name="memory_history_agent">自动记忆</string>
+    <string name="memory_history_tool">Agent 工具</string>
+    <string name="memory_history_restored">版本恢复</string>
+    <string name="memory_undo">撤销最近修改</string>
+    <string name="memory_merge_save">合并并保存</string>
+    <string name="memory_conflict_message">记忆已有新修改，草稿已保留</string>
+    <string name="memory_merge_conflict">同一段内容有冲突，请手动合并</string>
+    <string name="memory_conflict_review">合并修改</string>
+    <string name="memory_conflict_latest">最新记忆</string>
+    <string name="memory_conflict_draft">编辑草稿</string>
 </resources>

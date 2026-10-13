@@ -3,4 +3,23 @@
     <string name="search_filter_all">전체</string>
     <string name="search_refresh">검색 새로고침</string>
     <string name="agent_foreground_timed_out">시스템이 백그라운드 작업을 일시 정지했습니다. 채팅에서 계속하세요.</string>
+    <string name="memory_history_title">변경 기록</string>
+    <string name="memory_history_restore">이 버전 복원</string>
+    <string name="memory_history_empty">변경 기록이 없습니다</string>
+    <string name="memory_history_preview">버전 미리보기</string>
+    <string name="memory_history_source">출처 보기</string>
+    <string name="memory_history_before">변경 전</string>
+    <string name="memory_history_after">변경 후</string>
+    <string name="memory_history_empty_content">(비어 있음)</string>
+    <string name="memory_history_manual">직접 편집</string>
+    <string name="memory_history_agent">자동 기억</string>
+    <string name="memory_history_tool">Agent 도구</string>
+    <string name="memory_history_restored">버전 복원</string>
+    <string name="memory_undo">최근 변경 취소</string>
+    <string name="memory_merge_save">병합 후 저장</string>
+    <string name="memory_conflict_message">기억이 변경되었습니다. 초안은 유지됩니다.</string>
+    <string name="memory_merge_conflict">같은 부분의 변경이 충돌합니다. 직접 병합하세요.</string>
+    <string name="memory_conflict_review">변경 병합</string>
+    <string name="memory_conflict_latest">최신 기억</string>
+    <string name="memory_conflict_draft">초안 편집</string>
 </resources>
