@@ -1436,6 +1436,15 @@ interface KnowledgeDao {
     @Query("SELECT * FROM local_knowledge_chunks ORDER BY document_id, chunk_index")
     suspend fun listAllChunks(): List<LocalKnowledgeChunkEntity>
 
+    @Query("SELECT id, title, source, tags_json FROM local_knowledge_documents ORDER BY id")
+    suspend fun listSearchDocuments(): List<KnowledgeSearchDocument>
+
+    @Query("SELECT * FROM local_knowledge_chunks WHERE document_id IN (:documentIds) AND id > :afterId ORDER BY id LIMIT :limit")
+    suspend fun listChunkPage(documentIds: List<String>, afterId: String, limit: Int): List<LocalKnowledgeChunkEntity>
+
+    @Query("SELECT COUNT(*) FROM local_knowledge_chunks WHERE document_id IN (:documentIds) AND embedding_json IS NOT NULL AND embedding_json != ''")
+    suspend fun vectorCount(documentIds: List<String>): Int
+
     @Query("SELECT * FROM local_knowledge_chunks WHERE document_id = :documentId ORDER BY chunk_index")
     suspend fun listChunks(documentId: String): List<LocalKnowledgeChunkEntity>
 
