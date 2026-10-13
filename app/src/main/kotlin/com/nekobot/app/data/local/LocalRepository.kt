@@ -505,6 +505,24 @@ class LocalRepository(
     private val knowledgeManager by lazy { LocalKnowledgeManager(db, aiClient) }
     private val messageSearchIndex by lazy { LocalMessageSearchIndex(db) }
     private val agentMemoryStore = ServiceContainer.globalAgentMemory
+    private val capabilityStore by lazy {
+        appContext?.let { com.nekobot.app.data.local.ai.ModelCapabilityReportStore(
+            java.io.File(it.filesDir, "model-capabilities"), db.openHelper.databaseName.orEmpty()) }
+    }
+
+    fun modelCapabilityReport(modelId: String) = capabilityStore?.read(modelId)
+    fun cancelModelCapabilityProbe(requestTag: String) = aiClient.cancelRequests(requestTag)
+    suspend fun probeModelCapabilities(model: LocalAiModelEntity, requestTag: String,
+        onProgress: (com.nekobot.app.data.local.ai.ModelCapabilityResult) -> Unit) = withContext(Dispatchers.IO) {
+        val report = com.nekobot.app.data.local.ai.ModelCapabilityProber(aiClient).run(model, requestTag, onProgress) { result ->
+            recordSecondaryTokenUsage("model_test", model.name, model.model,
+                result.usage["prompt"] ?: 0, result.usage["completion"] ?: 0)
+        }
+        val current = aiModelDao.getById(model.id)
+        if (current != null && com.nekobot.app.data.local.ai.capabilityFingerprint(current) == report.fingerprint)
+            capabilityStore?.write(report)
+        report
+    }
 
     fun readGlobalAgentMemory() = agentMemoryStore.read()
     fun globalAgentMemoryVersions() = agentMemoryStore.versions()

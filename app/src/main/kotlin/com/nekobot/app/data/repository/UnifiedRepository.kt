@@ -1237,6 +1237,12 @@ class UnifiedRepository(
     suspend fun testLocalModel(model: LocalAiModelEntity) =
         if (isLocal) local.testModel(model) else null
 
+    fun modelCapabilityReport(modelId: String) = local.modelCapabilityReport(modelId)
+    fun cancelModelCapabilityProbe(requestTag: String) = local.cancelModelCapabilityProbe(requestTag)
+    suspend fun probeModelCapabilities(model: LocalAiModelEntity, requestTag: String,
+        onProgress: (com.nekobot.app.data.local.ai.ModelCapabilityResult) -> Unit) =
+        local.probeModelCapabilities(model, requestTag, onProgress)
+
     // ==================== Token 用量统计 ====================
 
     suspend fun tokenStats(dateRange: String? = null, startDate: String? = null, endDate: String? = null): Resource<TokenStats> =
