@@ -85,14 +85,15 @@ fun MarkdownText(
     color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     chatMode: Boolean = false,
-    processParens: Boolean = true
+    processParens: Boolean = true,
+    isStreaming: Boolean = false
 ) {
     if (text.isBlank()) return
     // 预处理保留为兼容入口；区块和行内语义直接解析原文，不再注入可泄漏的占位字符。
     val preprocessed = remember(text, chatMode, processParens) { preprocessMarkdown(text, chatMode, processParens) }
     val showInner = LocalShowInnerMonologue.current
-    val blocks = remember(preprocessed, chatMode, showInner) {
-        visibleMarkdownBlocks(preprocessed, chatMode, showInner)
+    val blocks = remember(preprocessed, chatMode, showInner, isStreaming) {
+        visibleMarkdownBlocks(preprocessed, chatMode, showInner, isStreaming)
     }
 
     // 先按最长可见文本/折叠标题定宽，再让独白条、引用等填满这一宽度。
@@ -124,17 +125,22 @@ val LocalShowInnerMonologue = staticCompositionLocalOf { true }
 /** 单会话气泡采用紧凑淡灰独白条；正文和复制仍使用原文。 */
 val LocalCompactInnerMonologue = staticCompositionLocalOf { false }
 
-/** 按显示开关得到最终渲染区块；只隐藏完整独白，未闭合的标记原样保留。 */
-internal fun visibleMarkdownBlocks(text: String, chatMode: Boolean, showInnerMonologue: Boolean): List<MdBlock> {
+/** 关闭独白时，流式未闭合尾段也隐藏；生成结束仍未闭合才原样保留。 */
+internal fun visibleMarkdownBlocks(
+    text: String,
+    chatMode: Boolean,
+    showInnerMonologue: Boolean,
+    isStreaming: Boolean = false
+): List<MdBlock> {
     if (!chatMode || showInnerMonologue) return parseBlocks(text, chatMode)
-    return parseBlocks(stripClosedInnerMonologue(text), chatMode)
+    return parseBlocks(stripHiddenInnerMonologue(text, isStreaming), chatMode)
         .filterNot { it is MdBlock.InnerMonologue }
 }
 
 private val INNER_LABELS = arrayOf("内心", "心里", "心想", "内白")
 
-/** 隐藏已闭合的（内心：…）/ (内心:…)，全角半角括号和冒号都认。代码块与行内代码原样保留。 */
-private fun stripClosedInnerMonologue(text: String): String {
+/** 隐藏独白（流式时包括未闭合尾段），全角半角括号和冒号都认。代码块与行内代码原样保留。 */
+private fun stripHiddenInnerMonologue(text: String, isStreaming: Boolean): String {
     val out = StringBuilder()
     var i = 0
     while (i < text.length) {
@@ -163,7 +169,8 @@ private fun stripClosedInnerMonologue(text: String): String {
         if (openLen > 0) {
             val close = indexOfCloseParenOutsideCode(text, i + openLen)
             if (close < 0) {
-                out.append(text.substring(i))
+                if (isStreaming) appendCodeRegions(out, text, i, text.length)
+                else out.append(text.substring(i))
                 return out.toString()
             }
             appendCodeRegions(out, text, i, close + 1)
@@ -236,7 +243,10 @@ private fun appendCodeRegions(out: StringBuilder, text: String, start: Int, end:
     while (i < end) {
         if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
             val fenceEnd = endOfMarkdownFence(text, i)
-            if (fenceEnd < 0 || fenceEnd > end) return
+            if (fenceEnd < 0 || fenceEnd > end) {
+                if (end == text.length) out.append(text.substring(i))
+                return
+            }
             out.append(text.substring(i, fenceEnd))
             i = fenceEnd
             continue

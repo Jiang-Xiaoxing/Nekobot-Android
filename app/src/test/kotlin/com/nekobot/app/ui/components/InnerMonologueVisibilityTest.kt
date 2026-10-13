@@ -32,12 +32,12 @@ class InnerMonologueVisibilityTest {
     }
 
     @Test
-    fun streamingUnclosedInnerTailIsVisibleWhenOff() {
-        val streaming = "嗯嗯（内心：其实我"
-        val hidden = visibleMarkdownBlocks(streaming, chatMode = true, showInnerMonologue = false)
-        assertEquals(listOf<MdBlock>(MdBlock.Paragraph(streaming)), hidden)
+    fun completedUnclosedInnerTailIsVisibleWhenOff() {
+        val completed = "嗯嗯（内心：其实我"
+        val hidden = visibleMarkdownBlocks(completed, chatMode = true, showInnerMonologue = false, isStreaming = false)
+        assertEquals(listOf<MdBlock>(MdBlock.Paragraph(completed)), hidden)
         // 开启时保持旧行为：未闭合文本照常显示
-        val shown = visibleMarkdownBlocks(streaming, chatMode = true, showInnerMonologue = true)
+        val shown = visibleMarkdownBlocks(completed, chatMode = true, showInnerMonologue = true)
         assertTrue(shown.filterIsInstance<MdBlock.Paragraph>().any { it.content.contains("其实我") })
     }
 
@@ -79,7 +79,7 @@ class InnerMonologueVisibilityTest {
     }
 
     @Test
-    fun streamingUnclosedInnerKeepsFollowingBodyAcrossLines() {
+    fun completedUnclosedInnerKeepsFollowingBodyAcrossLines() {
         val text = "嗯嗯（内心：其实我\n还想说"
         val hidden = visibleMarkdownBlocks(text, chatMode = true, showInnerMonologue = false)
         assertEquals(parseBlocks(text, true), hidden)
@@ -169,5 +169,89 @@ class InnerMonologueVisibilityTest {
     @Test
     fun nonChatModeUnaffected() {
         assertEquals(parseBlocks(text, false), visibleMarkdownBlocks(text, chatMode = false, showInnerMonologue = false))
+    }
+
+    @Test
+    fun streamingUnclosedInnerTailIsHiddenWhenOff() {
+        val tails = listOf("（内心：", "（内心：其实我", "(内心:其实我", "（心里:其实我", "(心想：其实我", "（内白：其实我")
+        for (tail in tails) {
+            assertEquals(tail, listOf(MdBlock.Paragraph("嗯嗯")),
+                visibleMarkdownBlocks("嗯嗯$tail", true, false, isStreaming = true))
+        }
+    }
+
+    @Test
+    fun streamingUnclosedInnerHidesNestedAndMultilineTail() {
+        val tails = listOf("（内心：想到（昨晚）\n今天照常出门。", "(内心:想到（昨天(一起吃饭)）\n还想说")
+        for (tail in tails) {
+            assertEquals(tail, parseBlocks("上一句\n正文", true),
+                visibleMarkdownBlocks("上一句\n正文$tail", true, false, isStreaming = true))
+        }
+    }
+
+    @Test
+    fun streamingClosedInnerIsHiddenDuringAndAfterGeneration() {
+        val samples = listOf("前（内心：想起（昨天）很开心）后", "前(内心:想到（昨天(一起吃饭)）\n很开心)后")
+        for (sample in samples) {
+            for (streaming in listOf(true, false)) {
+                assertEquals("$sample, streaming=$streaming", listOf(MdBlock.Paragraph("前后")),
+                    visibleMarkdownBlocks(sample, true, false, isStreaming = streaming))
+            }
+        }
+    }
+
+    @Test
+    fun completingStreamRestoresUnclosedBodyWithoutTextChange() {
+        val sample = "正文（内心：未完\n下一段"
+        assertEquals(listOf(MdBlock.Paragraph("正文")), visibleMarkdownBlocks(sample, true, false, isStreaming = true))
+        assertEquals(parseBlocks(sample, true), visibleMarkdownBlocks(sample, true, false, isStreaming = false))
+    }
+
+    @Test
+    fun closingStreamedInnerKeepsItHiddenAndRevealsFollowingBody() {
+        val partial = "正文（内心：秘密"
+        assertEquals(listOf(MdBlock.Paragraph("正文")), visibleMarkdownBlocks(partial, true, false, isStreaming = true))
+        val completed = "$partial）后文"
+        assertEquals(listOf(MdBlock.Paragraph("正文后文")), visibleMarkdownBlocks(completed, true, false, isStreaming = true))
+        assertEquals(listOf(MdBlock.Paragraph("正文后文")), visibleMarkdownBlocks(completed, true, false, isStreaming = false))
+    }
+
+    @Test
+    fun streamingOnlyUnclosedInnerLeavesNoBlock() {
+        assertTrue(visibleMarkdownBlocks("（内心：秘密\n还没说完", true, false, isStreaming = true).isEmpty())
+    }
+
+    @Test
+    fun streamingClosedInnerBeforeUnclosedInnerKeepsOnlyBody() {
+        val sample = "正文（内心：隐藏）后文（内心：未完\n下一段"
+        assertEquals(listOf(MdBlock.Paragraph("正文后文")), visibleMarkdownBlocks(sample, true, false, isStreaming = true))
+        assertEquals(parseBlocks("正文后文（内心：未完\n下一段", true),
+            visibleMarkdownBlocks(sample, true, false, isStreaming = false))
+    }
+
+    @Test
+    fun streamingShownModeAndNonChatModeKeepUnclosedBody() {
+        val sample = "正文（内心：未完\n下一段"
+        assertEquals(parseBlocks(sample, true), visibleMarkdownBlocks(sample, true, true, isStreaming = true))
+        assertEquals(parseBlocks(sample, false), visibleMarkdownBlocks(sample, false, false, isStreaming = true))
+    }
+
+    @Test
+    fun streamingCodeFenceAndInlineCodeAreNotStripped() {
+        val samples = listOf("代码 `（内心：x）` 示例", "```\n（内心：secret", "正文\n```\n（内心：这是代码\n```")
+        for (sample in samples) {
+            assertEquals(sample, parseBlocks(sample, true), visibleMarkdownBlocks(sample, true, false, isStreaming = true))
+        }
+        assertEquals(listOf(MdBlock.Paragraph("正文`")),
+            visibleMarkdownBlocks("正文`（内心：秘密", true, false, isStreaming = true))
+    }
+
+    @Test
+    fun streamingUnclosedInnerKeepsEmbeddedCode() {
+        assertEquals(parseBlocks("正文`code`", true),
+            visibleMarkdownBlocks("正文（内心：隐藏`code`还没说完", true, false, isStreaming = true))
+        val sample = "正文\n（内心：隐藏\n```\n（内心：代码保留"
+        assertEquals(parseBlocks("正文\n```\n（内心：代码保留", true),
+            visibleMarkdownBlocks(sample, true, false, isStreaming = true))
     }
 }

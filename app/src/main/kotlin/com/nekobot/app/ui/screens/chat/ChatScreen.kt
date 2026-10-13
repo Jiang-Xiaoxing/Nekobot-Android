@@ -3085,6 +3085,7 @@ private fun MessageBubble(
                                             sessionId = sessionId,
                                             chatMode = true,
                                             processParens = !isUser,
+                                            isStreaming = isStreamingPlaceholder,
                                             linkColor = accentLink()
                                         )
                                     } else {
@@ -3102,6 +3103,7 @@ private fun MessageBubble(
                                                 sessionId = sessionId,
                                                 chatMode = true,
                                                 processParens = !isUser,
+                                                isStreaming = isStreamingPlaceholder,
                                                 linkColor = linkColor
                                             )
                                         }
@@ -3117,6 +3119,7 @@ private fun MessageBubble(
                                 sessionId = sessionId,
                                 chatMode = true,
                                 processParens = !isUser,
+                                isStreaming = isStreamingPlaceholder,
                                 linkColor = linkColor
                             )
                         } else if (commandStyle != null && isUser) {
@@ -3142,7 +3145,8 @@ private fun MessageBubble(
                                             color = textColor,
                                             style = MaterialTheme.typography.bodyMedium,
                                             chatMode = true,
-                                            processParens = false
+                                            processParens = false,
+                                            isStreaming = isStreamingPlaceholder
                                         )
                                     }
                                 }
@@ -3163,6 +3167,7 @@ private fun MessageBubble(
                                     style = MaterialTheme.typography.bodyMedium,
                                     chatMode = true,
                                     processParens = !isUser,
+                                    isStreaming = isStreamingPlaceholder,
                                     modifier = Modifier.widthIn(max = maxBubbleWidth)
                                 )
                             }
