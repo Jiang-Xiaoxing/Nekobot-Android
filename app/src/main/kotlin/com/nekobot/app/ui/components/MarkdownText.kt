@@ -125,6 +125,32 @@ val LocalShowInnerMonologue = staticCompositionLocalOf { true }
 /** 单会话气泡采用紧凑淡灰独白条；正文和复制仍使用原文。 */
 val LocalCompactInnerMonologue = staticCompositionLocalOf { false }
 
+/** 仅由角色绿色气泡提供；用户消息及其他 Markdown 页面继续沿用原配色。 */
+internal data class MarkdownBubbleColors(
+    val link: androidx.compose.ui.graphics.Color,
+    val surface: androidx.compose.ui.graphics.Color,
+    val onSurface: androidx.compose.ui.graphics.Color,
+    val surfaceLink: androidx.compose.ui.graphics.Color,
+    val parentheses: androidx.compose.ui.graphics.Color
+)
+internal val LocalMarkdownBubbleColors = staticCompositionLocalOf<MarkdownBubbleColors?> { null }
+
+@Composable
+private fun parseRenderedInline(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    styleParentheses: Boolean = false,
+    onSurface: Boolean = false
+): AnnotatedString {
+    val colors = LocalMarkdownBubbleColors.current
+    return parseInline(text, color, style, styleParentheses,
+        linkColor = if (onSurface) colors?.surfaceLink ?: androidx.compose.ui.graphics.Color(0xFF58A6FF)
+            else colors?.link ?: androidx.compose.ui.graphics.Color(0xFF58A6FF),
+        parenthesesColor = if (onSurface) colors?.onSurface ?: color.copy(alpha = 0.62f)
+            else colors?.parentheses ?: color.copy(alpha = 0.62f))
+}
+
 /** 关闭独白时，流式未闭合尾段也隐藏；生成结束仍未闭合才原样保留。 */
 internal fun visibleMarkdownBlocks(
     text: String,
@@ -597,7 +623,7 @@ private fun RenderBlock(
     when (block) {
         is MdBlock.CodeBlock -> CodeBlockRenderer(block, modifier)
         is MdBlock.Header -> MarkdownInlineText(
-            text = parseInline(block.content, color, style, styleParentheses),
+            text = parseRenderedInline(block.content, color, style, styleParentheses),
             style = headerStyle(style, block.level),
             color = color,
             modifier = modifier
@@ -607,13 +633,15 @@ private fun RenderBlock(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(start = 8.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                .background(LocalMarkdownBubbleColors.current?.surface
+                    ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
                 .padding(8.dp)
         ) {
             MarkdownInlineText(
-                text = parseInline(block.content, color, style, styleParentheses),
+                text = parseRenderedInline(block.content, LocalMarkdownBubbleColors.current?.onSurface ?: color,
+                    style, styleParentheses, onSurface = true),
                 style = style.copy(lineHeight = markdownBodyLineHeight(style)),
-                color = color
+                color = LocalMarkdownBubbleColors.current?.onSurface ?: color
             )
         }
         is MdBlock.Table -> TableRenderer(block, color, style, modifier = modifier)
@@ -627,7 +655,7 @@ private fun RenderBlock(
         )
         is MdBlock.InnerMonologue -> InnerMonologueRenderer(block, color, style, modifier)
         is MdBlock.Paragraph -> MarkdownInlineText(
-            text = parseInline(block.content, color, style, styleParentheses),
+            text = parseRenderedInline(block.content, color, style, styleParentheses),
             style = style.copy(lineHeight = markdownBodyLineHeight(style)),
             color = color,
             modifier = modifier
@@ -693,11 +721,12 @@ private fun CodeBlockContent(
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val colors = if (fullscreen) null else LocalMarkdownBubbleColors.current
 
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .background(colors?.surface ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
     ) {
         if (showToolbar) {
             MarkdownBlockToolbar(
@@ -705,7 +734,8 @@ private fun CodeBlockContent(
                 onCopy = {
                     copyMarkdownText(context, clipboard, block.code)
                 },
-                onFullscreen = onFullscreen
+                onFullscreen = onFullscreen,
+                contentColor = colors?.onSurface ?: MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         SelectionContainer(
@@ -717,7 +747,7 @@ private fun CodeBlockContent(
             Text(
                 text = block.code,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors?.onSurface ?: MaterialTheme.colorScheme.onSurface,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(8.dp)
             )
@@ -742,7 +772,7 @@ private fun ListRenderer(
                     color = color
                 )
                 MarkdownInlineText(
-                    text = parseInline(item, color, style, styleParentheses),
+                    text = parseRenderedInline(item, color, style, styleParentheses),
                     style = style.copy(lineHeight = markdownBodyLineHeight(style)),
                     color = color,
                     modifier = Modifier.weight(1f)
@@ -857,6 +887,7 @@ private fun TableRenderer(
         }
     }
 
+    val fullscreenColor = if (LocalMarkdownBubbleColors.current != null) MaterialTheme.colorScheme.onSurface else color
     if (showFullscreen) {
         MarkdownFullscreenDialog(
             title = stringResource(R.string.markdown_table),
@@ -866,7 +897,7 @@ private fun TableRenderer(
             LandscapeTableFullscreenContent(modifier = contentModifier) {
                 TableRenderer(
                     block = block,
-                    color = color,
+                    color = fullscreenColor,
                     style = style,
                     modifier = Modifier.fillMaxSize(),
                     fullscreen = true
@@ -920,7 +951,7 @@ private fun androidx.compose.foundation.layout.RowScope.TableCell(
     ) {
         SelectionContainer(modifier = Modifier.fillMaxWidth()) {
             MarkdownInlineText(
-                text = parseInline(text, color, style),
+                text = parseRenderedInline(text, color, style),
                 style = style.copy(textAlign = TextAlign.Center),
                 color = color,
                 modifier = Modifier.fillMaxWidth()
@@ -933,7 +964,9 @@ private fun androidx.compose.foundation.layout.RowScope.TableCell(
 private fun MarkdownBlockToolbar(
     title: String,
     onCopy: () -> Unit,
-    onFullscreen: (() -> Unit)?
+    onFullscreen: (() -> Unit)?,
+    contentColor: androidx.compose.ui.graphics.Color = LocalMarkdownBubbleColors.current?.parentheses
+        ?: MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     Row(
         modifier = Modifier
@@ -944,7 +977,7 @@ private fun MarkdownBlockToolbar(
         Text(
             text = title,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = contentColor,
             modifier = Modifier.weight(1f),
             maxLines = 1
         )
@@ -952,7 +985,7 @@ private fun MarkdownBlockToolbar(
             Icon(
                 Icons.Filled.ContentCopy,
                 contentDescription = stringResource(R.string.common_copy),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = contentColor,
                 modifier = Modifier.size(15.dp)
             )
         }
@@ -961,7 +994,7 @@ private fun MarkdownBlockToolbar(
                 Icon(
                     Icons.Filled.Fullscreen,
                     contentDescription = stringResource(R.string.markdown_fullscreen),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = contentColor,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -1023,7 +1056,9 @@ private fun MarkdownFullscreenDialog(
                         )
                     }
                 }
-                content(Modifier.weight(1f).fillMaxWidth())
+                CompositionLocalProvider(LocalMarkdownBubbleColors provides null) {
+                    content(Modifier.weight(1f).fillMaxWidth())
+                }
             }
         }
     }
@@ -1058,8 +1093,11 @@ private fun InnerMonologueRenderer(
     var expanded by remember { mutableStateOf(false) }
     val compact = LocalCompactInnerMonologue.current
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val stripColor = if (compact && !dark) androidx.compose.ui.graphics.Color(0xFFEDF0EF)
+    val colors = LocalMarkdownBubbleColors.current
+    val stripColor = colors?.surface ?: if (compact && !dark) androidx.compose.ui.graphics.Color(0xFFEDF0EF)
         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (compact) 0.65f else 0.35f)
+    val stripInk = colors?.onSurface ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val expandedInk = colors?.onSurface ?: color.copy(alpha = 0.6f)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1073,13 +1111,13 @@ private fun InnerMonologueRenderer(
             Text(
                 text = stringResource(R.string.markdown_inner_monologue),
                 style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = stripInk,
                 modifier = Modifier.weight(1f)
             )
             Icon(
                 if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) stringResource(R.string.markdown_collapse) else stringResource(R.string.markdown_expand),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = stripInk,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1089,9 +1127,9 @@ private fun InnerMonologueRenderer(
             exit = shrinkVertically() + fadeOut()
         ) {
             MarkdownInlineText(
-                text = parseInline(block.content, color.copy(alpha = 0.6f), style.copy(fontStyle = FontStyle.Italic)),
+                text = parseRenderedInline(block.content, expandedInk, style.copy(fontStyle = FontStyle.Italic), onSurface = true),
                 style = style.copy(fontStyle = FontStyle.Italic),
-                color = color.copy(alpha = 0.6f),
+                color = expandedInk,
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
@@ -1147,7 +1185,9 @@ fun parseInline(
     text: String,
     baseColor: androidx.compose.ui.graphics.Color,
     baseStyle: androidx.compose.ui.text.TextStyle,
-    styleParentheses: Boolean = false
+    styleParentheses: Boolean = false,
+    linkColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF58A6FF),
+    parenthesesColor: androidx.compose.ui.graphics.Color = baseColor.copy(alpha = 0.62f)
 ): AnnotatedString {
     return buildAnnotatedString {
         var i = 0
@@ -1199,7 +1239,7 @@ fun parseInline(
                         withStyle(
                             SpanStyle(
                                 fontStyle = FontStyle.Italic,
-                                color = baseColor.copy(alpha = 0.62f)
+                                color = parenthesesColor
                             )
                         ) {
                             append(text.substring(i, end + 1))
@@ -1220,7 +1260,7 @@ fun parseInline(
                         val linkStart = length
                         withStyle(
                             SpanStyle(
-                                color = androidx.compose.ui.graphics.Color(0xFF58A6FF),
+                                color = linkColor,
                                 textDecoration = TextDecoration.Underline
                             )
                         ) {

@@ -2716,17 +2716,17 @@ private fun MessageBubble(
     }
     val companionChat = LocalCompanionChatName.current != null
     val companionPalette = companionChatPalette()
+    val companionAssistantStyle = companionAssistantBubbleStyle(companionPalette.background.luminance() < 0.5f)
     val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
     val userBubble = bubbleAppearance.userColor
     val userBrush = bubbleAppearance.userBrush
     val aiBorder = Color.Transparent
     val textColor = if (companionChat) {
-        if (isUser) companionPalette.outgoingInk else companionPalette.ink
+        if (isUser) companionPalette.outgoingInk else companionAssistantStyle.content
     } else bubbleAppearance.textColor(isUser)
     // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
-    val linkColor = linkColorOnBubble(if (companionChat) {
-        if (isUser) companionPalette.outgoing else companionPalette.surface
-    } else userBubble)
+    val linkColor = if (companionChat && !isUser) companionAssistantStyle.markdown.link
+        else linkColorOnBubble(if (companionChat) companionPalette.outgoing else userBubble)
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
     val clipboard = LocalClipboardManager.current
 
@@ -3021,10 +3021,11 @@ private fun MessageBubble(
                             .then(variantSwipeModifier)
                             .then(
                                 when {
-                                    companionChat && !segHasUserImage -> Modifier.background(
-                                        color = if (isUser) companionPalette.outgoing else companionPalette.surface,
+                                    companionChat && !isUser -> Modifier.background(
+                                        color = companionAssistantStyle.background,
                                         shape = segShape
                                     )
+                                    companionChat && !segHasUserImage -> Modifier.background(companionPalette.outgoing, segShape)
                                     !companionChat && isUser && commandStyle != null && !segHasUserImage ->
                                         Modifier.background(brush = commandCapsuleBrush!!, shape = segShape)
                                     isUser && !segHasUserImage ->
@@ -3196,7 +3197,12 @@ private fun MessageBubble(
                     Column(
                         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
                     ) {
-                        renderSegments()
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            com.nekobot.app.ui.components.LocalMarkdownBubbleColors provides
+                                if (companionChat && !isUser) companionAssistantStyle.markdown else null
+                        ) {
+                            renderSegments()
+                        }
                     }
                 }
             }
