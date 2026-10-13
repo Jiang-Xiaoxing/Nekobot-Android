@@ -1,6 +1,5 @@
 package com.nekobot.app.ui.screens.chat
 
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
@@ -439,7 +438,6 @@ fun ChatScreen(
     var previewGeneratedImage by remember(sessionId) {
         mutableStateOf<LocalMessageImageEntity?>(null)
     }
-    var selectingTextMessage by remember(sessionId) { mutableStateOf<Message?>(null) }
     var showClearConfirm by rememberSaveable(sessionId) { mutableStateOf(false) }
     var showMyMessages by rememberSaveable(sessionId) { mutableStateOf(false) }
     var showRestoreArchiveDialog by rememberSaveable(sessionId) { mutableStateOf(false) }
@@ -1668,23 +1666,20 @@ fun ChatScreen(
                 deletingMessage = target
             })
         }
-        val moreActions = buildList {
-            add(MessageMenuAction(stringResource(R.string.chat_multi_select), Icons.Filled.CheckCircle,
-                enabled = targetId != null, testTag = "message-action-multiselect") {
-                dismissMenu()
-                targetId?.let(viewModel::enterSelectionMode)
-            })
-            add(MessageMenuAction(stringResource(R.string.chat_menu_select_text), Icons.Filled.TextFields,
-                testTag = "message-action-select-text") {
-                dismissMenu()
-                selectingTextMessage = target
-            })
-            if (details.isNotBlank()) {
-                add(MessageMenuAction(stringResource(R.string.chat_menu_details), Icons.Filled.Info,
+        val moreActions = messageMenuMoreActionTypes(details.isNotBlank()).map { actionType ->
+            when (actionType) {
+                MessageMenuMoreAction.MULTI_SELECT -> MessageMenuAction(
+                    stringResource(R.string.chat_multi_select), Icons.Filled.CheckCircle,
+                    enabled = targetId != null, testTag = "message-action-multiselect"
+                ) {
+                    dismissMenu()
+                    targetId?.let(viewModel::enterSelectionMode)
+                }
+                MessageMenuMoreAction.DETAILS -> MessageMenuAction(stringResource(R.string.chat_menu_details), Icons.Filled.Info,
                     testTag = "message-action-details") {
                     dismissMenu()
                     messageDetailsText = details
-                })
+                }
             }
         }
         MessageActionPopup(anchor = messageActionAnchor, actions = actions, moreActions = moreActions, onDismiss = dismissMenu)
@@ -1763,39 +1758,6 @@ fun ChatScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-        }
-    }
-
-    selectingTextMessage?.let { selectedMessage ->
-        val selectableText = selectedMessage.displayContent
-        NekoDialog(
-            onDismiss = { selectingTextMessage = null },
-            title = stringResource(R.string.chat_select_text_title),
-            confirmText = stringResource(R.string.common_copy),
-            onConfirm = {
-                clipboard.setText(AnnotatedString(selectableText))
-                selectingTextMessage = null
-            },
-            cancelText = stringResource(R.string.common_close),
-            onCancel = { selectingTextMessage = null }
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .verticalScroll(rememberScrollState())
-                    .padding(14.dp)
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = selectableText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
             }
         }
     }

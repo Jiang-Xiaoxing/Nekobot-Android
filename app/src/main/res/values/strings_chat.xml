@@ -349,9 +349,7 @@
     <string name="chat_menu_edit">编辑</string>
     <string name="chat_menu_regenerate">重新回复</string>
     <string name="chat_menu_more">更多</string>
-    <string name="chat_menu_select_text">选择文字</string>
     <string name="chat_menu_details">详情</string>
-    <string name="chat_select_text_title">选择文本</string>
     <string name="chat_clear_messages_title">清空消息</string>
     <string name="chat_clear_messages_confirm">将删除本会话所有消息，此操作不可撤销。</string>
     <string name="chat_extract_archive_title">提取归档</string>

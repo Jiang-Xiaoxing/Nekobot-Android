@@ -343,9 +343,7 @@
     <string name="chat_menu_edit">Edit</string>
     <string name="chat_menu_regenerate">Regenerate</string>
     <string name="chat_menu_more">More</string>
-    <string name="chat_menu_select_text">Select text</string>
     <string name="chat_menu_details">Details</string>
-    <string name="chat_select_text_title">Select text</string>
     <string name="chat_clear_messages_title">Clear messages</string>
     <string name="chat_clear_messages_confirm">This will delete all messages in this chat. This cannot be undone.</string>
     <string name="chat_extract_archive_title">Extract from archive</string>

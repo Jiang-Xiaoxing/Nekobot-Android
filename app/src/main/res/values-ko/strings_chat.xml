@@ -343,9 +343,7 @@
     <string name="chat_menu_edit">편집</string>
     <string name="chat_menu_regenerate">다시 답변</string>
     <string name="chat_menu_more">더보기</string>
-    <string name="chat_menu_select_text">텍스트 선택</string>
     <string name="chat_menu_details">상세 정보</string>
-    <string name="chat_select_text_title">텍스트 선택</string>
     <string name="chat_clear_messages_title">메시지 지우기</string>
     <string name="chat_clear_messages_confirm">이 대화의 모든 메시지가 삭제돼요. 되돌릴 수 없어요.</string>
     <string name="chat_extract_archive_title">보관함에서 추출</string>

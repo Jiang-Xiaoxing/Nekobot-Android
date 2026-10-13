@@ -343,9 +343,7 @@
     <string name="chat_menu_edit">編集</string>
     <string name="chat_menu_regenerate">再生成</string>
     <string name="chat_menu_more">その他</string>
-    <string name="chat_menu_select_text">テキストを選択</string>
     <string name="chat_menu_details">詳細</string>
-    <string name="chat_select_text_title">テキストを選択</string>
     <string name="chat_clear_messages_title">メッセージをクリア</string>
     <string name="chat_clear_messages_confirm">このチャットのすべてのメッセージが削除されます。この操作は元に戻せません。</string>
     <string name="chat_extract_archive_title">アーカイブから抽出</string>
