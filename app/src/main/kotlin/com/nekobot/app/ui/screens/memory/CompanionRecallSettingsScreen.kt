@@ -147,7 +147,7 @@ internal fun CompanionRecallSettingsScreen(
                 Column {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("启用向量用于总结", style = MaterialTheme.typography.bodyMedium)
+                        Text("语义对照", style = MaterialTheme.typography.bodyMedium)
                         InfoPopoverButton("向量用于总结说明", "summary-vector-info", listOf(
                             "默认已经用关键词找；打开后再按意思找，换种说法也能认出是同一件事。"))
                         Spacer(Modifier.weight(1f))
