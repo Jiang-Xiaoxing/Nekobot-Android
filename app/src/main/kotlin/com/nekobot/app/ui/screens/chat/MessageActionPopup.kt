@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,14 +81,15 @@ internal fun messageMenuPosition(
     popup: IntSize,
     gap: Int,
     margin: Int,
-    topInset: Int = margin
+    topInset: Int = margin,
+    bottomInset: Int = 0
 ): IntOffset {
     val a = anchor ?: IntRect(window.width / 2, window.height / 2, window.width / 2, window.height / 2)
     val minX = margin
     val maxX = (window.width - popup.width - margin).coerceAtLeast(minX)
     val x = (a.center.x - popup.width / 2).coerceIn(minX, maxX)
-    val minY = topInset
-    val maxY = (window.height - popup.height - margin).coerceAtLeast(minY)
+    val minY = maxOf(margin, topInset)
+    val maxY = (window.height - popup.height - margin - bottomInset).coerceAtLeast(minY)
     val above = a.top - gap - popup.height
     val below = a.bottom + gap
     val y = when {
@@ -153,14 +157,15 @@ private class MessageMenuPositionProvider(
     private val anchor: IntRect?,
     private val gap: Int,
     private val margin: Int,
-    private val topInset: Int
+    private val topInset: Int,
+    private val bottomInset: Int
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
         windowSize: IntSize,
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize
-    ): IntOffset = messageMenuPosition(anchor, windowSize, popupContentSize, gap, margin, topInset)
+    ): IntOffset = messageMenuPosition(anchor, windowSize, popupContentSize, gap, margin, topInset, bottomInset)
 }
 
 private val MenuBackground = Color(0xFF2C2C2E)
@@ -178,9 +183,13 @@ internal fun MessageActionPopup(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gap = with(density) { 8.dp.roundToPx() }
     val margin = with(density) { 12.dp.roundToPx() }
-    // 边缘到边缘时窗口原点在状态栏下，顶部用真实安全区，不用写死的 40dp。
-    val topInset = WindowInsets.safeDrawing.getTop(density)
-    val provider = remember(anchor, gap, margin, topInset) { MessageMenuPositionProvider(anchor, gap, margin, topInset) }
+    // 从宿主读取安全区，导航栏和键盘取并集（最大值），随键盘动画重新定位。
+    val safeInsets = WindowInsets.safeDrawing.union(WindowInsets.navigationBars).union(WindowInsets.ime)
+    val topInset = safeInsets.getTop(density)
+    val bottomInset = safeInsets.getBottom(density)
+    val provider = remember(anchor, gap, margin, topInset, bottomInset) {
+        MessageMenuPositionProvider(anchor, gap, margin, topInset, bottomInset)
+    }
     var moreOpen by remember { mutableStateOf(false) }
     // 保持 focusable，点外部和返回键仍能关闭。键盘收起后的错位靠锚点持续更新解决。
     Popup(

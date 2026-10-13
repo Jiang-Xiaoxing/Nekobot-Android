@@ -50,7 +50,7 @@ internal fun CompanionRecallSettingsScreen(
     var chooseFirst by rememberSaveable { mutableStateOf(false) }
     val chosen = embedding.options.firstOrNull { it.id == embeddingId }
     val summaryVectorReady = vectorEnabled && chosen != null
-    val summaryVectorEffective = effectiveSummaryVector(summaryVector, summaryVectorReady)
+    val summaryVectorState = summaryVectorSwitchState(summaryVector, summaryVectorReady)
     LaunchedEffect(addedModelId) { if (addedModelId != null) { embeddingId = addedModelId; chooseFirst = false } }
     BackHandler { if (!busy) onBack() }
     Scaffold(topBar = { TopAppBar(title = { Text("记忆设置") }, navigationIcon = {
@@ -58,7 +58,7 @@ internal fun CompanionRecallSettingsScreen(
     }) }, bottomBar = {
         Surface {
             Button(onClick = { onSave(rounds, tokens, perCall.coerceAtMost(tokens), vectorEnabled, embeddingId,
-                CompanionConsolidationSettings(summaryVectorEffective, recentLimit, triggerLimit, existingLimit)) },
+                summaryVectorState.settings(recentLimit, triggerLimit, existingLimit)) },
                 enabled = !busy && (!vectorEnabled || chosen != null), shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(20.dp).heightIn(min = 52.dp)) {
                 Text(if (busy) "正在保存…" else "保存设置")
@@ -138,7 +138,7 @@ internal fun CompanionRecallSettingsScreen(
             }
             Text("额度仅对当前角色生效。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
-            // 向量就绪（已开启向量检索且模型可用）时总结才可用向量，否则回退关键词。开关显示和保存用同一个值。
+            // 显示和保存用户偏好；向量是否就绪只影响可操作性，运行时仍可回退关键词。
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("记忆整理", style = MaterialTheme.typography.titleSmall)
                 InfoPopoverButton("记忆整理说明", "consolidation-info", listOf(
@@ -152,8 +152,8 @@ internal fun CompanionRecallSettingsScreen(
                         InfoPopoverButton("向量用于总结说明", "summary-vector-info", listOf(
                             "默认已经用关键词找；打开后再按意思找，换种说法也能认出是同一件事。"))
                         Spacer(Modifier.weight(1f))
-                        Switch(summaryVectorEffective, onCheckedChange = { summaryVector = it },
-                            enabled = !busy && summaryVectorReady, modifier = Modifier.testTag("summary-vector-switch"))
+                        Switch(summaryVectorState.checked, onCheckedChange = { summaryVector = it },
+                            enabled = !busy && summaryVectorState.enabled, modifier = Modifier.testTag("summary-vector-switch"))
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     LimitRow("保留近期原话", "$recentLimit Token", !busy) { draftLimit = recentLimit.toString(); editingLimit = "recent" }
@@ -262,12 +262,14 @@ internal fun CompanionRecallSettingsScreen(
     }
 }
 
-/**
- * 语义对照开关的显示和保存必须是同一个值。
- * 向量检索未就绪时开关显示为关，保存也是关，不能把默认的 true 写回去。
- */
-internal fun effectiveSummaryVector(requested: Boolean, vectorReady: Boolean): Boolean =
-    requested && vectorReady
+/** 向量暂不可用不覆盖已保存的语义对照偏好。 */
+internal data class SummaryVectorSwitchState(val checked: Boolean, val enabled: Boolean) {
+    fun settings(recent: Int, trigger: Int, existing: Int) =
+        CompanionConsolidationSettings(checked, recent, trigger, existing)
+}
+
+internal fun summaryVectorSwitchState(requested: Boolean, vectorReady: Boolean) =
+    SummaryVectorSwitchState(checked = requested, enabled = vectorReady)
 
 /** 回查额度说明，数字跟随当前设置。 */
 internal fun recallQuotaExplanation(

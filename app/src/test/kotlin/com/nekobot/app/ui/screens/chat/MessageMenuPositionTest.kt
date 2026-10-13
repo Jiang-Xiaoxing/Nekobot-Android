@@ -76,6 +76,47 @@ class MessageMenuPositionTest {
         assertTrue(pos.y + popup.height <= window.height - 12)
     }
 
+    @Test fun menuAvoidsBottomNavigationBar() {
+        val inset = 96
+        val pos = messageMenuPosition(IntRect(100, 1870, 700, 1990), window, popup, 16, 24, 100, inset)
+        assertTrue(pos.y >= 100)
+        assertTrue(pos.y + popup.height <= window.height - inset - 24)
+    }
+
+    @Test fun keyboardInsetClampsMenuEvenWhenAnchorIsBehindKeyboard() {
+        val inset = 900
+        val pos = messageMenuPosition(IntRect(100, 1600, 700, 1800), window, popup, 16, 24, 100, inset)
+        assertEquals(window.height - inset - 24 - popup.height, pos.y)
+    }
+
+    @Test fun tallBubbleStaysBetweenTopInsetAndKeyboard() {
+        val pos = messageMenuPosition(IntRect(0, -500, 1080, 2600), window, popup, 16, 24, 100, 900)
+        assertTrue(pos.y >= 100)
+        assertTrue(pos.y + popup.height <= window.height - 900 - 24)
+    }
+
+    @Test fun keyboardClosingRestoresAnchorPosition() {
+        val anchor = IntRect(100, 1600, 700, 1800)
+        val before = messageMenuPosition(anchor, window, popup, 16, 24, 100, 96)
+        val open = messageMenuPosition(anchor, window, popup, 16, 24, 100, 900)
+        val closed = messageMenuPosition(anchor, window, popup, 16, 24, 100, 96)
+        assertTrue(open.y < before.y)
+        assertEquals(before, closed)
+    }
+
+    @Test fun missingAnchorStillAvoidsKeyboard() {
+        val pos = messageMenuPosition(null, window, popup, 16, 24, 100, 1100)
+        assertTrue(pos.y >= 100)
+        assertTrue(pos.y + popup.height <= 2000 - 1100 - 24)
+    }
+
+    @Test fun shortWindowRespectsBothVerticalInsets() {
+        val pos = messageMenuPosition(IntRect(0, 300, 400, 600), IntSize(400, 700), IntSize(300, 80),
+            gap = 8, margin = 12, topInset = 60, bottomInset = 280)
+        assertTrue(pos.y >= 60)
+        assertTrue(pos.y + 80 <= 700 - 280 - 12)
+    }
+
     @Test
     fun nestedCorrectionIsZeroWhenAlreadyInHostWindow() {
         val host = IntOffset(0, 60)
