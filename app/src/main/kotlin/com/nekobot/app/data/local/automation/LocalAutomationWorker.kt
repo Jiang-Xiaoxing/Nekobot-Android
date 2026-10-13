@@ -33,8 +33,10 @@ class LocalAutomationWorker(
         }
 
         // 抬到前台服务执行，避免长耗时 AI 生成被系统回收；finally 中必定释放。
-        AgentForegroundService.acquireAutomation(applicationContext)
+        var foregroundAcquired = false
         return try {
+            foregroundAcquired = AgentForegroundService.acquireAutomation(applicationContext)
+            check(foregroundAcquired) { applicationContext.getString(R.string.agent_foreground_timed_out) }
             val outcome = when (type) {
                 LocalAutomationScheduler.TYPE_TASK ->
                     ServiceContainer.localRepository.executeScheduledTask(targetId)
@@ -69,7 +71,7 @@ class LocalAutomationWorker(
                 Result.failure()
             }
         } finally {
-            AgentForegroundService.releaseAutomation(applicationContext)
+            if (foregroundAcquired) AgentForegroundService.releaseAutomation(applicationContext)
         }
     }
 

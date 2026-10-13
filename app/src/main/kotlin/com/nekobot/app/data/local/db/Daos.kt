@@ -600,6 +600,9 @@ interface AgentRunDao {
     )
     suspend fun pauseAllRunning(updatedAt: String)
 
+    @Query("UPDATE local_agent_runs SET status = 'paused', last_error = :reason, updated_at = :updatedAt WHERE status = 'running'")
+    suspend fun pauseAllRunningWithReason(updatedAt: String, reason: String)
+
     @Query(
         "UPDATE local_agent_runs SET assistant_message_id = :messageId, updated_at = :updatedAt " +
             "WHERE session_id = :sessionId AND run_id = :runId"

@@ -26,6 +26,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.BufferedReader
+import okio.buffer
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.util.Base64
@@ -65,7 +66,8 @@ data class LocalAiResult(
 data class LocalAiStreamCallbacks(
     val onStart: () -> Unit = {},
     val onContentChunk: (String) -> Unit = {},
-    val onThinkingChunk: (String) -> Unit = {}
+    val onThinkingChunk: (String) -> Unit = {},
+    val onStreamObserved: () -> Unit = {}
 )
 
 internal class LocalToolCallStreamAccumulator {
@@ -205,6 +207,8 @@ class LocalAiClient(
 ) {
     private val gson = Gson()
     private val proxyClients = ConcurrentHashMap<String, OkHttpClient>()
+    private val taggedCalls = ConcurrentHashMap<String, MutableSet<Call>>()
+    private val activeHttpCalls = ConcurrentHashMap.newKeySet<Call>()
     private var oauthCredentialResolver: (suspend (String) -> OAuthRuntimeCredential)? = null
 
     fun setOAuthCredentialResolver(
@@ -562,6 +566,7 @@ class LocalAiClient(
                 ?: throw IllegalStateException("响应体为空")
             BufferedReader(InputStreamReader(source, Charsets.UTF_8)).use { reader ->
                 readSseEvents(reader) { data ->
+                    streamCallbacks?.onStreamObserved?.invoke()
                     if (data == "[DONE]") return@readSseEvents true
                     protocol.parseStreamUsageDetail(data)?.let { detail ->
                         usage = detail.toUsageMap()
@@ -1088,12 +1093,54 @@ class LocalAiClient(
         return lastError ?: LocalAiResult("", error = "所有模型均不可用")
     }
 
+    /** 响应头返回后仍跟踪读取中的响应体，停止操作可以立即中断长流。 */
+    private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
+        activeHttpCalls.add(this)
+        val tag = request().tag(String::class.java)
+        if (tag != null) taggedCalls.compute(tag) { _, calls ->
+            (calls ?: ConcurrentHashMap.newKeySet()).apply { add(this@awaitResponse) }
+        }
+        fun release() {
+            activeHttpCalls.remove(this)
+            if (tag != null) taggedCalls.computeIfPresent(tag) { _, calls ->
+            calls.remove(this)
+            calls.takeUnless { it.isEmpty() }
+        } }
+        cont.invokeOnCancellation { cancel(); release() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, error: java.io.IOException) {
+                release()
+                if (cont.isActive) cont.resumeWithException(error)
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body
+                val tracked = if (body == null) response else {
+                    val source = object : okio.ForwardingSource(body.source()) {
+                        override fun close() { try { super.close() } finally { release() } }
+                    }.buffer()
+                    response.newBuilder().body(object : okhttp3.ResponseBody() {
+                        override fun contentType() = body.contentType()
+                        override fun contentLength() = body.contentLength()
+                        override fun source() = source
+                    }).build()
+                }
+                if (body == null) release()
+                if (cont.isActive) cont.resume(tracked) { _, _, _ -> tracked.close(); release() }
+                else { tracked.close(); release() }
+            }
+        })
+    }
+
     /** 取消指定会话标签下正在排队或执行的非流式模型请求。 */
     fun cancelRequests(requestTag: String) {
-        val calls = client.dispatcher.queuedCalls() + client.dispatcher.runningCalls()
-        calls
-            .filter { call -> call.request().tag(String::class.java) == requestTag }
-            .forEach { call -> runCatching { call.cancel() } }
+        val calls = (listOf(client) + proxyClients.values).flatMap {
+            it.dispatcher.queuedCalls() + it.dispatcher.runningCalls()
+        }.filter { it.request().tag(String::class.java) == requestTag } + taggedCalls[requestTag].orEmpty()
+        calls.distinct().forEach { call -> runCatching { call.cancel() } }
+    }
+
+    fun cancelAllRequests() {
+        activeHttpCalls.toList().forEach { runCatching { it.cancel() } }
     }
 
     /**
@@ -2844,26 +2891,6 @@ class LocalAiClient(
             .readTimeout(300, TimeUnit.SECONDS)   // 流式可能较慢
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
-
-        /**
-         * 可取消的 OkHttp Call 执行：协程取消时自动调用 [Call.cancel]，
-         * 中断阻塞的 HTTP 请求。避免用户点"停止"后底层请求仍在进行。
-         */
-        private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
-            cont.invokeOnCancellation { runCatching { cancel() } }
-            enqueue(object : Callback {
-                override fun onFailure(call: Call, e: java.io.IOException) {
-                    if (cont.isActive) cont.resumeWithException(e)
-                }
-                override fun onResponse(call: Call, response: Response) {
-                    if (cont.isActive) {
-                        cont.resume(response) { _, _, _ -> response.close() }
-                    } else {
-                        response.close()
-                    }
-                }
-            })
-        }
 
         /**
          * 解析图片生成端点 URL（/images/generations）。

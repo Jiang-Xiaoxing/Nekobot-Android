@@ -29,8 +29,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Agent 执行期间的前台保活服务。
@@ -151,6 +149,7 @@ class AgentForegroundService : Service() {
             }
             ACTION_STOP_ALL -> {
                 activeSessions.clear()
+                taskLeases.clear()
                 AgentOverlayBus.clear()
                 runCatching { ServiceContainer.localRepository.stopGeneration() }
                     .onFailure { LocalLogger.w(TAG, R.string.log_fgs_stop_generation_failed, it.message) }
@@ -181,10 +180,36 @@ class AgentForegroundService : Service() {
             }
         }
 
-        runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }
-            .onFailure { LocalLogger.e(TAG, R.string.log_fgs_start_failed, it.message) }
+        try { startForeground(NOTIFICATION_ID, buildNotification()) }
+        catch (error: Exception) {
+            LocalLogger.e(TAG, R.string.log_fgs_start_failed, error.message)
+            pauseAndStop()
+            return START_NOT_STICKY
+        }
         wakeLock?.takeIf { !it.isHeld }?.acquire(6 * 60 * 60 * 1_000L)
         return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        timeoutExhausted = true
+        pauseAndStop()
+    }
+
+    private fun pauseAndStop() {
+        val repository = ServiceContainer.localRepository
+        val reason = getString(R.string.agent_foreground_timed_out)
+        // 必须立即结束服务；检查点已随工具批次持久化，IO 清理由应用作用域继续。
+        ServiceContainer.applicationScope.launch {
+            runCatching { repository.pauseForForegroundTimeout(reason) }
+                .onFailure { LocalLogger.e(TAG, R.string.log_fgs_stop_generation_failed, it.message) }
+            LocalLinuxSandboxCoordinator.closeAll()
+        }
+        activeSessions.clear()
+        taskLeases.clear()
+        AgentOverlayBus.clear()
+        wakeLock?.takeIf { it.isHeld }?.release()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onDestroy() {
@@ -268,6 +293,8 @@ class AgentForegroundService : Service() {
         private const val EXTRA_SESSION_ID = "session_id"
 
         private val activeSessions = Collections.synchronizedSet(mutableSetOf<String>())
+        private val taskLeases = ForegroundTaskLeases()
+        @Volatile private var timeoutExhausted = false
 
         /**
          * 后台自动化（定时任务/工作流/主动聊天）专用槽位。
@@ -277,16 +304,21 @@ class AgentForegroundService : Service() {
          */
         private const val AUTOMATION_SLOT = "automation"
 
-        fun acquire(context: Context, sessionId: String) {
-            if (sessionId.isBlank()) return
+        fun acquire(context: Context, sessionId: String): Boolean {
+            if (sessionId.isBlank()) return false
+            if (timeoutExhausted && !ServiceContainer.isAppForeground) return false
+            if (ServiceContainer.isAppForeground) timeoutExhausted = false
             activeSessions.add(sessionId)
-            runCatching {
+            return runCatching {
                 context.applicationContext.startForegroundService(
                     Intent(context, AgentForegroundService::class.java)
                         .setAction(ACTION_ACQUIRE)
                         .putExtra(EXTRA_SESSION_ID, sessionId)
                 )
-            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
+            }.onFailure {
+                activeSessions.remove(sessionId)
+                LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message)
+            }.isSuccess
         }
 
         fun release(context: Context, sessionId: String) {
@@ -302,27 +334,18 @@ class AgentForegroundService : Service() {
         }
 
         /** 后台自动化任务开始：占用自动化槽位保活（不打扰通知文案的会话计数）。 */
-        fun acquireAutomation(context: Context) {
-            activeSessions.add(AUTOMATION_SLOT)
-            runCatching {
-                context.applicationContext.startForegroundService(
-                    Intent(context, AgentForegroundService::class.java)
-                        .setAction(ACTION_ACQUIRE)
-                        .putExtra(EXTRA_SESSION_ID, AUTOMATION_SLOT)
-                )
-            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
+        @Synchronized
+        fun acquireAutomation(context: Context): Boolean {
+            if (!taskLeases.acquire(AUTOMATION_SLOT)) return true
+            if (acquire(context, AUTOMATION_SLOT)) return true
+            taskLeases.release(AUTOMATION_SLOT)
+            return false
         }
 
         /** 后台自动化任务结束：释放槽位；无其它会话时前台服务自动停止。 */
+        @Synchronized
         fun releaseAutomation(context: Context) {
-            activeSessions.remove(AUTOMATION_SLOT)
-            runCatching {
-                context.applicationContext.startService(
-                    Intent(context, AgentForegroundService::class.java)
-                        .setAction(ACTION_RELEASE)
-                        .putExtra(EXTRA_SESSION_ID, AUTOMATION_SLOT)
-                )
-            }.onFailure { LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message) }
+            if (taskLeases.release(AUTOMATION_SLOT)) release(context, AUTOMATION_SLOT)
         }
 
         /**
@@ -334,25 +357,23 @@ class AgentForegroundService : Service() {
          * 最后一个任务结束（或进程被杀重启后无遗留）时才释放。
          */
         private const val BACKGROUND_TASK_SLOT_PREFIX = "background_task:"
-        private val backgroundTaskCounts = ConcurrentHashMap<String, AtomicInteger>()
 
         /** 后台任务开始：占用该会话的后台任务槽位保活。同会话多次开始只占一次。 */
+        @Synchronized
         fun acquireBackgroundTask(context: Context, sessionId: String) {
             if (sessionId.isBlank()) return
-            val count = backgroundTaskCounts.computeIfAbsent(sessionId) { AtomicInteger() }
-            if (count.incrementAndGet() == 1) {
-                acquire(context, BACKGROUND_TASK_SLOT_PREFIX + sessionId)
+            val key = BACKGROUND_TASK_SLOT_PREFIX + sessionId
+            if (taskLeases.acquire(key) && !acquire(context, key)) {
+                taskLeases.release(key)
             }
         }
 
         /** 后台任务结束：递减引用计数；归零后释放槽位。 */
+        @Synchronized
         fun releaseBackgroundTask(context: Context, sessionId: String) {
             if (sessionId.isBlank()) return
-            val count = backgroundTaskCounts[sessionId] ?: return
-            if (count.decrementAndGet() <= 0) {
-                backgroundTaskCounts.remove(sessionId)
-                release(context, BACKGROUND_TASK_SLOT_PREFIX + sessionId)
-            }
+            val key = BACKGROUND_TASK_SLOT_PREFIX + sessionId
+            if (taskLeases.release(key)) release(context, key)
         }
     }
 }

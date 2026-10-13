@@ -2,4 +2,5 @@
 <resources>
     <string name="search_filter_all">전체</string>
     <string name="search_refresh">검색 새로고침</string>
+    <string name="agent_foreground_timed_out">시스템이 백그라운드 작업을 일시 정지했습니다. 채팅에서 계속하세요.</string>
 </resources>

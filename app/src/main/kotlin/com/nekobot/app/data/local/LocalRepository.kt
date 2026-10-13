@@ -6432,12 +6432,26 @@ class LocalRepository(
     }
 
     /** 停止生成：同时中断模型请求、工具调用、命令进程和授权等待。 */
+    suspend fun pauseForForegroundTimeout(reason: String) {
+        try { agentRunDao.pauseAllRunningWithReason(nowIso(), reason) }
+        finally {
+            cancelActiveGenerations()
+            aiClient.cancelAllRequests()
+            subagentScope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach {
+                it.cancel(CancellationException(reason))
+            }
+        }
+    }
+
     fun stopGeneration(sessionId: String? = null) {
         val now = nowIso()
-        kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+        try { kotlinx.coroutines.runBlocking(Dispatchers.IO) {
             if (sessionId == null) agentRunDao.pauseAllRunning(now)
             else agentRunDao.pauseRunning(sessionId, now)
-        }
+        } } finally { cancelActiveGenerations(sessionId) }
+    }
+
+    private fun cancelActiveGenerations(sessionId: String? = null) {
         val sessionIds = sessionId
             ?.let(::listOf)
             ?: activeGenerations.keys.toList()
@@ -7149,9 +7163,10 @@ class LocalRepository(
 
         if (allowTools && session.sessionMode.equals("agent", ignoreCase = true)) {
             appContext?.let { context ->
-                agentForegroundStarted = runCatching {
-                    AgentForegroundService.acquire(context, sessionId)
-                }.isSuccess
+                agentForegroundStarted = AgentForegroundService.acquire(context, sessionId)
+                if (!agentForegroundStarted) throw CancellationException(
+                    context.getString(R.string.agent_foreground_timed_out)
+                )
             }
         }
 

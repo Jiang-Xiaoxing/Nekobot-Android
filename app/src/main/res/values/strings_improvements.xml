@@ -2,4 +2,5 @@
 <resources>
     <string name="search_filter_all">全部</string>
     <string name="search_refresh">刷新搜索</string>
+    <string name="agent_foreground_timed_out">系统已暂停后台任务，请返回会话继续</string>
 </resources>
