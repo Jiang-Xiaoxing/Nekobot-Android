@@ -719,10 +719,10 @@ fun ChatScreen(
             viewModel.refreshSession()
         }
     }
-    // 当前会话改名等资料保存后立即刷新顶栏标题
+    // 当前会话改名等资料保存后只刷新顶栏标题和会话信息，不整页重载消息
     LaunchedEffect(sessionId) {
         ServiceContainer.sessionChanged.collect { changedId ->
-            if (changedId == sessionId) viewModel.refreshSession()
+            if (changedId == sessionId) viewModel.refreshSession(reloadMessages = false)
         }
     }
     // 生命周期绑定：聊天界面可见性追踪（用于通知提醒判断）

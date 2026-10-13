@@ -1481,12 +1481,13 @@ class ChatViewModel : BaseViewModel() {
     }
 
     /**
-     * 刷新当前会话信息（用于角色卡立绘变更后同步头像）。
-     * 仅重新拉取 session 数据，不重置消息列表和 Socket 连接。
+     * 刷新当前会话信息（用于角色卡立绘变更后同步头像，或改名后同步标题）。
+     * [reloadMessages] 为 false 时只更新会话资料，不重拉消息列表。
+     * 生成中或延迟回复未完成时也不重拉。
      */
-    fun refreshSession() {
+    fun refreshSession(reloadMessages: Boolean = true) {
         val sid = currentSessionId.takeIf { it.isNotBlank() } ?: return
-        if (!runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
+        if (reloadMessages && !runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
             loadMessages()
         }
         launchResult(
