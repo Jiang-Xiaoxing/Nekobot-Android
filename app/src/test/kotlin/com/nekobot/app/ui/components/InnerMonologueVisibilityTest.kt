@@ -32,10 +32,10 @@ class InnerMonologueVisibilityTest {
     }
 
     @Test
-    fun streamingUnclosedInnerTailIsHiddenWhenOff() {
+    fun streamingUnclosedInnerTailIsVisibleWhenOff() {
         val streaming = "嗯嗯（内心：其实我"
         val hidden = visibleMarkdownBlocks(streaming, chatMode = true, showInnerMonologue = false)
-        assertEquals(listOf<MdBlock>(MdBlock.Paragraph("嗯嗯")), hidden)
+        assertEquals(listOf<MdBlock>(MdBlock.Paragraph(streaming)), hidden)
         // 开启时保持旧行为：未闭合文本照常显示
         val shown = visibleMarkdownBlocks(streaming, chatMode = true, showInnerMonologue = true)
         assertTrue(shown.filterIsInstance<MdBlock.Paragraph>().any { it.content.contains("其实我") })
@@ -43,7 +43,7 @@ class InnerMonologueVisibilityTest {
 
     @Test
     fun codeSpanIsNotTreatedAsInner() {
-        assertEquals("看 `（内心：x", stripUnclosedInnerTail("看 `（内心：x"))
+        assertEquals("看 `（内心：x", visibleText("看 `（内心：x"))
         val blocks = visibleMarkdownBlocks("代码 `（内心：x）` 示例", chatMode = true, showInnerMonologue = false)
         assertTrue(blocks.filterIsInstance<MdBlock.Paragraph>().any { it.content.contains("（内心：x）") })
     }
@@ -79,11 +79,13 @@ class InnerMonologueVisibilityTest {
     }
 
     @Test
-    fun streamingUnclosedInnerHidesFromOpenerAcrossLines() {
-        val hidden = visibleMarkdownBlocks("嗯嗯（内心：其实我\n还想说", chatMode = true, showInnerMonologue = false)
-        assertEquals(listOf<MdBlock>(MdBlock.Paragraph("嗯嗯")), hidden)
-        val half = visibleMarkdownBlocks("好的(内心:还没说完\n下一行", chatMode = true, showInnerMonologue = false)
-        assertEquals(listOf<MdBlock>(MdBlock.Paragraph("好的")), half)
+    fun streamingUnclosedInnerKeepsFollowingBodyAcrossLines() {
+        val text = "嗯嗯（内心：其实我\n还想说"
+        val hidden = visibleMarkdownBlocks(text, chatMode = true, showInnerMonologue = false)
+        assertEquals(parseBlocks(text, true), hidden)
+        val halfText = "好的(内心:还没说完\n下一行"
+        val half = visibleMarkdownBlocks(halfText, chatMode = true, showInnerMonologue = false)
+        assertEquals(parseBlocks(halfText, true), half)
         val shown = visibleMarkdownBlocks("嗯嗯（内心：其实我\n还想说", chatMode = true, showInnerMonologue = true)
         assertTrue(shown.filterIsInstance<MdBlock.Paragraph>().any { it.content.contains("还想说") })
     }
@@ -91,15 +93,15 @@ class InnerMonologueVisibilityTest {
     @Test
     fun codeFenceAndInlineCodeAreNotStripped() {
         val fenced = "正文\n```\n（内心：这是代码\n下一行\n```"
-        assertEquals(fenced, stripUnclosedInnerTail(fenced))
+        assertEquals(parseBlocks(fenced, true), visibleMarkdownBlocks(fenced, true, false))
         val fencedBlocks = visibleMarkdownBlocks(fenced, chatMode = true, showInnerMonologue = false)
         assertTrue(fencedBlocks.filterIsInstance<MdBlock.CodeBlock>().single().code.contains("（内心：这是代码"))
 
         val openFence = "```\n（内心：secret"
-        assertEquals(openFence, stripUnclosedInnerTail(openFence))
+        assertEquals(parseBlocks(openFence, true), visibleMarkdownBlocks(openFence, true, false))
 
         val afterFence = "```\ncode\n```\n然后（内心：还没完\n第二行"
-        assertEquals("```\ncode\n```\n然后", stripUnclosedInnerTail(afterFence))
+        assertEquals(parseBlocks(afterFence, true), visibleMarkdownBlocks(afterFence, true, false))
 
         val mixed = "好的（内心：隐藏）\n```\n（内心：保留）\n```\n还有(内心:也藏)"
         val mixedText = visibleText(mixed)
@@ -109,6 +111,49 @@ class InnerMonologueVisibilityTest {
         assertFalse(mixedText.contains("也藏"))
         val mixedBlocks = visibleMarkdownBlocks(mixed, chatMode = true, showInnerMonologue = false)
         assertTrue(mixedBlocks.filterIsInstance<MdBlock.CodeBlock>().single().code.contains("（内心：保留）"))
+    }
+
+    @Test fun unmatchedOuterBracketKeepsNestedBracketAndFollowingBody() {
+        val sample = "正文（内心：想到（昨晚）\n今天照常出门。"
+        assertEquals(parseBlocks(sample, true), visibleMarkdownBlocks(sample, true, false))
+    }
+
+    @Test fun closedInnerBeforeUnclosedInnerDoesNotHideTheRest() {
+        assertEquals("正文后文（内心：未完\n下一段", visibleText("正文（内心：隐藏）后文（内心：未完\n下一段"))
+    }
+
+    @Test fun nestedFullWidthParenthesesAreHiddenCompletely() {
+        assertEquals("前文后文", visibleText("前文（内心：想起（昨天（一起吃饭））很开心）后文"))
+    }
+
+    @Test fun nestedMixedWidthParenthesesAreHiddenCompletely() {
+        assertEquals("前文后文", visibleText("前文(内心:想起（昨天(一起吃饭)）很开心)后文"))
+    }
+
+    @Test fun nestedInnerIsOneFoldableBlockWhenShown() {
+        assertEquals(listOf(MdBlock.Paragraph("前"), MdBlock.InnerMonologue("想起（昨天）很开心"), MdBlock.Paragraph("后")),
+            visibleMarkdownBlocks("前（内心：想起（昨天）很开心）后", true, true))
+    }
+
+    @Test fun parenthesesInCodeDoNotCloseOrExtendInner() {
+        assertEquals("前`）(`后", visibleText("前（内心：想起（昨天）`）(`很开心）后"))
+    }
+
+    @Test fun nestedInnerAcrossLinesHidesOnlyThroughMatchingOuterClose() {
+        assertEquals("前后", visibleText("前（内心：想起（昨天\n一起吃饭）很开心）后"))
+    }
+
+    @Test fun orphanBacktickBeforeInnerDoesNotExposeIt() {
+        assertEquals("正文`后文", visibleText("正文`（内心：秘密）后文"))
+    }
+
+    @Test fun orphanBacktickInsideInnerDoesNotPreventClosure() {
+        assertEquals("正文后文", visibleText("正文（内心：秘密`还在想）后文"))
+    }
+
+    @Test fun orphanBacktickBeforeInnerStillAllowsFolding() {
+        val blocks = visibleMarkdownBlocks("正文`（内心：秘密）后文", true, true)
+        assertTrue(blocks.any { it == MdBlock.InnerMonologue("秘密") })
     }
 
     private fun visibleText(text: String): String =

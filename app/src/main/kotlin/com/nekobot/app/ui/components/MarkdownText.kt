@@ -124,25 +124,17 @@ val LocalShowInnerMonologue = staticCompositionLocalOf { true }
 /** 单会话气泡采用紧凑淡灰独白条；正文和复制仍使用原文。 */
 val LocalCompactInnerMonologue = staticCompositionLocalOf { false }
 
-/** 按显示开关得到最终渲染区块；隐藏时去掉已闭合独白，以及流式输出中尚未闭合的尾巴。 */
+/** 按显示开关得到最终渲染区块；只隐藏完整独白，未闭合的标记原样保留。 */
 internal fun visibleMarkdownBlocks(text: String, chatMode: Boolean, showInnerMonologue: Boolean): List<MdBlock> {
     if (!chatMode || showInnerMonologue) return parseBlocks(text, chatMode)
-    return parseBlocks(stripUnclosedInnerTail(stripClosedInnerMonologue(text)), chatMode)
+    return parseBlocks(stripClosedInnerMonologue(text), chatMode)
         .filterNot { it is MdBlock.InnerMonologue }
 }
 
 private val INNER_LABELS = arrayOf("内心", "心里", "心想", "内白")
 
 /** 隐藏已闭合的（内心：…）/ (内心:…)，全角半角括号和冒号都认。代码块与行内代码原样保留。 */
-private fun stripClosedInnerMonologue(text: String): String = omitInnerMonologue(text, dropClosed = true, dropUnclosed = false)
-
-/**
- * 流式中独白还没有右括号时，从开括号一直隐藏到结尾，可以跨行。
- * 代码围栏和行内代码里的同样文字不当成独白，也不删。
- */
-internal fun stripUnclosedInnerTail(text: String): String = omitInnerMonologue(text, dropClosed = false, dropUnclosed = true)
-
-private fun omitInnerMonologue(text: String, dropClosed: Boolean, dropUnclosed: Boolean): String {
+private fun stripClosedInnerMonologue(text: String): String {
     val out = StringBuilder()
     var i = 0
     while (i < text.length) {
@@ -159,8 +151,9 @@ private fun omitInnerMonologue(text: String, dropClosed: Boolean, dropUnclosed: 
         if (text[i] == '`') {
             val close = text.indexOf('`', i + 1)
             if (close < 0) {
-                out.append(text.substring(i))
-                return out.toString()
+                // 落单反引号是正文，不能让后续真正的独白变成代码。
+                out.append(text[i++])
+                continue
             }
             out.append(text.substring(i, close + 1))
             i = close + 1
@@ -170,16 +163,10 @@ private fun omitInnerMonologue(text: String, dropClosed: Boolean, dropUnclosed: 
         if (openLen > 0) {
             val close = indexOfCloseParenOutsideCode(text, i + openLen)
             if (close < 0) {
-                if (dropUnclosed) return out.toString().trimEnd(' ', '\t')
                 out.append(text.substring(i))
                 return out.toString()
             }
-            if (dropClosed) {
-                appendCodeRegions(out, text, i, close + 1)
-                i = close + 1
-                continue
-            }
-            out.append(text.substring(i, close + 1))
+            appendCodeRegions(out, text, i, close + 1)
             i = close + 1
             continue
         }
@@ -221,6 +208,7 @@ private fun endOfMarkdownFence(text: String, openIndex: Int): Int {
 
 private fun indexOfCloseParenOutsideCode(text: String, start: Int): Int {
     var i = start
+    var depth = 1
     while (i < text.length) {
         if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
             val fenceEnd = endOfMarkdownFence(text, i)
@@ -230,11 +218,13 @@ private fun indexOfCloseParenOutsideCode(text: String, start: Int): Int {
         }
         if (text[i] == '`') {
             val close = text.indexOf('`', i + 1)
-            if (close < 0) return -1
-            i = close + 1
+            i = if (close < 0) i + 1 else close + 1
             continue
         }
-        if (text[i] == '）' || text[i] == ')') return i
+        when (text[i]) {
+            '（', '(' -> depth++
+            '）', ')' -> if (--depth == 0) return i
+        }
         i++
     }
     return -1
@@ -253,7 +243,10 @@ private fun appendCodeRegions(out: StringBuilder, text: String, start: Int, end:
         }
         if (text[i] == '`') {
             val close = text.indexOf('`', i + 1)
-            if (close < 0 || close >= end) return
+            if (close < 0 || close >= end) {
+                i++
+                continue
+            }
             out.append(text.substring(i, close + 1))
             i = close + 1
             continue
@@ -480,21 +473,22 @@ private const val SEG_INNER = 1
  */
 private fun splitInnerSegments(line: String): List<Pair<Int, String>> {
     val result = mutableListOf<Pair<Int, String>>()
-    val innerRegex = Regex("[（(](?:内心|心里|心想|内白)[：:]([^（）()]*?)[）)]")
-    val matches = innerRegex.findAll(line)
-        .filterNot { match -> line.take(match.range.first).count { it == '`' } % 2 == 1 }
-        .toList()
-    if (matches.isEmpty()) return listOf(SEG_TEXT to line)
-
     var pos = 0
-    matches.forEach { match ->
-        val start = match.range.first
-        if (start > pos) {
-            val before = line.substring(pos, start)
-            if (before.isNotEmpty()) result.add(SEG_TEXT to before)
+    var i = 0
+    while (i < line.length) {
+        if (line[i] == '`') {
+            val close = line.indexOf('`', i + 1)
+            i = if (close < 0) i + 1 else close + 1
+            continue
         }
-        result.add(SEG_INNER to match.groupValues[1])
-        pos = match.range.last + 1
+        val openLen = innerMonologueOpenLength(line, i)
+        if (openLen == 0) { i++; continue }
+        val close = indexOfCloseParenOutsideCode(line, i + openLen)
+        if (close < 0) break
+        if (i > pos) result.add(SEG_TEXT to line.substring(pos, i))
+        result.add(SEG_INNER to line.substring(i + openLen, close))
+        i = close + 1
+        pos = i
     }
     if (pos < line.length) {
         result.add(SEG_TEXT to line.substring(pos))
