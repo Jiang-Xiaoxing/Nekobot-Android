@@ -113,20 +113,142 @@ fun MarkdownText(
  */
 val LocalShowInnerMonologue = staticCompositionLocalOf { true }
 
-/** 按显示开关得到最终渲染区块；隐藏时也去掉流式输出中尚未闭合的独白尾巴。 */
+/** 按显示开关得到最终渲染区块；隐藏时去掉已闭合独白，以及流式输出中尚未闭合的尾巴。 */
 internal fun visibleMarkdownBlocks(text: String, chatMode: Boolean, showInnerMonologue: Boolean): List<MdBlock> {
     if (!chatMode || showInnerMonologue) return parseBlocks(text, chatMode)
-    return parseBlocks(stripUnclosedInnerTail(text), chatMode).filterNot { it is MdBlock.InnerMonologue }
+    return parseBlocks(stripUnclosedInnerTail(stripClosedInnerMonologue(text)), chatMode)
+        .filterNot { it is MdBlock.InnerMonologue }
 }
 
-private val UNCLOSED_INNER_TAIL = Regex("[（(](?:内心|心里|心想|内白)[：:][^（）()\\n]*$")
+private val INNER_LABELS = arrayOf("内心", "心里", "心想", "内白")
 
-/** 流式中独白只写到一半（还没有右括号）时，隐藏模式下不让它以普通文字闪现。 */
-internal fun stripUnclosedInnerTail(text: String): String {
-    val match = UNCLOSED_INNER_TAIL.find(text) ?: return text
-    val lineStart = text.lastIndexOf('\n', match.range.first) + 1
-    if (text.substring(lineStart, match.range.first).count { it == '`' } % 2 == 1) return text
-    return text.substring(0, match.range.first).trimEnd(' ', '\t')
+/** 隐藏已闭合的（内心：…）/ (内心:…)，全角半角括号和冒号都认。代码块与行内代码原样保留。 */
+private fun stripClosedInnerMonologue(text: String): String = omitInnerMonologue(text, dropClosed = true, dropUnclosed = false)
+
+/**
+ * 流式中独白还没有右括号时，从开括号一直隐藏到结尾，可以跨行。
+ * 代码围栏和行内代码里的同样文字不当成独白，也不删。
+ */
+internal fun stripUnclosedInnerTail(text: String): String = omitInnerMonologue(text, dropClosed = false, dropUnclosed = true)
+
+private fun omitInnerMonologue(text: String, dropClosed: Boolean, dropUnclosed: Boolean): String {
+    val out = StringBuilder()
+    var i = 0
+    while (i < text.length) {
+        if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
+            val fenceEnd = endOfMarkdownFence(text, i)
+            if (fenceEnd < 0) {
+                out.append(text.substring(i))
+                return out.toString()
+            }
+            out.append(text.substring(i, fenceEnd))
+            i = fenceEnd
+            continue
+        }
+        if (text[i] == '`') {
+            val close = text.indexOf('`', i + 1)
+            if (close < 0) {
+                out.append(text.substring(i))
+                return out.toString()
+            }
+            out.append(text.substring(i, close + 1))
+            i = close + 1
+            continue
+        }
+        val openLen = innerMonologueOpenLength(text, i)
+        if (openLen > 0) {
+            val close = indexOfCloseParenOutsideCode(text, i + openLen)
+            if (close < 0) {
+                if (dropUnclosed) return out.toString().trimEnd(' ', '\t')
+                out.append(text.substring(i))
+                return out.toString()
+            }
+            if (dropClosed) {
+                appendCodeRegions(out, text, i, close + 1)
+                i = close + 1
+                continue
+            }
+            out.append(text.substring(i, close + 1))
+            i = close + 1
+            continue
+        }
+        out.append(text[i])
+        i++
+    }
+    return out.toString()
+}
+
+private fun innerMonologueOpenLength(text: String, index: Int): Int {
+    if (index >= text.length || (text[index] != '（' && text[index] != '(')) return 0
+    val rest = text.substring(index + 1)
+    for (label in INNER_LABELS) {
+        if (!rest.startsWith(label)) continue
+        val colon = index + 1 + label.length
+        if (colon < text.length && (text[colon] == '：' || text[colon] == ':')) return colon - index + 1
+    }
+    return 0
+}
+
+private fun isMarkdownLineStart(text: String, index: Int): Boolean = index == 0 || text[index - 1] == '\n'
+
+/** 围栏从开行算到闭合行之后；没闭合就返回 -1，剩下的都算代码。 */
+private fun endOfMarkdownFence(text: String, openIndex: Int): Int {
+    val lineEnd = text.indexOf('\n', openIndex)
+    if (lineEnd < 0) return -1
+    var i = lineEnd + 1
+    while (i < text.length) {
+        if (text.startsWith("```", i)) {
+            val closeLineEnd = text.indexOf('\n', i)
+            return if (closeLineEnd < 0) text.length else closeLineEnd + 1
+        }
+        val next = text.indexOf('\n', i)
+        if (next < 0) return -1
+        i = next + 1
+    }
+    return -1
+}
+
+private fun indexOfCloseParenOutsideCode(text: String, start: Int): Int {
+    var i = start
+    while (i < text.length) {
+        if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
+            val fenceEnd = endOfMarkdownFence(text, i)
+            if (fenceEnd < 0) return -1
+            i = fenceEnd
+            continue
+        }
+        if (text[i] == '`') {
+            val close = text.indexOf('`', i + 1)
+            if (close < 0) return -1
+            i = close + 1
+            continue
+        }
+        if (text[i] == '）' || text[i] == ')') return i
+        i++
+    }
+    return -1
+}
+
+/** 删掉独白正文时，把夹在中间的代码原样留下。 */
+private fun appendCodeRegions(out: StringBuilder, text: String, start: Int, end: Int) {
+    var i = start
+    while (i < end) {
+        if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
+            val fenceEnd = endOfMarkdownFence(text, i)
+            if (fenceEnd < 0 || fenceEnd > end) return
+            out.append(text.substring(i, fenceEnd))
+            i = fenceEnd
+            continue
+        }
+        if (text[i] == '`') {
+            val close = text.indexOf('`', i + 1)
+            if (close < 0 || close >= end) return
+            out.append(text.substring(i, close + 1))
+            i = close + 1
+            continue
+        }
+        i++
+    }
 }
 
 // ==================== 预处理 ====================
