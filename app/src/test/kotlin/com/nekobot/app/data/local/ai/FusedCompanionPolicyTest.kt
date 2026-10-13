@@ -25,11 +25,11 @@ class FusedCompanionPolicyTest {
         assertEquals(recent, FusedCompanionPolicy.recent(old + recent, FusedCompanionPolicy.tokens(recent)))
         assertTrue(FusedCompanionPolicy.recent(listOf(row(1,"user","长".repeat(1000)), row(2,"assistant","答")), 100).isEmpty())
     }
-    @Test fun budgetsScaleTogetherAfterFixedReservations() {
-        assertEquals(5600, FusedCompanionPolicy.budgets(14000).recent)
-        assertEquals(2800, FusedCompanionPolicy.budgets(7000).recent)
-        assertEquals(350, FusedCompanionPolicy.budgets(7000).pinned)
-        assertEquals(700, FusedCompanionPolicy.budgets(7000).trigger)
+    @Test fun onlyChatSharesScaleAfterFixedReservations() {
+        assertEquals(8000, FusedCompanionPolicy.budgets(14000).recent)
+        assertEquals(5090, FusedCompanionPolicy.budgets(7000).recent)
+        assertEquals(636, FusedCompanionPolicy.budgets(7000).pinned)
+        assertEquals(2000, FusedCompanionPolicy.budgets(7000).trigger)
     }
     @Test fun requestClockHasMinutePrecisionAndExplicitTimezone() {
         val a = ZonedDateTime.parse("2026-10-08T20:00:01+08:00[Asia/Shanghai]")

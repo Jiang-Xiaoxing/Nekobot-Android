@@ -8,8 +8,8 @@ import org.junit.Test
 class FusedCompanionChatWindowTest {
     @Test fun recentBudgetTakesTheSmallerOfSettingAndContextShare() {
         assertEquals(2_000, FusedCompanionPolicy.chatRecentBudget(28_000, CompanionConsolidationSettings(recent = 2_000)))
-        assertEquals(5_600, FusedCompanionPolicy.chatRecentBudget(14_000))
-        assertTrue(FusedCompanionPolicy.chatRecentBudget(14_000) < 8_000)
+        assertEquals(8_000, FusedCompanionPolicy.chatRecentBudget(14_000))
+        assertTrue(FusedCompanionPolicy.chatRecentBudget(7_000) < 8_000)
     }
 
     @Test fun historyKeepsOnlyTheRecentTail() {

@@ -7,7 +7,7 @@ internal data class CompanionBudgets(val recent: Int, val pinned: Int, val recal
     /** 整理时参考旧记忆的上限。 */
     val existing: Int = recall)
 
-/** 记忆整理设置（按角色保存）。数值为上限，模型上下文较小时仍按比例缩小。 */
+/** 记忆整理设置（按角色保存）。输入份额受上下文约束，触发门槛不随模型容量缩小。 */
 internal data class CompanionConsolidationSettings(
     val vectorEnabled: Boolean = true,
     val recent: Int = 8000,
@@ -32,25 +32,21 @@ internal object FusedCompanionPolicy {
 
     fun budgets(availableInput: Int, settings: CompanionConsolidationSettings = CompanionConsolidationSettings()): CompanionBudgets {
         require(availableInput >= 512) { "系统提示、工具和预留输出已占满模型容量，请选更大上下文模型" }
-        // 用户设置和固定上限是各自的上限。它们的和可能大于旧的 14000 基准，
-        // 这时按同一比例收紧，使各分项之和不超过本次可用上下文。
-        val requested = intArrayOf(settings.recent, 1_000, 2_000, settings.trigger, 4_000, settings.existing)
-        val sum = requested.sum().coerceAtLeast(1)
-        val scale = minOf(1.0, availableInput.toDouble() / sum.toDouble())
+        // 聊天只共享近期原话、核心和召回份额；后台整理是另一条请求，触发门槛不占输入。
+        val scale = minOf(1.0, availableInput.toDouble() / (settings.recent + 1_000 + 2_000))
         fun scaled(value: Int) = maxOf(1, (value * scale).toInt())
-        return CompanionBudgets(scaled(requested[0]), scaled(requested[1]), scaled(requested[2]),
-            scaled(requested[3]), scaled(requested[4]), existing = scaled(requested[5]))
+        return CompanionBudgets(scaled(settings.recent), scaled(1_000), scaled(2_000),
+            settings.trigger, minOf(4_000, availableInput), existing = minOf(settings.existing, availableInput))
     }
 
     /**
-     * 整理请求仍超限时，先丢掉批次末尾的回合，再减少参考原话和旧记忆。
-     * 只剩一条且它本身放不下时，返回要从批次开头跳过的条数，调用方写回执并继续。
+     * 整理请求仍超限时，先减少参考原话和旧记忆，再减少目标批次，避免增加模型调用次数。
+     * 一条完整原话仍放不下时明确要求更大模型，不能给它写已处理回执。
      */
     internal data class ConsolidationPayloadFit(
         val targetMessages: Int,
         val referenceMessages: Int,
         val existingCount: Int,
-        val skipMessages: Int = 0,
         val needsLargerModel: Boolean = false
     )
 
@@ -58,8 +54,7 @@ internal object FusedCompanionPolicy {
         targetTurnSizes: List<Int>,
         referenceTurnSizes: List<Int>,
         existingCount: Int,
-        fits: (targetMessages: Int, referenceMessages: Int, existing: Int) -> Boolean,
-        messageFitsAlone: (targetMessageIndex: Int) -> Boolean
+        fits: (targetMessages: Int, referenceMessages: Int, existing: Int) -> Boolean
     ): ConsolidationPayloadFit {
         val turns = targetTurnSizes.toMutableList()
         var referenceTurns = referenceTurnSizes.size
@@ -73,19 +68,25 @@ internal object FusedCompanionPolicy {
                 return ConsolidationPayloadFit(count, referenceMessages(), keptExisting)
             }
             when {
-                turns.size > 1 -> turns.removeAt(turns.lastIndex)
-                turns.size == 1 && turns[0] > 1 -> turns[0] = turns[0] - 1
                 referenceTurns > 0 -> referenceTurns--
                 keptExisting > 0 -> keptExisting--
-                else -> {
-                    val total = targetTurnSizes.sum()
-                    var skip = 0
-                    while (skip < total && !messageFitsAlone(skip)) skip++
-                    if (skip == 0) return ConsolidationPayloadFit(0, 0, 0, needsLargerModel = true)
-                    return ConsolidationPayloadFit(0, 0, 0, skipMessages = skip)
-                }
+                turns.size > 1 -> turns.removeAt(turns.lastIndex)
+                turns.size == 1 && turns[0] > 1 -> turns[0] = turns[0] - 1
+                else -> return ConsolidationPayloadFit(0, 0, 0, needsLargerModel = true)
             }
         }
+    }
+
+    internal data class PendingConsolidationPlan(val processableIds: Set<String>, val deferredIds: Set<String>) {
+        val capacityNotice: String? get() = deferredIds.takeIf { it.isNotEmpty() }?.let {
+            "有${it.size}条原话超过整理模型容量，尚未整理；原话保留待处理，请换更大上下文的模型"
+        }
+    }
+
+    /** 超容量原话仅从本次目标中排除，仍留在待处理队列；每次整理重新核对容量。 */
+    fun planPendingConsolidation(pending: List<LocalMessageEntity>, fitsAlone: (LocalMessageEntity) -> Boolean): PendingConsolidationPlan {
+        val (processable, deferred) = pending.partition(fitsAlone)
+        return PendingConsolidationPlan(processable.map { it.id }.toSet(), deferred.map { it.id }.toSet())
     }
 
     /**
@@ -124,7 +125,7 @@ internal object FusedCompanionPolicy {
         return ExistingMemoryPack(kept, protectedKept, skippedOrdinary, protectedOverBudget)
     }
 
-    /** 已回执的原话留在回合结构里，但不再进入下一批正文，避免一条放不下的消息反复挡住同回合其余原话。 */
+    /** 原话留在回合结构里；本批正文只含可处理且尚无回执的原话。 */
     fun pendingConsolidationTurns(
         turns: List<List<LocalMessageEntity>>,
         pendingIds: Set<String>

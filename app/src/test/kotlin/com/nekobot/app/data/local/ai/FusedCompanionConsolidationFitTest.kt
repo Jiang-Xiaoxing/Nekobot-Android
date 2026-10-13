@@ -13,16 +13,14 @@ class FusedCompanionConsolidationFitTest {
             targetTurnSizes = listOf(2, 2),
             referenceTurnSizes = listOf(2),
             existingCount = 3,
-            fits = { _, _, _ -> true },
-            messageFitsAlone = { true })
+            fits = { _, _, _ -> true })
         assertEquals(4, fit.targetMessages)
         assertEquals(2, fit.referenceMessages)
         assertEquals(3, fit.existingCount)
-        assertEquals(0, fit.skipMessages)
         assertFalse(fit.needsLargerModel)
     }
 
-    @Test fun overflowShrinksTheBatchBeforeReference() {
+    @Test fun overflowShrinksReferenceBeforeTheBatch() {
         val seen = mutableListOf<Triple<Int, Int, Int>>()
         val fit = FusedCompanionPolicy.fitConsolidationPayload(
             targetTurnSizes = listOf(1, 1),
@@ -30,36 +28,32 @@ class FusedCompanionConsolidationFitTest {
             existingCount = 0,
             fits = { target, reference, existing ->
                 seen += Triple(target, reference, existing)
-                target <= 1 && reference <= 1
-            },
-            messageFitsAlone = { true })
-        assertEquals(1, fit.targetMessages)
-        assertEquals(1, fit.referenceMessages)
+                target + reference <= 2
+            })
+        assertEquals(2, fit.targetMessages)
+        assertEquals(0, fit.referenceMessages)
         assertEquals(Triple(2, 1, 0), seen.first())
-        assertTrue(seen.any { it.first == 1 && it.second == 1 })
+        assertTrue(seen.any { it.first == 2 && it.second == 0 })
     }
 
-    @Test fun singleMessageThatCannotFitIsSkipped() {
+    @Test fun singleMessageThatCannotFitRequiresLargerModel() {
         val fit = FusedCompanionPolicy.fitConsolidationPayload(
             targetTurnSizes = listOf(1, 1),
             referenceTurnSizes = emptyList(),
             existingCount = 0,
-            fits = { _, _, _ -> false },
-            messageFitsAlone = { index -> index != 0 })
-        assertEquals(1, fit.skipMessages)
+            fits = { _, _, _ -> false })
         assertEquals(0, fit.targetMessages)
-        assertFalse(fit.needsLargerModel)
+        assertTrue(fit.needsLargerModel)
     }
 
-    @Test fun severalMessagesThatCannotFitAreSkippedTogether() {
+    @Test fun severalMessagesThatCannotFitAreNotMarkedProcessed() {
         val fit = FusedCompanionPolicy.fitConsolidationPayload(
             targetTurnSizes = listOf(2),
             referenceTurnSizes = emptyList(),
             existingCount = 0,
-            fits = { _, _, _ -> false },
-            messageFitsAlone = { false })
-        assertEquals(2, fit.skipMessages)
+            fits = { _, _, _ -> false })
         assertEquals(0, fit.targetMessages)
+        assertTrue(fit.needsLargerModel)
     }
 
     @Test fun messageThatFitsAloneIsKeptAfterOtherPartsShrink() {
@@ -67,12 +61,10 @@ class FusedCompanionConsolidationFitTest {
             targetTurnSizes = listOf(1),
             referenceTurnSizes = listOf(4),
             existingCount = 6,
-            fits = { target, reference, existing -> target == 1 && reference == 0 && existing == 0 },
-            messageFitsAlone = { true })
+            fits = { target, reference, existing -> target == 1 && reference == 0 && existing == 0 })
         assertEquals(1, fit.targetMessages)
         assertEquals(0, fit.referenceMessages)
         assertEquals(0, fit.existingCount)
-        assertEquals(0, fit.skipMessages)
     }
 
     @Test fun tokenSizedPayloadShrinksUntilTheLimit() {
@@ -84,34 +76,70 @@ class FusedCompanionConsolidationFitTest {
             existingCount = 3,
             fits = { target, reference, existing ->
                 prompt + target * 3_000 + reference * 2_000 + existing * 500 <= limit
-            },
-            messageFitsAlone = { index -> prompt + 3_000 <= limit || index > 0 })
-        assertEquals(0, fit.skipMessages)
+            })
         assertTrue(prompt + fit.targetMessages * 3_000 + fit.referenceMessages * 2_000 + fit.existingCount * 500 <= limit)
         assertTrue(fit.targetMessages >= 1)
     }
 
-    @Test fun skippedMessageIsNotRetriedWithTheRestOfItsTurn() {
+    @Test fun deferredMessageStaysPendingAfterTheRestOfItsTurnSucceeds() {
         val huge = row(1, "user", "长")
         val reply = row(2, "assistant", "答")
-        val first = FusedCompanionPolicy.fitConsolidationPayload(
-            targetTurnSizes = listOf(2),
-            referenceTurnSizes = emptyList(),
-            existingCount = 0,
-            fits = { _, _, _ -> false },
-            messageFitsAlone = { index -> index != 0 })
-        assertEquals(1, first.skipMessages)
-        val pending = FusedCompanionPolicy.pendingConsolidationTurns(listOf(listOf(huge, reply)), setOf(reply.id))
+        val plan = FusedCompanionPolicy.planPendingConsolidation(listOf(huge, reply)) { it.id != huge.id }
+        assertEquals(setOf(huge.id), plan.deferredIds)
+        val pending = FusedCompanionPolicy.pendingConsolidationTurns(listOf(listOf(huge, reply)), plan.processableIds)
         assertEquals(listOf(listOf(reply)), pending)
         val second = FusedCompanionPolicy.fitConsolidationPayload(
             targetTurnSizes = pending.map { it.size },
             referenceTurnSizes = emptyList(),
             existingCount = 0,
-            fits = { target, _, _ -> target == 1 },
-            messageFitsAlone = { true })
+            fits = { target, _, _ -> target == 1 })
         assertEquals(1, second.targetMessages)
-        assertEquals(0, second.skipMessages)
         assertFalse(second.needsLargerModel)
+        // 仅成功的目标会写回执；原话队列中仍有超容量消息，下轮重新计算且保留提示。
+        val unprocessed = listOf(huge, reply).filterNot { it.id in pending.flatten().map { row -> row.id } }
+        val next = FusedCompanionPolicy.planPendingConsolidation(unprocessed) { it.id != huge.id }
+        assertEquals(listOf(huge), unprocessed)
+        assertEquals(plan.capacityNotice, next.capacityNotice)
+    }
+
+    @Test fun deferredMessageBecomesProcessableWithLargerCapacity() {
+        val huge = row(1, "user", "长原话".repeat(100))
+        val small = FusedCompanionPolicy.planPendingConsolidation(listOf(huge)) { it.content.length <= 100 }
+        assertTrue(small.processableIds.isEmpty())
+        assertTrue(small.capacityNotice!!.contains("尚未整理"))
+        val larger = FusedCompanionPolicy.planPendingConsolidation(listOf(huge)) { it.content.length <= 1000 }
+        assertEquals(setOf(huge.id), larger.processableIds)
+        assertTrue(larger.deferredIds.isEmpty())
+        assertEquals(null, larger.capacityNotice)
+    }
+
+    @Test fun allOversizedMessagesStayDeferredWithoutAnyModelTarget() {
+        val rows = listOf(row(1, "user", "长"), row(2, "assistant", "长回复"))
+        val plan = FusedCompanionPolicy.planPendingConsolidation(rows) { false }
+        assertTrue(plan.processableIds.isEmpty())
+        assertEquals(rows.map { it.id }.toSet(), plan.deferredIds)
+        assertTrue(plan.capacityNotice!!.contains("有2条原话"))
+    }
+
+    @Test fun successfulNormalTargetsDoNotRemoveAnotherDeferredMessagesNotice() {
+        val huge = row(1, "user", "长")
+        val ordinary = listOf(row(2, "assistant", "回复"), row(3, "user", "新句"), row(4, "assistant", "新回复"))
+        var pending = listOf(huge) + ordinary
+        val notice = FusedCompanionPolicy.planPendingConsolidation(pending) { it != huge }.capacityNotice
+        for (done in ordinary) {
+            pending = pending.filterNot { it.id == done.id }
+            val plan = FusedCompanionPolicy.planPendingConsolidation(pending) { it != huge }
+            assertEquals(notice, plan.capacityNotice)
+            assertTrue(huge.id !in plan.processableIds)
+        }
+    }
+
+    @Test fun existingReferenceShrinksBeforeSplittingTargetBatch() {
+        val fit = FusedCompanionPolicy.fitConsolidationPayload(listOf(2, 2), emptyList(), 3) { target, _, existing ->
+            target + existing <= 4
+        }
+        assertEquals(4, fit.targetMessages)
+        assertEquals(0, fit.existingCount)
     }
 
     @Test fun lockedMemoryIsKeptWhenASmallerOrdinaryOneWouldFitInstead() {
