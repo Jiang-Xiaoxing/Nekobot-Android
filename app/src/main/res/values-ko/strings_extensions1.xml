@@ -143,7 +143,7 @@
     <string name="knowledge_new_doc">새 문서</string>
     <string name="knowledge_edit_doc">문서 편집</string>
     <string name="knowledge_empty_title">문서 없음</string>
-    <string name="knowledge_empty_hint">오른쪽 위 +를 눌러 추가해 보세요</string>
+    <string name="knowledge_empty_hint">메뉴에서 문서 추가 또는 가져오기</string>
     <string name="knowledge_index_rebuilt">인덱스가 재구축되었어요</string>
     <string name="knowledge_all_index_rebuilt">모든 인덱스가 재구축되었어요</string>
     <string name="knowledge_confirm_delete">삭제 확인</string>
@@ -188,4 +188,5 @@
     <string name="workflows_ai_no_model">활성화된 AI 모델이 설정되지 않았어요</string>
     <string name="workflows_ai_apply">적용하고 생성</string>
     <string name="workflows_ai_preview">미리보기</string>
+    <string name="knowledge_toolbar_menu">지식 메뉴</string>
 </resources>

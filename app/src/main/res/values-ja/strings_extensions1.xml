@@ -143,7 +143,7 @@
     <string name="knowledge_new_doc">新規ドキュメント</string>
     <string name="knowledge_edit_doc">ドキュメントを編集</string>
     <string name="knowledge_empty_title">ドキュメントがありません</string>
-    <string name="knowledge_empty_hint">右上の + をタップして追加</string>
+    <string name="knowledge_empty_hint">メニューから追加・インポート</string>
     <string name="knowledge_index_rebuilt">インデックスを再構築しました</string>
     <string name="knowledge_all_index_rebuilt">すべてのインデックスを再構築しました</string>
     <string name="knowledge_confirm_delete">削除の確認</string>
@@ -188,4 +188,5 @@
     <string name="workflows_ai_no_model">アクティブな AI モデルが設定されていません</string>
     <string name="workflows_ai_apply">適用して作成</string>
     <string name="workflows_ai_preview">プレビュー</string>
+    <string name="knowledge_toolbar_menu">ナレッジメニュー</string>
 </resources>

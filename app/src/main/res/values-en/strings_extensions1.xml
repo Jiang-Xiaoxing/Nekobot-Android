@@ -143,7 +143,7 @@
     <string name="knowledge_new_doc">New document</string>
     <string name="knowledge_edit_doc">Edit document</string>
     <string name="knowledge_empty_title">No documents</string>
-    <string name="knowledge_empty_hint">Tap + at the top right to add</string>
+    <string name="knowledge_empty_hint">Use the menu to add or import</string>
     <string name="knowledge_index_rebuilt">Index rebuilt</string>
     <string name="knowledge_all_index_rebuilt">All indexes rebuilt</string>
     <string name="knowledge_confirm_delete">Confirm delete</string>
@@ -188,4 +188,5 @@
     <string name="workflows_ai_no_model">No active AI model configured</string>
     <string name="workflows_ai_apply">Apply and create</string>
     <string name="workflows_ai_preview">Preview</string>
+    <string name="knowledge_toolbar_menu">Knowledge actions</string>
 </resources>

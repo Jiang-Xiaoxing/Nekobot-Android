@@ -143,7 +143,7 @@
     <string name="knowledge_new_doc">新建文档</string>
     <string name="knowledge_edit_doc">编辑文档</string>
     <string name="knowledge_empty_title">暂无文档</string>
-    <string name="knowledge_empty_hint">点击右上角 + 添加</string>
+    <string name="knowledge_empty_hint">在菜单中添加或导入文档</string>
     <string name="knowledge_index_rebuilt">索引已重建</string>
     <string name="knowledge_all_index_rebuilt">全部索引已重建</string>
     <string name="knowledge_confirm_delete">确认删除</string>
@@ -188,4 +188,5 @@
     <string name="workflows_ai_no_model">未配置激活的 AI 模型</string>
     <string name="workflows_ai_apply">应用并创建</string>
     <string name="workflows_ai_preview">生成预览</string>
+    <string name="knowledge_toolbar_menu">知识库操作</string>
 </resources>
