@@ -605,6 +605,9 @@
     <!-- ==================== Automatic long-term memory notice (same shape as the skill hint) ==================== -->
     <string name="chat_auto_memory_running">Organizing long-term memory…</string>
     <string name="chat_auto_memory_done">%1$d memory item(s) saved</string>
+    <string name="chat_companion_memory_failed">Memory consolidation failed; will retry automatically</string>
+    <string name="chat_companion_memory_failed_view">View</string>
+    <string name="chat_companion_memory_failed_dismiss">Dismiss</string>
 
     <!-- ==================== Workspace (WorkspaceScreen) ==================== -->
     <string name="workspace_title">Workspace</string>

@@ -9268,9 +9268,12 @@ class LocalRepository(
             _autoMemoryEvents.tryEmit(com.nekobot.app.data.local.ai.AgentMemoryNotice(
                 session.id, 0, com.nekobot.app.data.local.ai.AgentMemoryPhase.RUNNING, anchorContent = anchor))
             var changed = 0
+            var companionAttempt = false
+            var failureKey = ""
             try {
                 val current = sessionDao.getById(session.id)
                 if (current?.usesCompanionMemory() == true && current.characterId == session.characterId) {
+                    companionAttempt = current.companionMode
                     val model = aiModelDao.getActiveByPurpose("compression") ?: aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
                     val inputBudget = ((model?.maxContextLength ?: DEFAULT_AGENT_CONTEXT_TOKENS) -
                         if (current.companionMode) (model?.maxTokens ?: 4_000) + 1_000 else 2_000).coerceAtLeast(512)
@@ -9284,9 +9287,11 @@ class LocalRepository(
                 throw cancelled
             } catch (error: Exception) {
                 LocalLogger.w(TAG, R.string.log_repo_agent_memory_extract_failed, error.message)
+                failureKey = error.message?.take(300)?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
             } finally {
                 _autoMemoryEvents.tryEmit(com.nekobot.app.data.local.ai.AgentMemoryNotice(
-                    session.id, changed, com.nekobot.app.data.local.ai.AgentMemoryPhase.DONE, anchorContent = anchor))
+                    session.id, changed, com.nekobot.app.data.local.ai.AgentMemoryPhase.DONE, anchorContent = anchor,
+                    failed = companionAttempt && !succeeded, failureKey = failureKey))
             }
         }
         companionExtractionJobs[key] = job

@@ -611,6 +611,9 @@
     <!-- ==================== 自动长期记忆提示（与技能沉淀提示同形态） ==================== -->
     <string name="chat_auto_memory_running">正在整理长期记忆…</string>
     <string name="chat_auto_memory_done">已自动记忆 %1$d 条</string>
+    <string name="chat_companion_memory_failed">记忆整理失败，稍后会自动重试</string>
+    <string name="chat_companion_memory_failed_view">查看</string>
+    <string name="chat_companion_memory_failed_dismiss">关闭提示</string>
 
     <!-- ==================== 工作区页 (WorkspaceScreen) ==================== -->
     <string name="workspace_title">工作区</string>

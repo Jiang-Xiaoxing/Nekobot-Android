@@ -624,6 +624,9 @@
     <!-- ==================== 장기 기억 자동 정리 알림 (스킬 알림과 같은 형태) ==================== -->
     <string name="chat_auto_memory_running">장기 기억 정리 중…</string>
     <string name="chat_auto_memory_done">%1$d개 자동 기억됨</string>
+    <string name="chat_companion_memory_failed">기억 정리에 실패했습니다. 잠시 후 자동으로 다시 시도합니다</string>
+    <string name="chat_companion_memory_failed_view">보기</string>
+    <string name="chat_companion_memory_failed_dismiss">닫기</string>
 
     <!-- ==================== 멀티미디어 콘텐츠 (MultimediaContent) ==================== -->
     <string name="chat_media_image">이미지</string>

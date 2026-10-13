@@ -218,6 +218,7 @@ private fun TwoPaneSessionsWrapper(
     onOpenDetail: (String) -> Unit,
     onOpenWorkspace: (String) -> Unit,
     onOpenContextAnalysis: (String) -> Unit,
+    onOpenCompanionMemory: (String) -> Unit = {},
     onOpenStoryGraph: (String) -> Unit,
     onOpenWenku8Login: () -> Unit,
     onChatMaximizedChange: (Boolean) -> Unit,
@@ -293,6 +294,7 @@ private fun TwoPaneSessionsWrapper(
                             onOpenSessionDetail = onOpenDetail,
                             onOpenWorkspace = onOpenWorkspace,
                             onOpenContextAnalysis = onOpenContextAnalysis,
+                            onOpenCompanionMemory = onOpenCompanionMemory,
                             onOpenStoryGraph = onOpenStoryGraph,
                             onOpenWenku8Login = onOpenWenku8Login,
                             // 平板双栏：底部悬浮导航栏盖住输入框，输入区整体抬升避让；
@@ -506,6 +508,7 @@ fun SessionsScreen(
         onOpenDetail = onOpenDetail,
         onOpenWorkspace = { id -> onNavigate(Routes.workspace(id)) },
         onOpenContextAnalysis = { id -> onNavigate(Routes.contextAnalysis(id)) },
+        onOpenCompanionMemory = { id -> onNavigate(Routes.agentCharacterMemory(id)) },
         onOpenStoryGraph = onOpenStoryGraph,
         onOpenWenku8Login = { onNavigate(Routes.WENKU_LOGIN) },
         onChatMaximizedChange = onTwoPaneChatMaximizedChange

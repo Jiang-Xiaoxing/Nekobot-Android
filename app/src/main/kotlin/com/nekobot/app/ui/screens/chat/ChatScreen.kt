@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.ui.platform.testTag
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
@@ -1454,12 +1456,12 @@ fun ChatScreen(
                             // 统一内联提示：锚定到触发它的气泡下方；锚点失效时回退到列表末尾。
                             inlineNoticesByAnchorIndex[index]?.forEach { notice ->
                                 Spacer(Modifier.height(4.dp))
-                                ChatInlineNoticeDivider(notice)
+                                ChatInlineNoticeDivider(notice, onDismissMemoryFailure = viewModel::dismissCompanionMemoryFailure)
                             }
                             if (index == renderMessages.lastIndex) {
                                 fallbackInlineNotices.forEach { notice ->
                                     Spacer(Modifier.height(4.dp))
-                                    ChatInlineNoticeDivider(notice)
+                                    ChatInlineNoticeDivider(notice, onDismissMemoryFailure = viewModel::dismissCompanionMemoryFailure)
                                 }
                             }
                             if (
@@ -5714,8 +5716,12 @@ private fun AgentContextCompressionDivider(inProgress: Boolean) {
  * 锚定位置与外观自动与其他提示保持一致。
  */
 @Composable
-private fun ChatInlineNoticeDivider(notice: ChatInlineNotice) {
+private fun ChatInlineNoticeDivider(notice: ChatInlineNotice, onDismissMemoryFailure: () -> Unit = {}) {
     when (notice) {
+        is CompanionMemoryFailureUiState -> CompanionMemoryFailurePill(
+            onOpen = LocalOpenCompanionMemory.current,
+            onDismiss = onDismissMemoryFailure
+        )
         is ContextCompressionUiState -> InlineNoticeDivider(
             text = stringResource(
                 if (notice.running) R.string.chat_agent_context_compressing
@@ -5742,6 +5748,44 @@ private fun ChatInlineNoticeDivider(notice: ChatInlineNotice) {
             icon = Icons.Filled.Psychology,
             running = notice.running
         )
+    }
+}
+
+/** 记忆整理失败：居中淡琥珀色胶囊，警告图标 + 文案 + 「查看」链接 + 关闭。 */
+@Composable
+private fun CompanionMemoryFailurePill(onOpen: (() -> Unit)?, onDismiss: () -> Unit) {
+    val amberBg = androidx.compose.ui.graphics.Color(0xFFFFF4DC)
+    val amberFg = androidx.compose.ui.graphics.Color(0xFF8A5A00)
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+            color = amberBg,
+            modifier = Modifier.testTag("companion-memory-failure-notice")
+        ) {
+            Row(
+                Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(androidx.compose.material.icons.Icons.Outlined.WarningAmber, null,
+                    tint = amberFg, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.chat_companion_memory_failed),
+                    style = MaterialTheme.typography.labelMedium, color = amberFg)
+                if (onOpen != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.chat_companion_memory_failed_view),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                            .clickable(onClick = onOpen).padding(horizontal = 2.dp, vertical = 4.dp))
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(androidx.compose.material.icons.Icons.Filled.Close,
+                        stringResource(R.string.chat_companion_memory_failed_dismiss),
+                        tint = amberFg.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                }
+            }
+        }
     }
 }
 

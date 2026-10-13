@@ -528,6 +528,7 @@ fun NekobotNavGraph() {
                     onBack = { navController.popBackStack() },
                     onOpenChat = { id -> navController.navigate(Routes.chat(id)) },
                     onOpenContextAnalysis = { id -> navController.navigate(Routes.contextAnalysis(id)) },
+                    onOpenCompanionMemory = { id -> navController.navigate(Routes.agentCharacterMemory(id)) },
                     onOpenSessionDetail = { id -> navController.navigate(Routes.sessionDetail(id)) },
                     onOpenWorkspace = { id -> navController.navigate(Routes.workspace(id)) },
                     onOpenStoryGraph = { id -> navController.navigate(Routes.storyGraph(id)) },

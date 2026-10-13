@@ -624,6 +624,9 @@
     <!-- ==================== 長期記憶の自動整理の通知（スキル通知と同じ形） ==================== -->
     <string name="chat_auto_memory_running">長期記憶を整理中…</string>
     <string name="chat_auto_memory_done">%1$d 件を自動記憶しました</string>
+    <string name="chat_companion_memory_failed">記憶の整理に失敗しました。後で自動的に再試行します</string>
+    <string name="chat_companion_memory_failed_view">表示</string>
+    <string name="chat_companion_memory_failed_dismiss">閉じる</string>
 
     <!-- ==================== マルチメディアコンテンツ (MultimediaContent) ==================== -->
     <string name="chat_media_image">画像</string>

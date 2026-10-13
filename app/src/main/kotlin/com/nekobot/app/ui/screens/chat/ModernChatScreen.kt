@@ -180,6 +180,7 @@ fun ModernChatScreen(
     onBack: () -> Unit,
     onOpenChat: (String) -> Unit = {},
     onOpenContextAnalysis: (String) -> Unit = {},
+    onOpenCompanionMemory: (String) -> Unit = {},
     onOpenSessionDetail: (String) -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
     onOpenStoryGraph: (String) -> Unit = {},
@@ -272,7 +273,8 @@ fun ModernChatScreen(
         LocalStickerLookup provides stickerLookup,
         LocalCompanionChatName provides companionName,
         LocalCompanionShowReasoning provides companionShowReasoning,
-        com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue
+        com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue,
+        LocalOpenCompanionMemory provides if (companionName != null) ({ onOpenCompanionMemory(sessionId) }) else null
     ) {
     Box(Modifier.fillMaxSize()) {
     // Keep the chat and its list/composer state alive beneath the full page, but hide it from accessibility.

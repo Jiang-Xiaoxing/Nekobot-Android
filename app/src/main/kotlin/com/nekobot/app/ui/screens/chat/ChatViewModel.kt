@@ -267,6 +267,9 @@ class ChatViewModel : BaseViewModel() {
     private val _runtime = MutableStateFlow<ChatSessionState>(ChatSessionState(""))
     private val runtime: ChatSessionState get() = _runtime.value
 
+    /** 关闭聊天中的记忆整理失败提示（临时界面状态）。 */
+    fun dismissCompanionMemoryFailure() = runtime.dismissCompanionMemoryFailure()
+
     val messages: StateFlow<List<Message>> = _runtime
         .map { it.messages }
         .distinctUntilChanged()
