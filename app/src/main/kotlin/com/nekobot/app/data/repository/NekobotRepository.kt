@@ -134,21 +134,26 @@ class NekobotRepository(
     suspend fun listMessages(id: String): Resource<List<Message>> = safeCall { api.listMessages(id) }
 
     /**
-     * 服务器模式消息分页缓存：服务端 `GET /api/sessions/{id}/messages` 暂不支持
-     * limit/before 参数，协议层无法分页，客户端改为"全量拉取一次 + 本地切片"。
+     * 新后端使用 limit/before_message_id 游标分页；旧后端的数组响应缓存后切片。
      *
-     * 首屏刷新（[listRecentMessages]）会更新缓存；向上翻页（[listMessagesBefore]）
-     * 优先命中缓存，避免每翻一页都重新下载整份历史。只保留最近访问的少数会话。
+     * 兼容缓存按服务器隔离；确认支持分页后立即清除旧缓存。
      */
     private val messageCache = java.util.concurrent.ConcurrentHashMap<String, List<Message>>()
+    private fun messageCacheKey(id: String) = "${prefs.serverUrl}|$id"
 
     /** 聊天界面分页：取最近的 limit 条消息（升序）并更新缓存。 */
     suspend fun listRecentMessages(id: String, limit: Int): Resource<MessagePage> {
-        val res = listMessages(id)
+        val res = safeCall { api.listMessagePage(id, limit.coerceIn(1, 200)) }
         if (res is Resource.Success) {
-            val all = res.data.orEmpty()
+            val payload = res.data
+            if (payload?.isJsonObject == true) {
+                invalidateMessageCache(id)
+                return Resource.Success(parseRemoteMessagePage(payload, gson))
+            }
+            val all = payload?.takeIf { it.isJsonArray }?.asJsonArray
+                ?.map { gson.fromJson(it, Message::class.java) }.orEmpty()
             if (messageCache.size > 3) messageCache.clear()
-            messageCache[id] = all
+            messageCache[messageCacheKey(id)] = all
             val pageSize = limit.coerceAtLeast(1)
             return Resource.Success(
                 MessagePage(messages = all.takeLast(pageSize), hasMore = all.size > pageSize)
@@ -159,15 +164,21 @@ class NekobotRepository(
 
     /** 聊天界面分页：取 [beforeMessageId] 之前（更早）的一页消息（升序）。 */
     suspend fun listMessagesBefore(id: String, beforeMessageId: String, limit: Int): Resource<MessagePage> {
-        val cached = messageCache[id]
+        val cached = messageCache[messageCacheKey(id)]
         if (cached != null) {
             return Resource.Success(sliceMessagesBefore(cached, beforeMessageId, limit))
         }
-        val res = listMessages(id)
+        val res = safeCall { api.listMessagePage(id, limit.coerceIn(1, 200), beforeMessageId) }
         if (res is Resource.Success) {
-            val all = res.data.orEmpty()
+            val payload = res.data
+            if (payload?.isJsonObject == true) {
+                invalidateMessageCache(id)
+                return Resource.Success(parseRemoteMessagePage(payload, gson))
+            }
+            val all = payload?.takeIf { it.isJsonArray }?.asJsonArray
+                ?.map { gson.fromJson(it, Message::class.java) }.orEmpty()
             if (messageCache.size > 3) messageCache.clear()
-            messageCache[id] = all
+            messageCache[messageCacheKey(id)] = all
             return Resource.Success(sliceMessagesBefore(all, beforeMessageId, limit))
         }
         return res.mapData { MessagePage() }
@@ -183,7 +194,7 @@ class NekobotRepository(
 
     /** 清除消息分页缓存（会话清空/删除后调用，避免翻页命中过期数据）。 */
     fun invalidateMessageCache(id: String) {
-        messageCache.remove(id)
+        messageCache.keys.removeAll { it.endsWith("|$id") }
     }
 
     suspend fun addMessage(

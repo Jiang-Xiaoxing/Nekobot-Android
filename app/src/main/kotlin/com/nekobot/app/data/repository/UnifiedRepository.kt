@@ -337,7 +337,7 @@ class UnifiedRepository(
      * 聊天界面分页：取最近的一页消息（升序）。
      *
      * 本地模式走 Room 游标分页，超大会话（数万条导入历史）不会一次性载入全集；
-     * 服务器模式接口暂不支持分页参数，客户端在全量拉取后只保留最近一页，避免界面渲染全量。
+     * 服务器模式使用后端游标分页，旧后端返回数组时自动回退到缓存切片。
      */
     suspend fun listRecentMessages(id: String, limit: Int): Resource<MessagePage> =
         if (isLocal) Resource.Success(local.listRecentMessages(id, limit))

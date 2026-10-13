@@ -31,7 +31,7 @@ interface ApiService {
     suspend fun createSession(@Body body: CreateSessionRequest): Response<Session>
 
     @GET("api/sessions/{id}")
-    suspend fun getSession(@Path("id") id: String): Response<Session>
+    suspend fun getSession(@Path("id") id: String, @Query("include_messages") includeMessages: Boolean = false): Response<Session>
 
     @PUT("api/sessions/{id}")
     suspend fun updateSession(
@@ -68,6 +68,13 @@ interface ApiService {
 
     @GET("api/sessions/{id}/messages")
     suspend fun listMessages(@Path("id") id: String): Response<List<Message>>
+
+    @GET("api/sessions/{id}/messages")
+    suspend fun listMessagePage(
+        @Path("id") id: String,
+        @Query("limit") limit: Int,
+        @Query("before_message_id") beforeMessageId: String? = null
+    ): Response<JsonElement>
 
     @POST("api/sessions/{id}/messages")
     suspend fun addMessage(
