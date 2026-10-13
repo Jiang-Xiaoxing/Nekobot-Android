@@ -129,7 +129,10 @@ data class Session(
     @SerializedName(value = "delay_reply_delay_seconds", alternate = ["delayReplyDelaySeconds"])
     val delayReplyDelaySeconds: Int? = null,
     /** 仅本地使用的明确重命名标题，与角色名及自动生成的会话名分开。 */
-    @SerializedName("list_title_override") val listTitleOverride: String? = null
+    @SerializedName("list_title_override") val listTitleOverride: String? = null,
+    /** 聊天设置中关闭「显示内心独白」；仅本地显示用。 */
+    @SerializedName(value = "hide_inner_monologue", alternate = ["hideInnerMonologue"])
+    val hideInnerMonologue: Boolean? = null
 ) {
     val displayName: String get() = listTitleOverride?.takeIf { it.isNotBlank() }
         ?: name?.takeIf { it.isNotBlank() } ?: "未命名会话"

@@ -89,7 +89,10 @@ fun MarkdownText(
     if (text.isBlank()) return
     // 预处理保留为兼容入口；区块和行内语义直接解析原文，不再注入可泄漏的占位字符。
     val preprocessed = remember(text, chatMode, processParens) { preprocessMarkdown(text, chatMode, processParens) }
-    val blocks = remember(preprocessed, chatMode) { parseBlocks(preprocessed, chatMode) }
+    val showInner = LocalShowInnerMonologue.current
+    val blocks = remember(preprocessed, chatMode, showInner) {
+        visibleMarkdownBlocks(preprocessed, chatMode, showInner)
+    }
 
     Column(modifier = modifier) {
         blocks.forEachIndexed { index, block ->
@@ -102,6 +105,28 @@ fun MarkdownText(
             )
         }
     }
+}
+
+/**
+ * 聊天设置「显示内心独白」：false 时聊天气泡完全跳过 `（内心：...）` 段，不留灰色块。
+ * 仅影响渲染；消息原文、复制与搜索不变。默认 true 保持原行为。
+ */
+val LocalShowInnerMonologue = staticCompositionLocalOf { true }
+
+/** 按显示开关得到最终渲染区块；隐藏时也去掉流式输出中尚未闭合的独白尾巴。 */
+internal fun visibleMarkdownBlocks(text: String, chatMode: Boolean, showInnerMonologue: Boolean): List<MdBlock> {
+    if (!chatMode || showInnerMonologue) return parseBlocks(text, chatMode)
+    return parseBlocks(stripUnclosedInnerTail(text), chatMode).filterNot { it is MdBlock.InnerMonologue }
+}
+
+private val UNCLOSED_INNER_TAIL = Regex("[（(](?:内心|心里|心想|内白)[：:][^（）()\\n]*$")
+
+/** 流式中独白只写到一半（还没有右括号）时，隐藏模式下不让它以普通文字闪现。 */
+internal fun stripUnclosedInnerTail(text: String): String {
+    val match = UNCLOSED_INNER_TAIL.find(text) ?: return text
+    val lineStart = text.lastIndexOf('\n', match.range.first) + 1
+    if (text.substring(lineStart, match.range.first).count { it == '`' } % 2 == 1) return text
+    return text.substring(0, match.range.first).trimEnd(' ', '\t')
 }
 
 // ==================== 预处理 ====================

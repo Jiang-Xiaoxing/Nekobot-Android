@@ -250,6 +250,10 @@ fun ModernChatScreen(
     var companionShowReasoning by remember(sessionId, companionName != null) {
         mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
     }
+    var showInnerMonologue by remember(sessionId) { mutableStateOf(session?.hideInnerMonologue != true) }
+    LaunchedEffect(sessionId, session?.hideInnerMonologue) {
+        session?.let { showInnerMonologue = it.hideInnerMonologue != true }
+    }
     var companionUtilityRequest by remember(sessionId) { mutableStateOf<CompanionChatUtility?>(null) }
     val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
     val yoloAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode
@@ -268,7 +272,8 @@ fun ModernChatScreen(
     CompositionLocalProvider(
         LocalStickerLookup provides stickerLookup,
         LocalCompanionChatName provides companionName,
-        LocalCompanionShowReasoning provides companionShowReasoning
+        LocalCompanionShowReasoning provides companionShowReasoning,
+        com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue
     ) {
     Box(Modifier.fillMaxSize()) {
     // Keep the chat and its list/composer state alive beneath the full page, but hide it from accessibility.
@@ -380,6 +385,13 @@ fun ModernChatScreen(
             onSearch = { companionSearchRequest++ },
             onFavorites = { companionFavoritesRequest++ },
             onUsage = { onOpenContextAnalysis(sessionId) },
+            showInnerMonologue = showInnerMonologue,
+            onShowInnerMonologueChange = { show ->
+                showInnerMonologue = show
+                composerScope.launch {
+                    runCatching { ServiceContainer.localRepository.setHideInnerMonologue(sessionId, !show) }
+                }
+            },
             onArchive = if (!session?.archiveSessionId.isNullOrBlank()) {
                 { companionUtilityRequest = CompanionChatUtility.VIEW_ARCHIVE }
             } else null

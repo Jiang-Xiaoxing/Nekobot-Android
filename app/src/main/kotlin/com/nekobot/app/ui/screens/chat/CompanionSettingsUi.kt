@@ -114,7 +114,9 @@ internal fun CompanionSettingsScreen(
     characterName: String?, checked: Boolean, onCheckedChange: (Boolean) -> Unit,
     onDismiss: () -> Unit, onDetails: () -> Unit, onSearch: () -> Unit,
     onFavorites: () -> Unit, onUsage: () -> Unit, onArchive: (() -> Unit)? = null,
-    portraitUrl: String? = null
+    portraitUrl: String? = null,
+    showInnerMonologue: Boolean = true,
+    onShowInnerMonologueChange: ((Boolean) -> Unit)? = null
 ) {
     BackHandler(onBack = onDismiss)
     Surface(Modifier.fillMaxSize().testTag("companion-settings-screen"), color = companionSettingsBackground(),
@@ -138,9 +140,15 @@ internal fun CompanionSettingsScreen(
                             CompanionPreferenceRow("显示思考", Icons.Outlined.Description, "只影响当前角色",
                                 checked = checked, onCheckedChange = onCheckedChange)
                             CompanionPreferenceDivider()
+                            if (onShowInnerMonologueChange != null) {
+                                CompanionPreferenceRow("显示内心独白", Icons.Outlined.ChatBubbleOutline, "只影响当前会话",
+                                    modifier = Modifier.testTag("companion-show-inner-monologue"),
+                                    checked = showInnerMonologue, onCheckedChange = onShowInnerMonologueChange)
+                                CompanionPreferenceDivider()
+                            }
                             CompanionPreferenceRow("聊天用量", Icons.Outlined.BarChart, "查看上次请求带入的内容", onClick = onUsage)
                         }
-                        Text("开启后，可在消息中展开查看思考。", Modifier.padding(horizontal = 4.dp),
+                        Text("开启后，可在消息中展开查看思考；关闭内心独白后，消息中不再显示灰色的内心独白块。", Modifier.padding(horizontal = 4.dp),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     CompanionFeedbackEntry()

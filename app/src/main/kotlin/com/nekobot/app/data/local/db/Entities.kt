@@ -98,7 +98,9 @@ data class LocalSessionEntity(
     /** 延迟回复等待秒数。 */
     @ColumnInfo(name = "delay_reply_delay_seconds", defaultValue = "2") val delayReplyDelaySeconds: Int = 2,
     /** 用户明确重命名后的本会话展示标题；不改变绑定角色的身份。 */
-    @ColumnInfo(name = "list_title_override", defaultValue = "NULL") val listTitleOverride: String? = null
+    @ColumnInfo(name = "list_title_override", defaultValue = "NULL") val listTitleOverride: String? = null,
+    /** 聊天设置「显示内心独白」关闭时为 true；仅影响显示，不改提示词和消息原文。旧数据缺省为显示。 */
+    @ColumnInfo(name = "hide_inner_monologue", defaultValue = "0") val hideInnerMonologue: Boolean = false
 )
 
 /**

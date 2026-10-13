@@ -1652,6 +1652,10 @@ class LocalRepository(
     internal fun setCompanionReasoningEffort(sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) =
         ServiceContainer.prefs.setCompanionReasoningEffort(db.dbName, sessionId, value)
 
+    /** 会话级显示开关，存于会话表，随备份/导入一起迁移。 */
+    internal suspend fun setHideInnerMonologue(sessionId: String, hide: Boolean) =
+        db.sessionDao().setHideInnerMonologue(sessionId, hide)
+
     internal fun companionShowReasoning(sessionId: String) = ServiceContainer.prefs.companionShowReasoning(db.dbName, sessionId)
     internal fun setCompanionShowReasoning(sessionId: String, show: Boolean) =
         ServiceContainer.prefs.setCompanionShowReasoning(db.dbName, sessionId, show)
@@ -2008,6 +2012,7 @@ class LocalRepository(
             inheritCharacterGreeting = sessionObj.boolVal("inherit_character_greeting", "inheritCharacterGreeting") ?: false,
             delayReplyEnabled = sessionObj.boolVal("delay_reply_enabled", "delayReplyEnabled") ?: false,
             delayReplyDelaySeconds = sessionObj.intVal("delay_reply_delay_seconds", "delayReplyDelaySeconds") ?: 2,
+            hideInnerMonologue = sessionObj.boolVal("hide_inner_monologue", "hideInnerMonologue") ?: false,
             groupId = if (isGroup) "gc_${UUID.randomUUID().toString().replace("-", "").take(12)}" else null,
             characterIds = if (isGroup && groupCharacterIds.isNotEmpty()) gson.toJson(groupCharacterIds) else null
         )
@@ -11375,7 +11380,8 @@ ${AiOutputLanguage.directive()}
         longConversationEnabled = longConversationEnabled,
         companionMode = companionMode,
         delayReplyEnabled = delayReplyEnabled,
-        delayReplyDelaySeconds = delayReplyDelaySeconds
+        delayReplyDelaySeconds = delayReplyDelaySeconds,
+        hideInnerMonologue = hideInnerMonologue
     )
 
     private fun LocalMessageEntity.toMessage(): Message = Message(
