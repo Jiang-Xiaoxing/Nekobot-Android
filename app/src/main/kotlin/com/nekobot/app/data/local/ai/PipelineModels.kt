@@ -232,6 +232,9 @@ open class PipelineCallbacks {
      */
     open fun persistAgentToolMessage(ctx: PipelineContext, message: Map<String, Any>) {}
 
+    /** 循环裁剪后同步有效工具轨迹，防止上下文统计和中断恢复重新载入已移出的内容。 */
+    open fun synchronizeAgentToolContext(ctx: PipelineContext, messages: List<Map<String, Any>>) {}
+
     /**
      * 取出（并清空）当前待注入的用户消息，在工具循环每轮模型调用前调用。
      *

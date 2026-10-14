@@ -292,7 +292,7 @@ object OpenAIResponsesProtocol : LocalProtocol {
                 mapOf(
                     "type" to "function_call_output",
                     "call_id" to callId,
-                    "output" to (extractText(message["content"]) ?: "")
+                    "output" to (toResponseContent(message["content"], assistant = false) ?: "")
                 )
             )
         }

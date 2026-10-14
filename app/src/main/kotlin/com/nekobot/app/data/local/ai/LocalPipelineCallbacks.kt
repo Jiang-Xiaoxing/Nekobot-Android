@@ -1,6 +1,7 @@
 package com.nekobot.app.data.local.ai
 
 import android.util.Log
+import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocalImageResult
@@ -1021,7 +1022,7 @@ internal class LocalPipelineCallbacks(
                                 } else {
                                     activeModel.purpose.ifBlank { "chat" }
                                 },
-                                requiredContextTokens = estimateLocalMessagesTokens(messages)
+                                requiredContextTokens = estimateLocalMessagesTokens(messages) + estimateToolDefinitionsTokens(tools)
                             ) { model ->
                                 chatOnceForGeneration(model, messages, extra, streamCallbacks)
                             }
@@ -1044,7 +1045,7 @@ internal class LocalPipelineCallbacks(
                             requestTag = session.id,
                             shouldStop = { generationController.isStopped },
                             streamCallbacks = streamCallbacks,
-                            requiredContextTokens = estimateLocalMessagesTokens(messages)
+                            requiredContextTokens = estimateLocalMessagesTokens(messages) + estimateToolDefinitionsTokens(tools)
                         )
                     }
                 }
@@ -1110,7 +1111,7 @@ internal class LocalPipelineCallbacks(
                         models = modelQueueFor(ctx),
                         messages = messages,
                         extra = extra,
-                        requiredContextTokens = estimateLocalMessagesTokens(messages),
+                        requiredContextTokens = estimateLocalMessagesTokens(messages) + estimateToolDefinitionsTokens(tools),
                         requestTag = session.id
                     ).collect { event ->
                         if (generationController.isStopped) {
@@ -1326,6 +1327,24 @@ internal class LocalPipelineCallbacks(
                     createdAt = com.nekobot.app.data.local.LocalRepository.nowIsoStatic()
                 )
             )
+        }
+    }
+
+    override fun synchronizeAgentToolContext(ctx: PipelineContext, messages: List<Map<String, Any>>) {
+        if (agentRunId == null) return
+        kotlinx.coroutines.runBlocking {
+            // 更新与删除必须原子提交；恢复不能看到缺失一半响应的工具块。
+            db.withTransaction {
+                val rows = agentToolMessageDao.listBySession(session.id)
+                val payloads = synchronizeAgentToolMessagePayloads(rows.map { it.payload }, messages)
+                rows.zip(payloads).forEach { (row, payload) ->
+                    if (payload == null) {
+                        agentToolMessageDao.deleteById(session.id, row.id)
+                    } else if (payload != row.payload) {
+                        agentToolMessageDao.updatePayload(session.id, row.id, payload)
+                    }
+                }
+            }
         }
     }
 

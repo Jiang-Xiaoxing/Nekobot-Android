@@ -636,6 +636,12 @@ interface AgentToolMessageDao {
     @Insert
     suspend fun insert(message: LocalAgentToolMessageEntity): Long
 
+    @Query("UPDATE local_agent_tool_messages SET payload = :payload WHERE session_id = :sessionId AND id = :id")
+    suspend fun updatePayload(sessionId: String, id: Long, payload: String)
+
+    @Query("DELETE FROM local_agent_tool_messages WHERE session_id = :sessionId AND id = :id")
+    suspend fun deleteById(sessionId: String, id: Long)
+
     /** 按写入顺序返回整轮工具消息，用于中断恢复。 */
     @Query("SELECT * FROM local_agent_tool_messages WHERE session_id = :sessionId ORDER BY id ASC")
     suspend fun listBySession(sessionId: String): List<LocalAgentToolMessageEntity>
