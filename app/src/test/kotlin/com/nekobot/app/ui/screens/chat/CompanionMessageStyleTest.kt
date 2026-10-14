@@ -45,35 +45,73 @@ class CompanionMessageStyleTest {
     @Test fun missingPhotoFallsBackToInitial() = assertNull(companionPhotoPath(" ", "fasfa-cat"))
     @Test fun avatarPhotoWorksWithoutPortrait() = assertEquals("content://photo/1", companionPhotoPath(null, "content://photo/1"))
 
-    @Test fun lightAssistantRestoresPre53GreenPresetBase() {
-        val style = companionAssistantBubbleStyle(false)
-        assertEquals(Color(0xFF6BCB77), style.background)
+    @Test fun lightAssistantUsesExactlyTheUserBubbleColorAndInk() {
+        val palette = companionChatPalette(false)
+        val style = companionAssistantBubbleStyle(palette)
+        assertEquals(Color(0xFFD5EBD2), palette.outgoing)
+        assertEquals(Color(0xFF172A20), palette.outgoingInk)
+        assertEquals(palette.outgoing, style.background)
+        assertEquals(palette.outgoingInk, style.content)
         assertEquals(1f, style.background.alpha, 0f)
     }
 
-    @Test fun darkAssistantUsesSameSavedGreenAsPre53Override() {
-        val light = companionAssistantBubbleStyle(false)
-        val dark = companionAssistantBubbleStyle(true)
-        assertEquals(light.background, dark.background)
-        assertEquals(1f, dark.background.alpha, 0f)
+    @Test fun darkAssistantUsesExactlyTheUserBubbleColorAndInk() {
+        val palette = companionChatPalette(true)
+        val style = companionAssistantBubbleStyle(palette)
+        assertEquals(Color(0xFF355B45), palette.outgoing)
+        assertEquals(Color(0xFFF0F6F2), palette.outgoingInk)
+        assertEquals(palette.outgoing, style.background)
+        assertEquals(palette.outgoingInk, style.content)
+        assertEquals(1f, style.background.alpha, 0f)
     }
 
-    @Test fun lightAssistantBodyAndAsidePassContrastOnGreen() = assertBubbleContrast(false)
-    @Test fun darkAssistantBodyAndAsidePassContrastOnGreen() = assertBubbleContrast(true)
-    @Test fun lightAssistantLinksPassContrastOnGreen() = assertLinkContrast(false)
-    @Test fun darkAssistantLinksPassContrastOnGreen() = assertLinkContrast(true)
+    @Test fun lightCustomColorIsSharedByUserAndAssistant() = assertCustomColors(false)
+    @Test fun darkCustomColorIsSharedByUserAndAssistant() = assertCustomColors(true)
+
+    @Test fun changingCustomColorUpdatesBothBubbleBackgroundsAndInk() {
+        val dark = companionChatPalette(false, Color(0xFF102030))
+        val light = companionChatPalette(false, Color(0xFFEAF7D8))
+        assertNotEquals(dark.outgoing, light.outgoing)
+        assertNotEquals(dark.outgoingInk, light.outgoingInk)
+        assertEquals(dark.outgoing, companionAssistantBubbleStyle(dark).background)
+        assertEquals(light.outgoing, companionAssistantBubbleStyle(light).background)
+    }
+
+    @Test fun clearingCustomColorRestoresEachModesOriginalUserColor() {
+        listOf(false, true).forEach { dark ->
+            assertEquals(companionChatPalette(dark), companionChatPalette(dark, null))
+        }
+    }
+
+    @Test fun customColorDoesNotChangeSurroundingPaletteOrDetailSurfaces() {
+        listOf(false, true).forEach { dark ->
+            val original = companionChatPalette(dark)
+            val custom = companionChatPalette(dark, Color(0xFF8B6CFF))
+            assertEquals(original, custom.copy(outgoing = original.outgoing, outgoingInk = original.outgoingInk))
+            val originalMarkdown = companionAssistantBubbleStyle(original).markdown
+            val customMarkdown = companionAssistantBubbleStyle(custom).markdown
+            assertEquals(originalMarkdown.surface, customMarkdown.surface)
+            assertEquals(originalMarkdown.onSurface, customMarkdown.onSurface)
+            assertEquals(originalMarkdown.surfaceLink, customMarkdown.surfaceLink)
+        }
+    }
+
+    @Test fun lightAssistantBodyAndAsidePassContrastOnUserBackground() = assertBubbleContrast(false)
+    @Test fun darkAssistantBodyAndAsidePassContrastOnUserBackground() = assertBubbleContrast(true)
+    @Test fun lightAssistantLinksPassContrastOnUserBackground() = assertLinkContrast(false)
+    @Test fun darkAssistantLinksPassContrastOnUserBackground() = assertLinkContrast(true)
     @Test fun lightMonologueAndCodeTextAndControlsPassContrast() = assertSurfaceContrast(false)
     @Test fun darkMonologueAndCodeTextAndControlsPassContrast() = assertSurfaceContrast(true)
 
     @Test fun monologueLinksRemainReadableOnBothDetailSurfaces() {
         listOf(false, true).forEach { dark ->
-            val colors = companionAssistantBubbleStyle(dark).markdown
+            val colors = companionAssistantBubbleStyle(companionChatPalette(dark)).markdown
             assertReadable(colors.surfaceLink, colors.surface)
         }
     }
 
     @Test fun assistantMarkdownLinkUsesBubbleInkAndKeepsClickTargetAndUnderline() {
-        val colors = companionAssistantBubbleStyle(false).markdown
+        val colors = companionAssistantBubbleStyle(companionChatPalette(false)).markdown
         val rendered = parseInline("[点这里](https://example.com)", Color.Black, TextStyle.Default,
             linkColor = colors.link)
         assertEquals("点这里", rendered.text)
@@ -83,7 +121,7 @@ class CompanionMessageStyleTest {
     }
 
     @Test fun assistantAsideKeepsOriginalTextWithOpaqueReadableInk() {
-        val style = companionAssistantBubbleStyle(true)
+        val style = companionAssistantBubbleStyle(companionChatPalette(true))
         val rendered = parseInline("（轻声说）", style.content, TextStyle.Default, styleParentheses = true,
             parenthesesColor = style.markdown.parentheses)
         assertEquals("（轻声说）", rendered.text)
@@ -94,7 +132,7 @@ class CompanionMessageStyleTest {
 
     @Test fun monologueInlineLinksUseSurfaceColorAndKeepOriginalContent() {
         listOf(false, true).forEach { dark ->
-            val colors = companionAssistantBubbleStyle(dark).markdown
+            val colors = companionAssistantBubbleStyle(companionChatPalette(dark)).markdown
             val rendered = parseInline("心想：[去看看](https://example.com)", colors.onSurface,
                 TextStyle.Default, linkColor = colors.surfaceLink)
             assertEquals("心想：去看看", rendered.text)
@@ -111,7 +149,7 @@ class CompanionMessageStyleTest {
     }
 
     private fun assertBubbleContrast(dark: Boolean) {
-        val style = companionAssistantBubbleStyle(dark)
+        val style = companionAssistantBubbleStyle(companionChatPalette(dark))
         assertReadable(style.content, style.background)
         assertReadable(style.markdown.parentheses, style.background)
         // 行内代码仍沿用原来的灰色半透明底色。
@@ -119,12 +157,12 @@ class CompanionMessageStyleTest {
     }
 
     private fun assertLinkContrast(dark: Boolean) {
-        val style = companionAssistantBubbleStyle(dark)
+        val style = companionAssistantBubbleStyle(companionChatPalette(dark))
         assertReadable(style.markdown.link, style.background)
     }
 
     private fun assertSurfaceContrast(dark: Boolean) {
-        val colors = companionAssistantBubbleStyle(dark).markdown
+        val colors = companionAssistantBubbleStyle(companionChatPalette(dark)).markdown
         assertEquals(1f, colors.surface.alpha, 0f)
         assertEquals(1f, colors.onSurface.alpha, 0f)
         assertReadable(colors.onSurface, colors.surface)
@@ -135,6 +173,22 @@ class CompanionMessageStyleTest {
         val ratio = (maxOf(displayed.luminance(), background.luminance()) + 0.05f) /
             (minOf(displayed.luminance(), background.luminance()) + 0.05f)
         assertTrue("文字对比度 $ratio 应不低于 4.5:1", ratio >= 4.5f)
+    }
+
+    private fun assertCustomColors(dark: Boolean) {
+        listOf(Color(0xFFEAF7D8), Color(0xFF102030), Color(0xFF777777), Color(0xFF8B6CFF)).forEach { color ->
+            val palette = companionChatPalette(dark, color)
+            val style = companionAssistantBubbleStyle(palette)
+            assertEquals(color, palette.outgoing)
+            assertEquals(palette.outgoing, style.background)
+            assertEquals(palette.outgoingInk, style.content)
+            assertReadable(style.content, style.background)
+            assertReadable(style.markdown.link, style.background)
+            assertReadable(style.markdown.parentheses, style.background)
+            assertReadable(style.content, Color.Gray.copy(alpha = 0.15f).compositeOver(style.background))
+            assertReadable(style.markdown.onSurface, style.markdown.surface)
+            assertReadable(style.markdown.surfaceLink, style.markdown.surface)
+        }
     }
 
     private fun section(time: String?, previous: String?) =

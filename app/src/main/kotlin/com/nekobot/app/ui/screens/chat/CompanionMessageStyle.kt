@@ -1,9 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.nekobot.app.data.model.Message
 import com.nekobot.app.ui.components.MarkdownBubbleColors
-import com.nekobot.app.ui.components.bubbleContentColor
 
 internal data class CompanionAssistantBubbleStyle(
     val background: Color,
@@ -11,19 +11,15 @@ internal data class CompanionAssistantBubbleStyle(
     val markdown: MarkdownBubbleColors
 )
 
-/**
- * #53 前 ChatScreen 的双方气泡实际共用 chatBubbleAppearance.userBrush，未使用
- * CompanionChatPalette.outgoing。采用当时样式设置的绿色预设 #6BCB77，
- * 保留当前单会话气泡的纯色样式。旧消息覆盖色在浅深模式中相同，
- * 只有气泡内的独白/代码表面随模式变化。
- */
-internal fun companionAssistantBubbleStyle(dark: Boolean): CompanionAssistantBubbleStyle {
-    val background = Color(0xFF6BCB77)
-    val content = bubbleContentColor(background)
+/** 角色复用用户气泡的背景与字色，浅深模式及自定义覆盖保持同源。 */
+internal fun companionAssistantBubbleStyle(palette: CompanionChatPalette): CompanionAssistantBubbleStyle {
+    val dark = palette.background.luminance() < 0.5f
+    val background = palette.outgoing
+    val content = palette.outgoingInk
     return CompanionAssistantBubbleStyle(
         background, content,
         MarkdownBubbleColors(
-            link = Color(0xFF0C291B),
+            link = content,
             surface = if (dark) Color(0xFF2A3031) else Color(0xFFEDF0EF),
             onSurface = if (dark) Color(0xFFF0F4F2) else Color(0xFF202927),
             surfaceLink = if (dark) Color(0xFF9CD7FF) else Color(0xFF174C3C),

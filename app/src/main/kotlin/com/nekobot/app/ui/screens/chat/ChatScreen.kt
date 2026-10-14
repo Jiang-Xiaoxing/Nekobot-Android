@@ -2715,8 +2715,8 @@ private fun MessageBubble(
         Brush.linearGradient(listOf(it.kind.startColor, it.kind.endColor))
     }
     val companionChat = LocalCompanionChatName.current != null
-    val companionPalette = companionChatPalette()
-    val companionAssistantStyle = companionAssistantBubbleStyle(companionPalette.background.luminance() < 0.5f)
+    val companionPalette = companionChatPalette(ServiceContainer.prefs.messageColorOverride)
+    val companionAssistantStyle = companionAssistantBubbleStyle(companionPalette)
     val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
     val userBubble = bubbleAppearance.userColor
     val userBrush = bubbleAppearance.userBrush

@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
+import com.nekobot.app.ui.theme.parseHexColor
 
 /** Only provided inside a single-session companion chat; shared Agent/role UI keeps its own style. */
 internal val LocalCompanionChatName = staticCompositionLocalOf<String?> { null }
@@ -44,14 +45,25 @@ internal data class CompanionChatPalette(
 )
 
 @Composable
-internal fun companionChatPalette(): CompanionChatPalette =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+internal fun companionChatPalette(messageColorOverride: String? = null): CompanionChatPalette =
+    companionChatPalette(MaterialTheme.colorScheme.background.luminance() < 0.5f,
+        parseHexColor(messageColorOverride))
+
+/** 双方共用用户气泡的颜色来源；未设置覆盖色时保留原来的浅深色调色板。 */
+internal fun companionChatPalette(dark: Boolean, messageColorOverride: Color? = null): CompanionChatPalette {
+    val palette = if (dark) {
         CompanionChatPalette(Color(0xFF191D1E), Color(0xFF2A3031), Color(0xFF355B45),
             Color(0xFFF0F4F2), Color(0xFFB4BEBA), Color(0xFF92C5A9), Color(0xFFF0F6F2))
     } else {
         CompanionChatPalette(Color(0xFFF0F4F3), Color(0xFFFEFEFE), Color(0xFFD5EBD2),
             Color(0xFF202927), Color(0xFF75807C), Color(0xFF547E68), Color(0xFF172A20))
     }
+    return if (messageColorOverride == null) palette else palette.copy(
+        outgoing = messageColorOverride,
+        // 选择黑/白中对比度更高的一项，也覆盖中等亮度的自定义背景。
+        outgoingInk = if (messageColorOverride.luminance() > 0.179f) Color.Black else Color.White
+    )
+}
 
 /** A display preference only; NONE applies to new requests, never to saved messages. */
 @Composable

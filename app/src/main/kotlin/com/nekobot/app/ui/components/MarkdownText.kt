@@ -125,7 +125,7 @@ val LocalShowInnerMonologue = staticCompositionLocalOf { true }
 /** 单会话气泡采用紧凑淡灰独白条；正文和复制仍使用原文。 */
 val LocalCompactInnerMonologue = staticCompositionLocalOf { false }
 
-/** 仅由角色绿色气泡提供；用户消息及其他 Markdown 页面继续沿用原配色。 */
+/** 仅由单会话角色气泡提供；用户消息及其他 Markdown 页面继续沿用原配色。 */
 internal data class MarkdownBubbleColors(
     val link: androidx.compose.ui.graphics.Color,
     val surface: androidx.compose.ui.graphics.Color,
