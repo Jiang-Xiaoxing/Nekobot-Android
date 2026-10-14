@@ -13,6 +13,32 @@ import org.junit.Test
 class LocalAgentProgressReporterTest {
 
     @Test
+    fun parallelCallsWithTheSameNameKeepTheirArgumentsResultsAndDurationsTogether() {
+        val updates = mutableListOf<ThinkingCard>()
+        var now = 1_000_000_000L
+        val reporter = LocalAgentProgressReporter(
+            parentMessageId = "user-1", onUpdate = updates::add,
+            nowNanos = { now }, cardId = "card-1"
+        )
+        val context = PipelineContext(ChatRequest.forLocal(sessionId = "session-1", content = "读图"))
+        reporter.onToolStart(context, "read_image", mapOf("path" to "p02.jpg"), "")
+        now = 2_000_000_000L
+        reporter.onToolStart(context, "read_image", mapOf("path" to "p03.jpg"), "")
+        now = 3_000_000_000L
+        reporter.onToolDone(context, "read_image", mapOf("path" to "p02.jpg"), "")
+        now = 4_000_000_000L
+        reporter.onToolDone(context, "read_image", mapOf("path" to "p03.jpg"), "")
+
+        val steps = updates.last().steps.filter { it.type == "tool" }
+        assertEquals("p02.jpg", steps[0].arguments!!["path"])
+        assertTrue(steps[0].fullResult.toString().contains("p02.jpg"))
+        assertEquals("p03.jpg", steps[1].arguments!!["path"])
+        assertTrue(steps[1].fullResult.toString().contains("p03.jpg"))
+        assertEquals(2_000L, steps[0].durationMs)
+        assertEquals(2_000L, steps[1].durationMs)
+    }
+
+    @Test
     fun streamedReasoningIsAccumulatedInThinkingStep() {
         val updates = mutableListOf<ThinkingCard>()
         var now = 0L

@@ -81,6 +81,7 @@ import com.nekobot.app.data.local.ai.LocalToolCallRecord
 import com.nekobot.app.data.local.ai.dropIncompleteAgentTail
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.local.ai.estimateLocalMessagesTokens
+import com.nekobot.app.data.local.ai.estimateToolCallHistoryTokens
 import com.nekobot.app.data.local.ai.localDbToolIds
 import com.nekobot.app.data.local.ai.localSkillToolIds
 import com.nekobot.app.data.local.ai.parseMcpToolName
@@ -9052,7 +9053,7 @@ class LocalRepository(
     private fun LocalMessageEntity.agentContextTokenCount(): Int =
         AGENT_CONTEXT_MESSAGE_OVERHEAD_TOKENS +
             estimateLocalTextTokens(content) +
-            (toolCallHistory?.let(::estimateLocalTextTokens) ?: 0)
+            estimateToolCallHistoryTokens(toolCallHistory)
 
     /** 摘要最多 2000 字；在小上下文模型上进一步缩小，确保总结请求自身能够发送。 */
     private fun agentSummaryTokenBudget(maxContextTokens: Int): Int = minOf(
@@ -10458,7 +10459,7 @@ ${AiOutputLanguage.directive()}
             ContextUsageMessageRow(
                 role = message.role,
                 content = message.content,
-                toolHistoryTokens = history?.let(::estimateLocalTextTokens) ?: 0,
+                toolHistoryTokens = estimateToolCallHistoryTokens(history),
                 toolHistoryCount = history?.let { rows -> completedAgentToolCallCount(decodeToolCallHistory(rows)) } ?: 0,
                 isSummary = message.isAgentContextSummary()
             )

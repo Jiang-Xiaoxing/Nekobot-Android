@@ -326,6 +326,8 @@ data class ToolLoopHooks(
     val onToolResult: ((Map<String, Any>, Map<String, Any>, String, Int, List<Map<String, Any>>) -> Map<String, Any>?)? = null,
     /** 一整批 tool_calls 都写入对应 tool 结果后的安全检查点。 */
     val onCheckpoint: ((Int, List<Map<String, Any>>) -> Unit)? = null,
+    /** 裁剪后的有效上下文；持久化轨迹必须同步，否则 UI 和续跑会恢复裁剪前的正文。 */
+    val onContextTrimmed: ((List<Map<String, Any>>) -> Unit)? = null,
     /**
      * 本轮模型输出不是最终答复（循环将继续）时回调该轮正文。
      *
@@ -392,7 +394,8 @@ data class ToolLoopSession(
      * 每轮模型调用前检查的输入 token 预算；0 表示不做循环内上下文管理。
      * 与"轮次之间"的自动压缩互补：长任务往往在一轮内就堆满上下文。
      */
-    val contextBudgetTokens: () -> Int = { 0 }
+    val contextBudgetTokens: () -> Int = { 0 },
+    val inputOverheadTokens: Int = 0
 )
 
 /** 准备好的聊天上下文 */
@@ -477,7 +480,8 @@ internal fun messageSizeChars(message: Map<String, Any>): Int {
         is List<*> -> content.sumOf { part ->
             when (part) {
                 is String -> part.length
-                is Map<*, *> -> (part["text"] as? String)?.length ?: 0
+                is Map<*, *> -> (part["text"] as? String)?.length
+                    ?: (estimateLocalContentTokens(part) * 4)
                 else -> 0
             }
         }
@@ -574,20 +578,21 @@ private const val IN_LOOP_RECENT_MESSAGES_KEPT = 6
  * 与轮次之间的自动压缩互补——一次长任务往往在"一轮"内就堆满上下文：
  * 每个工具结果都可能上万字符，几十次调用后必然超出模型窗口，而轮次之间的压缩根本来不及触发。
  *
- * 只裁剪 `role == "tool"` 的消息正文（保留 role / tool_call_id / name 等结构）：
- * 直接删除 tool 消息会让部分模型报 "tool message without preceding tool_calls"。
- * 裁剪从最旧开始，最近 [IN_LOOP_RECENT_MESSAGES_KEPT] 条消息始终保留。
+ * 优先裁剪 `role == "tool"` 的文本或多模态正文，保留工具调用结构。
+ * 最近 [IN_LOOP_RECENT_MESSAGES_KEPT] 条消息通常保留；仍超预算时裁剪其正文，
+ * 再按完整工具块移除旧消息，避免产生孤儿工具响应。
  *
  * @return 本次裁剪的说明文本；未发生裁剪时返回 null。
  */
 internal fun manageInLoopContextBudget(
     toolMessages: MutableList<MutableMap<String, Any>>,
     budgetTokens: Int,
-    outputReserveRatio: Double = 0.2
+    outputReserveRatio: Double = 0.2,
+    inputOverheadTokens: Int = 0
 ): String? {
     if (budgetTokens <= 0) return null
-    val usable = (budgetTokens * (1.0 - outputReserveRatio.coerceIn(0.0, 0.6))).toInt()
-    if (usable <= 0) return null
+    val usable = ((budgetTokens * (1.0 - outputReserveRatio.coerceIn(0.0, 0.6))).toInt() -
+        inputOverheadTokens.coerceAtLeast(0)).coerceAtLeast(1)
     val before = estimateLocalMessagesTokens(toolMessages)
     if (before <= usable) return null
 
@@ -597,27 +602,58 @@ internal fun manageInLoopContextBudget(
         if (estimateLocalMessagesTokens(toolMessages) <= usable) break
         val message = toolMessages[index]
         if (!(message["role"] as? String).equals("tool", ignoreCase = true)) continue
-        val content = message["content"] as? String ?: continue
-        if (content.length <= IN_LOOP_TOOL_RESULT_MIN_KEEP) continue
-        message["content"] = "[历史工具结果已因上下文预算裁剪，原始长度 ${content.length} 字符。" +
+        val content = message["content"] ?: continue
+        if (content is String && content.length <= IN_LOOP_TOOL_RESULT_MIN_KEEP) continue
+        message["content"] = "[历史工具结果已因上下文预算裁剪，原始估算 ${estimateLocalContentTokens(content)} token。" +
             "如果仍然需要这些信息，请重新调用对应工具获取。]"
         elided++
     }
 
-    if (elided == 0) {
-        // 没有可裁剪的历史工具结果（例如几个巨大的结果都落在最近消息里）：
-        // 用整体硬裁剪兜底，保证本轮请求不会直接超出模型窗口。
-        val allowedChars = (usable * 2).coerceAtLeast(4_000)
-        val hardTrimmed = trimMessages(toolMessages, maxTotalChars = allowedChars)
-        val removed = toolMessages.size - hardTrimmed.size
-        if (removed <= 0) return null
-        toolMessages.clear()
-        toolMessages.addAll(hardTrimmed.map { it.toMutableMap() })
-        return "硬裁剪移除 $removed 条最旧消息（预算 $usable token）"
+    // 最近的结果通常保留原文；它们本身超预算时也必须能释放图片和过长正文。
+    if (estimateLocalMessagesTokens(toolMessages) > usable) {
+        for (index in elisionLimit until toolMessages.size) {
+            if (estimateLocalMessagesTokens(toolMessages) <= usable) break
+            val message = toolMessages[index]
+            if (message["role"] != "tool") continue
+            val content = message["content"] ?: continue
+            if (content is String && content.length <= IN_LOOP_TOOL_RESULT_MIN_KEEP) continue
+            val text = when (content) {
+                is String -> content
+                is List<*> -> content.mapNotNull { (it as? Map<*, *>)?.get("text") as? String }.joinToString("\n")
+                else -> ""
+            }
+            message["content"] = text.take(IN_LOOP_TOOL_RESULT_MIN_KEEP) +
+                "\n[工具结果超出上下文预算，图片和剩余正文已移出；需要细节时请重新调用该工具。]"
+            elided++
+        }
     }
 
+    var removed = 0
+    // 即便已经裁过部分结果也要再次检查；工具参数、推理正文等仍可能占满窗口。
+    if (estimateLocalMessagesTokens(toolMessages) > usable) {
+        val hardTrimmed = trimMessagesToTokenBudget(toolMessages, usable)
+        removed = toolMessages.size - hardTrimmed.size
+        toolMessages.clear()
+        toolMessages.addAll(hardTrimmed.map { it.toMutableMap() })
+    }
+
+    if (elided == 0 && removed == 0) return null
     val after = estimateLocalMessagesTokens(toolMessages)
-    return "裁剪 $elided 条工具结果（$before → $after token，预算 $usable）"
+    return "裁剪 $elided 条工具结果，移除 $removed 条旧消息（$before → $after token，预算 $usable）"
+}
+
+/** 以真实估算单位裁剪完整工具块，保留系统提示、最新用户问题与最后一个工具块。 */
+internal fun trimMessagesToTokenBudget(messages: List<Map<String, Any>>, budgetTokens: Int): List<Map<String, Any>> {
+    val system = messages.filter { it["role"] == "system" || it["role"] == "developer" }
+    val blocks = groupMessageBlocks(messages.filterNot { it in system })
+    val lastUser = blocks.indexOfLast { block -> block.any { it["role"] == "user" } }
+    val kept = blocks.indices.toMutableSet()
+    fun snapshot() = system + blocks.filterIndexed { index, _ -> index in kept }.flatten()
+    for (index in blocks.indices) {
+        if (estimateLocalMessagesTokens(snapshot()) <= budgetTokens) break
+        if (index != lastUser && index != blocks.lastIndex) kept.remove(index)
+    }
+    return snapshot()
 }
 
 /** 将知识库文本注入到 system 消息中 */
@@ -690,6 +726,40 @@ fun decodeToolCallHistory(json: String?): List<Map<String, Any>> {
             .filter { it["role"] in listOf("assistant", "tool") }
             .map(::sanitizeAgentToolHistoryMessage)
     }.getOrDefault(emptyList())
+}
+
+/** 旧消息里的工具历史也是结构化多模态消息，不能对整份 JSON（含 Base64）做文本估算。 */
+internal fun estimateToolCallHistoryTokens(json: String?): Int {
+    if (json.isNullOrBlank()) return 0
+    val history = decodeToolCallHistory(json)
+    return if (history.isNotEmpty()) estimateLocalMessagesTokens(history) else estimateLocalTextTokens(json)
+}
+
+/** 调用 ID 在内容被裁剪后保持稳定，供历史边界与落库同步使用。 */
+internal fun agentContextMessageKey(message: Map<String, Any>): String {
+    if (message["role"] == "tool") {
+        (message["tool_call_id"] as? String)?.takeIf(String::isNotBlank)?.let { return "tool:$it" }
+    }
+    if (message["role"] == "assistant") {
+        val ids = (message["tool_calls"] as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.get("id") as? String }
+            .orEmpty()
+        if (ids.isNotEmpty()) return "assistant:" + agentGson.toJson(ids)
+    }
+    return agentGson.toJson(message)
+}
+
+/** 返回原落库行对应的新正文；null 表示整个工具块已不在有效上下文中。 */
+internal fun synchronizeAgentToolMessagePayloads(
+    payloads: List<String>,
+    activeMessages: List<Map<String, Any>>
+): List<String?> {
+    val active = activeMessages.filter { it["role"] in listOf("assistant", "tool") }
+        .associateBy(::agentContextMessageKey)
+    return payloads.map { payload ->
+        val stored = decodeAgentToolMessageRow(payload) ?: return@map null
+        active[agentContextMessageKey(stored)]?.let(::encodeAgentToolMessageRow)
+    }
 }
 
 /** 将本轮工具调用历史序列化，供后续轮次自动恢复。 */
@@ -900,6 +970,17 @@ fun extractCurrentTurnToolCallHistory(
         .map { it.toMap() }
 }
 
+/** 硬裁剪会移除既有消息，固定下标不再可靠；通过稳定消息键识别尚存的既有前缀。 */
+internal fun extractCurrentTurnToolCallHistory(
+    messages: List<Map<String, Any>>,
+    preparedMessages: List<Map<String, Any>>
+): List<Map<String, Any>> {
+    val preparedKeys = preparedMessages.map(::agentContextMessageKey).toSet()
+    return messages.dropWhile { agentContextMessageKey(it) in preparedKeys }
+        .filter { it["role"] in listOf("assistant", "tool") }
+        .map { it.toMap() }
+}
+
 // ============================================================================
 // 响应内容处理
 // ============================================================================
@@ -911,7 +992,7 @@ fun extractCurrentTurnToolCallHistory(
  * 由 android_screenshot / android_step 在支持视觉的模型下注入），则返回
  * 多模态 content 数组：[文本 JSON, image_url parts]，让视觉模型直接看到截图，
  * 无需再调用 understand_image。协议层（Gemini/Anthropic/OpenAI Chat）已支持
- * 解析该数组；OpenAI Responses 协议只取文本部分（图片降级为文本提示）。
+ * 解析该数组；OpenAI Responses 将图片翻译为 input_image。
  */
 internal fun buildToolMessageContent(toolResult: Map<String, Any>): Any {
     val images = (toolResult["_image_urls"] as? List<*>)
@@ -1026,7 +1107,8 @@ suspend fun runToolCallLoop(
     /** 本轮允许的输入 token 预算（0 表示不做循环内上下文管理）。 */
     contextBudgetTokens: () -> Int = { 0 },
     /** 输出预留比例：预算中留给模型回复的部分（默认 20%）。 */
-    contextOutputReserveRatio: Double = 0.2
+    contextOutputReserveRatio: Double = 0.2,
+    inputOverheadTokens: Int = 0
 ): ToolLoopResult {
     val toolMessages = initialMessages.map { it.toMutableMap() }.toMutableList()
     var finalContent = ""
@@ -1102,9 +1184,11 @@ suspend fun runToolCallLoop(
         val contextTrimNotice = manageInLoopContextBudget(
             toolMessages = toolMessages,
             budgetTokens = contextBudgetTokens(),
-            outputReserveRatio = contextOutputReserveRatio
+            outputReserveRatio = contextOutputReserveRatio,
+            inputOverheadTokens = inputOverheadTokens
         )
         if (contextTrimNotice != null) {
+            hooks?.onContextTrimmed?.invoke(toolMessages.map { it.toMap() })
             com.nekobot.app.data.local.LocalLogger.i("AgentService", R.string.log_svc_context_trim, iteration, toolMessages.size, contextTrimNotice)
         }
 
@@ -1351,7 +1435,8 @@ suspend fun runToolLoopSession(session: ToolLoopSession): ToolExecutionResult {
         shouldStop = session.shouldStop,
         pendingUserMessages = session.pendingUserMessages,
         persistPendingUserMessages = session.persistPendingUserMessages,
-        contextBudgetTokens = session.contextBudgetTokens
+        contextBudgetTokens = session.contextBudgetTokens,
+        inputOverheadTokens = session.inputOverheadTokens
     )
     return ToolExecutionResult(loopResult = loopResult, preparedMessages = preparedMessages)
 }
