@@ -68,6 +68,8 @@ class PrefsManager(context: Context) {
     private val securePrefs = SecurePreferenceStore(context)
     private val gson = Gson()
     private val characterThinking = CharacterThinkingPreferences(prefs)
+    private val reasoning = ReasoningPreferences(prefs)
+    val reasoningSettingsRevision get() = reasoning.changes
 
     /** 角色视角思考默认开启；仅影响角色会话中新请求的提示词。 */
     var characterThinkingEnabled: Boolean
@@ -1373,39 +1375,39 @@ class PrefsManager(context: Context) {
 
     /** 获取对应会话类型的全局思考强度；Agent 与角色会话互不影响。 */
     fun companionReasoningEffort(profile: String, sessionId: String): com.nekobot.app.data.model.ReasoningEffort =
-        com.nekobot.app.data.model.ReasoningEffort.fromValue(prefs.getString(companionRecallKey(profile, sessionId) + ":reasoning",
-            getReasoningEffort(true).wireValue))
+        reasoning.companionEffort(profile, sessionId)
     fun setCompanionReasoningEffort(profile: String, sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) {
-        prefs.edit().putString(companionRecallKey(profile, sessionId) + ":reasoning", value.wireValue).apply()
+        reasoning.setEffort(profile, sessionId, true, null, value)
     }
 
     /** 伴侣会话的自定义思考参数；未设置时沿用 Agent 全局的自定义参数。 */
     fun companionCustomReasoning(profile: String, sessionId: String): com.nekobot.app.data.model.CustomReasoningParam {
-        val key = companionRecallKey(profile, sessionId)
-        val global = getCustomReasoning(true)
-        return com.nekobot.app.data.model.CustomReasoningParam(
-            prefs.getString("$key:reasoning_custom_path", null) ?: global.path,
-            prefs.getString("$key:reasoning_custom_value", null) ?: global.value)
+        return reasoning.companionCustom(profile, sessionId)
     }
     fun setCompanionCustomReasoning(profile: String, sessionId: String, value: com.nekobot.app.data.model.CustomReasoningParam) {
-        val key = companionRecallKey(profile, sessionId)
-        prefs.edit().putString("$key:reasoning_custom_path", value.path).putString("$key:reasoning_custom_value", value.value).apply()
+        reasoning.setCustom(profile, sessionId, true, null, value)
     }
     /** 全局自定义思考参数，Agent 与角色会话各一份，与思考强度同一作用域。 */
     fun getCustomReasoning(isAgentSession: Boolean): com.nekobot.app.data.model.CustomReasoningParam {
-        val suffix = if (isAgentSession) "agent" else "character"
-        return com.nekobot.app.data.model.CustomReasoningParam(
-            prefs.getString("reasoning_custom_path_$suffix", "").orEmpty(),
-            prefs.getString("reasoning_custom_value_$suffix", "").orEmpty())
+        return reasoning.globalCustom(isAgentSession)
     }
     fun setCustomReasoning(isAgentSession: Boolean, value: com.nekobot.app.data.model.CustomReasoningParam) {
-        val suffix = if (isAgentSession) "agent" else "character"
-        prefs.edit().putString("reasoning_custom_path_$suffix", value.path).putString("reasoning_custom_value_$suffix", value.value).apply()
+        reasoning.setCustom("", "", false, if (isAgentSession) "agent" else "character", value)
     }
     /** 发送时按会话取自定义思考参数：伴侣会话按会话，其余按 Agent/角色全局。 */
     fun customReasoningFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?): com.nekobot.app.data.model.CustomReasoningParam =
-        if (companionMode) companionCustomReasoning(profile, sessionId)
-        else getCustomReasoning(sessionMode.equals("agent", ignoreCase = true))
+        reasoning.custom(profile, sessionId, companionMode, sessionMode)
+
+    fun reasoningEffortFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?) =
+        reasoning.effort(profile, sessionId, companionMode, sessionMode)
+
+    fun setReasoningEffortFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?,
+        value: com.nekobot.app.data.model.ReasoningEffort) =
+        reasoning.setEffort(profile, sessionId, companionMode, sessionMode, value)
+
+    fun setCustomReasoningFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?,
+        value: com.nekobot.app.data.model.CustomReasoningParam) =
+        reasoning.setCustom(profile, sessionId, companionMode, sessionMode, value)
 
     /** Display only: never changes model settings or erases saved reasoning. */
     internal fun companionShowReasoning(profile: String, sessionId: String): Boolean =
@@ -1431,25 +1433,14 @@ class PrefsManager(context: Context) {
     }
 
     fun getReasoningEffort(isAgentSession: Boolean): com.nekobot.app.data.model.ReasoningEffort =
-        com.nekobot.app.data.model.ReasoningEffort.fromValue(
-            prefs.getString(
-                if (isAgentSession) KEY_AGENT_REASONING_EFFORT else KEY_CHARACTER_REASONING_EFFORT,
-                // 兼容拆分设置前保存的单一全局值，作为两类会话的初始默认值。
-                prefs.getString(KEY_REASONING_EFFORT_LEGACY, null)
-            )
-        )
+        reasoning.globalEffort(isAgentSession)
 
     /** 持久化对应会话类型的全局思考强度。 */
     fun setReasoningEffort(
         isAgentSession: Boolean,
         effort: com.nekobot.app.data.model.ReasoningEffort
     ) {
-        prefs.edit()
-            .putString(
-                if (isAgentSession) KEY_AGENT_REASONING_EFFORT else KEY_CHARACTER_REASONING_EFFORT,
-                effort.wireValue
-            )
-            .apply()
+        reasoning.setEffort("", "", false, if (isAgentSession) "agent" else "character", effort)
     }
 
     /** 兼容旧调用方：未提供会话类型时按角色会话读取。 */

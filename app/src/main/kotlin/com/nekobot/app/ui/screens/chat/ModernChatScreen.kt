@@ -845,9 +845,13 @@ private fun ModernChatComposer(
     }
     var quickActionsCollapsed by remember { mutableStateOf(ServiceContainer.prefs.chatQuickActionsCollapsed) }
     var showQuickActionEditor by remember { mutableStateOf(false) }
-    var reasoningEffort by remember(sessionId, isAgentSession) {
-        mutableStateOf(ServiceContainer.prefs.getReasoningEffort(isAgentSession))
+    val reasoningPrefs = ServiceContainer.prefs
+    val reasoningRevision by reasoningPrefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
+    val companionReasoningRepository = if (companionChat && reasoningPrefs.isLocalMode) ServiceContainer.localRepository else null
+    val readReasoningEffort = {
+        companionReasoningRepository?.companionReasoningEffort(sessionId) ?: reasoningPrefs.getReasoningEffort(isAgentSession)
     }
+    val reasoningEffort = reasoningRevision.let { readReasoningEffort() }
     var inputExpanded by remember { mutableStateOf(false) }
     var chatInputLayout by remember {
         mutableStateOf(ServiceContainer.prefs.chatInputLayoutMode)
@@ -1374,10 +1378,14 @@ private fun ModernChatComposer(
                     toolSetSummary = rememberToolSetSummary(sessionId, toolSetRevision),
                     toolSetAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode,
                     onReasoningEffortChange = { effort ->
-                        reasoningEffort = effort
-                        ServiceContainer.prefs.setReasoningEffort(isAgentSession, effort)
+                        companionReasoningRepository?.setCompanionReasoningEffort(sessionId, effort)
+                            ?: reasoningPrefs.setReasoningEffort(isAgentSession, effort)
                     },
-                    reasoningAgentScope = isAgentSession,
+                    customReasoning = companionReasoningRepository?.companionCustomReasoning(sessionId) ?: reasoningPrefs.getCustomReasoning(isAgentSession),
+                    onCustomReasoningChange = {
+                        companionReasoningRepository?.setCompanionCustomReasoning(sessionId, it)
+                            ?: reasoningPrefs.setCustomReasoning(isAgentSession, it)
+                    },
                     showCharacterThinkingSettings = isCharacterThinkingSession(session),
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
@@ -1455,7 +1463,7 @@ private fun ModernChatComposer(
                                 pendingPlotChoiceId = null
                                 pendingAttachments = emptyList()
                                 closePanel()
-                                onSend(text, null, attachments, ServiceContainer.localRepository.companionReasoningEffort(sessionId))
+                                onSend(text, null, attachments, readReasoningEffort())
                             }
                         )
                         AnimatedVisibility(visible = panelExpanded) {
@@ -1685,7 +1693,7 @@ private fun ModernChatComposer(
                                             pendingAttachments = emptyList()
                                             closePanel()
                                             if (!keepComposerOpen) keyboard?.hide()
-                                            onSend(text, choiceId, attachments, reasoningEffort)
+                                            onSend(text, choiceId, attachments, readReasoningEffort())
                                         }
                                         ModernComposerAction.VOICE -> requestMicPermission.launch(
                                             android.Manifest.permission.RECORD_AUDIO
@@ -2295,7 +2303,8 @@ private fun ReasoningEffortSelector(
     selected: ReasoningEffort,
     enabled: Boolean,
     onSelected: (ReasoningEffort) -> Unit,
-    customAgentScope: Boolean = false,
+    customReasoning: com.nekobot.app.data.model.CustomReasoningParam,
+    onCustomReasoningChange: (com.nekobot.app.data.model.CustomReasoningParam) -> Unit,
     showCharacterThinkingSettings: Boolean
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -2435,9 +2444,8 @@ private fun ReasoningEffortSelector(
                 }
             }
             if (selected == ReasoningEffort.CUSTOM) {
-                val customInitial = remember(customAgentScope) { ServiceContainer.prefs.getCustomReasoning(customAgentScope) }
-                CustomReasoningFields(customInitial, enabled,
-                    onChange = { ServiceContainer.prefs.setCustomReasoning(customAgentScope, it) },
+                CustomReasoningFields(customReasoning, enabled,
+                    onChange = onCustomReasoningChange,
                     modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp))
             }
             if (showCharacterThinkingSettings) {
@@ -2469,7 +2477,8 @@ private fun ModernChatActionPanel(
     toolSetSummary: String,
     toolSetAvailable: Boolean,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
-    reasoningAgentScope: Boolean = false,
+    customReasoning: com.nekobot.app.data.model.CustomReasoningParam,
+    onCustomReasoningChange: (com.nekobot.app.data.model.CustomReasoningParam) -> Unit,
     showCharacterThinkingSettings: Boolean,
     onToggleYolo: () -> Unit,
     onOpenToolSet: () -> Unit,
@@ -2562,7 +2571,8 @@ private fun ModernChatActionPanel(
                     selected = reasoningEffort,
                     enabled = !sending,
                     onSelected = onReasoningEffortChange,
-                    customAgentScope = reasoningAgentScope,
+                    customReasoning = customReasoning,
+                    onCustomReasoningChange = onCustomReasoningChange,
                     showCharacterThinkingSettings = showCharacterThinkingSettings
                 )
             }

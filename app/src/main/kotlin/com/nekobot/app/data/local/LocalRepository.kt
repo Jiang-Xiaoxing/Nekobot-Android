@@ -1668,6 +1668,15 @@ class LocalRepository(
     internal fun setCompanionReasoningEffort(sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) =
         ServiceContainer.prefs.setCompanionReasoningEffort(db.dbName, sessionId, value)
 
+    internal fun reasoningEffortFor(sessionId: String, companionMode: Boolean, sessionMode: String?) =
+        ServiceContainer.prefs.reasoningEffortFor(db.dbName, sessionId, companionMode, sessionMode)
+    internal fun setReasoningEffortFor(sessionId: String, companionMode: Boolean, sessionMode: String?, value: com.nekobot.app.data.model.ReasoningEffort) =
+        ServiceContainer.prefs.setReasoningEffortFor(db.dbName, sessionId, companionMode, sessionMode, value)
+    internal fun customReasoningFor(sessionId: String, companionMode: Boolean, sessionMode: String?) =
+        ServiceContainer.prefs.customReasoningFor(db.dbName, sessionId, companionMode, sessionMode)
+    internal fun setCustomReasoningFor(sessionId: String, companionMode: Boolean, sessionMode: String?, value: com.nekobot.app.data.model.CustomReasoningParam) =
+        ServiceContainer.prefs.setCustomReasoningFor(db.dbName, sessionId, companionMode, sessionMode, value)
+
     internal fun companionShowInnerMonologue(sessionId: String) =
         ServiceContainer.prefs.companionShowInnerMonologue(db.dbName, sessionId)
     internal fun setCompanionShowInnerMonologue(sessionId: String, show: Boolean) =

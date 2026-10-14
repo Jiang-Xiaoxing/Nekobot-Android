@@ -1094,18 +1094,22 @@ fun SessionDetailScreen(
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text("调整思考强度，按需查看调试信息",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            var effort by remember(sessionId) { mutableStateOf(ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }
+                            val reasoningPrefs = ServiceContainer.prefs
+                            val reasoningRevision by reasoningPrefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
+                            val reasoningRepository = ServiceContainer.localRepository
+                            val effort = reasoningRevision.let {
+                                reasoningRepository.reasoningEffortFor(sessionId, s.companionMode == true, s.sessionMode)
+                            }
                             AdvancedReasoningCard(
                                 effort = effort,
                                 showCharacterThinkingSettings = isCharacterThinkingSession(s),
                                 onSelect = { option ->
-                                    ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
-                                    effort = option
+                                    reasoningRepository.setReasoningEffortFor(sessionId, s.companionMode == true, s.sessionMode, option)
                                 }
                             ) {
-                                val customInitial = remember(sessionId) { ServiceContainer.localRepository.companionCustomReasoning(sessionId) }
+                                val customInitial = reasoningRepository.customReasoningFor(sessionId, s.companionMode == true, s.sessionMode)
                                 com.nekobot.app.ui.screens.chat.CustomReasoningFields(customInitial, enabled = true,
-                                    onChange = { ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) })
+                                    onChange = { reasoningRepository.setCustomReasoningFor(sessionId, s.companionMode == true, s.sessionMode, it) })
                             }
                             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
