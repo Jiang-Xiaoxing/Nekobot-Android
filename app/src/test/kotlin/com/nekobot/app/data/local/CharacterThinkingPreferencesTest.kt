@@ -2,6 +2,7 @@ package com.nekobot.app.data.local
 
 import android.content.SharedPreferences
 import com.nekobot.app.data.local.ai.CharacterThinkingSettings
+import com.nekobot.app.data.local.ai.CHARACTER_THINKING_FORMAT_PROMPT
 import com.nekobot.app.data.local.ai.DEFAULT_CHARACTER_THINKING_PROMPT
 import com.nekobot.app.data.local.ai.characterThinkingPrompt
 import java.lang.reflect.Proxy
@@ -50,7 +51,7 @@ class CharacterThinkingPreferencesTest {
         val restored = CharacterThinkingPreferences(preferences(saved)).read()
         assertTrue(restored.enabled)
         assertEquals(prompt, restored.customPrompt)
-        assertEquals(prompt.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+        assertEquals(prompt.replace("{{char}}", "晚星").replace("{{user}}", "小星") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT,
             characterThinkingPrompt(restored, "晚星", "小星"))
     }
 
@@ -65,7 +66,7 @@ class CharacterThinkingPreferencesTest {
         val restored = CharacterThinkingPreferences(preferences(saved)).read()
         assertFalse(restored.enabled)
         assertEquals("", restored.customPrompt)
-        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT,
             characterThinkingPrompt(restored, "晚星", "小星"))
     }
 
@@ -77,7 +78,7 @@ class CharacterThinkingPreferencesTest {
 
         val restored = CharacterThinkingPreferences(preferences(saved)).read()
         assertEquals(blankPrompt, restored.customPrompt)
-        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT,
             characterThinkingPrompt(restored, "晚星", "小星"))
         assertTrue(restored.enabled)
         assertEquals("none", saved["reasoning_effort_character"])
@@ -125,7 +126,7 @@ class CharacterThinkingPreferencesTest {
 
         listOf(roleEntry, groupEntry, companionEntry).forEach { reader ->
             assertEquals(CharacterThinkingSettings(false, ""), reader.read())
-            assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+            assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT,
                 characterThinkingPrompt(reader.read(), "晚星", "小星"))
         }
         assertEquals("none", saved["reasoning_effort_character"])

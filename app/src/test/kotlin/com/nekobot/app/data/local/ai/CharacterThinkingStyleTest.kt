@@ -22,7 +22,7 @@ class CharacterThinkingStyleTest {
         val item = requireNotNull(ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY))
         assertEquals(PromptStack.Priority.BEHAVIOR + 1, item.priority)
         assertEquals("session", item.scope)
-        assertEquals(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "小禾"), item.content)
+        assertEquals(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "小禾") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT, item.content)
         assertEquals(1, system(ctx).split("## $CHARACTER_THINKING_STYLE_KEY").size - 1)
         assertUserMessageUnchanged(ctx.messages)
     }
@@ -175,7 +175,7 @@ class CharacterThinkingStyleTest {
         val custom = "我是{{char}}，想到{{user}}就安心。调用 agent_history_search，参数 {\"query\":\"原样\"}。"
         val ctx = context()
         AIPipeline().prepareContext(ctx, callbacks(CharacterThinkingSettings(customPrompt = custom)))
-        assertEquals("我是林小满，想到小禾就安心。调用 agent_history_search，参数 {\"query\":\"原样\"}。",
+        assertEquals("我是林小满，想到小禾就安心。调用 agent_history_search，参数 {\"query\":\"原样\"}。\n" + CHARACTER_THINKING_FORMAT_PROMPT,
             ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.content)
         assertFalse(system(ctx).contains("【思考方式】"))
     }
@@ -184,7 +184,7 @@ class CharacterThinkingStyleTest {
     fun whitespacePromptUsesChineseDefaultAndUnknownUserNameIsNotInvented() = runBlocking {
         val ctx = context().apply { metadata.remove("user_name") }
         AIPipeline().prepareContext(ctx, callbacks(CharacterThinkingSettings(customPrompt = " \n\t")))
-        assertEquals(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "对方"),
+        assertEquals(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "对方") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT,
             ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.content)
         assertFalse(system(ctx).contains("{{user}}"))
     }

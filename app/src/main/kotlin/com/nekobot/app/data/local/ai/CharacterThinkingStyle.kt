@@ -2,10 +2,13 @@ package com.nekobot.app.data.local.ai
 
 import com.nekobot.app.data.model.Session
 
-/** 空白自定义文案使用默认提示；不改变模型思考强度，也不增加模型调用。 */
+/** 空白自定义文案使用默认提示；不改保存的档位，也不增加模型调用。 */
 data class CharacterThinkingSettings(val enabled: Boolean = true, val customPrompt: String = "")
 
 internal const val CHARACTER_THINKING_STYLE_KEY = "output.thinking_style"
+
+internal const val CHARACTER_THINKING_FORMAT_PROMPT =
+    "【思考输出格式】每次回复或调用工具前，在回复正文开头用 <think> 和 </think> 包住简体中文第一人称的内心想法。思考结束必须输出 </think>，正式回复只写在标签外；不要用 Markdown 代码块包住标签。工具仍通过原有工具调用接口发送，工具名和参数不写进思考标签替代调用。"
 
 /** 角色思考的会话资格；思考强度和偏好开关只控制注入，不隐藏设置入口。 */
 internal fun isCharacterThinkingSession(
@@ -33,7 +36,7 @@ internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
 
 /** 不猜测姓名；缺少明确玩家姓名时，要求模型依据已有资料中的姓名称呼对方。 */
 internal fun characterThinkingPrompt(settings: CharacterThinkingSettings, characterName: String, userName: String?): String =
-    characterThinkingPromptForEditing(settings)
+    (characterThinkingPromptForEditing(settings) + "\n" + CHARACTER_THINKING_FORMAT_PROMPT)
         .replace("{{char}}", characterName.takeIf(String::isNotBlank) ?: "当前角色")
         .replace("{{user}}", userName?.takeIf { it.isNotBlank() && it.lowercase() !in setOf("user", "the user", "用户") } ?: "对方")
 

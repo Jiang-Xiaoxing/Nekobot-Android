@@ -742,11 +742,17 @@ class LocalAiClient(
         }
         val isCodexSubscription = model.provider == "openai-codex" ||
             model.baseUrl.contains("chatgpt.com/backend-api/codex")
-        val normalized = if (isCodexSubscription && model.protocol == OpenAIResponsesProtocol.name) {
+        val protocolExtra = if (isCodexSubscription && model.protocol == OpenAIResponsesProtocol.name) {
             withStops - setOf("temperature", "max_tokens", "top_p")
         } else {
             withStops
         }
+        // 请求级标记保留到兼容重试和主备切换，自定义参数不能重新开启原生思考。
+        // 沿用下方协议映射：已知推理模型明确关闭，普通兼容端点省略不支持的参数。
+        val normalized = if (protocolExtra[FAKE_CHARACTER_THINKING_EXTRA] == true) {
+            (protocolExtra - com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY) +
+                ("reasoning_effort" to ReasoningEffort.NONE.wireValue)
+        } else protocolExtra
         val effort = ReasoningEffort.fromValue(normalized["reasoning_effort"] as? String)
         if (effort == ReasoningEffort.CUSTOM) {
             // 自定义思考参数：不做服务商自动换算，由 buildRequest 原样写入请求体。
@@ -1221,6 +1227,10 @@ class LocalAiClient(
             exclude.add(model.id)
             val (runtimeModel, credential) = resolveRuntimeModel(model)
 
+            // 伪思考的标签状态属于单次请求；备用模型不能继承上次未闭合的 <think>。
+            if (attempt > 0 && extra[FAKE_CHARACTER_THINKING_EXTRA] == true) {
+                emit(RealtimeEvent.StreamStart(null))
+            }
             val fullContent = StringBuilder()
             val fullThinking = StringBuilder()
             var terminal: LocalModelResponse? = null
