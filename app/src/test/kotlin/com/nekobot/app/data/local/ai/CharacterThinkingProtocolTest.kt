@@ -229,6 +229,38 @@ class CharacterThinkingProtocolTest {
     }
 
     @Test
+    fun nativeThinkingWhitespaceChunksSurviveAgentAndDirectAndFailoverStreams() = runBlocking {
+        val chunks = listOf("我想起", " ", "小星", "\n", "今天的回答。", "\n\n", "我还想再确认一下。")
+        val expected = chunks.joinToString("")
+        for (mode in listOf("agent", "plain", "queue")) {
+            val http = Http { sse(chunks.map { delta("reasoning_content", it) } + delta("content", "回答")) }
+            val content = StringBuilder(); val thinking = StringBuilder()
+            val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+                onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+            if (mode == "agent") {
+                val final = characterThinkingResult(http.client.chatOnce(model(), messages, extra(),
+                    streamCallbacks = relay.callbacks), true)
+                assertEquals(expected, final.thinkingContent)
+                assertEquals("回答", final.content)
+            } else (if (mode == "plain") http.client.chatStream(model(), messages, extra())
+                else http.client.chatStreamWithFailover(listOf(model()), messages, extra())).collect { event ->
+                when (event) {
+                    is RealtimeEvent.StreamStart -> relay.callbacks.onStart()
+                    is RealtimeEvent.StreamChunk -> relay.callbacks.onContentChunk(event.chunk)
+                    is RealtimeEvent.ReasoningChunk -> relay.callbacks.onThinkingChunk(event.chunk)
+                    is RealtimeEvent.Error -> fail(event.message)
+                    else -> Unit
+                }
+            }
+            relay.finish()
+            assertEquals(expected, thinking.toString())
+            assertEquals("回答", content.toString())
+            assertEquals(1, http.bodies.size)
+            assertSystemOnly(http.bodies.single())
+        }
+    }
+
+    @Test
     fun toolLoopReturnsOnlyNativeThinkingWithItsSignatureAndNeverSignsTaggedDisplay() = runBlocking {
         for (native in listOf("", "我先核对记录。")) {
             var count = 0

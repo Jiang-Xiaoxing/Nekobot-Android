@@ -96,9 +96,11 @@ object OpenAIChatProtocol : LocalProtocol {
             ?.get(0)?.asJsonObject
             ?.getAsJsonObject("delta")
             ?: return null
-        listOf("reasoning_content", "thinking_content").firstNotNullOfOrNull { key ->
-            delta.get(key)?.takeIf { !it.isJsonNull }?.asString?.takeIf(String::isNotBlank)
+        val values = listOf("reasoning_content", "thinking_content").mapNotNull { key ->
+            delta.get(key)?.takeIf { !it.isJsonNull }?.asString
         }
+        // 非空别名优先；仅有空白分片时也要保留，避免流式空格/换行被拼接丢失。
+        values.firstOrNull(String::isNotBlank) ?: values.firstOrNull(String::isNotEmpty)
     } catch (_: Exception) {
         null
     }
