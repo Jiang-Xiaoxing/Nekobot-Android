@@ -111,8 +111,31 @@ class MessageTrimTest {
         )
         val reasoning = mapOf("role" to "assistant", "content" to "abc", "reasoning_content" to "R".repeat(40))
 
-        assertEquals(30, messageSizeChars(multimodal))
+        assertTrue("图片必须参与字符窗口的近似容量计量", messageSizeChars(multimodal) > 30)
+        val largeTransport = multimodal + ("content" to listOf(
+            mapOf("type" to "text", "text" to "T".repeat(30)),
+            mapOf("type" to "image_url", "image_url" to mapOf("url" to "data:image/png;base64," + "A".repeat(100_000)))
+        ))
+        assertEquals("图片的传输编码长度不能改变上下文容量", messageSizeChars(multimodal), messageSizeChars(largeTransport))
         assertEquals(43, messageSizeChars(reasoning))
+    }
+
+    @Test
+    fun `字符窗口裁剪会移除完整的旧图片工具块`() {
+        val messages = listOf(
+            mapOf("role" to "system", "content" to "sys"),
+            mapOf("role" to "assistant", "content" to "", "tool_calls" to listOf(toolCall("{}"))),
+            mapOf("role" to "tool", "tool_call_id" to "call-1", "content" to buildToolMessageContent(
+                mapOf("_image_urls" to listOf("data:image/png;base64,AA=="))
+            )),
+            mapOf("role" to "user", "content" to "现在回答")
+        )
+
+        val trimmed = trimMessages(messages, maxTotalChars = 512)
+
+        assertFalse(trimmed.any { it["role"] == "tool" || it["tool_calls"] != null })
+        assertEquals("sys", trimmed.first()["content"])
+        assertEquals("现在回答", trimmed.last()["content"])
     }
 
     @Test
