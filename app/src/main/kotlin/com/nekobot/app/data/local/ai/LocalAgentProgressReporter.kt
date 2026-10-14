@@ -199,6 +199,7 @@ internal class LocalAgentProgressReporter(
         }
         steps.add(ThinkingStep(type = "agent_text", status = "done", text = bounded))
         AgentOverlayBus.onIntermediateContent(sessionId, bounded)
+        AgentIntermediateReplyBus.onIntermediateContent(sessionId, bounded)
         emit(progressText(R.string.agent_progress_processing, "AI 正在处理..."))
     }
 
@@ -373,6 +374,7 @@ internal class LocalAgentProgressReporter(
         // 清理被中断工具（onToolStart 后未配对 onToolDone）残留的开始时间戳。
         toolStartNanosByName.clear()
         AgentOverlayBus.onRunFinished(sessionId)
+        AgentIntermediateReplyBus.finishRun(sessionId)
         for (index in steps.indices) {
             val step = steps[index]
             if (step.status == "running" || step.status == "active") {

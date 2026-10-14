@@ -18,6 +18,7 @@ import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.ai.AgentAttentionCenter
 import com.nekobot.app.data.local.ai.AgentAttentionItem
 import com.nekobot.app.data.local.ai.AgentAttentionKind
+import com.nekobot.app.data.local.ai.AgentIntermediateReplyBus
 import com.nekobot.app.data.local.ai.AgentOverlayBus
 import com.nekobot.app.data.local.ai.LocalLinuxSandboxCoordinator
 import com.nekobot.app.data.remote.ExecAuthorization
@@ -44,6 +45,7 @@ class AgentForegroundService : Service() {
     /** 悬浮窗相关协程只在服务存活期间收集状态。 */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var overlayWindow: AgentOverlayWindow? = null
+    private var notificationStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -59,6 +61,14 @@ class AgentForegroundService : Service() {
                 AgentAttentionCenter.pendingBySession
             ) { state, foreground, pending -> Triple(state, foreground, pending) }
                 .collect { (state, foreground, pending) -> syncOverlay(state, foreground, pending) }
+        }
+        serviceScope.launch {
+            AgentIntermediateReplyBus.state.collect {
+                if (notificationStarted && activeSessions.isNotEmpty()) {
+                    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                        .notify(NOTIFICATION_ID, buildNotification())
+                }
+            }
         }
     }
 
@@ -139,6 +149,7 @@ class AgentForegroundService : Service() {
             ACTION_RELEASE -> {
                 intent.getStringExtra(EXTRA_SESSION_ID)?.let { sessionId ->
                     activeSessions.remove(sessionId)
+                    AgentIntermediateReplyBus.finishRun(sessionId)
                     AgentOverlayBus.onRunFinished(sessionId)
                 }
                 if (activeSessions.isEmpty()) {
@@ -150,6 +161,7 @@ class AgentForegroundService : Service() {
             ACTION_STOP_ALL -> {
                 activeSessions.clear()
                 taskLeases.clear()
+                AgentIntermediateReplyBus.clear()
                 AgentOverlayBus.clear()
                 runCatching { ServiceContainer.localRepository.stopGeneration() }
                     .onFailure { LocalLogger.w(TAG, R.string.log_fgs_stop_generation_failed, it.message) }
@@ -162,6 +174,7 @@ class AgentForegroundService : Service() {
                 val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
                 if (sessionId.isNotBlank()) {
                     activeSessions.remove(sessionId)
+                    AgentIntermediateReplyBus.finishRun(sessionId)
                     AgentOverlayBus.onRunFinished(sessionId)
                     runCatching { ServiceContainer.localRepository.stopGeneration(sessionId) }
                     .onFailure { LocalLogger.w(TAG, R.string.log_fgs_stop_generation_failed, it.message) }
@@ -186,6 +199,7 @@ class AgentForegroundService : Service() {
             pauseAndStop()
             return START_NOT_STICKY
         }
+        notificationStarted = true
         wakeLock?.takeIf { !it.isHeld }?.acquire(6 * 60 * 60 * 1_000L)
         return START_NOT_STICKY
     }
@@ -206,6 +220,7 @@ class AgentForegroundService : Service() {
         }
         activeSessions.clear()
         taskLeases.clear()
+        AgentIntermediateReplyBus.clear()
         AgentOverlayBus.clear()
         wakeLock?.takeIf { it.isHeld }?.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -218,9 +233,11 @@ class AgentForegroundService : Service() {
         overlayWindow?.hide()
         overlayWindow = null
         AgentOverlayRegistry.attach(null)
+        notificationStarted = false
         wakeLock?.takeIf(PowerManager.WakeLock::isHeld)?.release()
         wakeLock = null
         activeSessions.clear()
+        AgentIntermediateReplyBus.clear()
         super.onDestroy()
     }
 
@@ -252,6 +269,9 @@ class AgentForegroundService : Service() {
         )
         val sessions = synchronized(activeSessions) { activeSessions.toList() }
         val onlySessionId = sessions.singleOrNull()
+        val latestReply = AgentIntermediateReplyBus.state.value.latestReply?.content
+        val contentText = latestReply
+            ?: getString(R.string.agent_foreground_task_count, sessions.size.coerceAtLeast(1))
         val stopIntent = PendingIntent.getService(
             this,
             1,
@@ -268,7 +288,8 @@ class AgentForegroundService : Service() {
         }
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(getString(R.string.agent_foreground_title))
-            .setContentText(getString(R.string.agent_foreground_task_count, activeSessions.size.coerceAtLeast(1)))
+            .setContentText(contentText)
+            .setStyle(Notification.BigTextStyle().bigText(contentText))
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -309,6 +330,7 @@ class AgentForegroundService : Service() {
             if (timeoutExhausted && !ServiceContainer.isAppForeground) return false
             if (ServiceContainer.isAppForeground) timeoutExhausted = false
             activeSessions.add(sessionId)
+            AgentIntermediateReplyBus.beginRun(sessionId)
             return runCatching {
                 context.applicationContext.startForegroundService(
                     Intent(context, AgentForegroundService::class.java)
@@ -317,6 +339,7 @@ class AgentForegroundService : Service() {
                 )
             }.onFailure {
                 activeSessions.remove(sessionId)
+                AgentIntermediateReplyBus.finishRun(sessionId)
                 LocalLogger.e(TAG, R.string.log_fgs_intent_failed, it.message)
             }.isSuccess
         }
@@ -324,6 +347,7 @@ class AgentForegroundService : Service() {
         fun release(context: Context, sessionId: String) {
             if (sessionId.isBlank()) return
             activeSessions.remove(sessionId)
+            AgentIntermediateReplyBus.finishRun(sessionId)
             runCatching {
                 context.applicationContext.startService(
                     Intent(context, AgentForegroundService::class.java)
