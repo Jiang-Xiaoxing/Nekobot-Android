@@ -70,7 +70,7 @@ internal fun CompanionRoleSettingsContent(
             CompanionPreferenceRow("聊天模型", Icons.Outlined.Forum, onClick = onModels)
         }
         CompanionPreferenceDivider()
-        CompanionPreferenceRow("高级设置", Icons.Outlined.Tune, "思考强度与调试信息", onClick = onAdvanced)
+        CompanionPreferenceRow("高级设置", Icons.Outlined.Tune, "查看调试信息", onClick = onAdvanced)
     }
     CompanionPreferenceGroup("会话信息") {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

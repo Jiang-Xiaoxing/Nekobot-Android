@@ -252,6 +252,10 @@ fun ModernChatScreen(
         mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
     }
     val characterThinkingSettings by ServiceContainer.prefs.characterThinkingSettings.collectAsStateWithLifecycle()
+    val companionReasoningRevision by ServiceContainer.prefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
+    val companionEffort = companionReasoningRevision.let {
+        if (companionName != null) ServiceContainer.localRepository.companionReasoningEffort(sessionId) else ReasoningEffort.NONE
+    }
     var showInnerMonologue by remember(sessionId) {
         mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
     }
@@ -393,6 +397,10 @@ fun ModernChatScreen(
                 ServiceContainer.localRepository.setCompanionShowInnerMonologue(sessionId, show)
                 showInnerMonologue = show
             },
+            reasoningEffort = companionEffort,
+            customReasoning = ServiceContainer.localRepository.companionCustomReasoning(sessionId),
+            onReasoningEffortChange = { ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, it) },
+            onCustomReasoningChange = { ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) },
             onArchive = if (!session?.archiveSessionId.isNullOrBlank()) {
                 { companionUtilityRequest = CompanionChatUtility.VIEW_ARCHIVE }
             } else null

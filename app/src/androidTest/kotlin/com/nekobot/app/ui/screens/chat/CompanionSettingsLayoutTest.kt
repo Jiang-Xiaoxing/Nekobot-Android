@@ -87,9 +87,9 @@ class CompanionSettingsLayoutTest {
         val colours = listOf(0xFFFF6094, 0xFF8D68FF, 0xFF468DFF, 0xFF1DBFBF, 0xFF67C975, 0xFFFFB547, 0xFFFF6368, 0xFF90744A)
         colours.forEachIndexed { index, hex ->
             compose.runOnIdle { accent = Color(hex) }
-            compose.onNode(isToggleable()).assertIsOn()
+            compose.onNode(isToggleable() and hasText("显示思考")).assertIsOn()
             compose.onNodeWithText("显示思考").performClick()
-            compose.onNode(isToggleable()).assertIsOff()
+            compose.onNode(isToggleable() and hasText("显示思考")).assertIsOff()
             compose.onNodeWithText("显示思考").performClick()
             capture("theme-$index", Color(hex))
         }
@@ -188,7 +188,7 @@ class CompanionSettingsLayoutTest {
             CompanionSettingsScreen("很长很长的角色名字（转换测试）", false, { changes++ }, {}, {}, {}, {}, {})
         } }
         compose.onNodeWithText("聊天用量").performScrollTo().assertIsDisplayed()
-        compose.onNode(isToggleable()).assertIsOff()
+        compose.onNode(isToggleable() and hasText("显示思考")).assertIsOff()
         capture("dark-large-text")
         assertEquals(0, changes)
     }

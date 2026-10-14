@@ -1108,20 +1108,8 @@ fun SessionDetailScreen(
                     session?.let { s ->
                         if (advancedPage) {
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("调整思考强度，按需查看调试信息",
+                            Text("按需查看调试信息",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            val reasoningRepository = ServiceContainer.localRepository
-                            AdvancedReasoningCard(
-                                effort = effort,
-                                showCharacterThinkingSettings = isCharacterThinkingSession(s),
-                                onSelect = { option ->
-                                    reasoningRepository.setReasoningEffortFor(sessionId, s.companionMode == true, s.sessionMode, option)
-                                }
-                            ) {
-                                val customInitial = reasoningRepository.customReasoningFor(sessionId, s.companionMode == true, s.sessionMode)
-                                com.nekobot.app.ui.screens.chat.CustomReasoningFields(customInitial, enabled = true,
-                                    onChange = { reasoningRepository.setCustomReasoningFor(sessionId, s.companionMode == true, s.sessionMode, it) })
-                            }
                             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("调试信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

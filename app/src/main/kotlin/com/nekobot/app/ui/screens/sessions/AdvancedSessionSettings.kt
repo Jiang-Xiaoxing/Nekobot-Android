@@ -10,7 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,45 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
 import com.nekobot.app.data.local.ai.PromptSection
 import com.nekobot.app.data.local.ai.promptSectionPercentages
-import com.nekobot.app.data.model.ReasoningEffort
-import com.nekobot.app.ui.components.CharacterThinkingSettingsControls
 import java.util.Locale
-
-/** 思考强度仍按会话保存；角色思考风格复用现有全局偏好。 */
-@Composable
-internal fun AdvancedReasoningCard(
-    effort: ReasoningEffort,
-    onSelect: (ReasoningEffort) -> Unit,
-    showCharacterThinkingSettings: Boolean,
-    customFields: @Composable () -> Unit
-) {
-    var menu by remember { mutableStateOf(false) }
-    AdvancedSettingsCard(Modifier.testTag("advanced-reasoning")) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Outlined.Psychology, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
-            Text("思考强度", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Box {
-                OutlinedButton(onClick = { menu = true }, shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text(effort.displayName)
-                    Spacer(Modifier.width(6.dp))
-                    Icon(Icons.Default.ExpandMore, null, Modifier.size(18.dp))
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    ReasoningEffort.entries.forEach { option ->
-                        DropdownMenuItem(text = { Text(option.displayName) }, onClick = { onSelect(option); menu = false })
-                    }
-                }
-            }
-        }
-        Text("只影响当前会话，选择后立即保存", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 40.dp))
-        Text("模型需支持对应选项", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 40.dp))
-        if (effort == ReasoningEffort.CUSTOM) customFields()
-        if (showCharacterThinkingSettings) CharacterThinkingSettingsControls(effort)
-    }
-}
 
 /** 默认折叠且折叠时不组合正文，复制、详情和启用操作在原内容中保留。 */
 @Composable

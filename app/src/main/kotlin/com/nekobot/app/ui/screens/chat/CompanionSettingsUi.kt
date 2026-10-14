@@ -15,6 +15,10 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +39,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.nekobot.app.ui.components.resolveAvatarUrl
+import com.nekobot.app.ui.components.CharacterThinkingSettingsControls
+import com.nekobot.app.data.model.CustomReasoningParam
+import com.nekobot.app.data.model.ReasoningEffort
 
 /** Scoped to companion settings: deliberately independent of message and relationship skin colours. */
 @Composable
@@ -116,12 +123,17 @@ internal fun CompanionSettingsScreen(
     onFavorites: () -> Unit, onUsage: () -> Unit, onArchive: (() -> Unit)? = null,
     portraitUrl: String? = null,
     showInnerMonologue: Boolean = true,
-    onShowInnerMonologueChange: ((Boolean) -> Unit)? = null
+    onShowInnerMonologueChange: ((Boolean) -> Unit)? = null,
+    reasoningEffort: ReasoningEffort = ReasoningEffort.NONE,
+    customReasoning: CustomReasoningParam = CustomReasoningParam(),
+    onReasoningEffortChange: (ReasoningEffort) -> Unit = {},
+    onCustomReasoningChange: (CustomReasoningParam) -> Unit = {},
+    onSaved: () -> Unit = {}
 ) {
     BackHandler(onBack = onDismiss)
     Surface(Modifier.fillMaxSize().testTag("companion-settings-screen"), color = companionSettingsBackground(),
         contentColor = MaterialTheme.colorScheme.onSurface) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             CompanionReadingHeader("聊天设置", onDismiss)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 CompanionSettingsIdentity(characterName, portraitUrl, onDetails)
@@ -135,20 +147,31 @@ internal fun CompanionSettingsScreen(
                             if (onArchive != null) CompanionSettingsAction("查看归档", Icons.Outlined.FolderOpen, onArchive, Modifier.weight(1f))
                         }
                     }
+                    CompanionPreferenceGroup("思考") {
+                        CompanionPreferenceRow("显示思考", Icons.Outlined.Description, "控制这段想法是否显示",
+                            checked = checked, onCheckedChange = { onCheckedChange(it); onSaved() })
+                        CompanionPreferenceDivider()
+                        CompanionReasoningEffortSetting(reasoningEffort, onReasoningEffortChange, onSaved)
+                        if (reasoningEffort == ReasoningEffort.CUSTOM) {
+                            CustomReasoningFields(customReasoning, enabled = true,
+                                onChange = { onCustomReasoningChange(it); onSaved() },
+                                modifier = Modifier.padding(start = 72.dp, end = 16.dp, bottom = 12.dp))
+                        }
+                        CompanionPreferenceDivider()
+                        CharacterThinkingSettingsControls(reasoningEffort,
+                            Modifier.padding(horizontal = 16.dp, vertical = 6.dp), compact = true, onSaved = onSaved)
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         CompanionPreferenceGroup("显示与用量") {
-                            CompanionPreferenceRow("显示思考", Icons.Outlined.Description, "只影响当前角色",
-                                checked = checked, onCheckedChange = onCheckedChange)
-                            CompanionPreferenceDivider()
                             if (onShowInnerMonologueChange != null) {
                                 CompanionPreferenceRow("显示内心独白", Icons.Outlined.ChatBubbleOutline, "只影响当前会话",
                                     modifier = Modifier.testTag("companion-show-inner-monologue"),
-                                    checked = showInnerMonologue, onCheckedChange = onShowInnerMonologueChange)
+                                    checked = showInnerMonologue, onCheckedChange = { onShowInnerMonologueChange(it); onSaved() })
                                 CompanionPreferenceDivider()
                             }
                             CompanionPreferenceRow("聊天用量", Icons.Outlined.BarChart, "查看上次请求带入的内容", onClick = onUsage)
                         }
-                        Text("开启后，可在消息中展开查看思考；关闭内心独白后，消息中不再显示灰色的内心独白块。", Modifier.padding(horizontal = 4.dp),
+                        Text("同时开启显示思考和角色视角思考后，可在消息中展开内心想法。正文内心独白由独立开关控制。", Modifier.padding(horizontal = 4.dp),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     CompanionFeedbackEntry()
@@ -156,6 +179,35 @@ internal fun CompanionSettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun CompanionReasoningEffortSetting(
+    effort: ReasoningEffort,
+    onSelect: (ReasoningEffort) -> Unit,
+    onSaved: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    CompanionPreferenceRow("思考强度", Icons.Outlined.Psychology, "只影响当前会话",
+        trailing = {
+            Box {
+                OutlinedButton(onClick = { menuOpen = true }, shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(effort.displayName)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    ReasoningEffort.entries.forEach { option ->
+                        DropdownMenuItem(text = { Text(option.displayName) }, onClick = {
+                            onSelect(option)
+                            menuOpen = false
+                            onSaved()
+                        })
+                    }
+                }
+            }
+        })
 }
 
 @Composable

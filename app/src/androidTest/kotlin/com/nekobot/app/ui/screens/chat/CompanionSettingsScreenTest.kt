@@ -165,7 +165,7 @@ class CompanionSettingsScreenTest {
             compose.onNodeWithTag("companion-settings-screen").assertIsDisplayed()
             compose.onNode(isDialog()).assertDoesNotExist()
             compose.onNodeWithText("查看归档").assertDoesNotExist()
-            compose.onNode(isToggleable()).assertIsOff()
+            compose.onNode(isToggleable() and hasText("显示思考")).assertIsOff()
             capture("full-page")
             compose.onNodeWithText("显示思考").performClick()
             assertTrue(ServiceContainer.localRepository.companionShowReasoning(ids.first))
@@ -174,7 +174,7 @@ class CompanionSettingsScreenTest {
             compose.waitUntil(10_000) { compose.onAllNodesWithText("单会话角色记忆").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("返回").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("companion-settings-screen").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNode(isToggleable()).assertIsOn()
+            compose.onNode(isToggleable() and hasText("显示思考")).assertIsOn()
 
             compose.onNodeWithText("查找记录").performClick()
             compose.onNodeWithText("查找聊天记录").assertIsDisplayed()
