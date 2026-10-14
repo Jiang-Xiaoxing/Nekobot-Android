@@ -2724,9 +2724,9 @@ private fun MessageBubble(
     val textColor = if (companionChat) {
         if (isUser) companionPalette.outgoingInk else companionAssistantStyle.content
     } else bubbleAppearance.textColor(isUser)
-    // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
-    val linkColor = if (companionChat && !isUser) companionAssistantStyle.markdown.link
-        else linkColorOnBubble(if (companionChat) companionPalette.outgoing else userBubble)
+    // 单会话双方的 Markdown 和独立链接共用同一颜色来源。
+    val linkColor = if (companionChat) companionBubbleLinkColor(companionPalette)
+        else linkColorOnBubble(userBubble)
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
     val clipboard = LocalClipboardManager.current
 
@@ -3199,7 +3199,9 @@ private fun MessageBubble(
                     ) {
                         androidx.compose.runtime.CompositionLocalProvider(
                             com.nekobot.app.ui.components.LocalMarkdownBubbleColors provides
-                                if (companionChat && !isUser) companionAssistantStyle.markdown else null
+                                if (companionChat && !isUser) companionAssistantStyle.markdown else null,
+                            com.nekobot.app.ui.components.LocalMarkdownBubbleLinkColor provides
+                                if (companionChat) linkColor else null
                         ) {
                             renderSegments()
                         }

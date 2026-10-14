@@ -134,6 +134,16 @@ internal data class MarkdownBubbleColors(
     val parentheses: androidx.compose.ui.graphics.Color
 )
 internal val LocalMarkdownBubbleColors = staticCompositionLocalOf<MarkdownBubbleColors?> { null }
+/** 双方气泡只覆盖正文链接；独白条和代码块继续使用各自表面配色。 */
+internal val LocalMarkdownBubbleLinkColor = staticCompositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
+
+internal fun markdownLinkColor(
+    colors: MarkdownBubbleColors?,
+    bubbleLinkColor: androidx.compose.ui.graphics.Color?,
+    onSurface: Boolean = false
+): androidx.compose.ui.graphics.Color =
+    (if (onSurface) colors?.surfaceLink else bubbleLinkColor ?: colors?.link)
+        ?: androidx.compose.ui.graphics.Color(0xFF58A6FF)
 
 @Composable
 private fun parseRenderedInline(
@@ -145,8 +155,7 @@ private fun parseRenderedInline(
 ): AnnotatedString {
     val colors = LocalMarkdownBubbleColors.current
     return parseInline(text, color, style, styleParentheses,
-        linkColor = if (onSurface) colors?.surfaceLink ?: androidx.compose.ui.graphics.Color(0xFF58A6FF)
-            else colors?.link ?: androidx.compose.ui.graphics.Color(0xFF58A6FF),
+        linkColor = markdownLinkColor(colors, LocalMarkdownBubbleLinkColor.current, onSurface),
         parenthesesColor = if (onSurface) colors?.onSurface ?: color.copy(alpha = 0.62f)
             else colors?.parentheses ?: color.copy(alpha = 0.62f))
 }
@@ -1056,7 +1065,10 @@ private fun MarkdownFullscreenDialog(
                         )
                     }
                 }
-                CompositionLocalProvider(LocalMarkdownBubbleColors provides null) {
+                CompositionLocalProvider(
+                    LocalMarkdownBubbleColors provides null,
+                    LocalMarkdownBubbleLinkColor provides null
+                ) {
                     content(Modifier.weight(1f).fillMaxWidth())
                 }
             }

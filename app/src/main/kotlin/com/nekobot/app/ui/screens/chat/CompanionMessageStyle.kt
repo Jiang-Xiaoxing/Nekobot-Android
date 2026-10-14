@@ -11,6 +11,9 @@ internal data class CompanionAssistantBubbleStyle(
     val markdown: MarkdownBubbleColors
 )
 
+/** 双方链接共用已按气泡亮度确定的字色，保留默认配色及自定义色的可读对比度。 */
+internal fun companionBubbleLinkColor(palette: CompanionChatPalette): Color = palette.outgoingInk
+
 /** 角色复用用户气泡的背景与字色，浅深模式及自定义覆盖保持同源。 */
 internal fun companionAssistantBubbleStyle(palette: CompanionChatPalette): CompanionAssistantBubbleStyle {
     val dark = palette.background.luminance() < 0.5f
@@ -19,7 +22,7 @@ internal fun companionAssistantBubbleStyle(palette: CompanionChatPalette): Compa
     return CompanionAssistantBubbleStyle(
         background, content,
         MarkdownBubbleColors(
-            link = content,
+            link = companionBubbleLinkColor(palette),
             surface = if (dark) Color(0xFF2A3031) else Color(0xFFEDF0EF),
             onSurface = if (dark) Color(0xFFF0F4F2) else Color(0xFF202927),
             surfaceLink = if (dark) Color(0xFF9CD7FF) else Color(0xFF174C3C),
