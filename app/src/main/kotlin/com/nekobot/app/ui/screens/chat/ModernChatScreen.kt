@@ -256,6 +256,8 @@ fun ModernChatScreen(
     val companionEffort = companionReasoningRevision.let {
         if (companionName != null) ServiceContainer.localRepository.companionReasoningEffort(sessionId) else ReasoningEffort.NONE
     }
+    val savedContext = LocalContext.current
+    val savedNotice = remember(savedContext) { Toast.makeText(savedContext, "已保存", Toast.LENGTH_SHORT) }
     var showInnerMonologue by remember(sessionId) {
         mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
     }
@@ -401,6 +403,7 @@ fun ModernChatScreen(
             customReasoning = ServiceContainer.localRepository.companionCustomReasoning(sessionId),
             onReasoningEffortChange = { ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, it) },
             onCustomReasoningChange = { ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) },
+            onSaved = { savedNotice.cancel(); savedNotice.show() },
             onArchive = if (!session?.archiveSessionId.isNullOrBlank()) {
                 { companionUtilityRequest = CompanionChatUtility.VIEW_ARCHIVE }
             } else null

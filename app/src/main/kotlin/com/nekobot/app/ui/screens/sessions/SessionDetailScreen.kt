@@ -566,7 +566,7 @@ class SessionDetailViewModel : BaseViewModel() {
     }
 
     /** 设置某注入项是否关闭，并立即持久化到会话。 */
-    fun setPromptKeyDisabled(key: String, disabled: Boolean) {
+    fun setPromptKeyDisabled(key: String, disabled: Boolean, savedNotice: Boolean = false) {
         val s = _session.value ?: return
         val previous = _disabledPromptKeys.value
         val updated = previous.toMutableSet().apply {
@@ -582,7 +582,9 @@ class SessionDetailViewModel : BaseViewModel() {
                 )
             },
             onSuccess = {
-                showToast(if (disabled) string(R.string.sessions_detail_injection_disabled, key) else string(R.string.sessions_detail_injection_enabled, key))
+                showToast(if (savedNotice) "已保存"
+                    else if (disabled) string(R.string.sessions_detail_injection_disabled, key)
+                    else string(R.string.sessions_detail_injection_enabled, key))
             },
             onError = { message ->
                 _disabledPromptKeys.value = previous
@@ -1064,7 +1066,7 @@ fun SessionDetailScreen(
                 },
                 actions = {
                     if (singleSessionRole) {
-                        TextButton(onClick = { vm.save(onBack) }) { Text(saveDesc, fontWeight = FontWeight.SemiBold) }
+                        if (!advancedPage) TextButton(onClick = { vm.save(onBack) }) { Text(saveDesc, fontWeight = FontWeight.SemiBold) }
                         Box {
                             IconButton(onClick = { managementMenu = true }) { Icon(Icons.Filled.MoreVert, "更多操作") }
                             CompanionRoleMenu({ showExportDialog = true }, { showDeleteDialog = true }, { managementMenu = false }, managementMenu)
@@ -2031,7 +2033,7 @@ fun SessionDetailScreen(
             PromptStackDetailDialog(
                 item = item,
                 disabled = item.key in disabledPromptKeys,
-                onDisabledChange = { vm.setPromptKeyDisabled(item.key, it) },
+                onDisabledChange = { vm.setPromptKeyDisabled(item.key, it, savedNotice = advancedPage) },
                 onDismiss = { selectedPromptStackItem = null }
             )
         }
