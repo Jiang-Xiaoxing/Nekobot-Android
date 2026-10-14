@@ -53,6 +53,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Info
 import com.nekobot.app.data.local.ai.PromptSection
+import com.nekobot.app.data.local.ai.isCharacterThinkingSession
 import com.nekobot.app.data.model.ReasoningEffort
 import androidx.compose.material3.TextButton
 import com.nekobot.app.ui.screens.chat.companionSettingsBackground
@@ -1096,6 +1097,7 @@ fun SessionDetailScreen(
                             var effort by remember(sessionId) { mutableStateOf(ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }
                             AdvancedReasoningCard(
                                 effort = effort,
+                                showCharacterThinkingSettings = isCharacterThinkingSession(s),
                                 onSelect = { option ->
                                     ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
                                     effort = option

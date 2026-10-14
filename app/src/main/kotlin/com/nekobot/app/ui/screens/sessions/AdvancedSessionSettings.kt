@@ -36,6 +36,7 @@ import java.util.Locale
 internal fun AdvancedReasoningCard(
     effort: ReasoningEffort,
     onSelect: (ReasoningEffort) -> Unit,
+    showCharacterThinkingSettings: Boolean,
     customFields: @Composable () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -62,7 +63,7 @@ internal fun AdvancedReasoningCard(
         Text("模型需支持对应选项", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 40.dp))
         if (effort == ReasoningEffort.CUSTOM) customFields()
-        CharacterThinkingSettingsControls(effort)
+        if (showCharacterThinkingSettings) CharacterThinkingSettingsControls(effort)
     }
 }
 

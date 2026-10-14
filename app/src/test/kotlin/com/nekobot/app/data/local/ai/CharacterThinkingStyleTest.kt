@@ -2,6 +2,7 @@ package com.nekobot.app.data.local.ai
 
 import com.nekobot.app.data.local.META_INHERIT_CHARACTER
 import com.nekobot.app.data.model.ReasoningEffort
+import com.nekobot.app.data.model.Session
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -69,6 +70,86 @@ class CharacterThinkingStyleTest {
             val ctx = context(mode = mode).apply { metadata[META_INHERIT_CHARACTER] = true }
             AIPipeline().prepareContext(ctx, callbacks())
             assertNotNull(ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY))
+        }
+    }
+
+    @Test
+    fun ordinarySessionWithoutCharacterHidesSettingsAndDoesNotInject() = runBlocking {
+        assertSessionVisibilityMatchesInjection(Session(sessionMode = "character"), character = false, expected = false)
+    }
+
+    @Test
+    fun boundCharacterSessionShowsSettingsAndInjects() = runBlocking {
+        assertSessionVisibilityMatchesInjection(Session(characterId = "role"), character = true, expected = true)
+    }
+
+    @Test
+    fun inheritedAgentShowsSettingsAndInjectsRegardlessOfModeCase() = runBlocking {
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "AgEnT", characterId = "role", inheritCharacter = true),
+            character = true, expected = true
+        )
+    }
+
+    @Test
+    fun groupWithParticipantsShowsSettingsAndInjectsWithoutInheritance() = runBlocking {
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "GROUP", characterIds = listOf("", "role", "other-role")),
+            character = true, expected = true
+        )
+    }
+
+    @Test
+    fun boundAgentWithoutInheritanceHidesSettingsAndDoesNotInject() = runBlocking {
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "agent", characterId = "role"), character = true, expected = false
+        )
+    }
+
+    @Test
+    fun fusedAgentShowsSettingsAndInjectsWithoutInheritance() = runBlocking {
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "agent", characterId = "role", companionMode = true),
+            character = true, expected = true
+        )
+    }
+
+    @Test
+    fun inheritanceAndCompanionFlagsWithoutCharacterDoNotQualify() = runBlocking {
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "agent", characterId = " ", inheritCharacter = true, companionMode = true),
+            character = false, expected = false
+        )
+    }
+
+    @Test
+    fun groupWithoutParticipantsHidesSettingsAndDoesNotInject() = runBlocking {
+        // 群聊管线只从参与者列表选择角色，不使用单角色字段。
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "group", characterId = "role", characterIds = listOf("", " ")),
+            character = false, expected = false
+        )
+    }
+
+    @Test
+    fun ordinarySessionDoesNotUseGroupParticipantFieldsAsBoundCharacter() = runBlocking {
+        assertSessionVisibilityMatchesInjection(
+            Session(sessionMode = "character", characterIds = listOf("role")), character = false, expected = false
+        )
+        assertFalse(isCharacterThinkingSession(null))
+    }
+
+    @Test
+    fun qualifyingSettingsStayVisibleWhenReasoningOrThinkingSwitchDisablesInjection() = runBlocking {
+        val session = Session(sessionMode = "agent", characterId = "role", inheritCharacter = true)
+        assertTrue(isCharacterThinkingSession(session))
+        for ((effort, settings) in listOf(
+            ReasoningEffort.NONE to CharacterThinkingSettings(),
+            ReasoningEffort.HIGH to CharacterThinkingSettings(enabled = false)
+        )) {
+            val ctx = context(mode = "agent", effort = effort).apply { metadata[META_INHERIT_CHARACTER] = true }
+            AIPipeline().prepareContext(ctx, callbacks(settings))
+            assertAbsent(ctx)
         }
     }
 
@@ -203,6 +284,18 @@ class CharacterThinkingStyleTest {
             }
             assertUserMessageUnchanged(ctx.messages)
         }
+    }
+
+    private suspend fun assertSessionVisibilityMatchesInjection(session: Session, character: Boolean, expected: Boolean) {
+        assertEquals("设置入口资格", expected, isCharacterThinkingSession(session))
+        val ctx = context(mode = session.sessionMode ?: "character", character = character).apply {
+            if (session.sessionMode == null) metadata.remove("session_mode")
+            if (session.inheritCharacter == true) metadata[META_INHERIT_CHARACTER] = true
+            if (session.companionMode == true) metadata[META_FUSED_COMPANION] = true
+        }
+        AIPipeline().prepareContext(ctx, callbacks(character = character))
+        assertEquals("实际注入与设置入口资格一致", expected, ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY) != null)
+        assertUserMessageUnchanged(ctx.messages)
     }
 
     private fun context(mode: String = "character", effort: ReasoningEffort = ReasoningEffort.HIGH,

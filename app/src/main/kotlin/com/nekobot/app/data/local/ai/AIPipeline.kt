@@ -378,8 +378,12 @@ class AIPipeline {
             ?: ctx.chatRequest.metadata[com.nekobot.app.data.local.META_INHERIT_CHARACTER]) == true
         val hasCharacter = ctx.characterTurn != null ||
             !callbacks.getCharacterContext(ctx)?.characterId.isNullOrBlank()
-        val isCharacterSession = hasCharacter &&
-            (!sessionMode.equals("agent", ignoreCase = true) || inheritsCharacter || ctx.metadata[META_FUSED_COMPANION] == true)
+        val isCharacterSession = isCharacterThinkingSession(
+            hasCharacter = hasCharacter,
+            sessionMode = sessionMode,
+            inheritsCharacter = inheritsCharacter,
+            fusedCompanion = ctx.metadata[META_FUSED_COMPANION] == true
+        )
         val thinkingSettings = callbacks.getCharacterThinkingSettings(ctx)
         if (isCharacterSession && callbacks.getReasoningEffort(ctx) != com.nekobot.app.data.model.ReasoningEffort.NONE && thinkingSettings.enabled) {
             ctx.promptStack.add(

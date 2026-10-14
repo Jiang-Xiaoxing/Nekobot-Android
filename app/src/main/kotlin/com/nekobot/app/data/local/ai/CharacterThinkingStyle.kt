@@ -1,9 +1,32 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.data.model.Session
+
 /** 空白自定义文案使用默认提示；不改变模型思考强度，也不增加模型调用。 */
 data class CharacterThinkingSettings(val enabled: Boolean = true, val customPrompt: String = "")
 
 internal const val CHARACTER_THINKING_STYLE_KEY = "output.thinking_style"
+
+/** 角色思考的会话资格；思考强度和偏好开关只控制注入，不隐藏设置入口。 */
+internal fun isCharacterThinkingSession(
+    hasCharacter: Boolean,
+    sessionMode: String?,
+    inheritsCharacter: Boolean,
+    fusedCompanion: Boolean
+): Boolean = hasCharacter &&
+    (!sessionMode.equals("agent", ignoreCase = true) || inheritsCharacter || fusedCompanion)
+
+/** 群聊逐个参与角色准备上下文，其他会话使用绑定角色。 */
+internal fun isCharacterThinkingSession(session: Session?): Boolean = isCharacterThinkingSession(
+    hasCharacter = if (session?.sessionMode.equals("group", ignoreCase = true)) {
+        session?.characterIds.orEmpty().any { it.isNotBlank() }
+    } else {
+        !session?.characterId.isNullOrBlank()
+    },
+    sessionMode = session?.sessionMode,
+    inheritsCharacter = session?.inheritCharacter == true,
+    fusedCompanion = session?.companionMode == true
+)
 
 internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
     "【思考方式】你的全部思考——包括 reasoning_content，以及调用回忆/记忆等工具前后的每一段思考——都是{{char}}本人的心里话：一律用简体中文，以\"我\"自称，带着{{char}}此刻的心情和语气去想，可以犹豫、惦记、偷偷开心。想到对方时用{{user}}的名字或\"他/她\"，不要写\"用户\"\"the user\"\"Let me…\"\"让我分析一下\"这类旁观者或助手口吻。工具名和参数保持原样，其余一律中文。示例：（{{user}}问我还答应过他什么……我记得是明天一起去书店，先翻翻记忆确认，可别记错了。）思考里只想事情和心情，不预写正式回复。"

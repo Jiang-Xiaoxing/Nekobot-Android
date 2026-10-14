@@ -141,6 +141,7 @@ import com.nekobot.app.data.local.AgentLiveContextUsage
 import com.nekobot.app.data.local.ai.ContextUsageBreakdown
 import com.nekobot.app.data.local.ai.ContextUsagePartTokens
 import com.nekobot.app.data.local.ai.AgentRunStage
+import com.nekobot.app.data.local.ai.isCharacterThinkingSession
 import com.nekobot.app.data.local.ChatInputLayoutMode
 import com.nekobot.app.data.local.LocalCommandAction
 import com.nekobot.app.data.local.LocalCommandSuggestion
@@ -1377,6 +1378,7 @@ private fun ModernChatComposer(
                         ServiceContainer.prefs.setReasoningEffort(isAgentSession, effort)
                     },
                     reasoningAgentScope = isAgentSession,
+                    showCharacterThinkingSettings = isCharacterThinkingSession(session),
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
                         if (companionChat) onDismissCompanionSettings()
@@ -2293,7 +2295,8 @@ private fun ReasoningEffortSelector(
     selected: ReasoningEffort,
     enabled: Boolean,
     onSelected: (ReasoningEffort) -> Unit,
-    customAgentScope: Boolean = false
+    customAgentScope: Boolean = false,
+    showCharacterThinkingSettings: Boolean
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -2437,7 +2440,7 @@ private fun ReasoningEffortSelector(
                     onChange = { ServiceContainer.prefs.setCustomReasoning(customAgentScope, it) },
                     modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp))
             }
-            if (!customAgentScope) {
+            if (showCharacterThinkingSettings) {
                 CharacterThinkingSettingsControls(selected, Modifier.padding(16.dp))
             }
         }
@@ -2467,6 +2470,7 @@ private fun ModernChatActionPanel(
     toolSetAvailable: Boolean,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     reasoningAgentScope: Boolean = false,
+    showCharacterThinkingSettings: Boolean,
     onToggleYolo: () -> Unit,
     onOpenToolSet: () -> Unit,
     onCompress: () -> Unit,
@@ -2558,7 +2562,8 @@ private fun ModernChatActionPanel(
                     selected = reasoningEffort,
                     enabled = !sending,
                     onSelected = onReasoningEffortChange,
-                    customAgentScope = reasoningAgentScope
+                    customAgentScope = reasoningAgentScope,
+                    showCharacterThinkingSettings = showCharacterThinkingSettings
                 )
             }
             if (toolSetAvailable) {
