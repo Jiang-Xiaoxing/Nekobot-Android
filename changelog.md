@@ -2,6 +2,44 @@
 
 本文件记录 Nekobot Android 应用的版本变更。
 
+## v0.8.5 - 2026-10-14
+
+### 新增
+
+- 聊天输入框支持通过 @ 浏览并选择工作区文件，自动插入文件路径。
+- Agent 前台通知展示当前会话的中间回复内容。
+- Agent 根据模型视觉能力选择图片处理方式，多模态上下文裁剪时保留图片。
+- 新增 ElevenLabs、Deepgram、SiliconFlow 原生语音接入，以及 Gemini Live、Grok 实时语音支持。
+- TTS 和生图试验场支持模型选择、音色上传、参考图及媒体保存分享。
+- AI 配置支持实测并保存模型能力；聊天记录支持服务端游标分页并兼容旧版后端。
+- 全局搜索增强消息定位。
+
+### 修复
+
+- 修复 Agent 上下文同步跨运行串扰及多模态上下文裁剪时图片丢失的问题。
+- 修复后台 Agent 服务超时、模型请求取消处理和 Codex Responses 能力检测兼容性。
+- 修复官网脚本错误，并改善滚动观察器不可用和减少动态效果设置下的兼容性。
+
+### 优化
+
+- 重构全局 Agent 记忆编辑与历史预览，支持历史查看、撤销、冲突合并和来源会话跳转。
+- 知识库检索按作用域分批执行并缓存切片评分，操作入口收纳至更多菜单。
+
+### English
+
+- Chat composer lets users browse and select workspace files with @ and inserts their paths.
+- Agent foreground notifications display the active session's intermediate reply.
+- Agent chooses image handling based on model vision support, and multimodal context trimming preserves images.
+- Added native speech integrations for ElevenLabs, Deepgram and SiliconFlow, plus Gemini Live and Grok real-time voice.
+- TTS and image generation playgrounds support model selection, voice uploads, reference images, and media save and share.
+- AI configuration can test and save model capabilities; chat history supports server cursor pagination with older backend compatibility.
+- Improved global search and message navigation.
+- Fixed Agent context synchronization leaking across runs and image loss when trimming multimodal context.
+- Fixed Agent background-service timeouts and model request cancellation, plus Codex Responses capability detection.
+- Fixed website script errors and improved compatibility with browsers without scroll observers or with reduced motion enabled.
+- Redesigned global Agent memory editing and history previews, with history, undo, conflict merging, and source-session navigation.
+- Knowledge retrieval now batches by scope and caches chunk scoring; actions are grouped in a More menu.
+
 ## v0.8.4 - 2026-10-13
 
 ### 新增
