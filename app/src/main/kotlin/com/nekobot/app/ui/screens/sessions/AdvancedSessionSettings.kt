@@ -127,14 +127,14 @@ internal fun AdvancedReasoningCard(
                     )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { promptDraft = "" }) { Text("恢复默认") }
-            },
             confirmButton = {
-                TextButton(onClick = {
-                    onCharacterThinkingPromptSave(promptDraft.orEmpty())
-                    promptDraft = null
-                }) { Text("保存") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
+                    TextButton(onClick = { promptDraft = "" }) { Text("恢复默认") }
+                    TextButton(onClick = {
+                        onCharacterThinkingPromptSave(promptDraft.orEmpty())
+                        promptDraft = null
+                    }) { Text("保存") }
+                }
             }
         )
     }
