@@ -452,6 +452,10 @@ class AIPipeline {
         val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty() else emptyList())
             .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { "${it.key}: ${it.content}" }
         messagesForAi = callbacks.finalizeContext(ctx, messagesForAi, tools, dynamic)
+        messagesForAi = withCharacterThinkingRequest(messagesForAi,
+            ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
+        ctx.metadata["composed_system_prompt"] = messagesForAi.filter { it["role"] == "system" }
+            .joinToString("\n\n") { it["content"].toString() }
 
         // 裁剪上下文
         val prepared = prepareChatContext(

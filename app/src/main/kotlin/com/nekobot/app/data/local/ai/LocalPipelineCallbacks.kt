@@ -1118,10 +1118,12 @@ internal class LocalPipelineCallbacks(
         triggerBeforeTurnHook(ctx)
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
+            val thinkingMessages = withCharacterThinkingRequest(messages,
+                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
             val recallRequest = recallGuard()?.let { guard -> kotlinx.coroutines.runBlocking {
-                guard.prepare("main", messages, tools, activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
+                guard.prepare("main", thinkingMessages, tools, activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
             } }
-            val accountingMessages = recallRequest?.messages ?: messages
+            val accountingMessages = recallRequest?.messages ?: thinkingMessages
             val requestMessages = accountingMessages.map(CompanionRequestUsage::clean)
             val requestStartedAt = System.currentTimeMillis()
             val requestTools = recallRequest?.tools ?: tools
@@ -1242,7 +1244,9 @@ internal class LocalPipelineCallbacks(
 
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
-            val requestMessages = messages.map(CompanionRequestUsage::clean)
+            val requestMessages = withCharacterThinkingRequest(messages,
+                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
+                .map(CompanionRequestUsage::clean)
             val requestStartedAt = System.currentTimeMillis()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
