@@ -602,6 +602,12 @@ class LocalRepository(
     ): RoutedChatPlan {
         val models = queueFor("chat")
         val routingPrefs = ServiceContainer.prefs
+        val sessionOrder = routingPrefs.getSessionChatModelOrder(sessionId, db.dbName)
+        if (models.any { it.id in sessionOrder }) {
+            return RoutedChatPlan(
+                com.nekobot.app.data.local.ai.applySessionModelOrder(models, sessionOrder)
+            )
+        }
         if (!routingPrefs.smartRoutingEnabled || models.size <= 1) return RoutedChatPlan(models)
 
         val session = sessionId.takeIf(String::isNotBlank)?.let { sessionDao.getById(it) }
@@ -2229,6 +2235,7 @@ class LocalRepository(
         ServiceContainer.prefs.clearAgentSkillNotice(id)
         // 自动长期记忆的会话级提示同理（记忆内容本身是跨会话共享的，不在这里删除）。
         ServiceContainer.prefs.clearAgentMemoryNotice(id)
+        ServiceContainer.prefs.setSessionChatModelOrder(id, emptyList(), db.dbName)
     }
 
     /**
@@ -9684,6 +9691,30 @@ ${AiOutputLanguage.directive()}
         aiModelDao.listAll()
     }
 
+    suspend fun getSessionChatModels(sessionId: String): com.nekobot.app.data.model.SessionChatModels =
+        withContext(Dispatchers.IO) {
+            val models = queueFor("chat")
+            val order = ServiceContainer.prefs.getSessionChatModelOrder(sessionId, db.dbName)
+            com.nekobot.app.data.model.SessionChatModels(
+                models = com.nekobot.app.data.local.ai.applySessionModelOrder(models, order).map {
+                    com.nekobot.app.data.model.SessionChatModel(it.id, it.name, it.model, it.priority)
+                },
+                customized = models.any { it.id in order }
+            )
+        }
+
+    suspend fun setSessionChatModel(sessionId: String, modelId: String?): com.nekobot.app.data.model.SessionChatModels =
+        withContext(Dispatchers.IO) {
+            require(sessionDao.getById(sessionId) != null)
+            val models = getSessionChatModels(sessionId).models
+            require(modelId == null || models.any { it.id == modelId })
+            val order = if (modelId == null) emptyList() else {
+                listOf(modelId) + models.map { it.id }.filter { it != modelId }
+            }
+            ServiceContainer.prefs.setSessionChatModelOrder(sessionId, order, db.dbName)
+            getSessionChatModels(sessionId)
+        }
+
     suspend fun getActiveModel(): LocalAiModelEntity? = withContext(Dispatchers.IO) {
         aiModelDao.getActive()
     }
@@ -11957,7 +11988,7 @@ ${AiOutputLanguage.directive()}
         persistUserMessage: Boolean = true,
         metadata: Map<String, Any> = emptyMap()
     ): String {
-        val model = aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
+        val model = getRoutedModel(sessionId, prompt)
             ?: throw IllegalStateException("请先配置并启用聊天模型")
         var failure: String? = null
         chatWithPipeline(

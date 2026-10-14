@@ -1030,6 +1030,25 @@ class PrefsManager(context: Context) {
             prefs.edit().putString(KEY_ACTIVE_DB_NAME, value).apply()
         }
 
+    /** 会话聊天队列按数据库隔离，避免导入相同会话 ID 时串用配置。 */
+    fun getSessionChatModelOrder(sessionId: String, dbName: String = activeDbName): List<String> =
+        runCatching {
+            val raw = prefs.getString("session_chat_models_${dbName}_$sessionId", null)
+                ?: return emptyList()
+            Gson().fromJson(raw, Array<String>::class.java).toList().distinct()
+        }.getOrDefault(emptyList())
+
+    fun setSessionChatModelOrder(
+        sessionId: String,
+        order: List<String>,
+        dbName: String = activeDbName
+    ) {
+        val key = "session_chat_models_${dbName}_$sessionId"
+        prefs.edit().apply {
+            if (order.isEmpty()) remove(key) else putString(key, Gson().toJson(order.distinct()))
+        }.apply()
+    }
+
     /** 列出所有已记录的 db profile。 */
     fun listDbProfiles(): List<DbProfile> {
         val raw = prefs.getString(KEY_DB_PROFILES, null) ?: return listOf(

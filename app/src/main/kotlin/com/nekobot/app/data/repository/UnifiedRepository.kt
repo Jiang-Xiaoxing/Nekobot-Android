@@ -430,6 +430,24 @@ class UnifiedRepository(
             remote.clearMessages(id).also { if (it is Resource.Success) remote.invalidateMessageCache(id) }
         }
 
+    /** 会话级聊天模型顺序；远程服务尚未提供对应接口。 */
+    suspend fun getSessionChatModels(id: String): Resource<com.nekobot.app.data.model.SessionChatModels> =
+        sessionChatModelsResult { local.getSessionChatModels(id) }
+
+    suspend fun setSessionChatModel(id: String, modelId: String?): Resource<com.nekobot.app.data.model.SessionChatModels> =
+        sessionChatModelsResult { local.setSessionChatModel(id, modelId) }
+
+    private suspend fun sessionChatModelsResult(
+        block: suspend () -> com.nekobot.app.data.model.SessionChatModels
+    ): Resource<com.nekobot.app.data.model.SessionChatModels> = try {
+        if (isLocal) Resource.Success(block())
+        else Resource.Error(ServiceContainer.getString(com.nekobot.app.R.string.chat_model_update_failed))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Resource.Error(ServiceContainer.getString(com.nekobot.app.R.string.chat_model_update_failed))
+    }
+
     /**
      * 本地模式：返回 Flow<RealtimeEvent>（流式聊天）；
      * 服务器模式：返回 null（调用方走 Socket）。

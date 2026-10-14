@@ -799,4 +799,10 @@
 <string name="chat_subagent_control_unavailable">子代理状态已变化，请刷新后重试</string>
 <string name="chat_subagent_retry_action">重试</string>
     <string name="chat_subagent_retry_prompt">请先确认子代理任务 %1$s 仍符合当前目标，然后调用 subagent_retry(task_id=%1$s) 创建重试任务，并跟进结果。</string>
+    <string name="chat_p0_model">P0 模型</string>
+    <string name="chat_model_session_hint">仅当前会话，其余模型自动顺排。</string>
+    <string name="chat_model_follow_default">跟随默认队列</string>
+    <string name="chat_model_priority_name">P%1$d · %2$s</string>
+    <string name="chat_model_update_failed">无法更新会话模型，请重试</string>
+    <string name="chat_setting_reasoning_hint">选择思考强度。</string>
 </resources>
