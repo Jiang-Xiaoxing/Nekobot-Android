@@ -240,12 +240,12 @@ class PromptStack {
     }
 
     companion object {
-        /** 移除历史系统提示里缓存的单个动态段，兼容两种标题格式。 */
+        /** 移除历史系统提示里缓存的单个动态段，兼容两种标题格式；只删到段后第一个空行，后续无标题文字保留。 */
         internal fun stripSection(prompt: String, key: String): String {
             val escapedKey = Regex.escape(key)
             return prompt.replace(
-                Regex("(?:\\n{2,}|\\A)(?:## $escapedKey|\\[$escapedKey\\])\\n.*?(?=\\n{2,}(?:## |\\[)|\\Z)", RegexOption.DOT_MATCHES_ALL),
-                "\n\n"
+                Regex("(?:\\n{2,}|\\A)(?:## $escapedKey|\\[$escapedKey\\])\\n.*?(?=\\n{2,}|\\Z)", RegexOption.DOT_MATCHES_ALL),
+                ""
             ).trim()
         }
 
