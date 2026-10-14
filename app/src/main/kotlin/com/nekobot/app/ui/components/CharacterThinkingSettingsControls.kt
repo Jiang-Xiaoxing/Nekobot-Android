@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,7 +33,7 @@ import com.nekobot.app.data.model.ReasoningEffort
 @Composable
 internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier: Modifier = Modifier) {
     val prefs = ServiceContainer.prefs
-    var characterThinkingSettings by remember { mutableStateOf(prefs.getCharacterThinkingSettings()) }
+    val characterThinkingSettings by prefs.characterThinkingSettings.collectAsStateWithLifecycle()
     var promptDraft by rememberSaveable { mutableStateOf<String?>(null) }
     val thinkingControlsEnabled = effort != ReasoningEffort.NONE
     LaunchedEffect(thinkingControlsEnabled) {
@@ -46,7 +47,6 @@ internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier
                 .toggleable(value = characterThinkingSettings.enabled, enabled = thinkingControlsEnabled,
                     role = Role.Switch, onValueChange = { enabled ->
                         prefs.characterThinkingEnabled = enabled
-                        characterThinkingSettings = prefs.getCharacterThinkingSettings()
                     }),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -60,8 +60,7 @@ internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
                 .testTag("character-thinking-prompt-entry")
                 .clickable(enabled = thinkingControlsEnabled, role = Role.Button) {
-                    characterThinkingSettings = prefs.getCharacterThinkingSettings()
-                    promptDraft = characterThinkingPromptForEditing(characterThinkingSettings)
+                    promptDraft = characterThinkingPromptForEditing(prefs.getCharacterThinkingSettings())
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -97,7 +96,6 @@ internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier
                     TextButton(onClick = { promptDraft = DEFAULT_CHARACTER_THINKING_PROMPT }) { Text("恢复默认") }
                     TextButton(onClick = {
                         prefs.characterThinkingPrompt = characterThinkingPromptToSave(promptDraft.orEmpty())
-                        characterThinkingSettings = prefs.getCharacterThinkingSettings()
                         promptDraft = null
                     }) { Text("保存") }
                 }

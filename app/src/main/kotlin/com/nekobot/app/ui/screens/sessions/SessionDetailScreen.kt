@@ -846,7 +846,7 @@ fun SessionDetailScreen(
     val aiModels by vm.aiModels.collectAsStateWithLifecycle()
     val ttsModelProviders by vm.ttsModelProviders.collectAsStateWithLifecycle()
     val customPrompts by vm.customPrompts.collectAsStateWithLifecycle()
-    val promptStackDebug by vm.promptStackDebug.collectAsStateWithLifecycle()
+    val recordedPromptStackDebug by vm.promptStackDebug.collectAsStateWithLifecycle()
     val composedSystemPrompt by vm.composedSystemPrompt.collectAsStateWithLifecycle()
     val disabledPromptKeys by vm.disabledPromptKeys.collectAsStateWithLifecycle()
     val characterDetail by vm.characterDetail.collectAsStateWithLifecycle()
@@ -872,6 +872,22 @@ fun SessionDetailScreen(
     }
     val singleSessionRole = session?.companionMode == true
     val advancedPage = singleSessionRole && advancedOpen
+    val thinkingSettings by ServiceContainer.prefs.characterThinkingSettings.collectAsStateWithLifecycle()
+    val reasoningRevision by ServiceContainer.prefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
+    val effort = reasoningRevision.let {
+        if (ServiceContainer.prefs.isLocalMode && session != null) {
+            ServiceContainer.localRepository.reasoningEffortFor(sessionId, singleSessionRole, session?.sessionMode)
+        } else ServiceContainer.prefs.getReasoningEffort(session?.sessionMode.equals("agent", true))
+    }
+    val promptStackDebug = if (ServiceContainer.prefs.isLocalMode && advancedPage) {
+        liveCharacterThinkingDebugItems(recordedPromptStackDebug, session, thinkingSettings, effort,
+            characterDetail?.name ?: session?.characterName ?: session?.senderName.orEmpty())
+    } else recordedPromptStackDebug
+    LaunchedEffect(advancedPage, promptStackDebug) {
+        if (advancedPage && selectedPromptStackItem?.key == com.nekobot.app.data.local.ai.CHARACTER_THINKING_STYLE_KEY) {
+            selectedPromptStackItem = promptStackDebug.firstOrNull { it.key == selectedPromptStackItem?.key }
+        }
+    }
     var promptSectionUsage by remember(sessionId) { mutableStateOf<Map<PromptSection, Int>?>(null) }
     LaunchedEffect(sessionId, advancedPage) {
         if (advancedPage && ServiceContainer.prefs.isLocalMode) {
@@ -1094,12 +1110,7 @@ fun SessionDetailScreen(
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text("调整思考强度，按需查看调试信息",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            val reasoningPrefs = ServiceContainer.prefs
-                            val reasoningRevision by reasoningPrefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
                             val reasoningRepository = ServiceContainer.localRepository
-                            val effort = reasoningRevision.let {
-                                reasoningRepository.reasoningEffortFor(sessionId, s.companionMode == true, s.sessionMode)
-                            }
                             AdvancedReasoningCard(
                                 effort = effort,
                                 showCharacterThinkingSettings = isCharacterThinkingSession(s),
@@ -1136,7 +1147,7 @@ fun SessionDetailScreen(
                                 }
                             }
                             AdvancedDebugCard(sessionId, promptStackTitle,
-                                "查看各段内容、顺序与启用状态", Icons.Outlined.Layers) {
+                                "思考段随设置更新，其余为上次请求记录", Icons.Outlined.Layers) {
                                 Text(promptStackDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (promptStackDebug.isEmpty()) {
                                     Text("暂无注入记录，完成一次聊天后可查看", style = MaterialTheme.typography.bodyMedium)
@@ -2025,13 +2036,17 @@ fun SessionDetailScreen(
         )
     }
 
-    selectedPromptStackItem?.let { item ->
-        PromptStackDetailDialog(
-            item = item,
-            disabled = item.key in disabledPromptKeys,
-            onDisabledChange = { vm.setPromptKeyDisabled(item.key, it) },
-            onDismiss = { selectedPromptStackItem = null }
-        )
+    selectedPromptStackItem?.let { selected ->
+        val item = promptStackDebug.firstOrNull { it.key == selected.key }
+            ?: if (advancedPage && selected.key == com.nekobot.app.data.local.ai.CHARACTER_THINKING_STYLE_KEY) null else selected
+        if (item != null) {
+            PromptStackDetailDialog(
+                item = item,
+                disabled = item.key in disabledPromptKeys,
+                onDisabledChange = { vm.setPromptKeyDisabled(item.key, it) },
+                onDismiss = { selectedPromptStackItem = null }
+            )
+        }
     }
 
     if (showBindCharacterDialog) {

@@ -68,6 +68,7 @@ class PrefsManager(context: Context) {
     private val securePrefs = SecurePreferenceStore(context)
     private val gson = Gson()
     private val characterThinking = CharacterThinkingPreferences(prefs)
+    val characterThinkingSettings get() = characterThinking.settings
     private val reasoning = ReasoningPreferences(prefs)
     val reasoningSettingsRevision get() = reasoning.changes
 
