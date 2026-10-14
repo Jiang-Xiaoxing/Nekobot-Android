@@ -60,6 +60,24 @@ class HistoricalReasoningTest {
         assertEquals("thinking_content 是文件字段", result["content"])
     }
 
+    @Test
+    fun anthropicThinkingAndRedactedBlocksAreRemovedFromHistoryAndTrace() {
+        val blocks = listOf(
+            mapOf("type" to "thinking", "thinking" to "OLD_BLOCK_THINKING", "signature" to "OLD_BLOCK_SIG"),
+            mapOf("type" to "redacted_thinking", "data" to "OLD_REDACTED"),
+            mapOf("type" to "text", "text" to "可见正文")
+        )
+        val inner = mapOf<String, Any>("role" to "assistant", "content" to blocks, "signature" to "OLD_SIG2", "thinking" to "OLD_T2")
+        val original = mapOf<String, Any>("role" to "assistant", "content" to blocks,
+            "signature" to "OLD_SIG", "redacted_thinking" to "OLD_R", "tool_call_history" to listOf(inner))
+        val cleaned = withoutHistoricalReasoning(original)
+        assertFalse(cleaned.toString().contains("OLD_"))
+        assertEquals(listOf(mapOf("type" to "text", "text" to "可见正文")), cleaned["content"])
+        assertEquals(listOf(mapOf("type" to "text", "text" to "可见正文")), (cleaned["tool_call_history"] as List<*>).filterIsInstance<Map<*, *>>().single()["content"])
+        assertEquals(3, (original["content"] as List<*>).size)
+        assertEquals("OLD_SIG", original["signature"])
+    }
+
     private fun fixture() = object : PipelineCallbacks() {
         override fun loadMessages(ctx: PipelineContext) = listOf(saved)
     }
