@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.ai.DEFAULT_CHARACTER_THINKING_PROMPT
+import com.nekobot.app.data.local.ai.characterThinkingPromptForEditing
+import com.nekobot.app.data.local.ai.characterThinkingPromptToSave
 import com.nekobot.app.data.model.ReasoningEffort
 
 /** 所有角色／群聊入口共用同一份全局偏好；重新进入时读取最新值。 */
@@ -58,7 +60,8 @@ internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
                 .testTag("character-thinking-prompt-entry")
                 .clickable(enabled = thinkingControlsEnabled, role = Role.Button) {
-                    promptDraft = characterThinkingSettings.customPrompt
+                    characterThinkingSettings = prefs.getCharacterThinkingSettings()
+                    promptDraft = characterThinkingPromptForEditing(characterThinkingSettings)
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -83,7 +86,6 @@ internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier
                         onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth().testTag("character-thinking-prompt-editor"),
                         label = { Text("思考提示词") },
-                        placeholder = { Text(DEFAULT_CHARACTER_THINKING_PROMPT) },
                         minLines = 8,
                         maxLines = 12,
                         shape = RoundedCornerShape(12.dp)
@@ -92,9 +94,9 @@ internal fun CharacterThinkingSettingsControls(effort: ReasoningEffort, modifier
             },
             confirmButton = {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
-                    TextButton(onClick = { promptDraft = "" }) { Text("恢复默认") }
+                    TextButton(onClick = { promptDraft = DEFAULT_CHARACTER_THINKING_PROMPT }) { Text("恢复默认") }
                     TextButton(onClick = {
-                        prefs.characterThinkingPrompt = promptDraft.orEmpty()
+                        prefs.characterThinkingPrompt = characterThinkingPromptToSave(promptDraft.orEmpty())
                         characterThinkingSettings = prefs.getCharacterThinkingSettings()
                         promptDraft = null
                     }) { Text("保存") }

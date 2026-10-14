@@ -33,6 +33,14 @@ internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
 
 /** 不猜测姓名；缺少明确玩家姓名时，要求模型依据已有资料中的姓名称呼对方。 */
 internal fun characterThinkingPrompt(settings: CharacterThinkingSettings, characterName: String, userName: String?): String =
-    settings.customPrompt.takeIf(String::isNotBlank).orEmpty().ifEmpty { DEFAULT_CHARACTER_THINKING_PROMPT }
+    characterThinkingPromptForEditing(settings)
         .replace("{{char}}", characterName.takeIf(String::isNotBlank) ?: "当前角色")
         .replace("{{user}}", userName?.takeIf { it.isNotBlank() && it.lowercase() !in setOf("user", "the user", "用户") } ?: "对方")
+
+/** 编辑的就是当前生效全文，默认模板中的姓名占位符保持可编辑。 */
+internal fun characterThinkingPromptForEditing(settings: CharacterThinkingSettings): String =
+    settings.customPrompt.takeIf(String::isNotBlank) ?: DEFAULT_CHARACTER_THINKING_PROMPT
+
+/** 原样保存自定义文案；未改动的默认全文仍用空串表示“跟随默认”。 */
+internal fun characterThinkingPromptToSave(draft: String): String =
+    if (draft == DEFAULT_CHARACTER_THINKING_PROMPT) "" else draft
