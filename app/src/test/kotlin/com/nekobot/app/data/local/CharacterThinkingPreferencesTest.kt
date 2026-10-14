@@ -84,6 +84,56 @@ class CharacterThinkingPreferencesTest {
         assertEquals(true, saved["show_reasoning"])
     }
 
+    @Test
+    fun roleGroupAndCompanionReadersShareEverySwitchAndPromptUpdate() {
+        val saved = mutableMapOf<String, Any>()
+        // 三个入口分别持有偏好读取器，但使用同一份全局存储。
+        val entries = List(3) { CharacterThinkingPreferences(preferences(saved)) }
+        entries.forEachIndexed { index, writer ->
+            val enabled = index % 2 == 0
+            val prompt = "  入口$index：我是{{char}}。\n想起{{user}}时，用中文思考。  "
+            writer.enabled = enabled
+            writer.customPrompt = prompt
+
+            entries.forEach { reader ->
+                assertEquals(CharacterThinkingSettings(enabled, prompt), reader.read())
+            }
+            // 其他入口重进也应读取刚写入的值。
+            assertEquals(CharacterThinkingSettings(enabled, prompt),
+                CharacterThinkingPreferences(preferences(saved)).read())
+        }
+        assertEquals(2, saved.size)
+    }
+
+    @Test
+    fun savingOrRestoringPromptFromAnotherEntryKeepsLatestSwitchAndReasoningSettings() {
+        val saved = mutableMapOf<String, Any>(
+            "reasoning_effort_character" to "none",
+            "reasoning_effort_agent" to "high",
+            "companion:session-a:reasoning" to "medium"
+        )
+        val roleEntry = CharacterThinkingPreferences(preferences(saved))
+        val groupEntry = CharacterThinkingPreferences(preferences(saved))
+        val companionEntry = CharacterThinkingPreferences(preferences(saved))
+        assertTrue(groupEntry.read().enabled)
+        assertTrue(companionEntry.read().enabled)
+
+        roleEntry.enabled = false
+        groupEntry.customPrompt = "我在群聊里的心里话。\n保留换行。"
+        assertEquals(CharacterThinkingSettings(false, groupEntry.customPrompt), roleEntry.read())
+        companionEntry.customPrompt = ""
+
+        listOf(roleEntry, groupEntry, companionEntry).forEach { reader ->
+            assertEquals(CharacterThinkingSettings(false, ""), reader.read())
+            assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+                characterThinkingPrompt(reader.read(), "晚星", "小星"))
+        }
+        assertEquals("none", saved["reasoning_effort_character"])
+        assertEquals("high", saved["reasoning_effort_agent"])
+        assertEquals("medium", saved["companion:session-a:reasoning"])
+        assertEquals(5, saved.size)
+    }
+
     /** JVM 测试只模拟所需 SharedPreferences API，写入必须经过 apply/commit 才能读回。 */
     private fun preferences(saved: MutableMap<String, Any>): SharedPreferences = Proxy.newProxyInstance(
         SharedPreferences::class.java.classLoader, arrayOf(SharedPreferences::class.java)

@@ -156,6 +156,7 @@ import com.nekobot.app.data.model.SessionCacheStats
 import com.nekobot.app.data.model.Skill
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.components.AgentToolSetPickerDialog
+import com.nekobot.app.ui.components.CharacterThinkingSettingsControls
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.toolSetModeLabel
@@ -2435,6 +2436,9 @@ private fun ReasoningEffortSelector(
                 CustomReasoningFields(customInitial, enabled,
                     onChange = { ServiceContainer.prefs.setCustomReasoning(customAgentScope, it) },
                     modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp))
+            }
+            if (!customAgentScope) {
+                CharacterThinkingSettingsControls(selected, Modifier.padding(16.dp))
             }
         }
     }
