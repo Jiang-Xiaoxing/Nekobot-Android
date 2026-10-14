@@ -106,7 +106,7 @@ internal fun messageEntranceModifier(
 
 /** Alternate renderer only. The original reasoning components remain intact. */
 @Composable
-internal fun DynamicThinkingSection(identity: String?, text: String, thinking: Boolean) {
+internal fun DynamicThinkingSection(identity: String?, text: String, thinking: Boolean, label: String? = null) {
     var expanded by remember(identity) { mutableStateOf(thinking) }
     LaunchedEffect(identity, thinking) { expanded = thinking }
     val scroll = rememberScrollState()
@@ -137,7 +137,7 @@ internal fun DynamicThinkingSection(identity: String?, text: String, thinking: B
                 .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ThinkingBreathingLabel(thinking, Modifier.weight(1f, fill = false))
+            ThinkingBreathingLabel(thinking, Modifier.weight(1f, fill = false), label)
             Spacer(Modifier.width(6.dp))
             Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 stringResource(if (expanded) R.string.common_collapse else R.string.common_expand),
@@ -157,7 +157,7 @@ internal fun DynamicThinkingSection(identity: String?, text: String, thinking: B
 }
 
 @Composable
-private fun ThinkingBreathingLabel(active: Boolean, modifier: Modifier = Modifier) {
+private fun ThinkingBreathingLabel(active: Boolean, modifier: Modifier = Modifier, label: String? = null) {
     val animate = active && appearanceMotionAllowed()
     val opacity = if (animate) {
         val transition = rememberInfiniteTransition(label = "thinking_text")
@@ -171,7 +171,7 @@ private fun ThinkingBreathingLabel(active: Boolean, modifier: Modifier = Modifie
         )
     } else null
     Text(
-        text = stringResource(if (active) R.string.chat_dynamic_thinking else R.string.chat_reasoning_process),
+        text = label ?: stringResource(if (active) R.string.chat_dynamic_thinking else R.string.chat_reasoning_process),
         modifier = modifier.graphicsLayer { alpha = opacity?.value ?: 1f },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant

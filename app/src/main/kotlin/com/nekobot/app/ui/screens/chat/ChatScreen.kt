@@ -2898,7 +2898,8 @@ private fun MessageBubble(
                 DynamicThinkingSection(
                     identity = "${message.id}:${message.timestamp}",
                     text = message.reasoningContent.orEmpty(),
-                    thinking = isStreamingPlaceholder && message.content.isNullOrBlank()
+                    thinking = isStreamingPlaceholder && message.content.isNullOrBlank(),
+                    label = if (companionChat) stringResource(R.string.companion_chat_reasoning) else null
                 )
             } else if (companionChat && !isUser) {
                 CompanionReasoningSection(

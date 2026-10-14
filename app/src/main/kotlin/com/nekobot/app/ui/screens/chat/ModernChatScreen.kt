@@ -251,6 +251,7 @@ fun ModernChatScreen(
     var companionShowReasoning by remember(sessionId, companionName != null) {
         mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
     }
+    val characterThinkingSettings by ServiceContainer.prefs.characterThinkingSettings.collectAsStateWithLifecycle()
     var showInnerMonologue by remember(sessionId) {
         mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
     }
@@ -272,7 +273,7 @@ fun ModernChatScreen(
     CompositionLocalProvider(
         LocalStickerLookup provides stickerLookup,
         LocalCompanionChatName provides companionName,
-        LocalCompanionShowReasoning provides companionShowReasoning,
+        LocalCompanionShowReasoning provides companionThoughtsEnabled(companionShowReasoning, characterThinkingSettings.enabled),
         com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue,
         com.nekobot.app.ui.components.LocalCompactInnerMonologue provides (companionName != null),
         LocalOpenCompanionMemory provides if (companionName != null) ({ onOpenCompanionMemory(sessionId) }) else null
