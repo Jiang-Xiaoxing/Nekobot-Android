@@ -73,11 +73,44 @@ class CharacterThinkingParserTest {
 
     @Test
     fun noTagsKeepTextWhitespaceAndUnrelatedMarkupIntact() {
-        val text = "  直接回答\n3 < 5；<b>文字</b>；<thinking>其他标签</thinking>。  "
+        val text = "  直接回答\n3 < 5；<b>文字</b>；<thinker>其他标签</thinker>。  "
         val output = Output()
         text.forEach { output.parser.append(it.toString()) }
         output.parser.finish()
         output.check(text, "")
+    }
+
+    @Test
+    fun thinkingAliasAndTagNewlinesWorkAtEverySplit() {
+        val text = "<ThInKiNg>\r\n\n我先想想\n再想一步</tHiNkInG>\r\n\n  回答\n第二行"
+        for (split in 0..text.length) {
+            val output = Output()
+            output.parser.append(text.take(split))
+            output.parser.append(text.drop(split))
+            output.parser.finish()
+            output.check("  回答\n第二行", "我先想想\n再想一步")
+        }
+    }
+
+    @Test
+    fun aliasTagsAndRepeatedPrefillCanArriveCharacterByCharacter() {
+        val output = Output()
+        (CHARACTER_THINKING_PREFILL + "<THINKING>\n我想到他了</THINKING>\n回答").forEach {
+            output.parser.append(it.toString())
+            assertFalse(output.content.toString().contains("我"))
+            assertFalse(output.content.toString().contains('<'))
+        }
+        output.parser.finish()
+        output.check("回答", "我想到他了")
+    }
+
+    @Test
+    fun prefilledContinuationWithoutClosingTagStaysInThinking() {
+        val output = Output()
+        output.parser.append(CHARACTER_THINKING_PREFILL)
+        output.parser.append("我还没想完")
+        output.parser.finish()
+        output.check("", "我还没想完")
     }
 
     @Test

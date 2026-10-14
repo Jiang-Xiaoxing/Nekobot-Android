@@ -1,5 +1,15 @@
 package com.nekobot.app.data.local.ai
 
+internal const val CHARACTER_THINKING_PREFILL = "<think>\n"
+
+/** 只用于实际发送的请求副本，不写入玩家消息、工具循环上下文或聊天历史。 */
+internal fun withCharacterThinkingPrefill(
+    messages: List<Map<String, Any>>,
+    enabled: Boolean
+): List<Map<String, Any>> = if (enabled) {
+    messages + mapOf("role" to "assistant", "content" to CHARACTER_THINKING_PREFILL)
+} else messages
+
 /**
  * 在最终请求中保留本轮已经批准注入的思考文案，放在首条 system 的开头。
  * 工具循环复用时不重复；不接触 user、assistant、tool 的正文或签名。

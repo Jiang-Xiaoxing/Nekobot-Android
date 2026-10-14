@@ -59,6 +59,180 @@ class CharacterThinkingProtocolTest {
     private fun delta(key: String, value: String) = Gson().toJson(mapOf(
         "choices" to listOf(mapOf("delta" to mapOf(key to value)))))
 
+    private fun assertPrefill(body: JsonObject, enabled: Boolean) {
+        val sent = body["messages"].asJsonArray
+        assertEquals(if (enabled) 3 else 2, sent.size())
+        assertEquals("system", sent[0].asJsonObject["role"].asString)
+        assertEquals("user", sent[1].asJsonObject["role"].asString)
+        assertEquals("哈哈", sent[1].asJsonObject["content"].asString)
+        if (enabled) {
+            assertEquals("assistant", sent[2].asJsonObject["role"].asString)
+            assertEquals(CHARACTER_THINKING_PREFILL, sent[2].asJsonObject["content"].asString)
+        }
+        assertFalse(body.has(FAKE_CHARACTER_THINKING_EXTRA))
+    }
+
+    @Test
+    fun prefillCopiesOnlyRequestListAndNeverTouchesUserImagesOrHistory() {
+        val images = listOf(mapOf("type" to "text", "text" to "原话"),
+            mapOf("type" to "image_url", "image_url" to mapOf("url" to "mock-image")))
+        val imageUser = mapOf<String, Any>("role" to "user", "content" to images)
+        val history = listOf(imageUser)
+        val sent = withCharacterThinkingPrefill(history, true)
+        assertEquals(1, history.size)
+        assertEquals(2, sent.size)
+        assertSame(imageUser, sent.first())
+        assertSame(images, sent.first()["content"])
+        assertEquals(mapOf("role" to "assistant", "content" to "<think>\n"), sent.last())
+        assertSame(history, withCharacterThinkingPrefill(history, false))
+    }
+
+    @Test
+    fun bareContinuationIsParsedUsingPrefillInOneNonstreamRequest() = runBlocking {
+        val http = Http { json(answer("我听见他笑了。</thinking>\n怎么啦？")) }
+        val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
+        assertEquals("怎么啦？", result.content)
+        assertEquals("我听见他笑了。", result.thinkingContent)
+        assertEquals(1, http.bodies.size)
+        assertPrefill(http.bodies.single(), true)
+        assertSame(user, messages.last())
+    }
+
+    @Test
+    fun nativeModeNeverPrefillsOrPrependsResponse() = runBlocking {
+        val http = Http { json(answer("正文")) }
+        val result = http.client.chatOnce(model(), messages, mapOf("reasoning_effort" to "high"))
+        assertEquals("正文", result.content)
+        assertEquals("Native English", result.thinkingContent)
+        assertPrefill(http.bodies.single(), false)
+    }
+
+    @Test
+    fun rejectedPrefillFallsBackOnceAndNoTagFallbackStaysContent() = runBlocking {
+        for (status in listOf(400, 422, 500)) {
+            val http = Http { if (it == 1) Triple(status, "unsupported assistant prefill", "text/plain")
+                else json(answer("*(我有点担心)* 你好")) }
+            val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
+            assertEquals("*(我有点担心)* 你好", result.content)
+            assertEquals("", result.thinkingContent)
+            assertEquals(2, http.bodies.size)
+            assertPrefill(http.bodies[0], true)
+            assertPrefill(http.bodies[1], false)
+            assertTrue(http.bodies[1].has("tools"))
+            assertSame(user, messages.last())
+        }
+    }
+
+    @Test
+    fun jsonErrorWithHttp200AlsoFallsBackWithoutExposingFirstError() = runBlocking {
+        val http = Http { if (it == 1) json("""{"error":{"message":"assistant prefill unsupported"}}""")
+            else json(answer("<thinking>我想好了</thinking>回答")) }
+        val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
+        assertEquals("回答", result.content)
+        assertEquals("我想好了", result.thinkingContent)
+        assertEquals(2, http.bodies.size)
+        assertPrefill(http.bodies.last(), false)
+    }
+
+    @Test
+    fun bothRequestsRejectedStopAfterOneFallback() = runBlocking {
+        val http = Http { Triple(400, "unsupported assistant prefill", "text/plain") }
+        try {
+            http.client.chatOnce(model(), messages, extra())
+            fail("两次失败应继续走原错误路径")
+        } catch (error: FailoverHttpException) {
+            assertEquals(400, error.statusCode)
+        }
+        assertEquals(2, http.bodies.size)
+        assertPrefill(http.bodies.first(), true)
+        assertPrefill(http.bodies.last(), false)
+    }
+
+    @Test
+    fun anthropicPrefillRejectionFallsBackEvenOutsideOpenAi400Compatibility() = runBlocking {
+        val http = Http { if (it == 1) Triple(400, "assistant prefill unsupported", "text/plain") else
+            json("""{"content":[{"type":"text","text":"<thinking>我想好了</thinking>回答"}],"stop_reason":"end_turn"}""") }
+        val result = characterThinkingResult(http.client.chatOnce(model(protocol = AnthropicMessagesProtocol.name), messages, extra()), true)
+        assertEquals("回答", result.content)
+        assertEquals("我想好了", result.thinkingContent)
+        assertEquals(2, http.bodies.size)
+        assertEquals(CHARACTER_THINKING_PREFILL, http.bodies.first()["messages"].asJsonArray.last().asJsonObject["content"].asString)
+        assertEquals(1, http.bodies.last()["messages"].asJsonArray.size())
+        http.bodies.forEach { assertEquals("disabled", it["thinking"].asJsonObject["type"].asString) }
+    }
+
+    @Test
+    fun prefillAndFallbackStreamingUseTheirOwnParserStartForJsonAndSse() = runBlocking {
+        for (fallback in listOf(false, true)) for (buffered in listOf(false, true)) for (queue in listOf(false, true)) {
+            val text = if (fallback) "<thinking>我想好了</thinking>\n回答" else "我想好了</THINKING>\n回答"
+            val http = Http { if (fallback && it == 1) Triple(422, "unsupported prefill", "text/plain")
+                else if (buffered) json(answer(text)) else sse(text.map { delta("content", it.toString()) }) }
+            val content = StringBuilder()
+            val thinking = StringBuilder()
+            var starts = 0
+            val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+                onStart = { starts++; content.setLength(0); thinking.setLength(0) },
+                onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+            val flow = if (queue) http.client.chatStreamWithFailover(listOf(model()), messages, extra())
+                else http.client.chatStream(model(), messages, extra())
+            flow.collect { event ->
+                when (event) {
+                    is RealtimeEvent.StreamStart -> relay.callbacks.onStart()
+                    is RealtimeEvent.StreamChunk -> relay.callbacks.onContentChunk(event.chunk)
+                    is RealtimeEvent.ReasoningChunk -> relay.callbacks.onThinkingChunk(event.chunk)
+                    is RealtimeEvent.Error -> fail(event.message)
+                    else -> Unit
+                }
+                assertFalse(content.toString().contains("我"))
+            }
+            relay.finish()
+            assertEquals("回答", content.toString())
+            assertEquals("我想好了", thinking.toString())
+            assertEquals(1, starts)
+            assertEquals(if (fallback) 2 else 1, http.bodies.size)
+            assertPrefill(http.bodies.first(), true)
+            if (fallback) assertPrefill(http.bodies.last(), false)
+        }
+    }
+
+    @Test
+    fun agentStreamCallbacksMatchFinalResultForPrefillAndFallback() = runBlocking {
+        for (fallback in listOf(false, true)) for (buffered in listOf(false, true)) {
+            val text = if (fallback) "<think>我先查一下。</think>回答" else "我先查一下。</think>回答"
+            val http = Http { if (fallback && it == 1) Triple(400, "unsupported prefill", "text/plain")
+                else if (buffered) json(answer(text)) else sse(text.map { delta("content", it.toString()) }) }
+            val content = StringBuilder()
+            val thinking = StringBuilder()
+            var starts = 0
+            val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(onStart = { starts++ },
+                onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+            val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra(), streamCallbacks = relay.callbacks), true)
+            relay.finish()
+            assertEquals("回答", result.content)
+            assertEquals(result.content, content.toString())
+            assertEquals("我先查一下。", result.thinkingContent)
+            assertEquals(result.thinkingContent, thinking.toString())
+            assertEquals(1, starts)
+            assertEquals(if (fallback) 2 else 1, http.bodies.size)
+        }
+    }
+
+    @Test
+    fun fallbackDoesNotDisablePrefillForTheNextToolOrChatRequest() = runBlocking {
+        val http = Http { when (it) {
+            1 -> Triple(400, "unsupported prefill", "text/plain")
+            2 -> json(answer("<think>上次思考</think>上次回答"))
+            else -> json(answer("这次思考</think>这次回答"))
+        } }
+        characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
+        val next = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
+        assertEquals("这次回答", next.content)
+        assertEquals("这次思考", next.thinkingContent)
+        assertEquals(3, http.bodies.size)
+        assertPrefill(http.bodies[1], false)
+        assertPrefill(http.bodies[2], true)
+    }
+
     @Test
     fun ordinaryEndpointOmitsUnsupportedReasoningAndUsesOnlyOneCallWithSystemPrompt() = runBlocking {
         val http = Http { json(answer()) }
@@ -75,6 +249,11 @@ class CharacterThinkingProtocolTest {
         assertEquals("system", sent[0].asJsonObject["role"].asString)
         assertEquals("哈哈", sent[1].asJsonObject["content"].asString)
         assertEquals("user", sent[1].asJsonObject["role"].asString)
+        assertEquals(3, sent.size())
+        assertEquals("assistant", sent[2].asJsonObject["role"].asString)
+        assertEquals(CHARACTER_THINKING_PREFILL, sent[2].asJsonObject["content"].asString)
+        assertEquals(2, messages.size)
+        assertSame(user, messages.last())
         assertTrue(sent[0].asJsonObject["content"].asString.contains(CHARACTER_THINKING_FORMAT_PROMPT))
         assertTrue(body.has("tools"))
     }
@@ -98,7 +277,7 @@ class CharacterThinkingProtocolTest {
             val http = Http { json(response) }
             val result = http.client.chatOnce(target, messages, extra())
             assertNull(result.error)
-            assertEquals("回答", result.content)
+            assertEquals(CHARACTER_THINKING_PREFILL + "回答", result.content)
             assertEquals(1, http.bodies.size)
             val body = http.bodies.single()
             assertFalse(body.has(FAKE_CHARACTER_THINKING_EXTRA)); assertFalse(body.has(CustomReasoningParam.EXTRA_KEY))
@@ -139,10 +318,10 @@ class CharacterThinkingProtocolTest {
 
     @Test
     fun failoverKeepsFakeRequestForDifferentProviderWithoutAnExtraGeneration() = runBlocking {
-        val http = Http { if (it == 1) Triple(500, "mock failure", "text/plain") else json(answer()) }
+        val http = Http { if (it <= 2) Triple(500, "mock failure", "text/plain") else json(answer()) }
         val raw = http.client.chatOnceWithFailover(listOf(model("primary"), model("backup", provider = "deepseek")), messages, extra())
         val result = characterThinkingResult(raw, true)
-        assertEquals(2, http.bodies.size)
+        assertEquals(3, http.bodies.size)
         assertEquals("backup", result.usedModelId)
         assertEquals("怎么啦？", result.content)
         assertEquals("我听见他笑了。", result.thinkingContent)
@@ -225,7 +404,7 @@ class CharacterThinkingProtocolTest {
         val http = Http { if (it == 1) sse(listOf(
             Gson().toJson(mapOf("type" to "response.output_text.delta", "delta" to "<think>" + "我还在想".repeat(100))),
             """{"type":"error","message":"mock stream failure"}"""
-        )) else json("""{"status":"completed","output_text":"备用正文"}""") }
+        )) else json("""{"status":"completed","output_text":"</think>备用正文"}""") }
         val content = StringBuilder()
         val thinking = StringBuilder()
         var starts = 0

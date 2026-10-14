@@ -8,6 +8,7 @@ internal class CharacterThinkingParser(
     private var pending = ""
     private var thinking = false
     private var finished = false
+    private var skipTagNewlines = false
 
     fun append(chunk: String) {
         check(!finished)
@@ -23,17 +24,15 @@ internal class CharacterThinkingParser(
                 emit(pending.substring(0, tagStart))
                 pending = pending.substring(tagStart)
             }
-            val lower = pending.take(CLOSE.length).lowercase()
+            val lower = pending.take(TAGS.maxOf(String::length)).lowercase()
+            val tag = TAGS.firstOrNull { lower.startsWith(it) }
             when {
-                lower.startsWith(OPEN) -> {
-                    thinking = true
-                    pending = pending.substring(OPEN.length)
+                tag != null -> {
+                    thinking = !tag.startsWith("</")
+                    skipTagNewlines = true
+                    pending = pending.substring(tag.length)
                 }
-                lower.startsWith(CLOSE) -> {
-                    thinking = false
-                    pending = pending.substring(CLOSE.length)
-                }
-                OPEN.startsWith(lower) || CLOSE.startsWith(lower) -> break
+                TAGS.any { it.startsWith(lower) } -> break
                 else -> {
                     emit(pending.take(1))
                     pending = pending.drop(1)
@@ -50,12 +49,16 @@ internal class CharacterThinkingParser(
     }
 
     private fun emit(text: String) {
-        if (text.isNotEmpty()) (if (thinking) onThinking else onContent)(text)
+        // 标签后的 CR/LF 可跨分片；不把预填的换行算成一段思考，也保留正文内部空白。
+        val value = if (skipTagNewlines) text.trimStart('\r', '\n') else text
+        if (value.isNotEmpty()) {
+            skipTagNewlines = false
+            (if (thinking) onThinking else onContent)(value)
+        }
     }
 
     private companion object {
-        const val OPEN = "<think>"
-        const val CLOSE = "</think>"
+        val TAGS = listOf("<think>", "</think>", "<thinking>", "</thinking>")
     }
 }
 
