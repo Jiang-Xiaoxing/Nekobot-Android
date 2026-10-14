@@ -1331,10 +1331,12 @@ internal class LocalPipelineCallbacks(
     }
 
     override fun synchronizeAgentToolContext(ctx: PipelineContext, messages: List<Map<String, Any>>) {
-        if (agentRunId == null) return
+        val runId = agentRunId ?: return
         kotlinx.coroutines.runBlocking {
             // 更新与删除必须原子提交；恢复不能看到缺失一半响应的工具块。
             db.withTransaction {
+                // 已被新一轮取代的回调不能删除新运行刚写入的轨迹。
+                if (agentRunDao.getBySession(session.id)?.runId != runId) return@withTransaction
                 val rows = agentToolMessageDao.listBySession(session.id)
                 val payloads = synchronizeAgentToolMessagePayloads(rows.map { it.payload }, messages)
                 rows.zip(payloads).forEach { (row, payload) ->
