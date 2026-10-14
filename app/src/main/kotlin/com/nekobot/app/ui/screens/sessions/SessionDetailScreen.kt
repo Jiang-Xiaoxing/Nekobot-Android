@@ -1094,10 +1094,23 @@ fun SessionDetailScreen(
                             Text("调整思考强度，按需查看调试信息",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             var effort by remember(sessionId) { mutableStateOf(ServiceContainer.localRepository.companionReasoningEffort(sessionId)) }
-                            AdvancedReasoningCard(effort, onSelect = { option ->
-                                ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
-                                effort = option
-                            }) {
+                            var thinkingSettings by remember(sessionId) { mutableStateOf(ServiceContainer.prefs.getCharacterThinkingSettings()) }
+                            AdvancedReasoningCard(
+                                effort = effort,
+                                onSelect = { option ->
+                                    ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, option)
+                                    effort = option
+                                },
+                                characterThinkingSettings = thinkingSettings,
+                                onCharacterThinkingEnabledChange = { enabled ->
+                                    ServiceContainer.prefs.characterThinkingEnabled = enabled
+                                    thinkingSettings = ServiceContainer.prefs.getCharacterThinkingSettings()
+                                },
+                                onCharacterThinkingPromptSave = { prompt ->
+                                    ServiceContainer.prefs.characterThinkingPrompt = prompt
+                                    thinkingSettings = ServiceContainer.prefs.getCharacterThinkingSettings()
+                                }
+                            ) {
                                 val customInitial = remember(sessionId) { ServiceContainer.localRepository.companionCustomReasoning(sessionId) }
                                 com.nekobot.app.ui.screens.chat.CustomReasoningFields(customInitial, enabled = true,
                                     onChange = { ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) })

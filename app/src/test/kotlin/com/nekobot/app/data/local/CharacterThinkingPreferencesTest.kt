@@ -2,6 +2,8 @@ package com.nekobot.app.data.local
 
 import android.content.SharedPreferences
 import com.nekobot.app.data.local.ai.CharacterThinkingSettings
+import com.nekobot.app.data.local.ai.DEFAULT_CHARACTER_THINKING_PROMPT
+import com.nekobot.app.data.local.ai.characterThinkingPrompt
 import java.lang.reflect.Proxy
 import org.junit.Assert.*
 import org.junit.Test
@@ -37,6 +39,49 @@ class CharacterThinkingPreferencesTest {
         assertEquals(CharacterThinkingSettings(), CharacterThinkingPreferences(preferences(saved)).read())
         assertEquals("high", saved["reasoning_effort_character"])
         assertEquals(false, saved["show_reasoning"])
+    }
+
+    @Test
+    fun multilinePromptIsSavedVerbatimAndUsedAfterReopeningPreferences() {
+        val saved = mutableMapOf<String, Any>()
+        val prompt = "  我是{{char}}。\n想起{{user}}时，先想自己的心情。\n\t保留工具名 reasoning_content。  "
+        CharacterThinkingPreferences(preferences(saved)).customPrompt = prompt
+
+        val restored = CharacterThinkingPreferences(preferences(saved)).read()
+        assertTrue(restored.enabled)
+        assertEquals(prompt, restored.customPrompt)
+        assertEquals(prompt.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+            characterThinkingPrompt(restored, "晚星", "小星"))
+    }
+
+    @Test
+    fun savingEmptyPromptRestoresExistingDefaultWithoutChangingDisabledSwitch() {
+        val saved = mutableMapOf<String, Any>()
+        val store = CharacterThinkingPreferences(preferences(saved))
+        store.enabled = false
+        store.customPrompt = "旧自定义提示词"
+        store.customPrompt = ""
+
+        val restored = CharacterThinkingPreferences(preferences(saved)).read()
+        assertFalse(restored.enabled)
+        assertEquals("", restored.customPrompt)
+        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+            characterThinkingPrompt(restored, "晚星", "小星"))
+    }
+
+    @Test
+    fun whitespaceOnlyPromptUsesDefaultWithoutRewritingSavedTextOrOtherSettings() {
+        val saved = mutableMapOf<String, Any>("reasoning_effort_character" to "none", "show_reasoning" to true)
+        val blankPrompt = " \n\t "
+        CharacterThinkingPreferences(preferences(saved)).customPrompt = blankPrompt
+
+        val restored = CharacterThinkingPreferences(preferences(saved)).read()
+        assertEquals(blankPrompt, restored.customPrompt)
+        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "晚星").replace("{{user}}", "小星"),
+            characterThinkingPrompt(restored, "晚星", "小星"))
+        assertTrue(restored.enabled)
+        assertEquals("none", saved["reasoning_effort_character"])
+        assertEquals(true, saved["show_reasoning"])
     }
 
     /** JVM 测试只模拟所需 SharedPreferences API，写入必须经过 apply/commit 才能读回。 */
