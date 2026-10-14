@@ -244,7 +244,10 @@ class AIPipeline {
     ) {
         // 加载消息历史
         val messagesRaw = callbacks.loadMessages(ctx)
-        var messagesForAi = messagesRaw.map { it.toMap() }
+        val isAgentHistory = ((ctx.metadata["session_mode"] ?: ctx.chatRequest.metadata["session_mode"]) as? String)
+            .equals("agent", ignoreCase = true)
+        // 普通聊天不回传旧思考；本轮工具循环追加的协议消息不经过此历史清理。
+        var messagesForAi = messagesRaw.map { if (isAgentHistory) it.toMap() else withoutHistoricalReasoning(it) }
 
         // 追加当前用户消息（如果 loadMessages 未包含）
         val userContent = ctx.chatRequest.content

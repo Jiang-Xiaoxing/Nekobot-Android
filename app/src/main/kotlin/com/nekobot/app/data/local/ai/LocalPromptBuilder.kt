@@ -100,7 +100,8 @@ object LocalPromptBuilder {
             messages.add(mapOf("role" to "user", "content" to userInput))
         }
 
-        return messages
+        return if (session.sessionMode.equals("agent", ignoreCase = true)) messages
+        else messages.map(::withoutHistoricalReasoning)
     }
 
     /**
