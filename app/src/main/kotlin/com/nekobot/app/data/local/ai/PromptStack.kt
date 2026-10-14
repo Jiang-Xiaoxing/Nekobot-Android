@@ -168,8 +168,6 @@ class PromptStack {
         "character.memories_legacy",
         "character.image_capability",
         "character.personality_evolution",
-        "output.bubble_split",
-        "output.inner_monologue",
         "real_time.continuity",
         "character.circadian",
         "character.timeline",
@@ -182,7 +180,7 @@ class PromptStack {
         "world_book.after_an",
         "memory_fs.context",
         "memory_fs_context"
-    )
+    ) + characterOutputPromptKeys
 
     /** 旧版内联 section 标记 */
     private val legacyRuntimeSectionMarkers = listOf(
@@ -242,6 +240,15 @@ class PromptStack {
     }
 
     companion object {
+        /** 移除历史系统提示里缓存的单个动态段，兼容两种标题格式。 */
+        internal fun stripSection(prompt: String, key: String): String {
+            val escapedKey = Regex.escape(key)
+            return prompt.replace(
+                Regex("(?:\\n{2,}|\\A)(?:## $escapedKey|\\[$escapedKey\\])\\n.*?(?=\\n{2,}(?:## |\\[)|\\Z)", RegexOption.DOT_MATCHES_ALL),
+                "\n\n"
+            ).trim()
+        }
+
         /**
          * 从消息列表中分离 system prompt 和历史消息。
          *

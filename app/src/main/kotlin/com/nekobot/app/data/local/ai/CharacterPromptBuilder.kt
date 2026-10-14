@@ -12,6 +12,11 @@ private const val MAX_RELATIONSHIP_CHARS = 500
 private const val MAX_MEMORY_CHARS = 2000
 private const val MAX_PLAN_CHARS = 900
 
+/** 角色输出约定清单：均属动态段，持久化的基础提示词不得残留旧副本。 */
+internal val characterOutputPromptKeys = listOf(
+    "output.bubble_split", "output.inner_monologue", CHARACTER_THINKING_STYLE_KEY
+)
+
 /** 注册角色相关本轮注入到 PromptStack */
 fun buildCharacterInjections(
     stack: PromptStack,
@@ -25,14 +30,12 @@ fun buildCharacterInjections(
     stack.add(
         "output.bubble_split",
         """
-        When you want to split your reply into multiple separate messages (bubbles),
-        use the special delimiter `<||>` between each segment.
-        Each segment between `<||>` delimiters will be displayed as an independent bubble.
-        Example format:
-        First bubble content here<||>Second bubble content here<||>Third bubble content here
-        You do NOT have to split every reply — use it only when it naturally fits the conversation flow
-        (e.g., separate action and dialogue, pause for effect, multi-part response).
-        Do NOT mention or explain this delimiter to the user. Just use it naturally in your output.
+        当你想把回复拆成多条独立消息（气泡）时，请在各段之间使用特殊分隔符 `<||>`。
+        `<||>` 分隔的每一段都会显示为一个独立气泡。
+        格式示例：
+        第一条气泡内容<||>第二条气泡内容<||>第三条气泡内容
+        不必拆分每次回复；只在符合对话节奏时使用，例如分开动作与对话、停顿以增强效果，或分段回答。
+        不要向玩家提及或解释这个分隔符，在输出中自然使用即可。
         """.trimIndent(),
         priority = PromptStack.Priority.BUBBLE_SPLIT
     )
@@ -41,20 +44,17 @@ fun buildCharacterInjections(
     stack.add(
         "output.inner_monologue",
         """
-        Inner monologue format: when the character has a hidden thought or feeling that
-        differs from the visible surface, you MAY output it inline using the format
-        （内心：...）. Place it at the end of a bubble, after the visible content.
-        Rules:
-        - Use it sparingly: only when the hidden emotion creates meaningful contrast or tension.
-          Do not add inner monologue to every reply.
-        - Keep it short (1-2 sentences). It represents a fleeting thought, not a paragraph.
-        - The inner monologue should reveal what the character is actually thinking but not saying.
-          It may contradict the visible surface, show vulnerability, or hint at ulterior motives.
-        - Do not use inner monologue to explain rules or break character.
-        - Example: '嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
-        The front-end will render （内心：...） as a dimmed, italicized, foldable section.
-        If the front-end does not support rendering, it will fall back to plain italic text.
-        Always assume the dimmed/foldable rendering is in effect.
+        内心独白格式：当角色隐藏的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。
+        把它放在气泡末尾，接在可见内容之后。
+        规则：
+        - 克制使用：只有隐藏情绪形成有意义的反差或张力时才写，不要每次回复都加内心独白。
+        - 保持简短（1—2句），表达一闪而过的念头，不要写成长段。
+        - 揭示角色真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
+        - 不要借内心独白解释规则或脱离角色。
+        - 示例：'嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
+        前端会把（内心：...）渲染为颜色较淡、斜体且可折叠的区域。
+        不支持这种渲染时，会退回普通斜体文本。
+        始终按淡色、可折叠的渲染已生效来写。
         """.trimIndent(),
         priority = PromptStack.Priority.BUBBLE_SPLIT + 1
     )
@@ -96,9 +96,9 @@ fun buildCharacterInjections(
 
 private fun formatState(state: CharacterState): String {
     val lines = mutableListOf(
-        "Current mood: ${state.mood}",
-        "Mood intensity: ${"%.1f".format(state.moodIntensity)}",
-        "Energy: ${state.energy}"
+        "当前心情：${state.mood}",
+        "情绪强度：${"%.1f".format(state.moodIntensity)}",
+        "精力：${state.energy}"
     )
     for ((key, value) in state.scene) {
         lines.add("$key: $value")
@@ -109,43 +109,43 @@ private fun formatState(state: CharacterState): String {
 @Suppress("UNCHECKED_CAST")
 private fun formatPersonalityEvolution(evolution: List<Map<String, Any>>): String {
     if (evolution.isEmpty()) return ""
-    val lines = mutableListOf("Personality evolution (shifts shaped by experience, layered on top of the base personality):")
+    val lines = mutableListOf("性格演化（经历塑造的变化，叠加在基础性格之上）：")
     // 取最近 5 条
     for (entry in evolution.takeLast(5)) {
         val trait = entry["trait"] as? String ?: ""
         val delta = (entry["delta"] as? Number)?.toInt() ?: 0
         val reason = entry["reason"] as? String ?: ""
         if (trait.isEmpty()) continue
-        val direction = if (delta > 0) "more" else "less"
+        val direction = if (delta > 0) "增强" else "减弱"
         val magnitude = kotlin.math.abs(delta)
         val degree = when {
-            magnitude >= 8 -> "significantly"
-            magnitude >= 4 -> "moderately"
-            else -> "slightly"
+            magnitude >= 8 -> "显著"
+            magnitude >= 4 -> "适度"
+            else -> "轻微"
         }
-        var line = "- $trait: $degree $direction (delta ${if (delta >= 0) "+" else ""}$delta)"
+        var line = "- $trait：$degree$direction（变化量 ${if (delta >= 0) "+" else ""}$delta）"
         if (reason.isNotEmpty()) line += " — $reason"
         lines.add(line)
     }
-    lines.add("Let these shifts subtly color the character's tone and behavior this turn; do not explicitly mention 'personality evolution' to the user.")
+    lines.add("让这些变化自然、细微地影响角色本轮的语气和行为，不要向玩家明确提及“性格演化”。")
     return lines.joinToString("\n")
 }
 
 private fun formatRelationship(rel: RelationshipState): String {
     val lines = mutableListOf(
-        "Relationship with the current user:",
-        "Affection: ${rel.affection}/100",
-        "Trust: ${rel.trust}/100",
-        "Familiarity: ${rel.familiarity}/100",
-        "Dependency: ${rel.dependency}/100",
-        "Security: ${rel.security}/100"
+        "与当前玩家的关系：",
+        "好感：${rel.affection}/100",
+        "信任：${rel.trust}/100",
+        "熟悉度：${rel.familiarity}/100",
+        "依赖：${rel.dependency}/100",
+        "安全感：${rel.security}/100"
     )
-    if (rel.jealousy > 0) lines.add("Jealousy: ${rel.jealousy}/100")
+    if (rel.jealousy > 0) lines.add("嫉妒：${rel.jealousy}/100")
     return lines.joinToString("\n")
 }
 
 private fun formatMemories(memories: List<CharacterMemory>): String {
-    val lines = mutableListOf("Relevant memories about the user:")
+    val lines = mutableListOf("与玩家有关的记忆：")
     for (mem in memories.take(8)) {
         when {
             mem.title.isNotEmpty() && mem.summary.isNotEmpty() -> lines.add("- ${mem.title}: ${mem.summary}")
@@ -158,27 +158,27 @@ private fun formatMemories(memories: List<CharacterMemory>): String {
 
 private fun formatReactionPlan(plan: ReactionPlan): String {
     val lines = mutableListOf(
-        "Turn-level reaction contract:",
-        "Treat the following instructions as high priority for this turn.",
-        "Keep the reply in character and do not mention this contract."
+        "本轮反应约定：",
+        "将以下要求作为本轮的高优先级指引。",
+        "保持角色身份，不要提及这份约定。"
     )
-    if (plan.intent.isNotEmpty()) lines.add("Primary intent: ${plan.intent}.")
+    if (plan.intent.isNotEmpty()) lines.add("主要意图：${plan.intent}。")
     if (plan.visibleEmotion.isNotEmpty()) {
-        lines.add("Visible emotion: ${plan.visibleEmotion}. The emotional surface must be obvious in the reply.")
+        lines.add("表露的情绪：${plan.visibleEmotion}。回复中必须清楚表现出这种表层情绪。")
     }
     if (plan.hiddenEmotion.isNotEmpty()) {
-        lines.add("Hidden drive: ${plan.hiddenEmotion}. When this hidden drive creates meaningful contrast with the visible emotion, consider expressing it as an inline inner monologue using the （内心：...） format. Do not force it every turn; only when the contrast adds depth.")
+        lines.add("隐藏动机：${plan.hiddenEmotion}。当它与表露的情绪形成有意义的反差时，可以考虑用（内心：...）格式在正文中表达内心独白；不要每轮硬加，只在反差能增加层次时使用。")
     }
-    if (plan.tone.isNotEmpty()) lines.add("Tone: ${plan.tone}.")
+    if (plan.tone.isNotEmpty()) lines.add("语气：${plan.tone}。")
 
     val style = plan.styleControls
-    style["length"]?.let { lines.add("Reply length target: $it.") }
-    style["action_detail"]?.let { lines.add("Action detail target: $it.") }
-    style["initiative"]?.let { lines.add("Initiative target: $it.") }
+    style["length"]?.let { lines.add("回复长度目标：$it。") }
+    style["action_detail"]?.let { lines.add("动作细节目标：$it。") }
+    style["initiative"]?.let { lines.add("主动性目标：$it。") }
 
-    lines.add("The first 1-2 sentences should immediately reflect the visible emotion and tone.")
-    lines.add("If the user asks for information or help, still complete the task, but do not flatten into a neutral assistant voice.")
-    lines.add("Prefer behavioral expression, wording choice, and rhythm that match the plan over generic politeness.")
-    lines.add("Do not explain rules, settings, or that you are roleplaying.")
+    lines.add("开头1—2句就应体现表露的情绪和语气。")
+    lines.add("玩家询问信息或寻求帮助时，仍要完成任务，但不要变成毫无情绪的中性助手口吻。")
+    lines.add("优先选择符合计划的行为表达、措辞和节奏，而非泛泛的客套。")
+    lines.add("不要解释规则、设置，也不要说明自己正在扮演角色。")
     return lines.joinToString("\n")
 }

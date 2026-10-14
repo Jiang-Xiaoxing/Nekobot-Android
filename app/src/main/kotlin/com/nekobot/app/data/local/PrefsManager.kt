@@ -67,6 +67,19 @@ class PrefsManager(context: Context) {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     private val securePrefs = SecurePreferenceStore(context)
     private val gson = Gson()
+    private val characterThinking = CharacterThinkingPreferences(prefs)
+
+    /** 角色视角思考默认开启；仅影响角色会话中新请求的提示词。 */
+    var characterThinkingEnabled: Boolean
+        get() = characterThinking.enabled
+        set(value) { characterThinking.enabled = value }
+
+    /** 自定义思考提示词默认空，空白时使用默认中文文案。 */
+    var characterThinkingPrompt: String
+        get() = characterThinking.customPrompt
+        set(value) { characterThinking.customPrompt = value }
+
+    fun getCharacterThinkingSettings() = characterThinking.read()
 
     private fun companionRecallKey(profile: String, session: String) =
         "companion_recall:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest("$profile\n$session")

@@ -362,8 +362,30 @@ class AIPipeline {
         if (userPersona.isNotBlank()) {
             ctx.promptStack.add(
                 "user.persona",
-                "Player persona / background (use this to interpret the player's identity, name, preferences, and circumstances; address or refer to the player by the name given in this description rather than generic terms like \"user\"):\n$userPersona",
+                "玩家人设／背景（据此理解玩家的身份、姓名、偏好与处境；称呼或提及玩家时，使用这份描述中给出的名字，不要使用“用户”等泛称）：\n$userPersona",
                 priority = PromptStack.Priority.BEHAVIOR,
+                scope = "session"
+            )
+        }
+
+        // 每次重新准备都按当前条件重建，关闭开关或切到 NONE 不残留旧段落。
+        ctx.promptStack.remove(CHARACTER_THINKING_STYLE_KEY)
+        val sessionMode = (ctx.metadata["session_mode"] ?: ctx.chatRequest.metadata["session_mode"]) as? String
+        val inheritsCharacter = (ctx.metadata[com.nekobot.app.data.local.META_INHERIT_CHARACTER]
+            ?: ctx.chatRequest.metadata[com.nekobot.app.data.local.META_INHERIT_CHARACTER]) == true
+        val hasCharacter = ctx.characterTurn != null ||
+            !callbacks.getCharacterContext(ctx)?.characterId.isNullOrBlank()
+        val isCharacterSession = hasCharacter &&
+            (!sessionMode.equals("agent", ignoreCase = true) || inheritsCharacter || ctx.metadata[META_FUSED_COMPANION] == true)
+        val thinkingSettings = callbacks.getCharacterThinkingSettings(ctx)
+        if (isCharacterSession && callbacks.getReasoningEffort(ctx) != com.nekobot.app.data.model.ReasoningEffort.NONE && thinkingSettings.enabled) {
+            ctx.promptStack.add(
+                CHARACTER_THINKING_STYLE_KEY,
+                characterThinkingPrompt(thinkingSettings,
+                    ctx.characterTurn?.profile?.name.orEmpty().ifBlank { (ctx.metadata["sender_name"] as? String).orEmpty() },
+                    (ctx.metadata["user_name"] ?: ctx.chatRequest.metadata["user_name"]) as? String),
+                priority = PromptStack.Priority.BEHAVIOR + 1,
+                // 长久陪伴也放在顶部 system 中，工具循环及缓存重建均保留这项规则。
                 scope = "session"
             )
         }
@@ -381,6 +403,7 @@ class AIPipeline {
         val dynamicKeys = setOf("knowledge.rag", "agent.todos", "agent.goal", "agent.spec")
         val dynamicItems = if (fused) pipelineExtraItems.filter { it.key in dynamicKeys || it.scope == "turn" } else emptyList()
         val baseParts = listOf(characterBasePrompt, basePrompt)
+            .map { PromptStack.stripSection(it, CHARACTER_THINKING_STYLE_KEY) }
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()

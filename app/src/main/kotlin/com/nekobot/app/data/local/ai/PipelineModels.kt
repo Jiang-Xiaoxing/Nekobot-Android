@@ -185,6 +185,14 @@ typealias StreamModelCall = (messages: List<Map<String, Any>>, stopped: Boolean)
  * 对应原仓库 PipelineCallbacks。
  */
 open class PipelineCallbacks {
+    /** 由频道读取偏好；角色思考风格与显示开关无关。 */
+    open fun getCharacterThinkingSettings(ctx: PipelineContext) = CharacterThinkingSettings()
+
+    /** 本轮实际请求强度；本地频道覆盖为调用模型时使用的同一值。 */
+    open fun getReasoningEffort(ctx: PipelineContext) = com.nekobot.app.data.model.ReasoningEffort.fromValue(
+        (ctx.metadata["reasoning_effort"] ?: ctx.chatRequest.metadata["reasoning_effort"]) as? String
+    )
+
     open suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>,
         tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> = messages
 

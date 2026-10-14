@@ -1806,6 +1806,11 @@ internal class LocalPipelineCallbacks(
 
     override fun getCharacterRuntime(ctx: PipelineContext): CharacterRuntime? = characterRuntime
 
+    override fun getCharacterThinkingSettings(ctx: PipelineContext) =
+        com.nekobot.app.ServiceContainer.prefs.getCharacterThinkingSettings()
+
+    override fun getReasoningEffort(ctx: PipelineContext) = reasoningEffort
+
     // ---- 工具执行 ----
 
     override suspend fun executeTool(
