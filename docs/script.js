@@ -82,7 +82,7 @@
     const metaDesc = $('meta[name="description"]');
     if (metaDesc) metaDesc.setAttribute('content', t('meta.description'));
     document.documentElement.lang = LANG_HTML[currentLang] || I18N_DEFAULT;
-    const rawChat = Array.isArray(dict.chat) && dict.chat.length ? dict.chat : (I18N_DICT[I18N_DEFAULT].chat || []);
+    const rawChat = Array.isArray(dict.chat) && dict.chat.length ? dict.chat : (fallback.chat || []);
     chatScript = rawChat.map((text, i) => ({ from: CHAT_FROM_PATTERN[i % CHAT_FROM_PATTERN.length], text }));
     updateLangSwitcher();
     if (refreshDynamicA11y) refreshDynamicA11y();
@@ -182,7 +182,7 @@
   const linkMap = new Map(
     $$('.nav-links a').map((a) => [a.getAttribute('href').slice(1), a])
   );
-  const spy = new IntersectionObserver(
+  const spy = typeof IntersectionObserver === 'function' ? new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         const link = linkMap.get(entry.target.id);
@@ -194,22 +194,30 @@
       });
     },
     { rootMargin: '-38% 0px -55% 0px' }
-  );
-  sections.forEach((s) => spy.observe(s));
+  ) : null;
+  if (spy) sections.forEach((s) => spy.observe(s));
 
   /* ---------- 4. 滚动渐入动画 ---------- */
-  let revealIO = new IntersectionObserver(
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const revealIO = typeof IntersectionObserver === 'function' && !reduceMotion ? new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           entry.target.classList.add('visible');
+          entry.target.classList.remove('reveal-pending');
           revealIO.unobserve(entry.target);
         }
       });
     },
     { threshold: 0.12 }
-  );
-  $$('.reveal').forEach((el) => revealIO.observe(el));
+  ) : null;
+  function observeReveal(el) {
+    // 只有成功注册动画后才隐藏内容，脚本加载失败时仍可阅读页面。
+    if (!revealIO) return;
+    revealIO.observe(el);
+    el.classList.add('reveal-pending');
+  }
+  $$('.reveal').forEach(observeReveal);
 
   /* ---------- 5. 手机模型 · 模拟聊天循环（文案随语言切换） ---------- */
   const chatBody = $('#chatBody');
@@ -258,7 +266,7 @@
   }
 
   // 等手机滚入视野后再开始播放，省电也更自然
-  if (chatBody) {
+  if (chatBody && typeof IntersectionObserver === 'function') {
     const phoneIO = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
@@ -270,6 +278,9 @@
       { threshold: 0.3 }
     );
     phoneIO.observe(chatBody);
+  } else if (chatBody) {
+    chatStarted = true;
+    playChat();
   }
 
   /* ---------- 6. 功能展示 Tab 切换 ---------- */
@@ -523,7 +534,6 @@
       tag_name: 'v0.8.2', published_at: '2026-10-06',
       body: '- 经历档案支持查看对应聊天原文：可跳转到原聊天并定位历史段落，返回时保留浏览位置，失效来源可刷新\n- 浏览器工具支持 localhost / 127.0.0.1 / ::1 等回环地址的明文 http 页面与本地 .html 文件\n- 工作区文件与文件夹条目显示最近修改时间\n- 修复 Agent 压缩后历史摘要未发送给模型的问题，并标明摘要仅供回忆参考\n- 修复超大消息行导致会话无法打开：超限行列按 UTF-8 字节截断转存，读取异常自动修复重试\n- 修复经历来源在原话删改后不更新、切换资料库后显示旧聊天、后台更新打断翻页的问题\n- 补全日语、韩语资源中缺失的繁体中文界面语言选项\n- 工具集目录改为自动推导，新增工具无需再手写目录清单；Skill/数据库/子代理/MCP 自动进入 Tools 配置页\n- 精简 subagent_list 输出，任务结果改用 subagent_get 查询\n\n### English\n- Experience archive entries can open the original chat and jump to the source passage, keeping the previous scroll position; invalid sources can be refreshed\n- The browser tool now supports loopback http pages (localhost / 127.0.0.1 / ::1) and local .html files\n- Workspace files and folders now show their last modified time\n- Fixed compressed history summaries not being sent to the model; stored summaries are labeled as recall-only reference\n- Fixed very large message rows making a session impossible to open: oversized rows are truncated by UTF-8 bytes, and oversized reads are auto-repaired and retried\n- Fixed experience sources not updating after edits or deletions, stale chats after switching databases, and background updates interrupting paging\n- Completed the missing Traditional Chinese language option in the Japanese and Korean resources\n- Tool catalog is now derived automatically, so new tools need no manual catalog list; Skill, database, sub-agent and MCP session tools now appear in the Tools configuration page\n- Slimmed subagent_list output to task metadata only; use subagent_get to fetch results',
     },
-    },
   ];
   function renderReleases(releases) {
     const container = $('#changelogList');
@@ -536,7 +546,7 @@
       const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return `<div class="tl-item reveal${delay}"><div class="tl-dot"></div><div class="tl-card"><div class="tl-head"><b>${esc(ver)}</b><time>${esc(date)}</time></div><ul>${items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></div></div>`;
     }).join('');
-    container.querySelectorAll('.reveal').forEach((el) => revealIO.observe(el));
+    container.querySelectorAll('.reveal').forEach(observeReveal);
   }
 
   (async () => {
