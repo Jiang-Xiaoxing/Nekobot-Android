@@ -8,6 +8,11 @@
     <string name="command_suggestion_detail_title">명령 상세</string>
     <string name="command_suggestion_detail_hint">옵션을 길게 눌러 전체 설명 보기</string>
     <string name="command_suggestion_aliases">별칭: %1$s</string>
+    <string name="chat_workspace_mention_title">워크스페이스 파일</string>
+    <string name="chat_workspace_mention_hint">이름으로 검색하고 폴더를 눌러 탐색</string>
+    <string name="chat_workspace_mention_empty">일치하는 파일이나 폴더가 없습니다</string>
+    <string name="chat_workspace_mention_load_failed">워크스페이스 파일을 불러올 수 없습니다</string>
+    <string name="chat_workspace_mention_parent">상위 폴더로 이동</string>
     <string name="command_capsule_goal">목표</string>
     <string name="command_capsule_spec">명세</string>
     <string name="cmd_help_usage">/help</string>

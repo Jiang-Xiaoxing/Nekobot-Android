@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -128,6 +129,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.google.gson.JsonObject
+import com.google.gson.JsonElement
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AgentLiveContextUsage
@@ -153,6 +155,7 @@ import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.toolSetModeLabel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -339,6 +342,56 @@ private sealed interface ChatCommandCandidate {
     data class SkillCommand(val skill: Skill) : ChatCommandCandidate {
         override val key: String = "skill:${skill.id ?: skill.name}"
         override val insertion: String = "/skill \"${skill.name.replace("\"", "\\\"")}\" "
+    }
+}
+
+private data class WorkspaceMentionTrigger(
+    val start: Int,
+    val end: Int,
+    val query: String
+)
+
+private fun findWorkspaceMention(value: TextFieldValue): WorkspaceMentionTrigger? {
+    if (!value.selection.collapsed) return null
+    val cursor = value.selection.end.coerceIn(0, value.text.length)
+    val start = value.text.lastIndexOf('@', cursor - 1)
+    if (start < 0) return null
+    val query = value.text.substring(start + 1, cursor)
+    if (query.any(Char::isWhitespace)) return null
+    return WorkspaceMentionTrigger(start, cursor, query)
+}
+
+private fun replaceWorkspaceMention(
+    value: TextFieldValue,
+    trigger: WorkspaceMentionTrigger,
+    replacement: String
+): TextFieldValue {
+    val before = value.text.substring(0, trigger.start)
+    val after = value.text.substring(trigger.end)
+    return TextFieldValue(
+        text = before + replacement + after,
+        selection = TextRange(before.length + replacement.length)
+    )
+}
+
+private fun parseWorkspaceMentionFiles(element: JsonElement): List<WorkspaceFile> {
+    val files = when {
+        element.isJsonArray -> element.asJsonArray
+        element.isJsonObject -> element.asJsonObject.getAsJsonArray("files") ?: return emptyList()
+        else -> return emptyList()
+    }
+    return files.mapNotNull { entry ->
+        runCatching {
+            val file = entry.asJsonObject
+            WorkspaceFile(
+                name = file.get("name")?.asString.orEmpty(),
+                type = file.get("type")?.asString ?: "file",
+                size = runCatching { file.get("size")?.asLong ?: 0L }.getOrDefault(0L),
+                path = file.get("path")?.asString.orEmpty(),
+                mimeType = file.get("mime_type")?.asString.orEmpty(),
+                modifiedAt = runCatching { file.get("modified_at")?.asLong ?: 0L }.getOrDefault(0L)
+            ).takeIf { it.name.isNotBlank() && it.path.isNotBlank() }
+        }.getOrNull()
     }
 }
 
@@ -610,6 +663,137 @@ private fun CommandSuggestionPanel(
     )
 }
 
+@Composable
+private fun WorkspaceMentionPanel(
+    files: List<WorkspaceFile>,
+    currentPath: String,
+    query: String,
+    loading: Boolean,
+    loadFailed: Boolean,
+    onNavigateUp: () -> Unit,
+    onOpenFolder: (WorkspaceFile) -> Unit,
+    onPickFile: (WorkspaceFile) -> Unit
+) {
+    val visibleFiles = remember(files, query) {
+        files.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.chat_workspace_mention_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (currentPath.isBlank()) {
+                            stringResource(R.string.chat_workspace_mention_hint)
+                        } else {
+                            currentPath
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (currentPath.isNotBlank()) {
+                    IconButton(onClick = onNavigateUp, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.chat_workspace_mention_parent),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+            }
+            if (loading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            if (loadFailed) {
+                Text(
+                    text = stringResource(R.string.chat_workspace_mention_load_failed),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (!loading && visibleFiles.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.chat_workspace_mention_empty),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(visibleFiles, key = WorkspaceFile::path) { file ->
+                        val isDirectory = file.isDirectory
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { if (isDirectory) onOpenFolder(file) else onPickFile(file) }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isDirectory) Icons.Filled.Folder else Icons.Filled.AttachFile,
+                                contentDescription = null,
+                                tint = if (isDirectory) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(19.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = file.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isDirectory) FontWeight.Medium else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!isDirectory) {
+                                    Text(
+                                        text = file.path,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * 命令/ Skill 选项的完整说明弹窗：长按建议面板条目时展示。
  * [candidate] 为 null 时不渲染。
@@ -733,6 +917,7 @@ private fun ModernChatComposer(
         )
     }
     val input = inputField.text
+    val workspaceMentionTrigger = remember(inputField) { findWorkspaceMention(inputField) }
     // 命令胶囊：/goal、/spec 前缀在输入框内替换为彩色胶囊（视觉变换隐藏命令字符，
     // 胶囊由 decorationBox 在同样位置绘制；发送内容不受影响，仍是原始文本）
     val commandCapsule = remember(input) { matchCommandCapsule(input) }
@@ -789,6 +974,33 @@ private fun ModernChatComposer(
     var toolSetRevision by remember(sessionId) { mutableStateOf(0) }
     var enabledSkills by remember(sessionId) { mutableStateOf<List<Skill>>(emptyList()) }
     var dismissedCommandCandidateInput by remember(sessionId) { mutableStateOf<String?>(null) }
+    var workspaceMentionPath by rememberSaveable(sessionId) { mutableStateOf("") }
+    var workspaceMentionFiles by remember(sessionId) { mutableStateOf<List<WorkspaceFile>>(emptyList()) }
+    var workspaceMentionLoading by remember(sessionId) { mutableStateOf(false) }
+    var workspaceMentionLoadFailed by remember(sessionId) { mutableStateOf(false) }
+
+    LaunchedEffect(sessionId, workspaceMentionPath, workspaceMentionTrigger != null) {
+        if (workspaceMentionTrigger == null) return@LaunchedEffect
+        workspaceMentionFiles = emptyList()
+        workspaceMentionLoading = true
+        workspaceMentionLoadFailed = false
+        try {
+            when (val result = ServiceContainer.unified.listWorkspaceFiles(
+                sessionId,
+                workspaceMentionPath.ifBlank { null }
+            )) {
+                is Resource.Success -> workspaceMentionFiles = parseWorkspaceMentionFiles(result.data)
+                is Resource.Error -> workspaceMentionLoadFailed = true
+                Resource.Loading -> Unit
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            workspaceMentionLoadFailed = true
+        } finally {
+            workspaceMentionLoading = false
+        }
+    }
 
     LaunchedEffect(sessionId, skillsEnabled) {
         enabledSkills = if (skillsEnabled) {
@@ -1206,9 +1418,10 @@ private fun ModernChatComposer(
         input,
         enabledSkills,
         skillsEnabled,
-        dismissedCommandCandidateInput
+        dismissedCommandCandidateInput,
+        workspaceMentionTrigger
     ) {
-        if (input == dismissedCommandCandidateInput) {
+        if (input == dismissedCommandCandidateInput || workspaceMentionTrigger != null) {
             emptyList()
         } else {
             buildChatCommandCandidates(input, enabledSkills, skillsEnabled, context)
@@ -1362,7 +1575,34 @@ private fun ModernChatComposer(
                         )
                     }
 
-                    if (commandCandidates.isNotEmpty()) {
+                    if (workspaceMentionTrigger != null) {
+                        WorkspaceMentionPanel(
+                            files = workspaceMentionFiles,
+                            currentPath = workspaceMentionPath,
+                            query = workspaceMentionTrigger.query,
+                            loading = workspaceMentionLoading,
+                            loadFailed = workspaceMentionLoadFailed,
+                            onNavigateUp = {
+                                workspaceMentionPath = workspaceMentionPath.substringBeforeLast('/', "")
+                                inputField = replaceWorkspaceMention(inputField, workspaceMentionTrigger, "@")
+                            },
+                            onOpenFolder = { folder ->
+                                workspaceMentionPath = folder.path
+                                inputField = replaceWorkspaceMention(inputField, workspaceMentionTrigger, "@")
+                                inputExpanded = true
+                            },
+                            onPickFile = { file ->
+                                inputField = replaceWorkspaceMention(
+                                    inputField,
+                                    workspaceMentionTrigger,
+                                    "@${file.path} "
+                                )
+                                dismissedCommandCandidateInput = null
+                                inputExpanded = true
+                                pendingPlotChoiceId = null
+                            }
+                        )
+                    } else if (commandCandidates.isNotEmpty()) {
                         CommandSuggestionPanel(
                             candidates = commandCandidates,
                             showAllCommands = input.trimStart() == "/",
@@ -1435,6 +1675,12 @@ private fun ModernChatComposer(
                                         if (panelExpanded) closePanel()
                                         if (it.text != dismissedCommandCandidateInput) {
                                             dismissedCommandCandidateInput = null
+                                        }
+                                        val nextMention = findWorkspaceMention(it)
+                                        if (workspaceMentionTrigger == null && nextMention != null) {
+                                            workspaceMentionPath = ""
+                                        } else if (nextMention == null) {
+                                            workspaceMentionPath = ""
                                         }
                                         inputField = it
                                         if (pendingPlotChoiceId != null && it.text != plotChoices.firstOrNull { c -> c.id == pendingPlotChoiceId }?.title) {
