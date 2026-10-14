@@ -390,20 +390,36 @@ internal fun estimateLocalMessagesTokens(messages: List<Map<String, Any>>): Int 
     if (messages.isEmpty()) return 0
     val total = messages.sumOf { message ->
         MESSAGE_OVERHEAD_TOKENS +
-            estimateMessageValueTokens(message["content"]) +
-            estimateMessageValueTokens(message["tool_calls"])
+            estimateLocalContentTokens(message["content"]) +
+            estimateLocalContentTokens(message["tool_calls"]) +
+            estimateLocalTextTokens((message["reasoning_content"] as? String).orEmpty())
     } + CHAT_PRIMING_TOKENS
     return total.coerceAtLeast(1)
 }
 
-private fun estimateMessageValueTokens(value: Any?): Int = when (value) {
+/**
+ * 图片采用独立的保守预算，绝不能把传输用的 URL / Base64 当作正文分词。
+ * 各模型的视觉计费规则不同；这里仅用于本地容量估算，实际用量仍以服务商 usage 为准。
+ */
+internal const val LOCAL_IMAGE_TOKEN_ESTIMATE = 4_096
+internal const val LOCAL_LOW_DETAIL_IMAGE_TOKEN_ESTIMATE = 512
+
+internal fun estimateLocalContentTokens(value: Any?): Int = when (value) {
     null -> 0
     is String -> estimateLocalTextTokens(value)
-    is List<*> -> value.sumOf(::estimateMessageValueTokens)
+    is List<*> -> value.sumOf(::estimateLocalContentTokens)
     is Map<*, *> -> {
-        val preferred = value["text"] ?: value["content"]
-        if (preferred != null) estimateMessageValueTokens(preferred)
-        else value.values.sumOf(::estimateMessageValueTokens)
+        val inline = (value["inlineData"] ?: value["inline_data"]) as? Map<*, *>
+        val inlineMime = (inline?.get("mimeType") ?: inline?.get("mime_type")) as? String
+        if (value["type"] in setOf("image_url", "input_image", "image") ||
+            inlineMime?.startsWith("image/") == true) {
+            val detail = (value["image_url"] as? Map<*, *>)?.get("detail") ?: value["detail"]
+            if (detail == "low") LOCAL_LOW_DETAIL_IMAGE_TOKEN_ESTIMATE else LOCAL_IMAGE_TOKEN_ESTIMATE
+        } else {
+            val preferred = value["text"] ?: value["content"]
+            if (preferred != null) estimateLocalContentTokens(preferred)
+            else value.values.sumOf(::estimateLocalContentTokens)
+        }
     }
     else -> 0
 }

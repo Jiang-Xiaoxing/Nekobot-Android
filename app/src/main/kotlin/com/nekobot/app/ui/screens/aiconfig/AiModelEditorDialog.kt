@@ -149,7 +149,9 @@ private data class ProviderPreset(
     val inputPrice: String,
     val outputPrice: String,
     val labelRes: Int? = null,
-    val purpose: String? = null
+    val purpose: String? = null,
+    val voice: String? = null,
+    val format: String? = null
 )
 
 private val LIVE_SEED_PROVIDERS = setOf("doubao", "seed", "volcengine", "bytedance", "ark", "volces")
@@ -164,6 +166,14 @@ private data class LiveRealtimeDefaults(
 )
 
 private fun liveRealtimeDefaults(provider: String): LiveRealtimeDefaults = when (provider.lowercase()) {
+    "gemini", "google", "google_gemini" -> LiveRealtimeDefaults(
+        provider, com.nekobot.app.data.local.ai.REALTIME_GEMINI_DEFAULT_MODEL,
+        "https://generativelanguage.googleapis.com/v1beta", "Kore", ""
+    )
+    "grok", "xai" -> LiveRealtimeDefaults(
+        provider, com.nekobot.app.data.local.ai.REALTIME_GROK_DEFAULT_MODEL,
+        "https://api.x.ai/v1", "eve", ""
+    )
     "qwen", "dashscope", "tongyi" -> LiveRealtimeDefaults(
         provider = provider,
         model = REALTIME_QWEN_DEFAULT_MODEL,
@@ -245,6 +255,10 @@ private fun rememberProviderLabels(): LinkedHashMap<String, String> = linkedMapO
     "doubao" to stringResource(R.string.aimodel_editor_provider_doubao),
     "azure" to stringResource(R.string.aimodel_editor_provider_azure),
     "siliconflow" to stringResource(R.string.aimodel_editor_provider_siliconflow),
+    "elevenlabs" to stringResource(R.string.aimodel_editor_provider_elevenlabs),
+    "deepgram" to stringResource(R.string.aimodel_editor_provider_deepgram),
+    "groq" to stringResource(R.string.aimodel_editor_provider_groq),
+    "stability" to stringResource(R.string.aimodel_editor_provider_stability),
     "custom" to stringResource(R.string.aimodel_editor_provider_custom)
 )
 
@@ -371,7 +385,12 @@ fun AiModelEditorDialog(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                providerPresets.forEach { preset ->
+                val mediaPresets = com.nekobot.app.data.local.ai.mediaModelPresets(state.purpose)
+                val presets = if (mediaPresets.isEmpty()) providerPresets else mediaPresets.map {
+                    ProviderPreset(providerLabels[it.provider] ?: it.provider, it.provider, it.model,
+                        it.baseUrl, "32000", "4096", "", "", purpose = state.purpose, voice = it.voice, format = it.format)
+                }
+                presets.forEach { preset ->
                     AssistChip(
                         onClick = {
                             allowAutomaticPricing = true
@@ -682,6 +701,8 @@ fun AiModelEditorDialog(
                         state.model.contains("glm", ignoreCase = true) &&
                             state.model.contains("realtime", ignoreCase = true)
                     val liveVoiceOptions = when {
+                        state.provider.lowercase() in setOf("google", "gemini", "google_gemini") -> com.nekobot.app.data.local.ai.REALTIME_GEMINI_VOICES
+                        state.provider.lowercase() in setOf("grok", "xai") -> com.nekobot.app.data.local.ai.REALTIME_GROK_VOICES
                         isQwenRealtime -> REALTIME_QWEN_VOICES
                         isSeedRealtime -> REALTIME_SEED_VOICES
                         isGlmRealtime -> REALTIME_GLM_VOICES
@@ -708,7 +729,7 @@ fun AiModelEditorDialog(
                         options = liveVoiceOptions,
                         onSelect = { state = state.copy(ttsVoice = it) }
                     )
-                    EditorTextField(
+                    if (state.provider.lowercase() !in setOf("google", "gemini", "google_gemini", "grok", "xai")) EditorTextField(
                         label = stringResource(R.string.aimodel_editor_live_transcription_model),
                         value = state.sttModel,
                         placeholder = liveTranscriptionPlaceholder
@@ -749,7 +770,10 @@ fun AiModelEditorDialog(
                         "gemini" to stringResource(R.string.aimodel_editor_tts_provider_gemini),
                         "glm" to stringResource(R.string.aimodel_editor_tts_provider_glm),
                         "minimax" to stringResource(R.string.aimodel_editor_tts_provider_minimax),
-                        "qwen" to stringResource(R.string.aimodel_editor_tts_provider_qwen)
+                        "qwen" to stringResource(R.string.aimodel_editor_tts_provider_qwen),
+                        "siliconflow" to stringResource(R.string.aimodel_editor_provider_siliconflow),
+                        "elevenlabs" to stringResource(R.string.aimodel_editor_provider_elevenlabs),
+                        "deepgram" to stringResource(R.string.aimodel_editor_provider_deepgram)
                     )
                     val ttsResourceDefault = stringResource(R.string.aimodel_editor_tts_resource_default)
                     val ttsRefNotLoaded = stringResource(R.string.aimodel_editor_tts_ref_audio_not_loaded)
@@ -760,7 +784,7 @@ fun AiModelEditorDialog(
                     EditorDropdownField(
                         label = stringResource(R.string.aimodel_editor_tts_provider),
                         value = state.ttsProvider,
-                        options = listOf("openai", "gemini", "glm", "minimax", "qwen", "doubao", "xiaomi"),
+                        options = ttsProviderLabels.keys.toList(),
                         labelFor = { ttsProviderLabels[it] ?: it },
                         onSelect = { state = state.copy(ttsProvider = it) }
                     )
@@ -796,7 +820,8 @@ fun AiModelEditorDialog(
                     EditorDropdownField(
                         label = stringResource(R.string.aimodel_editor_tts_format),
                         value = state.ttsFormat,
-                        options = listOf("mp3", "wav", "opus", "flac"),
+                        options = if (state.ttsProvider in setOf("elevenlabs", "deepgram", "siliconflow"))
+                            listOf("mp3", "wav", "opus") else listOf("mp3", "wav", "opus", "flac"),
                         onSelect = { state = state.copy(ttsFormat = it) }
                     )
                     if (state.ttsProvider == "xiaomi") {
@@ -836,6 +861,10 @@ fun AiModelEditorDialog(
                         "gemini" to stringResource(R.string.aimodel_editor_stt_provider_gemini),
                         "glm" to stringResource(R.string.aimodel_editor_stt_provider_glm),
                         "qwen" to stringResource(R.string.aimodel_editor_stt_provider_qwen),
+                        "siliconflow" to stringResource(R.string.aimodel_editor_provider_siliconflow),
+                        "groq" to stringResource(R.string.aimodel_editor_provider_groq),
+                        "elevenlabs" to stringResource(R.string.aimodel_editor_provider_elevenlabs),
+                        "deepgram" to stringResource(R.string.aimodel_editor_provider_deepgram),
                         "xiaomi" to stringResource(R.string.aimodel_editor_stt_provider_xiaomi),
                         "local" to stringResource(R.string.aimodel_editor_stt_provider_local)
                     )
@@ -847,7 +876,7 @@ fun AiModelEditorDialog(
                     EditorDropdownField(
                         label = stringResource(R.string.aimodel_editor_stt_provider),
                         value = state.sttProvider,
-                        options = listOf("", "openai", "gemini", "glm", "qwen", "xiaomi", "local"),
+                        options = sttProviderLabels.keys.toList(),
                         labelFor = { sttProviderLabels[it] ?: it },
                         onSelect = { state = state.copy(sttProvider = it) }
                     )
@@ -1117,7 +1146,7 @@ private fun AiModelEditorState.applyPreset(
     // "URL does not appear to be valid" 或服务端 fallback 到已下线的旧模型快照。
     val targetPurpose = preset.purpose ?: purpose
     val liveDefaults = liveRealtimeDefaults(preset.provider).takeIf { targetPurpose == "live" }
-    val isImageGeneration = targetPurpose == "image_generation"
+    val nativeProvider = com.nekobot.app.data.local.ai.MultimodalProviderSupport.normalize(preset.provider)
     return copy(
         name = presetConfigTemplate.format(presetLabel),
         purpose = targetPurpose,
@@ -1125,16 +1154,28 @@ private fun AiModelEditorState.applyPreset(
         protocol = protocolFor(preset.provider, protocols),
         model = liveDefaults?.model ?: preset.model,
         baseUrl = liveDefaults?.baseUrl ?: preset.baseUrl,
+        appendBaseUrlPath = if (preset.purpose != null) true else appendBaseUrlPath,
         maxContextLength = preset.maxContextLength,
         maxTokens = preset.maxTokens,
         inputPrice = preset.inputPrice,
         outputPrice = preset.outputPrice,
-        supportsTools = !isImageGeneration && preset.provider != "google",
-        supportsReasoning = !isImageGeneration && preset.provider !in setOf("google", "minimax"),
-        supportsStream = !isImageGeneration,
+        supportsTools = targetPurpose == "chat" && preset.provider != "google",
+        supportsReasoning = targetPurpose == "chat" && preset.provider !in setOf("google", "minimax"),
+        supportsStream = targetPurpose in setOf("chat", "vision", "video", "live"),
         supportsVision = if (targetPurpose == "chat") supportsVision else false,
-        ttsVoice = liveDefaults?.voice ?: ttsVoice,
-        sttModel = liveDefaults?.transcriptionModel ?: sttModel
+        ttsProvider = if (targetPurpose == "tts") nativeProvider else ttsProvider,
+        ttsModel = if (targetPurpose == "tts") preset.model else ttsModel,
+        ttsVoice = liveDefaults?.voice ?: preset.voice ?: ttsVoice,
+        ttsFormat = preset.format ?: ttsFormat,
+        ttsUrl = if (targetPurpose == "tts") "" else ttsUrl,
+        ttsHeaders = if (targetPurpose == "tts") "" else ttsHeaders,
+        ttsBodyTemplate = if (targetPurpose == "tts") "" else ttsBodyTemplate,
+        ttsResourceId = if (targetPurpose == "tts" && nativeProvider == "doubao") "seed-tts-2.0" else if (targetPurpose == "tts") "" else ttsResourceId,
+        ttsRefAudio = if (targetPurpose == "tts") "" else ttsRefAudio,
+        sttProvider = if (targetPurpose == "stt") nativeProvider else sttProvider,
+        sttUrl = if (targetPurpose == "stt") "" else sttUrl,
+        sttHeaders = if (targetPurpose == "stt") "" else sttHeaders,
+        sttModel = liveDefaults?.transcriptionModel ?: if (targetPurpose == "stt") preset.model else sttModel
     )
 }
 

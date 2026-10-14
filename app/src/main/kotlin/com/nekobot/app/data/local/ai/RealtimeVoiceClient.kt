@@ -57,22 +57,34 @@ data class RealtimeModelConfig(
     val isGlmRealtime: Boolean
         get() = realtimeProtocol == RealtimeProtocol.GLM
 
+    val isGeminiLive: Boolean
+        get() = realtimeProtocol == RealtimeProtocol.GEMINI
+
+    val isGrokRealtime: Boolean
+        get() = realtimeProtocol == RealtimeProtocol.GROK
+
     /** 国内 Realtime 服务采用兼容旧版 OpenAI Realtime 的扁平会话字段。 */
     internal val usesFlatSessionUpdate: Boolean
-        get() = realtimeProtocol != RealtimeProtocol.OPENAI
+        get() = realtimeProtocol in setOf(RealtimeProtocol.QWEN, RealtimeProtocol.SEED, RealtimeProtocol.GLM)
 }
 
 private enum class RealtimeProtocol {
     OPENAI,
     QWEN,
     SEED,
-    GLM;
+    GLM,
+    GEMINI,
+    GROK;
 
     companion object {
         fun resolve(provider: String?, model: String): RealtimeProtocol {
             val normalizedProvider = provider.orEmpty().trim().lowercase()
             val normalizedModel = model.trim().lowercase()
             return when {
+                MultimodalProviderSupport.normalize(normalizedProvider) == "gemini" ||
+                    normalizedModel.startsWith("gemini") -> GEMINI
+                MultimodalProviderSupport.normalize(normalizedProvider) == "grok" ||
+                    normalizedModel.startsWith("grok") -> GROK
                 normalizedProvider in setOf("qwen", "dashscope", "tongyi") ||
                     normalizedModel.contains("qwen") && normalizedModel.contains("realtime") -> QWEN
                 normalizedProvider in setOf("doubao", "seed", "volcengine", "bytedance", "ark", "volces") ||
@@ -163,7 +175,7 @@ class RealtimeVoiceClient(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 ) {
-    private val gson = Gson()
+    private val gson = com.google.gson.GsonBuilder().serializeNulls().create()
 
     fun streamTurn(
         config: RealtimeModelConfig,
@@ -172,7 +184,10 @@ class RealtimeVoiceClient(
         pcm16: ByteArray,
         tools: List<Map<String, Any>> = emptyList(),
         onToolCall: (suspend (RealtimeFunctionCall) -> Map<String, Any>)? = null
-    ): Flow<RealtimeVoiceEvent> = callbackFlow {
+    ): Flow<RealtimeVoiceEvent> = if (config.isGeminiLive) {
+        require(tools.isEmpty()) { "Gemini Live 当前不支持本地 Agent 工具调用" }
+        GeminiLiveClient(baseClient).streamTurn(config, instructions, context, pcm16)
+    } else callbackFlow {
         require(config.apiKey.isNotBlank() && config.apiKey != "********") {
             "Realtime 模型缺少可用的 API Key"
         }
@@ -191,8 +206,10 @@ class RealtimeVoiceClient(
         }
 
         val client = baseClient.withModelProxy(config.proxyUrl)
+        // 聊天录音统一为 16kHz；OpenAI/GLM/Seed 的 PCM16 协议要求 24kHz。
+        val inputAudio = if (config.isQwenRealtime || config.isGrokRealtime) pcm16 else resampleRealtimeInput(pcm16)
         val request = Request.Builder()
-            .url(buildRealtimeWebSocketUrl(config.baseUrl, config.appendBaseUrlPath, config.model, config.isQwenRealtime))
+            .url(buildRealtimeWebSocketUrl(config.baseUrl.ifBlank { if (config.isGrokRealtime) "https://api.x.ai/v1" else "" }, config.appendBaseUrlPath, config.model, config.isQwenRealtime))
             .header("Authorization", "Bearer ${config.apiKey}")
             .build()
         val userTranscript = StringBuilder()
@@ -292,9 +309,9 @@ class RealtimeVoiceClient(
             audioUploadStarted = true
             launch {
                 var offset = 0
-                while (offset < pcm16.size) {
-                    val end = minOf(offset + REALTIME_INPUT_CHUNK_BYTES, pcm16.size)
-                    val bytes = pcm16.copyOfRange(offset, end)
+                while (offset < inputAudio.size) {
+                    val end = minOf(offset + REALTIME_INPUT_CHUNK_BYTES, inputAudio.size)
+                    val bytes = inputAudio.copyOfRange(offset, end)
                     if (!webSocket.send(
                         gson.toJson(JsonObject().apply {
                             addProperty("type", "input_audio_buffer.append")
@@ -366,7 +383,7 @@ class RealtimeVoiceClient(
                 }
                 // Qwen 必须先确认 session.update 已禁用服务端 VAD，才可提交音频。
                 // 否则新模型可能按默认 VAD 自动创建响应，再收到 response.create 时会报并发错误。
-                if (!config.isQwenRealtime) uploadAudio(webSocket)
+                if (!config.isQwenRealtime && !config.isGrokRealtime) uploadAudio(webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -376,7 +393,7 @@ class RealtimeVoiceClient(
 
                     "session.updated" -> {
                         trySend(RealtimeVoiceEvent.Connected)
-                        if (config.isQwenRealtime) uploadAudio(webSocket)
+                        if (config.isQwenRealtime || config.isGrokRealtime) uploadAudio(webSocket)
                     }
 
                     "conversation.item.input_audio_transcription.delta" -> {
@@ -543,6 +560,10 @@ class RealtimeVoiceClient(
     }
 
     suspend fun testConnection(config: RealtimeModelConfig): Result<Unit> = runCatching {
+        if (config.isGeminiLive) {
+            GeminiLiveClient(baseClient).testConnection(config).getOrThrow()
+            return@runCatching
+        }
         require(config.apiKey.isNotBlank() && config.apiKey != "********") {
             "Realtime 模型缺少可用的 API Key"
         }
@@ -551,15 +572,19 @@ class RealtimeVoiceClient(
                 val completed = AtomicBoolean(false)
                 val client = baseClient.withModelProxy(config.proxyUrl)
                 val request = Request.Builder()
-                    .url(buildRealtimeWebSocketUrl(config.baseUrl, config.appendBaseUrlPath, config.model, config.isQwenRealtime))
+                    .url(buildRealtimeWebSocketUrl(config.baseUrl.ifBlank { if (config.isGrokRealtime) "https://api.x.ai/v1" else "" }, config.appendBaseUrlPath, config.model, config.isQwenRealtime))
                     .header("Authorization", "Bearer ${config.apiKey}")
                     .build()
                 val socket = client.newWebSocket(request, object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        webSocket.send(gson.toJson(buildRealtimeSessionUpdate(config, "简洁地进行语音对话。")))
+                    }
+
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         val type = runCatching {
                             JsonParser.parseString(text).asJsonObject.string("type")
                         }.getOrNull()
-                        if (type == "session.created" && completed.compareAndSet(false, true)) {
+                        if (type == "session.updated" && completed.compareAndSet(false, true)) {
                             webSocket.close(1000, "test completed")
                             continuation.resume(Unit)
                         } else if (type == "error" && completed.compareAndSet(false, true)) {
@@ -590,6 +615,23 @@ internal fun buildRealtimeSessionUpdate(
     context: List<RealtimeContextMessage> = emptyList(),
     tools: List<Map<String, Any>> = emptyList()
 ): JsonObject {
+    if (config.isGrokRealtime) {
+        return Gson().toJsonTree(mapOf(
+            "type" to "session.update",
+            "session" to linkedMapOf<String, Any?>(
+                "voice" to config.voice.ifBlank { "eve" },
+                "instructions" to instructions.trim().take(REALTIME_MAX_INSTRUCTIONS_CHARS),
+                "turn_detection" to null,
+                "audio" to mapOf(
+                    "input" to mapOf("format" to mapOf("type" to "audio/pcm", "rate" to REALTIME_INPUT_SAMPLE_RATE)),
+                    "output" to mapOf("format" to mapOf("type" to "audio/pcm", "rate" to REALTIME_OUTPUT_SAMPLE_RATE))
+                )
+            )
+        )).asJsonObject.also {
+            // Gson 默认忽略 Map 中的 null，手动关闭服务端 VAD。
+            it.getAsJsonObject("session").add("turn_detection", com.google.gson.JsonNull.INSTANCE)
+        }
+    }
     if (config.isQwenRealtime) {
         return buildQwenRealtimeSessionUpdate(config, instructions, context, tools)
     }
@@ -675,6 +717,7 @@ private fun buildFlatRealtimeSessionUpdate(
 internal fun buildRealtimeResponseCreate(config: RealtimeModelConfig): JsonObject = JsonObject().apply {
     addProperty("type", "response.create")
     when {
+        config.isGrokRealtime -> Unit
         config.isQwenRealtime -> add("response", JsonObject().apply {
             add("modalities", JsonArray().apply {
                 add("text")
@@ -881,6 +924,8 @@ private val RealtimeProtocol.defaultModel: String
         RealtimeProtocol.SEED -> REALTIME_SEED_DEFAULT_MODEL
         RealtimeProtocol.GLM -> REALTIME_GLM_DEFAULT_MODEL
         RealtimeProtocol.OPENAI -> "gpt-realtime"
+        RealtimeProtocol.GEMINI -> REALTIME_GEMINI_DEFAULT_MODEL
+        RealtimeProtocol.GROK -> REALTIME_GROK_DEFAULT_MODEL
     }
 
 private val RealtimeProtocol.defaultVoice: String
@@ -889,6 +934,8 @@ private val RealtimeProtocol.defaultVoice: String
         RealtimeProtocol.SEED -> REALTIME_SEED_DEFAULT_VOICE
         RealtimeProtocol.GLM -> REALTIME_GLM_DEFAULT_VOICE
         RealtimeProtocol.OPENAI -> "marin"
+        RealtimeProtocol.GEMINI -> "Kore"
+        RealtimeProtocol.GROK -> "eve"
     }
 
 private val RealtimeProtocol.defaultTranscriptionModel: String
@@ -897,9 +944,35 @@ private val RealtimeProtocol.defaultTranscriptionModel: String
         RealtimeProtocol.SEED -> REALTIME_SEED_DEFAULT_TRANSCRIPTION_MODEL
         RealtimeProtocol.GLM -> REALTIME_GLM_DEFAULT_TRANSCRIPTION_MODEL
         RealtimeProtocol.OPENAI -> "gpt-4o-mini-transcribe"
+        RealtimeProtocol.GEMINI, RealtimeProtocol.GROK -> ""
     }
 
 const val REALTIME_SAMPLE_RATE = 24_000
+
+/** 16kHz 单声道 PCM16 到 24kHz，保持录音时长与音调。 */
+internal fun resampleRealtimeInput(input: ByteArray): ByteArray {
+    val samples = input.size / 2
+    if (samples == 0) return byteArrayOf()
+    val output = ByteArray((samples * 3 / 2) * 2)
+    fun sample(index: Int): Int {
+        val i = index.coerceIn(0, samples - 1) * 2
+        return ((input[i].toInt() and 255) or (input[i + 1].toInt() shl 8)).toShort().toInt()
+    }
+    repeat(output.size / 2) { i ->
+        val position = i * 2.0 / 3.0
+        val index = position.toInt()
+        val fraction = position - index
+        val value = (sample(index) * (1 - fraction) + sample(index + 1) * fraction).toInt()
+        output[i * 2] = value.toByte()
+        output[i * 2 + 1] = (value shr 8).toByte()
+    }
+    return output
+}
+
+const val REALTIME_GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-live-preview"
+const val REALTIME_GROK_DEFAULT_MODEL = "grok-voice-latest"
+val REALTIME_GEMINI_VOICES = listOf("Kore", "Puck", "Charon", "Aoede", "Fenrir", "Leda", "Orus", "Zephyr")
+val REALTIME_GROK_VOICES = listOf("eve", "ara", "rex", "sal", "leo")
 /** Qwen Realtime 输入采样率（官方默认 16000Hz，更稳定；输出保持 24000Hz）。 */
 const val REALTIME_INPUT_SAMPLE_RATE = 16_000
 /** Qwen Realtime 输出采样率（官方默认 24000Hz）。 */

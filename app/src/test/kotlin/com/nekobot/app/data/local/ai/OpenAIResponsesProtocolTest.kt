@@ -7,6 +7,66 @@ import kotlinx.coroutines.runBlocking
 
 class OpenAIResponsesProtocolTest {
     @Test
+    fun `function call output preserves tool images as structured input images`() {
+        val url = "data:image/jpeg;base64,AA=="
+        val payload = OpenAIResponsesProtocol.buildPayload(
+            model = "gpt-test",
+            messages = listOf(mapOf(
+                "role" to "tool", "tool_call_id" to "call-image",
+                "content" to buildToolMessageContent(mapOf("path" to "part.jpg", "_image_urls" to listOf(url)))
+            )),
+            stream = true, extra = emptyMap()
+        )
+        val output = (payload["input"] as List<*>).single() as Map<*, *>
+        val blocks = output["output"] as List<*>
+
+        assertEquals("function_call_output", output["type"])
+        assertEquals("call-image", output["call_id"])
+        assertTrue(((blocks[0] as Map<*, *>)["text"] as String).contains("part.jpg"))
+        assertEquals(mapOf("type" to "input_image", "image_url" to url), blocks[1])
+        assertTrue(((blocks[0] as Map<*, *>)["text"] as String).contains("base64").not())
+    }
+
+    @Test
+    fun `plain text function output remains a string`() {
+        val payload = OpenAIResponsesProtocol.buildPayload(
+            model = "gpt-test",
+            messages = listOf(mapOf("role" to "tool", "tool_call_id" to "call-text", "content" to "result")),
+            stream = true, extra = emptyMap()
+        )
+        val output = (payload["input"] as List<*>).single() as Map<*, *>
+        assertEquals("result", output["output"])
+    }
+    @Test
+    fun `multimodal input preserves images and message roles`() {
+        val payload = OpenAIResponsesProtocol.buildPayload(
+            model = "gpt-test",
+            messages = listOf(
+                mapOf("role" to "user", "content" to listOf(
+                    mapOf("type" to "text", "text" to "Read this image"),
+                    mapOf("type" to "image_url", "image_url" to mapOf(
+                        "url" to "data:image/png;base64,AA==", "detail" to "high"))
+                )),
+                mapOf("role" to "assistant", "content" to listOf(mapOf("type" to "text", "text" to "1234"))),
+                mapOf("role" to "user", "content" to listOf(mapOf(
+                    "type" to "input_image", "file_id" to "file-image", "detail" to "auto")))
+            ),
+            stream = true, extra = emptyMap()
+        )
+        val input = payload["input"] as List<*>
+        val user = input[0] as Map<*, *>
+        val blocks = user["content"] as List<*>
+        assertEquals("user", user["role"])
+        assertEquals(mapOf("type" to "input_text", "text" to "Read this image"), blocks[0])
+        assertEquals(mapOf("type" to "input_image", "image_url" to "data:image/png;base64,AA==", "detail" to "high"), blocks[1])
+        val assistant = input[1] as Map<*, *>
+        assertEquals("assistant", assistant["role"])
+        assertEquals(listOf(mapOf("type" to "output_text", "text" to "1234")), assistant["content"])
+        assertEquals(listOf(mapOf("type" to "input_image", "file_id" to "file-image", "detail" to "auto")),
+            (input[2] as Map<*, *>)["content"])
+    }
+
+    @Test
     fun `build payload separates instructions and flattens tools`() {
         val payload = OpenAIResponsesProtocol.buildPayload(
             model = "gpt-test",

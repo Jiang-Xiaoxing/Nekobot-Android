@@ -784,7 +784,7 @@ class AIPipeline {
     ) {
         val modelCall = callbacks.buildModelCall(ctx, tools)
         ctx.toolContext = callbacks.getWorkspaceContext(ctx)
-        val preparedMessageCount = ctx.messages.size + ctx.toolCallHistory.orEmpty().size
+        val preparedMessages = ctx.messages + ctx.toolCallHistory.orEmpty()
 
         // 工具执行器
         val toolExecutor: suspend (Map<String, Any>, String, Int, List<Map<String, Any>>) -> Map<String, Any> = { toolCall, thinking, iteration, messages ->
@@ -814,7 +814,7 @@ class AIPipeline {
         val hooks = ToolLoopHooks(
             onIterationStart = { iteration, messages ->
                 progress.onToolIteration(ctx, iteration)
-                val safeHistory = extractCurrentTurnToolCallHistory(messages, preparedMessageCount)
+                val safeHistory = extractCurrentTurnToolCallHistory(messages, preparedMessages)
                 ctx.toolTrace = safeHistory
                 callbacks.saveAgentCheckpoint(
                     ctx = ctx,
@@ -857,7 +857,7 @@ class AIPipeline {
                 null  // 使用默认 tool message 格式
             },
             onCheckpoint = { _, messages ->
-                val safeHistory = extractCurrentTurnToolCallHistory(messages, preparedMessageCount)
+                val safeHistory = extractCurrentTurnToolCallHistory(messages, preparedMessages)
                 ctx.toolTrace = safeHistory
                 callbacks.saveAgentCheckpoint(
                     ctx = ctx,
@@ -874,6 +874,10 @@ class AIPipeline {
             // 即时写入的内容能恢复（检查点只保存进度，不含工具正文）。
             onToolMessageAppended = { message ->
                 callbacks.persistAgentToolMessage(ctx, message)
+            },
+            onContextTrimmed = { messages ->
+                callbacks.synchronizeAgentToolContext(ctx, messages)
+                ctx.toolTrace = extractCurrentTurnToolCallHistory(messages, preparedMessages)
             }
         )
 
@@ -889,6 +893,7 @@ class AIPipeline {
             pendingUserMessages = { callbacks.drainPendingUserMessages(ctx) },
             // 模型配置的上下文窗口即本轮输入预算：工具循环内超限时先裁剪历史工具结果，
             // 而不是等到下一轮才开始压缩（长任务常常一轮就撑满窗口）。
+            inputOverheadTokens = estimateToolDefinitionsTokens(tools),
             contextBudgetTokens = {
                 // 由 process() 写入的 max_context_tokens（= 模型配置的 token 上限）。
                 (ctx.metadata["max_context_tokens"] as? Int)?.takeIf { it > 0 } ?: 0
@@ -916,7 +921,7 @@ class AIPipeline {
             // 若再次写入会造成工具历史跨轮重复嵌套。
             ctx.toolTrace = extractCurrentTurnToolCallHistory(
                 loopResult.toolMessages,
-                executionResult.preparedMessages.size
+                executionResult.preparedMessages
             )
 
             if (loopResult.stopped) {

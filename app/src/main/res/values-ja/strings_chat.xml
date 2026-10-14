@@ -800,4 +800,10 @@
 <string name="chat_subagent_control_unavailable">サブエージェントの状態が変わりました。更新して再試行してください</string>
 <string name="chat_subagent_retry_action">再試行</string>
     <string name="chat_subagent_retry_prompt">まずサブエージェントタスク %1$s が現在の目標に合っていることを確認し、subagent_retry(task_id=%1$s) を呼び出して再試行し、結果を確認してください。</string>
+    <string name="chat_p0_model">P0 モデル</string>
+    <string name="chat_model_session_hint">この会話のみ。他のモデルは順に並びます。</string>
+    <string name="chat_model_follow_default">既定の順序に従う</string>
+    <string name="chat_model_priority_name">P%1$d · %2$s</string>
+    <string name="chat_model_update_failed">会話モデルを更新できません。再試行してください。</string>
+    <string name="chat_setting_reasoning_hint">思考強度を選択します。</string>
 </resources>

@@ -13,6 +13,14 @@ internal object MultimodalProviderSupport {
     fun imageProvider(model: LocalAiModelEntity): String =
         firstNonBlank(model.provider, model.protocol)
 
+    fun supportsImageReference(provider: String, modelName: String): Boolean = when (provider.trim().lowercase()) {
+        "minimax", "glm", "zhipu", "bigmodel", "stability", "stabilityai" -> false
+        "siliconflow", "silicon_flow" -> modelName.contains("Image-Edit", true)
+        "doubao", "seed", "seedream", "volcengine", "ark", "volces" -> true
+        "qwen", "dashscope", "tongyi" -> modelName.trim().equals("qwen-image-3.0", true)
+        else -> true
+    }
+
     fun endpoint(
         baseUrl: String,
         suffix: String,
@@ -83,5 +91,21 @@ internal object MultimodalProviderSupport {
     }
 
     private fun firstNonBlank(vararg values: String?): String =
-        values.firstOrNull { !it.isNullOrBlank() }?.trim()?.lowercase().orEmpty()
+        normalize(values.firstOrNull { !it.isNullOrBlank() }.orEmpty())
+
+    fun normalize(provider: String): String = when (val value = provider.trim().lowercase()) {
+        "google", "google_gemini", "gemini_native" -> "gemini"
+        "zhipu", "bigmodel" -> "glm"
+        "dashscope", "tongyi" -> "qwen"
+        "silicon_flow" -> "siliconflow"
+        "eleven_labs" -> "elevenlabs"
+        "xai", "x.ai" -> "grok"
+        "stabilityai" -> "stability"
+        else -> value
+    }
+}
+
+internal fun decodeMiniMaxAudioHex(value: String): ByteArray {
+    require(value.length % 2 == 0 && value.all { it.digitToIntOrNull(16) != null }) { "MiniMax 返回的音频 Hex 无效" }
+    return ByteArray(value.length / 2) { index -> value.substring(index * 2, index * 2 + 2).toInt(16).toByte() }
 }

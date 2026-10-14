@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -134,6 +135,44 @@ class LocalTtsChainTest {
         assertTrue(json.contains("\"tts_model\":\"mimo-v2.5-tts\""))
         assertTrue(json.contains("\"stt_language\":\"zh\""))
         assertFalse(json.contains("\"protocol\""))
+    }
+
+    @Test
+    fun customVoiceUploadUsesConfiguredEndpointAndOriginalFormFields() = runBlocking {
+        var capturedUrl = ""
+        var capturedBody = ""
+        val client = client { request ->
+            capturedUrl = request.url.toString()
+            val buffer = okio.Buffer()
+            request.body!!.writeTo(buffer)
+            capturedBody = buffer.readUtf8()
+            assertEquals("Bearer test-key", request.header("Authorization"))
+            response(request, """{"uri":"speech:CustomVoiceABC"}""".toByteArray(), "application/json")
+        }
+        val model = ttsModel("openai", "https://provider.example/v1", "speech-model", ttsVoice = "alloy")
+            .copy(ttsUploadUrl = "https://provider.example/custom-voice")
+        val id = LocalAiClient(client).uploadTtsVoice(
+            model,
+            okhttp3.MultipartBody.Part.createFormData("file", "voice.wav", "sample".toRequestBody("audio/wav".toMediaType())),
+            "我的音色".toRequestBody(), "你好".toRequestBody()
+        )
+        assertEquals("speech:CustomVoiceABC", id)
+        assertEquals("https://provider.example/custom-voice", capturedUrl)
+        listOf("name=\"customName\"", "name=\"text\"", "name=\"model\"", "speech-model", "我的音色", "你好")
+            .forEach { assertTrue(it, capturedBody.contains(it)) }
+    }
+
+    @Test
+    fun customVoiceUploadRejectsSuccessWithoutVoiceId() = runBlocking {
+        val client = client { request -> response(request, "{}".toByteArray(), "application/json") }
+        try {
+            LocalAiClient(client).uploadTtsVoice(
+                ttsModel("openai", "https://provider.example/v1", "tts", ttsVoice = "alloy"),
+                okhttp3.MultipartBody.Part.createFormData("file", "voice.wav", "sample".toRequestBody()),
+                "name".toRequestBody(), "text".toRequestBody()
+            )
+            org.junit.Assert.fail("Empty voice id must not be stored")
+        } catch (_: IllegalStateException) { }
     }
 
     private fun client(handler: (okhttp3.Request) -> Response): OkHttpClient =

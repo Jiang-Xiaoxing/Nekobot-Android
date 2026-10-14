@@ -82,7 +82,7 @@
     const metaDesc = $('meta[name="description"]');
     if (metaDesc) metaDesc.setAttribute('content', t('meta.description'));
     document.documentElement.lang = LANG_HTML[currentLang] || I18N_DEFAULT;
-    const rawChat = Array.isArray(dict.chat) && dict.chat.length ? dict.chat : (I18N_DICT[I18N_DEFAULT].chat || []);
+    const rawChat = Array.isArray(dict.chat) && dict.chat.length ? dict.chat : (fallback.chat || []);
     chatScript = rawChat.map((text, i) => ({ from: CHAT_FROM_PATTERN[i % CHAT_FROM_PATTERN.length], text }));
     updateLangSwitcher();
     if (refreshDynamicA11y) refreshDynamicA11y();
@@ -182,7 +182,7 @@
   const linkMap = new Map(
     $$('.nav-links a').map((a) => [a.getAttribute('href').slice(1), a])
   );
-  const spy = new IntersectionObserver(
+  const spy = typeof IntersectionObserver === 'function' ? new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         const link = linkMap.get(entry.target.id);
@@ -194,22 +194,30 @@
       });
     },
     { rootMargin: '-38% 0px -55% 0px' }
-  );
-  sections.forEach((s) => spy.observe(s));
+  ) : null;
+  if (spy) sections.forEach((s) => spy.observe(s));
 
   /* ---------- 4. 滚动渐入动画 ---------- */
-  let revealIO = new IntersectionObserver(
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const revealIO = typeof IntersectionObserver === 'function' && !reduceMotion ? new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           entry.target.classList.add('visible');
+          entry.target.classList.remove('reveal-pending');
           revealIO.unobserve(entry.target);
         }
       });
     },
     { threshold: 0.12 }
-  );
-  $$('.reveal').forEach((el) => revealIO.observe(el));
+  ) : null;
+  function observeReveal(el) {
+    // 只有成功注册动画后才隐藏内容，脚本加载失败时仍可阅读页面。
+    if (!revealIO) return;
+    revealIO.observe(el);
+    el.classList.add('reveal-pending');
+  }
+  $$('.reveal').forEach(observeReveal);
 
   /* ---------- 5. 手机模型 · 模拟聊天循环（文案随语言切换） ---------- */
   const chatBody = $('#chatBody');
@@ -258,7 +266,7 @@
   }
 
   // 等手机滚入视野后再开始播放，省电也更自然
-  if (chatBody) {
+  if (chatBody && typeof IntersectionObserver === 'function') {
     const phoneIO = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
@@ -270,6 +278,9 @@
       { threshold: 0.3 }
     );
     phoneIO.observe(chatBody);
+  } else if (chatBody) {
+    chatStarted = true;
+    playChat();
   }
 
   /* ---------- 6. 功能展示 Tab 切换 ---------- */
@@ -512,6 +523,10 @@
 
   const FALLBACK_RELEASES = [
     {
+      tag_name: 'v0.8.5', published_at: '2026-10-14',
+      body: '- 聊天输入框支持通过 @ 浏览并选择工作区文件，自动插入文件路径。\n- Agent 前台通知展示当前会话的中间回复内容。\n- Agent 根据模型视觉能力选择图片处理方式，多模态上下文裁剪时保留图片。\n- 新增 ElevenLabs、Deepgram、SiliconFlow 原生语音接入，以及 Gemini Live、Grok 实时语音支持。\n- TTS 和生图试验场支持模型选择、音色上传、参考图及媒体保存分享。\n- AI 配置支持实测并保存模型能力；聊天记录支持服务端游标分页并兼容旧版后端。\n- 全局搜索增强消息定位。\n- 修复 Agent 上下文同步跨运行串扰及多模态上下文裁剪时图片丢失的问题。\n- 修复后台 Agent 服务超时、模型请求取消处理和 Codex Responses 能力检测兼容性。\n- 修复官网脚本错误，并改善滚动观察器不可用和减少动态效果设置下的兼容性。\n- 重构全局 Agent 记忆编辑与历史预览，支持历史查看、撤销、冲突合并和来源会话跳转。\n- 知识库检索按作用域分批执行并缓存切片评分，操作入口收纳至更多菜单。\n\n### English\n- Chat composer lets users browse and select workspace files with @ and inserts their paths.\n- Agent foreground notifications display the active session\'s intermediate reply.\n- Agent chooses image handling based on model vision support, and multimodal context trimming preserves images.\n- Added native speech integrations for ElevenLabs, Deepgram and SiliconFlow, plus Gemini Live and Grok real-time voice.\n- TTS and image generation playgrounds support model selection, voice uploads, reference images, and media save and share.\n- AI configuration can test and save model capabilities; chat history supports server cursor pagination with older backend compatibility.\n- Improved global search and message navigation.\n- Fixed Agent context synchronization leaking across runs and image loss when trimming multimodal context.\n- Fixed Agent background-service timeouts and model request cancellation, plus Codex Responses capability detection.\n- Fixed website script errors and improved compatibility with browsers without scroll observers or with reduced motion enabled.\n- Redesigned global Agent memory editing and history previews, with history, undo, conflict merging, and source-session navigation.\n- Knowledge retrieval now batches by scope and caches chunk scoring; actions are grouped in a More menu.'
+    },
+    {
       tag_name: 'v0.8.4', published_at: '2026-10-13',
       body: '- 本地图片生成模型支持连通性测试，并显示返回图片数量。\n- 内置浏览器将工作区 HTML 管理移至菜单弹窗，简化浏览操作。\n- WebDAV 备份与恢复页面展示传输进度，并增强条件写入与兼容回退。\n- 导航栏、菜单和弹窗接入液态玻璃样式。\n- 修复 Android 13+ 通知及录音权限检查，避免无授权时发送通知或启动录音。\n- 修复本地 Agent 会话 YOLO 授权未持久保存及 exec 结果重复返回。\n- 修复液态玻璃菜单的背景采样显示。\n\n### English\n- Local image generation models can be connectivity-tested, with the number of returned images shown.\n- Workspace HTML management in the built-in browser now lives in a menu popup for simpler browsing.\n- WebDAV backup and restore screens show transfer progress, with improved conditional writes and compatibility fallbacks.\n- Liquid-glass styling is now used for navigation bars, menus and dialogs.\n- Fixed Android 13+ notification and recording permission checks to prevent unauthorized notifications or recording.\n- Fixed local Agent YOLO authorization not persisting across sessions and duplicate exec command results.\n- Fixed background sampling in liquid-glass menus.'
     },
@@ -535,7 +550,7 @@
       const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return `<div class="tl-item reveal${delay}"><div class="tl-dot"></div><div class="tl-card"><div class="tl-head"><b>${esc(ver)}</b><time>${esc(date)}</time></div><ul>${items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></div></div>`;
     }).join('');
-    container.querySelectorAll('.reveal').forEach((el) => revealIO.observe(el));
+    container.querySelectorAll('.reveal').forEach(observeReveal);
   }
 
   (async () => {

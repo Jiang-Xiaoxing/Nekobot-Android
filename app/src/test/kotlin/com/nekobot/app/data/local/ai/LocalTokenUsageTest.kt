@@ -9,6 +9,41 @@ import org.junit.Test
 class LocalTokenUsageTest {
 
     @Test
+    fun `image estimates are independent of base64 length and URL transport`() {
+        fun image(url: String) = mapOf<String, Any>(
+            "type" to "image_url", "image_url" to mapOf("url" to url)
+        )
+        val small = image("data:image/jpeg;base64,AA==")
+        val large = image("data:image/jpeg;base64," + "A".repeat(3_000_000))
+        val remote = image("https://example.com/image.jpg")
+
+        assertEquals(estimateLocalContentTokens(small), estimateLocalContentTokens(large))
+        assertEquals(estimateLocalContentTokens(remote), estimateLocalContentTokens(large))
+        assertTrue(estimateLocalContentTokens(large) in 1..10_000)
+        assertTrue(estimateLocalContentTokens(listOf(large, large)) > estimateLocalContentTokens(large))
+    }
+
+    @Test
+    fun `image estimate supports Responses Anthropic Gemini and low detail blocks`() {
+        val responses = mapOf("type" to "input_image", "image_url" to "data:image/png;base64,AA==")
+        val anthropic = mapOf("type" to "image", "source" to mapOf("type" to "base64", "data" to "AA=="))
+        val gemini = mapOf("inlineData" to mapOf("mimeType" to "image/png", "data" to "AA=="))
+        val low = mapOf("type" to "image_url", "image_url" to mapOf("url" to "https://example.com/i.png", "detail" to "low"))
+
+        assertEquals(estimateLocalContentTokens(responses), estimateLocalContentTokens(anthropic))
+        assertEquals(estimateLocalContentTokens(responses), estimateLocalContentTokens(gemini))
+        assertTrue(estimateLocalContentTokens(low) < estimateLocalContentTokens(responses))
+    }
+
+    @Test
+    fun `request estimates include reasoning content`() {
+        val message = mapOf<String, Any>("role" to "assistant", "content" to "", "tool_calls" to emptyList<Any>())
+        val withReasoning = message + ("reasoning_content" to "检查".repeat(500))
+
+        assertEquals(1_000, estimateLocalMessagesTokens(listOf(withReasoning)) - estimateLocalMessagesTokens(listOf(message)))
+    }
+
+    @Test
     fun `reported usage accepts compatible aliases and number types`() {
         val result = resolveLocalTokenUsage(
             usage = mapOf(

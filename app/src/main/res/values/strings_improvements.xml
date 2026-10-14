@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_filter_all">全部</string>
+    <string name="search_refresh">刷新搜索</string>
+    <string name="agent_foreground_timed_out">系统已暂停后台任务，请返回会话继续</string>
+    <string name="memory_history_title">修改历史</string>
+    <string name="memory_history_restore">恢复此版本</string>
+    <string name="memory_history_empty">暂无修改记录</string>
+    <string name="memory_history_preview">版本预览</string>
+    <string name="memory_history_source">查看来源</string>
+    <string name="memory_history_before">修改前</string>
+    <string name="memory_history_after">修改后</string>
+    <string name="memory_history_empty_content">（空）</string>
+    <string name="memory_history_manual">手动修改</string>
+    <string name="memory_history_agent">自动记忆</string>
+    <string name="memory_history_tool">Agent 工具</string>
+    <string name="memory_history_restored">版本恢复</string>
+    <string name="memory_undo">撤销最近修改</string>
+    <string name="memory_merge_save">合并并保存</string>
+    <string name="memory_conflict_message">记忆已有新修改，草稿已保留</string>
+    <string name="memory_merge_conflict">同一段内容有冲突，请手动合并</string>
+    <string name="model_probe_title">能力检测</string>
+    <string name="model_probe_start">开始检测</string>
+    <string name="model_probe_running">检测中…</string>
+    <string name="model_probe_stream">流式输出</string>
+    <string name="model_probe_tools">工具调用</string>
+    <string name="model_probe_vision">图片理解</string>
+    <string name="model_probe_reasoning">思考输出</string>
+    <string name="model_probe_pass">已观察到</string>
+    <string name="model_probe_fail">请求失败</string>
+    <string name="model_probe_unknown">未观察到</string>
+    <string name="model_probe_mismatch">与当前配置不一致</string>
+    <string name="model_probe_hint">检测会调用模型并消耗少量额度</string>
+    <string name="model_probe_saved">检测时间：%1$s</string>
+    <string name="model_probe_apply">启用已验证能力</string>
+    <string name="model_probe_pending">待检测</string>
+    <string name="model_probe_stale">配置已变更，请重新检测</string>
+    <string name="tokens_source_model_test">模型检测</string>
+    <string name="memory_conflict_review">合并修改</string>
+    <string name="memory_conflict_latest">最新记忆</string>
+    <string name="memory_conflict_draft">编辑草稿</string>
+</resources>

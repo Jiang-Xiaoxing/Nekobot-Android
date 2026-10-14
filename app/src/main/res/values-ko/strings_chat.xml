@@ -800,4 +800,10 @@
 <string name="chat_subagent_control_unavailable">하위 에이전트 상태가 변경되었습니다. 새로고침 후 다시 시도하세요</string>
 <string name="chat_subagent_retry_action">다시 시도</string>
     <string name="chat_subagent_retry_prompt">먼저 하위 에이전트 작업 %1$s이(가) 현재 목표에 여전히 맞는지 확인한 다음 subagent_retry(task_id=%1$s)를 호출해 새 작업을 만들고 결과를 확인하세요.</string>
+    <string name="chat_p0_model">P0 모델</string>
+    <string name="chat_model_session_hint">현재 대화에만 적용됩니다. 나머지 모델은 순서대로 배치됩니다.</string>
+    <string name="chat_model_follow_default">기본 대기열 따르기</string>
+    <string name="chat_model_priority_name">P%1$d · %2$s</string>
+    <string name="chat_model_update_failed">대화 모델을 업데이트하지 못했습니다. 다시 시도하세요.</string>
+    <string name="chat_setting_reasoning_hint">사고 강도를 선택하세요.</string>
 </resources>

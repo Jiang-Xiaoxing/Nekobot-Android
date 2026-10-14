@@ -799,4 +799,10 @@
 <string name="chat_subagent_control_unavailable">The subagent state changed. Refresh and try again.</string>
 <string name="chat_subagent_retry_action">Retry</string>
     <string name="chat_subagent_retry_prompt">First confirm subagent task %1$s still matches the current goal, then call subagent_retry(task_id=%1$s) to create a retry task and follow its result.</string>
+    <string name="chat_p0_model">P0 model</string>
+    <string name="chat_model_session_hint">This chat only. Other models follow in order.</string>
+    <string name="chat_model_follow_default">Follow default queue</string>
+    <string name="chat_model_priority_name">P%1$d · %2$s</string>
+    <string name="chat_model_update_failed">Could not update the chat model. Try again.</string>
+    <string name="chat_setting_reasoning_hint">Choose the reasoning effort.</string>
 </resources>

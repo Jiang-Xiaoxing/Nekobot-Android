@@ -106,6 +106,11 @@ import com.nekobot.app.ui.components.SectionHeader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import com.nekobot.app.data.local.ai.ModelCapability
+import com.nekobot.app.data.local.ai.ModelCapabilityReport
+import com.nekobot.app.data.local.ai.CapabilityObservation
+import com.nekobot.app.data.local.ai.capabilityFingerprint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -228,6 +233,71 @@ class LocalAiModelsViewModel : BaseViewModel() {
         }
     }
 
+    private val _probeReport = MutableStateFlow<ModelCapabilityReport?>(null)
+    val probeReport = _probeReport.asStateFlow()
+    private val _probeRunning = MutableStateFlow(false)
+    val probeRunning = _probeRunning.asStateFlow()
+    private var probeJob: kotlinx.coroutines.Job? = null
+    private var probeTag: String? = null
+    private var cancelProbeRequest: (() -> Unit)? = null
+
+    fun loadProbeReport(model: LocalAiModelEntity) {
+        cancelProbe()
+        _probeReport.value = null
+        val target = unified
+        val revision = ServiceContainer.dataSourceRevision.value
+        probeJob = viewModelScope.launch {
+            val report = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { target.modelCapabilityReport(model.id) }
+            if (revision == ServiceContainer.dataSourceRevision.value) _probeReport.value = report
+        }
+    }
+
+    fun startProbe(model: LocalAiModelEntity) {
+        cancelProbe()
+        val target = unified
+        val revision = ServiceContainer.dataSourceRevision.value
+        val tag = "model-probe:" + UUID.randomUUID()
+        probeTag = tag
+        cancelProbeRequest = { target.cancelModelCapabilityProbe(tag) }
+        _probeRunning.value = true
+        _probeReport.value = ModelCapabilityReport(model.id, capabilityFingerprint(model), "", emptyList())
+        probeJob = viewModelScope.launch {
+            try {
+                val report = target.probeModelCapabilities(model, tag) { result ->
+                    if (probeTag == tag && revision == ServiceContainer.dataSourceRevision.value)
+                        _probeReport.update { it?.copy(results = it.results.filterNot { previous -> previous.capability == result.capability } + result) }
+                }
+                if (probeTag == tag && revision == ServiceContainer.dataSourceRevision.value) _probeReport.value = report
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (revision == ServiceContainer.dataSourceRevision.value) showError(error.message)
+            } finally {
+                if (probeTag == tag) { _probeRunning.value = false; probeTag = null; cancelProbeRequest = null }
+            }
+        }
+    }
+
+    fun cancelProbe() {
+        cancelProbeRequest?.invoke()
+        cancelProbeRequest = null
+        probeTag = null
+        probeJob?.cancel()
+        probeJob = null
+        _probeRunning.value = false
+    }
+
+    fun applyProbe(model: LocalAiModelEntity) {
+        val report = _probeReport.value ?: return
+        if (report.fingerprint != capabilityFingerprint(model)) return
+        val observed = report.results.filter { it.observation == CapabilityObservation.OBSERVED }.map { it.capability }.toSet()
+        saveModel(model.copy(supportsStream = model.supportsStream || ModelCapability.STREAM in observed,
+            supportsTools = model.supportsTools || ModelCapability.TOOLS in observed,
+            supportsVision = model.supportsVision || ModelCapability.VISION in observed,
+            supportsReasoning = model.supportsReasoning || ModelCapability.REASONING in observed))
+    }
+
+    override fun onCleared() { cancelProbe(); super.onCleared() }
+
     private fun loadApiKeys() {
         viewModelScope.launch {
             runCatching { ServiceContainer.localRepository.listApiKeys() }
@@ -290,6 +360,12 @@ fun LocalAiModelsScreen(onBack: () -> Unit) {
     var editingModel by remember { mutableStateOf<LocalAiModelEntity?>(null) }
     var deletingModel by remember { mutableStateOf<LocalAiModelEntity?>(null) }
     var testingModel by remember { mutableStateOf<LocalAiModelEntity?>(null) }
+    var probeModelId by remember { mutableStateOf<String?>(null) }
+    val probeReport by vm.probeReport.collectAsStateWithLifecycle()
+    val probeRunning by vm.probeRunning.collectAsStateWithLifecycle()
+    val sourceRevision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
+    LaunchedEffect(sourceRevision) { probeModelId = null; vm.cancelProbe() }
+
     var testResult by remember { mutableStateOf<String?>(null) }
     var showLogs by remember { mutableStateOf(false) }
     var logRecords by remember { mutableStateOf<List<LocalLogger.Record>>(emptyList()) }
@@ -430,6 +506,7 @@ fun LocalAiModelsScreen(onBack: () -> Unit) {
                                 },
                                 onDuplicate = { vm.duplicateModel(model) },
                                 onDelete = { deletingModel = model },
+                                onProbe = { probeModelId = model.id; vm.loadProbeReport(model) },
                                 onTest = {
                                     testingModel = model
                                     testResult = null
@@ -492,6 +569,13 @@ fun LocalAiModelsScreen(onBack: () -> Unit) {
                 deletingModel = null
             }
         )
+    }
+
+    models.firstOrNull { it.id == probeModelId }?.let { model ->
+        ModelCapabilityDialog(model, probeReport?.takeIf { it.modelId == model.id }, probeRunning,
+            onRun = { vm.startProbe(model) }, onStop = vm::cancelProbe,
+            onApply = { vm.applyProbe(model) },
+            onDismiss = { vm.cancelProbe(); probeModelId = null })
     }
 
     // 测试结果
@@ -725,7 +809,8 @@ private fun ModelCard(
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
-    onTest: () -> Unit
+    onTest: () -> Unit,
+    onProbe: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val purposeLabel = localModelPurposeLabel(model.purpose)
@@ -807,6 +892,11 @@ private fun ModelCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false }
                 ) {
+                    if (model.purpose.ifBlank { "chat" } in setOf("chat", "vision")) DropdownMenuItem(
+                        text = { Text(stringResource(R.string.model_probe_title)) },
+                        leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null) },
+                        onClick = { menuExpanded = false; onProbe() }
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.common_edit)) },
                         leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },

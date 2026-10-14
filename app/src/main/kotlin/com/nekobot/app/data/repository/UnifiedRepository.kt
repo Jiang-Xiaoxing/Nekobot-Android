@@ -338,11 +338,23 @@ class UnifiedRepository(
     suspend fun listMessages(id: String): Resource<List<Message>> =
         if (isLocal) Resource.Success(local.listMessages(id)) else remote.listMessages(id)
 
+    suspend fun searchMessages(query: String, limit: Int = 60): Resource<List<Message>> =
+        if (isLocal) Resource.Success(local.searchMessages(query, limit)) else Resource.Success(emptyList())
+
+    fun readGlobalAgentMemory() = local.readGlobalAgentMemory()
+    fun globalAgentMemoryVersions() = local.globalAgentMemoryVersions()
+    fun saveGlobalAgentMemory(content: String, expected: String) = local.saveGlobalAgentMemory(content, expected)
+    fun restoreGlobalAgentMemoryVersion(id: String, expected: String) = local.restoreGlobalAgentMemoryVersion(id, expected)
+    fun undoGlobalAgentMemory(expected: String) = local.undoGlobalAgentMemory(expected)
+
+    suspend fun listWorkspaceSearchEntries(sessionIds: List<String>) =
+        if (isLocal) local.listWorkspaceSearchEntries(sessionIds) else emptyList()
+
     /**
      * 聊天界面分页：取最近的一页消息（升序）。
      *
      * 本地模式走 Room 游标分页，超大会话（数万条导入历史）不会一次性载入全集；
-     * 服务器模式接口暂不支持分页参数，客户端在全量拉取后只保留最近一页，避免界面渲染全量。
+     * 服务器模式使用后端游标分页，旧后端返回数组时自动回退到缓存切片。
      */
     suspend fun listRecentMessages(id: String, limit: Int): Resource<MessagePage> =
         if (isLocal) Resource.Success(local.listRecentMessages(id, limit))
@@ -428,6 +440,24 @@ class UnifiedRepository(
         if (isLocal) { local.clearMessages(id); Resource.Success(Unit) } else {
             remote.clearMessages(id).also { if (it is Resource.Success) remote.invalidateMessageCache(id) }
         }
+
+    /** 会话级聊天模型顺序；远程服务尚未提供对应接口。 */
+    suspend fun getSessionChatModels(id: String): Resource<com.nekobot.app.data.model.SessionChatModels> =
+        sessionChatModelsResult { local.getSessionChatModels(id) }
+
+    suspend fun setSessionChatModel(id: String, modelId: String?): Resource<com.nekobot.app.data.model.SessionChatModels> =
+        sessionChatModelsResult { local.setSessionChatModel(id, modelId) }
+
+    private suspend fun sessionChatModelsResult(
+        block: suspend () -> com.nekobot.app.data.model.SessionChatModels
+    ): Resource<com.nekobot.app.data.model.SessionChatModels> = try {
+        if (isLocal) Resource.Success(block())
+        else Resource.Error(ServiceContainer.getString(com.nekobot.app.R.string.chat_model_update_failed))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Resource.Error(ServiceContainer.getString(com.nekobot.app.R.string.chat_model_update_failed))
+    }
 
     /**
      * 本地模式：返回 Flow<RealtimeEvent>（流式聊天）；
@@ -1192,14 +1222,15 @@ class UnifiedRepository(
         null
     }
 
-    /** Live 对话入口预检：经典链路只需 STT/TTS，原生 Realtime 额外需要 live 模型。 */
+    /** 经典语音需要 STT/TTS，原生实时语音由 Live 模型完成输入和输出。 */
     suspend fun validateLiveConversationConfig(
         requiresRealtimeModel: Boolean = true
     ): Resource<Unit> {
         val purposes = buildList {
-            add("stt")
-            add("tts")
-            if (requiresRealtimeModel) add("live")
+            if (requiresRealtimeModel) add("live") else {
+                add("stt")
+                add("tts")
+            }
         }
         if (isLocal) {
             val missing = purposes.filter { purpose ->
@@ -1235,6 +1266,12 @@ class UnifiedRepository(
 
     suspend fun testLocalModel(model: LocalAiModelEntity) =
         if (isLocal) local.testModel(model) else null
+
+    fun modelCapabilityReport(modelId: String) = local.modelCapabilityReport(modelId)
+    fun cancelModelCapabilityProbe(requestTag: String) = local.cancelModelCapabilityProbe(requestTag)
+    suspend fun probeModelCapabilities(model: LocalAiModelEntity, requestTag: String,
+        onProgress: (com.nekobot.app.data.local.ai.ModelCapabilityResult) -> Unit) =
+        local.probeModelCapabilities(model, requestTag, onProgress)
 
     // ==================== Token 用量统计 ====================
 
@@ -1952,19 +1989,104 @@ class UnifiedRepository(
     suspend fun toggleMessageFilter(enabled: Boolean): Resource<JsonElement> =
         if (isLocal) localNotSupported("消息过滤") else remote.toggleMessageFilter(enabled)
 
+    /** 试验场模型选择，返回不含 API Key 的轻量元数据。 */
+    suspend fun getMediaPlaygroundModels(purpose: String): Resource<List<com.nekobot.app.data.model.MediaPlaygroundModel>> = try {
+        if (isLocal) {
+            Resource.Success(local.listModelsByPurpose(purpose).sortedBy { it.priority }.map { model ->
+                com.nekobot.app.data.model.MediaPlaygroundModel(
+                    id = model.id, name = model.name,
+                    provider = if (purpose == "tts") model.ttsProvider else model.provider.orEmpty().ifBlank { model.protocol },
+                    voice = model.ttsVoice, speed = model.ttsSpeed, pitch = model.ttsPitch, volume = model.ttsVolume,
+                    canUploadVoice = model.ttsUploadUrl.isNotBlank() || model.baseUrl.contains("siliconflow", true),
+                    supportsImageReference = com.nekobot.app.data.local.ai.MultimodalProviderSupport.supportsImageReference(
+                        model.provider.orEmpty().ifBlank { model.protocol }, model.model)
+                )
+            })
+        } else {
+            val activeId = if (purpose == "tts") {
+                when (val active = remote.activeByPurpose()) {
+                    is Resource.Success -> runCatching {
+                        active.data.asJsonObject.getAsJsonObject("active_models")
+                            .getAsJsonObject(purpose).get("active_model_id")?.takeUnless { it.isJsonNull }?.asString
+                    }.getOrNull()
+                    else -> null
+                }
+            } else null
+            remote.listAiModels().mapData { models ->
+                models.orEmpty().filter { it.enabled != false && it.purpose == purpose }
+                    .sortedWith(compareByDescending<com.nekobot.app.data.model.AiModel> { activeId != null && it.id == activeId }
+                        .thenBy { it.priority ?: Int.MAX_VALUE }).mapNotNull { model ->
+                        model.id?.let { id -> com.nekobot.app.data.model.MediaPlaygroundModel(
+                            id = id, name = model.displayName,
+                            provider = if (purpose == "tts") model.ttsProvider.orEmpty() else model.provider.orEmpty().ifBlank { model.protocol.orEmpty() },
+                            voice = model.ttsVoice.orEmpty(), speed = model.ttsSpeed ?: 1f,
+                            pitch = model.ttsPitch ?: 1f, volume = model.ttsVolume ?: 1f,
+                            canUploadVoice = !model.ttsUploadUrl.isNullOrBlank() || model.baseUrl.orEmpty().contains("siliconflow", true),
+                            supportsImageReference = com.nekobot.app.data.local.ai.MultimodalProviderSupport.supportsImageReference(
+                                model.provider.orEmpty().ifBlank { model.protocol.orEmpty() }, model.model.orEmpty())
+                        ) }
+                    }
+            }
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Resource.Error(e.message ?: "模型列表加载失败")
+    }
+
+    suspend fun uploadPlaygroundVoice(
+        bytes: ByteArray, mimeType: String, name: String, sampleText: String, modelId: String? = null
+    ): Resource<TtsVoice> = try {
+        require(bytes.isNotEmpty() && bytes.size <= 10 * 1024 * 1024)
+        require(name.isNotBlank() && sampleText.isNotBlank())
+        val extension = when (mimeType.substringBefore(';').lowercase()) {
+            "audio/mpeg", "audio/mp3" -> "mp3"
+            "audio/wav", "audio/x-wav", "audio/wave" -> "wav"
+            "audio/mp4", "audio/x-m4a" -> "m4a"
+            else -> mimeType.substringAfter('/').substringBefore(';')
+        }
+        val file = MultipartBody.Part.createFormData("file", "voice.$extension",
+            bytes.toRequestBody(mimeType.toMediaTypeOrNull()))
+        val nameBody = name.toRequestBody("text/plain".toMediaTypeOrNull())
+        val textBody = sampleText.toRequestBody("text/plain".toMediaTypeOrNull())
+        if (isLocal) Resource.Success(local.uploadLocalTtsVoice(file, nameBody, textBody, modelId, name))
+        else remote.uploadTtsVoice(file, nameBody, textBody)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Resource.Error(e.message ?: "音色上传失败")
+    }
+
     // ---- TTS 试验场 ----
-    suspend fun listTtsVoices(): Resource<List<TtsVoice>> =
+    suspend fun listTtsVoices(modelId: String? = null): Resource<List<TtsVoice>> =
         if (isLocal) {
             try {
-                Resource.Success(local.listLocalTtsVoices())
+                Resource.Success(local.listLocalTtsVoices(modelId))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Resource.Error(e.message ?: "本地 TTS 音色加载失败")
             }
         } else {
-            remote.listTtsVoices()
+            remote.listTtsVoices(modelId)
         }
     suspend fun ttsPreview(req: TtsPreviewRequest): Resource<TtsPreviewResponse> =
         if (isLocal) localNotSupported("TTS 试验场") else remote.ttsPreview(req)
+
+    /** 远程预览落到本机缓存后可播放、导出和分享。 */
+    suspend fun cacheTtsPreview(url: String): Resource<com.nekobot.app.data.local.LocalAudioResult> = withContext(Dispatchers.IO) {
+        val context = appContext ?: return@withContext Resource.Error("应用上下文未初始化")
+        val resolved = if (url.startsWith("https://") || url.startsWith("http://")) url
+            else "${prefs.serverUrl.trimEnd('/')}/${url.trimStart('/')}"
+        remote.downloadTtsPreview(resolved).mapData { bytes ->
+            require(bytes.isNotEmpty()) { "TTS 服务未返回音频" }
+            val format = com.nekobot.app.data.local.ai.generatedAudioFormat(bytes)
+            java.io.File(context.cacheDir, "tts_preview/${java.util.UUID.randomUUID()}.${format.extension}").apply {
+                parentFile?.mkdirs()
+                writeBytes(bytes)
+            }.let { com.nekobot.app.data.local.LocalAudioResult(android.net.Uri.fromFile(it).toString(), format.mimeType, "", "") }
+        }
+    }
     suspend fun synthesizeRemoteTts(req: TtsPreviewRequest): Resource<TtsPreviewResponse> =
         if (isLocal) localNotSupported("远程 TTS") else remote.synthesizeTts(req)
     suspend fun updateMessageAudioUrl(
@@ -2529,6 +2651,8 @@ class UnifiedRepository(
                     modelId = modelId
                 )
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Resource.Error(e.message ?: "本地 TTS 合成失败")
         }
@@ -2568,11 +2692,14 @@ class UnifiedRepository(
         prompt: String,
         size: String = "1024x1024",
         n: Int = 1,
-        referenceImage: ImageGenerationReference? = null
+        referenceImage: ImageGenerationReference? = null,
+        modelId: String? = null
     ): Resource<List<com.nekobot.app.data.local.LocalImageResult>> {
         if (isLocal) {
             return try {
-                Resource.Success(local.generateImages(prompt, size, n, referenceImage))
+                Resource.Success(local.generateImages(prompt, size, n, referenceImage, modelId))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Resource.Error(e.message ?: "本地图片生成失败")
             }
@@ -2584,14 +2711,26 @@ class UnifiedRepository(
                 is Resource.Loading -> return Resource.Error("模型列表加载中")
             }
             val imageModels = allModels
-                .filter { it.purpose == "image_generation" && it.enabled != false }
-                .sortedByDescending { it.priority ?: 0 }
+                .filter { it.purpose == "image_generation" && it.enabled != false &&
+                    (modelId.isNullOrBlank() || it.id == modelId) }
+                .sortedBy { it.priority ?: Int.MAX_VALUE }
             if (imageModels.isEmpty()) {
                 return Resource.Error("未配置图片生成模型，请在 AI 配置中心启用 purpose=image_generation 的模型")
             }
+            val resolvedModels = imageModels.mapNotNull { model ->
+                if (model.apiKey != "********") model else {
+                    ServiceContainer.realtimeCredentialStore.get(prefs.serverUrl, model)
+                        ?.let { model.copy(apiKey = it) }
+                }
+            }
+            if (resolvedModels.isEmpty()) {
+                return Resource.Error(ServiceContainer.getString(com.nekobot.app.R.string.playground_image_key_required))
+            }
             Resource.Success(
-                local.generateImagesFromRemoteModels(imageModels, prompt, size, n, referenceImage)
+                local.generateImagesFromRemoteModels(resolvedModels, prompt, size, n, referenceImage)
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Resource.Error(e.message ?: "远程图片生成失败")
         }

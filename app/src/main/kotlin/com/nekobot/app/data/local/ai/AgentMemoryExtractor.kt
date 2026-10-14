@@ -535,7 +535,8 @@ internal class AgentMemoryWriter(
     private val writeMemory: (String) -> Unit,
     private val aiModelProvider: (suspend () -> com.nekobot.app.data.local.db.LocalAiModelEntity?)? = null,
     private val failoverExecutor: LocalChatFailoverExecutor? = null,
-    private val onTokenUsage: ((String, String, String, Int, Int) -> Unit)? = null
+    private val onTokenUsage: ((String, String, String, Int, Int) -> Unit)? = null,
+    private val writeMemoryWithSource: (suspend (String, String, String, String) -> Unit)? = null
 ) {
     private companion object {
         const val TAG = "AgentMemoryWriter"
@@ -595,15 +596,18 @@ internal class AgentMemoryWriter(
                 LocalLogger.i(TAG, R.string.log_memx_no_valid_changes)
                 return 0
             }
-            // 重新读一次再落库：模型调用期间用户可能刚手工改过记忆，
-            // 用调用前的快照做基准会把那次修改覆盖掉。
+            // 模型审查以它看到的快照为基准；并发的独立修改合并，同段冲突放弃自动写入。
             val base = runCatching { readMemory() }.getOrDefault(existing)
-            val applied = AgentMemoryExtractor.applyActions(base, actions)
+            val applied = AgentMemoryExtractor.applyActions(existing, actions)
             if (applied.changedItems <= 0) {
                 LocalLogger.i(TAG, R.string.log_memx_no_change_skip)
                 return 0
             }
-            writeMemory(applied.content)
+            val merged = if (base == existing) applied.content
+                else mergeMemoryEdits(existing, applied.content, base) ?: return 0
+            if (merged == base) return 0
+            if (writeMemoryWithSource != null) writeMemoryWithSource.invoke(base, merged, sessionId, userMessage)
+            else writeMemory(merged)
             LocalLogger.i(TAG, R.string.log_memx_memory_updated, applied.added, applied.replaced, applied.deleted)
             applied.changedItems
         } catch (e: kotlinx.coroutines.CancellationException) {

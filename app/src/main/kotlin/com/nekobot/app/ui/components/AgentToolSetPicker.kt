@@ -22,13 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
-import com.nekobot.app.ui.components.GlassAlertDialog as AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,170 +97,161 @@ internal fun AgentToolSetPickerDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
+    NekoDialog(
+        onDismiss = onDismiss,
+        title = title,
+        message = subtitle,
+        confirmText = stringResource(R.string.common_close),
+        onConfirm = onDismiss,
+        cancelText = null
+    ) {
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            // 模式行：一键套用整套工具集，之后仍可用下方开关继续细化
+            if (onSelectMode != null && (modes.isNotEmpty() || showFollowDefaultChip)) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
+                    text = stringResource(R.string.toolset_modes_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        text = {
-            Column {
-                // 模式行：一键套用整套工具集，之后仍可用下方开关继续细化
-                if (onSelectMode != null && (modes.isNotEmpty() || showFollowDefaultChip)) {
-                    Text(
-                        text = stringResource(R.string.toolset_modes_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (showFollowDefaultChip) {
-                            ToolSetModeChip(
-                                label = stringResource(R.string.toolset_mode_follow_default),
-                                selected = followDefault,
-                                onClick = { onFollowDefault?.invoke() }
-                            )
-                        }
-                        modes.forEach { mode ->
-                            ToolSetModeChip(
-                                // 「跟随默认」时同时点亮默认所对应的模式，用户能看出跟随到了哪套工具
-                                label = toolSetModeLabel(mode),
-                                selected = activeModeId == mode.id,
-                                onClick = { onSelectMode(mode.id) }
-                            )
-                        }
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    )
-                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            expandedCategory = null
-                            onReset()
-                        }
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        resetLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    if (showFollowDefaultChip) {
+                        ToolSetModeChip(
+                            label = stringResource(R.string.toolset_mode_follow_default),
+                            selected = followDefault,
+                            onClick = { onFollowDefault?.invoke() }
+                        )
+                    }
+                    modes.forEach { mode ->
+                        ToolSetModeChip(
+                            // 「跟随默认」时同时点亮默认所对应的模式，用户能看出跟随到了哪套工具
+                            label = toolSetModeLabel(mode),
+                            selected = activeModeId == mode.id,
+                            onClick = { onSelectMode(mode.id) }
+                        )
+                    }
                 }
                 HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 6.dp),
+                    modifier = Modifier.padding(vertical = 8.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                 )
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 460.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    itemsIndexed(categories) { index, (categoryId, toolIds) ->
-                        val allOn = toolIds.all { it in enabled }
-                        val anyOn = toolIds.any { it in enabled }
-                        val expanded = expandedCategory == categoryId
-                        Column(
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        expandedCategory = null
+                        onReset()
+                    }
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    resetLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 6.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                itemsIndexed(categories) { index, (categoryId, toolIds) ->
+                    val allOn = toolIds.all { it in enabled }
+                    val anyOn = toolIds.any { it in enabled }
+                    val expanded = expandedCategory == categoryId
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
+                            )
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
-                                )
+                                .clickable { expandedCategory = if (expanded) null else categoryId }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { expandedCategory = if (expanded) null else categoryId }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        toolsetCategoryName(categoryId),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        when {
-                                            allOn -> stringResource(R.string.toolset_cat_all_on)
-                                            anyOn -> stringResource(R.string.toolset_cat_partial)
-                                            else -> stringResource(R.string.toolset_cat_off)
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    stringResource(R.string.toolset_tools_count, toolIds.size),
+                                    toolsetCategoryName(categoryId),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    when {
+                                        allOn -> stringResource(R.string.toolset_cat_all_on)
+                                        anyOn -> stringResource(R.string.toolset_cat_partial)
+                                        else -> stringResource(R.string.toolset_cat_off)
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                Spacer(Modifier.width(6.dp))
-                                Switch(
-                                    checked = allOn,
-                                    onCheckedChange = { onToggleCategory(categoryId, it) }
-                                )
-                                Icon(
-                                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
                             }
-                            AnimatedVisibility(visible = expanded) {
-                                Column {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 12.dp),
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                    )
-                                    toolIds.forEach { toolId ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 14.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                toolLabel(toolId),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Switch(
-                                                checked = toolId in enabled,
-                                                onCheckedChange = { on -> onToggleTool(toolId, on) }
-                                            )
-                                        }
+                            Text(
+                                stringResource(R.string.toolset_tools_count, toolIds.size),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Switch(
+                                checked = allOn,
+                                onCheckedChange = { onToggleCategory(categoryId, it) }
+                            )
+                            Icon(
+                                if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        AnimatedVisibility(visible = expanded) {
+                            Column {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                )
+                                toolIds.forEach { toolId ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            toolLabel(toolId),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Switch(
+                                            checked = toolId in enabled,
+                                            onCheckedChange = { on -> onToggleTool(toolId, on) }
+                                        )
                                     }
                                 }
                             }
@@ -270,11 +259,8 @@ internal fun AgentToolSetPickerDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
         }
-    )
+    }
 }
 
 /** 工具集大类 id → 本地化名称；未收录时回退为 id 本身。 */

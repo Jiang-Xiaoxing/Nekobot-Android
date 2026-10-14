@@ -58,6 +58,7 @@ import com.nekobot.app.data.local.ai.currentLocalContextTokens
 import com.nekobot.app.data.local.ai.addLocalAgentBasePrompt
 import com.nekobot.app.data.local.ai.addCharacterInheritanceBridgePrompt
 import com.nekobot.app.data.local.ai.addAgentEnvPrompt
+import com.nekobot.app.data.local.ai.addAgentImageCapabilityPrompt
 import com.nekobot.app.data.local.ai.addAgentTodosPrompt
 import com.nekobot.app.data.local.ai.addAgentGoalPrompt
 import com.nekobot.app.data.local.ai.addAgentSpecPrompt
@@ -88,6 +89,7 @@ import com.nekobot.app.data.local.ai.LocalToolCallRecord
 import com.nekobot.app.data.local.ai.dropIncompleteAgentTail
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.local.ai.estimateLocalMessagesTokens
+import com.nekobot.app.data.local.ai.estimateToolCallHistoryTokens
 import com.nekobot.app.data.local.ai.localDbToolIds
 import com.nekobot.app.data.local.ai.localSkillToolIds
 import com.nekobot.app.data.local.ai.parseMcpToolName
@@ -511,6 +513,32 @@ class LocalRepository(
         LocalAutomationScheduler(it, db.dbName.removeSuffix(".db"))
     }
     private val knowledgeManager by lazy { LocalKnowledgeManager(db, aiClient) }
+    private val messageSearchIndex by lazy { LocalMessageSearchIndex(db) }
+    private val agentMemoryStore = ServiceContainer.globalAgentMemory
+    private val capabilityStore by lazy {
+        appContext?.let { com.nekobot.app.data.local.ai.ModelCapabilityReportStore(
+            java.io.File(it.filesDir, "model-capabilities"), db.openHelper.databaseName.orEmpty()) }
+    }
+
+    fun modelCapabilityReport(modelId: String) = capabilityStore?.read(modelId)
+    fun cancelModelCapabilityProbe(requestTag: String) = aiClient.cancelRequests(requestTag)
+    suspend fun probeModelCapabilities(model: LocalAiModelEntity, requestTag: String,
+        onProgress: (com.nekobot.app.data.local.ai.ModelCapabilityResult) -> Unit) = withContext(Dispatchers.IO) {
+        val report = com.nekobot.app.data.local.ai.ModelCapabilityProber(aiClient).run(model, requestTag, onProgress) { result ->
+            recordSecondaryTokenUsage("model_test", model.name, model.model,
+                result.usage["prompt"] ?: 0, result.usage["completion"] ?: 0)
+        }
+        val current = aiModelDao.getById(model.id)
+        if (current != null && com.nekobot.app.data.local.ai.capabilityFingerprint(current) == report.fingerprint)
+            capabilityStore?.write(report)
+        report
+    }
+
+    fun readGlobalAgentMemory() = agentMemoryStore.read()
+    fun globalAgentMemoryVersions() = agentMemoryStore.versions()
+    fun saveGlobalAgentMemory(content: String, expected: String) = agentMemoryStore.replace(content, expected)
+    fun restoreGlobalAgentMemoryVersion(id: String, expected: String) = agentMemoryStore.restoreVersion(id, expected)
+    fun undoGlobalAgentMemory(expected: String) = agentMemoryStore.undo(expected)
     /** 路由决策日志记录器 */
     val routingDecisionLogger by lazy { RoutingDecisionLogger(db) }
     /** A/B 测试分流器 */
@@ -612,6 +640,12 @@ class LocalRepository(
         }
         val models = queueFor("chat")
         val routingPrefs = ServiceContainer.prefs
+        val sessionOrder = routingPrefs.getSessionChatModelOrder(sessionId, db.dbName)
+        if (sessionModeOverride != "utility" && models.any { it.id in sessionOrder }) {
+            return RoutedChatPlan(
+                com.nekobot.app.data.local.ai.applySessionModelOrder(models, sessionOrder)
+            )
+        }
         if (!routingPrefs.smartRoutingEnabled || models.size <= 1) return RoutedChatPlan(models)
 
         val contextTokens = sessionId.takeIf(String::isNotBlank)
@@ -1270,7 +1304,7 @@ class LocalRepository(
     private val agentMemoryWriter by lazy {
         com.nekobot.app.data.local.ai.AgentMemoryWriter(
             aiClient = aiClient,
-            readMemory = { runCatching { ServiceContainer.globalAgentMemory.read().content }.getOrDefault("") },
+            readMemory = { runCatching { agentMemoryStore.read().content }.getOrDefault("") },
             writeMemory = { merged ->
                 // 记忆总量有上限（GlobalAgentMemoryStore.MAX_CONTENT_CHARS），
                 // 超出时保留最新的末尾内容，避免写入直接抛错。
@@ -1282,7 +1316,15 @@ class LocalRepository(
             },
             aiModelProvider = { aiModelDao.getActive() },
             failoverExecutor = chatFailoverExecutor,
-            onTokenUsage = ::recordSecondaryTokenUsage
+            onTokenUsage = ::recordSecondaryTokenUsage,
+            writeMemoryWithSource = { base, merged, sessionId, userMessage ->
+                agentMemoryStore.replace(
+                    merged.take(com.nekobot.app.data.local.ai.GlobalAgentMemoryStore.MAX_CONTENT_CHARS),
+                    expectedContent = base, source = "agent", sourceSessionId = sessionId,
+                    sourceMessageId = messageDao.findUserMessageId(sessionId, userMessage)
+                )
+                ServiceContainer.notifyMemoryChanged()
+            }
         )
     }
 
@@ -2457,6 +2499,7 @@ class LocalRepository(
         // 自动长期记忆的会话级提示同理（记忆内容本身是跨会话共享的，不在这里删除）。
         ServiceContainer.prefs.clearAgentMemoryNotice(id)
         ServiceContainer.prefs.clearCompanionRecallSession(db.dbName, id)
+        ServiceContainer.prefs.setSessionChatModelOrder(id, emptyList(), db.dbName)
     }
 
     /**
@@ -2980,7 +3023,13 @@ class LocalRepository(
     suspend fun searchMessages(query: String, limit: Int = 60): List<Message> = withContext(Dispatchers.IO) {
         val normalized = query.trim()
         if (normalized.isBlank()) emptyList()
-        else messageDao.searchContent(normalized, limit.coerceIn(1, 200)).map { it.toMessage() }
+        else {
+            val ids = try { messageSearchIndex.searchIds(normalized, limit.coerceIn(1, 200)) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+            (if (ids == null) messageDao.searchContent(normalized, limit.coerceIn(1, 200))
+            else if (ids.isEmpty()) emptyList() else messageDao.searchRowsByIds(ids)).map { it.toMessage() }
+        }
     }
 
     /** 仅供 AI 调用链读取；命令输入和命令结果继续保留在聊天记录中。 */
@@ -6755,12 +6804,26 @@ class LocalRepository(
     }
 
     /** 停止生成：同时中断模型请求、工具调用、命令进程和授权等待。 */
+    suspend fun pauseForForegroundTimeout(reason: String) {
+        try { agentRunDao.pauseAllRunningWithReason(nowIso(), reason) }
+        finally {
+            cancelActiveGenerations()
+            aiClient.cancelAllRequests()
+            subagentScope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach {
+                it.cancel(CancellationException(reason))
+            }
+        }
+    }
+
     fun stopGeneration(sessionId: String? = null) {
         val now = nowIso()
-        kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+        try { kotlinx.coroutines.runBlocking(Dispatchers.IO) {
             if (sessionId == null) agentRunDao.pauseAllRunning(now)
             else agentRunDao.pauseRunning(sessionId, now)
-        }
+        } } finally { cancelActiveGenerations(sessionId) }
+    }
+
+    private fun cancelActiveGenerations(sessionId: String? = null) {
         val sessionIds = sessionId
             ?.let(::listOf)
             ?: activeGenerations.keys.toList()
@@ -7018,6 +7081,10 @@ class LocalRepository(
                 LocaleHelper.getEffectiveLocale(it, ServiceContainer.prefs.language).language
             } ?: Locale.getDefault().language
             ctx.promptStack.addLocalAgentBasePrompt(promptLanguage)
+            ctx.promptStack.addAgentImageCapabilityPrompt(
+                supportsVision = activeModel.purpose.equals("chat", ignoreCase = true) && activeModel.supportsVision,
+                language = promptLanguage
+            )
             if (inheritsCharacter(session.sessionMode, session.inheritCharacter)) {
                 ctx.promptStack.addCharacterInheritanceBridgePrompt(promptLanguage)
             }
@@ -7491,9 +7558,10 @@ class LocalRepository(
 
         if (allowTools && session.sessionMode.equals("agent", ignoreCase = true)) {
             appContext?.let { context ->
-                agentForegroundStarted = runCatching {
-                    AgentForegroundService.acquire(context, sessionId)
-                }.isSuccess
+                agentForegroundStarted = AgentForegroundService.acquire(context, sessionId)
+                if (!agentForegroundStarted) throw CancellationException(
+                    context.getString(R.string.agent_foreground_timed_out)
+                )
             }
         }
 
@@ -7721,6 +7789,10 @@ class LocalRepository(
             // 重新读取会话实体，确保注入的是最新持久化的目标与规格任务。
             val promptSession = sessionDao.getById(sessionId) ?: session
             ctx.promptStack.addLocalAgentBasePrompt(promptLanguage)
+            ctx.promptStack.addAgentImageCapabilityPrompt(
+                supportsVision = activeModel.purpose.equals("chat", ignoreCase = true) && activeModel.supportsVision,
+                language = promptLanguage
+            )
             // 继承角色能力时补一段「角色身份 + Agent 能力」的衔接说明，
             // 避免角色卡（"你就是 X"）与 Agent 核心规则（"你是通用智能体"）互相打架。
             if (inheritsCharacter(session.sessionMode, session.inheritCharacter)) {
@@ -9509,7 +9581,7 @@ class LocalRepository(
     private fun LocalMessageEntity.agentContextTokenCount(): Int =
         AGENT_CONTEXT_MESSAGE_OVERHEAD_TOKENS +
             estimateLocalTextTokens(content) +
-            (toolCallHistory?.let(::estimateLocalTextTokens) ?: 0)
+            estimateToolCallHistoryTokens(toolCallHistory)
 
     /** 摘要最多 2000 字；在小上下文模型上进一步缩小，确保总结请求自身能够发送。 */
     private fun agentSummaryTokenBudget(maxContextTokens: Int): Int = minOf(
@@ -10133,6 +10205,36 @@ ${AiOutputLanguage.directive()}
         aiModelDao.listAll()
     }
 
+    suspend fun getSessionChatModels(sessionId: String): com.nekobot.app.data.model.SessionChatModels =
+        withContext(Dispatchers.IO) {
+            val session = sessionDao.getById(sessionId)
+            val characterQueue = if (session?.sessionMode.equals("group", ignoreCase = true)) null
+                else characterChatQueue(session?.characterId)
+            val models = characterQueue ?: queueFor("chat")
+            val order = ServiceContainer.prefs.getSessionChatModelOrder(sessionId, db.dbName)
+            com.nekobot.app.data.model.SessionChatModels(
+                models = (characterQueue ?: com.nekobot.app.data.local.ai.applySessionModelOrder(models, order)).map {
+                    com.nekobot.app.data.model.SessionChatModel(it.id, it.name, it.model, it.priority)
+                },
+                customized = characterQueue != null || models.any { it.id in order },
+                characterQueueConfigured = characterQueue != null
+            )
+        }
+
+    suspend fun setSessionChatModel(sessionId: String, modelId: String?): com.nekobot.app.data.model.SessionChatModels =
+        withContext(Dispatchers.IO) {
+            require(sessionDao.getById(sessionId) != null)
+            val queue = getSessionChatModels(sessionId)
+            require(!queue.characterQueueConfigured) { "这个角色已设置独立模型队列，请在角色的聊天模型设置中修改。" }
+            val models = queue.models
+            require(modelId == null || models.any { it.id == modelId })
+            val order = if (modelId == null) emptyList() else {
+                listOf(modelId) + models.map { it.id }.filter { it != modelId }
+            }
+            ServiceContainer.prefs.setSessionChatModelOrder(sessionId, order, db.dbName)
+            getSessionChatModels(sessionId)
+        }
+
     suspend fun getActiveModel(): LocalAiModelEntity? = withContext(Dispatchers.IO) {
         aiModelDao.getActive()
     }
@@ -10310,18 +10412,14 @@ ${AiOutputLanguage.directive()}
         }
         val filesDir = appContext?.filesDir
             ?: throw IllegalStateException("应用上下文未初始化，无法保存 TTS 音频")
-        val format = exec.model.ttsFormat.lowercase().takeIf { it in setOf("mp3", "wav", "opus", "flac", "ogg") }
-            ?: "mp3"
-        val cacheFile = File(filesDir, "tts/${UUID.randomUUID()}.$format").apply {
+        val format = com.nekobot.app.data.local.ai.generatedAudioFormat(exec.value, exec.model.ttsFormat)
+        val cacheFile = File(filesDir, "tts/${UUID.randomUUID()}.${format.extension}").apply {
             parentFile?.mkdirs()
             writeBytes(exec.value)
         }
         LocalAudioResult(
             cacheUri = android.net.Uri.fromFile(cacheFile).toString(),
-            mimeType = when (format) {
-                "mp3" -> "audio/mpeg"
-                else -> "audio/$format"
-            },
+            mimeType = format.mimeType,
             usedModelId = exec.model.id,
             usedModelName = exec.model.name
         )
@@ -10332,55 +10430,29 @@ ${AiOutputLanguage.directive()}
             messageDao.updateAudioUrl(messageId, audioUrl, nowIso())
         }
 
-    /** 根据当前 TTS 模型提供商返回与原仓库一致的内置音色。 */
-    suspend fun listLocalTtsVoices(): List<TtsVoice> = withContext(Dispatchers.IO) {
-        val active = aiModelDao.getActiveByPurpose("tts")
-            ?: aiModelDao.listByPurpose("tts").firstOrNull()
-            ?: return@withContext emptyList()
-        val provider = active.ttsProvider.ifBlank {
-            active.provider?.takeIf { it.isNotBlank() } ?: active.protocol
-        }.lowercase()
-        when (provider) {
-            "xiaomi", "mimo" -> listOf(
-                "mimo_default" to "MiMo 默认",
-                "冰糖" to "冰糖",
-                "茉莉" to "茉莉",
-                "苏打" to "苏打",
-                "白桦" to "白桦",
-                "Mia" to "Mia",
-                "Chloe" to "Chloe",
-                "Milo" to "Milo",
-                "Dean" to "Dean"
-            )
-            "doubao", "volcengine", "bytedance" -> listOf(
-                "zh_female_shuangkuaisisi_moon_bigtts" to "爽快思思",
-                "zh_male_bvlazysheep" to "懒羊羊",
-                "zh_male_ahu_conversation_wvae_bigtts" to "阿虎",
-                "zh_female_vv_uranus_bigtts" to "VV",
-                "zh_female_cancan_mars_bigtts" to "灿灿",
-                "zh_male_chongchong_mars_bigtts" to "冲冲",
-                "zh_female_dandan_mars_bigtts" to "丹丹",
-                "zh_male_haoyu_mars_bigtts" to "浩宇",
-                "zh_female_wanwan_mars_bigtts" to "婉婉",
-                "zh_male_yunxi_mars_bigtts" to "云希"
-            )
-            else -> listOf(
-                "alloy" to "Alloy",
-                "echo" to "Echo",
-                "fable" to "Fable",
-                "onyx" to "Onyx",
-                "nova" to "Nova",
-                "shimmer" to "Shimmer",
-                "coral" to "Coral",
-                "verse" to "Verse",
-                "ballad" to "Ballad",
-                "ash" to "Ash",
-                "sage" to "Sage",
-                "marin" to "Marin",
-                "cedar" to "Cedar"
-            )
-        }.map { (id, name) ->
-            TtsVoice(id = id, name = name, provider = provider)
+    /** 按实际选择的 TTS 模型加载目录及已上传的自定义音色。 */
+    suspend fun listLocalTtsVoices(modelId: String? = null): List<TtsVoice> = withContext(Dispatchers.IO) {
+        val model = modelId?.takeIf { it.isNotBlank() }?.let { aiModelDao.getById(it) }
+            ?: queueFor("tts").firstOrNull() ?: return@withContext emptyList()
+        val provider = com.nekobot.app.data.local.ai.MultimodalProviderSupport.ttsProvider(model)
+        (com.nekobot.app.data.local.ai.TtsVoiceCatalog.voices(provider, model.ttsVoice) +
+            ServiceContainer.prefs.getCustomTtsVoices(model.id)).distinctBy { it.id }
+    }
+
+    suspend fun uploadLocalTtsVoice(
+        file: okhttp3.MultipartBody.Part,
+        customName: okhttp3.RequestBody,
+        text: okhttp3.RequestBody,
+        modelId: String?,
+        displayName: String
+    ): TtsVoice = withContext(Dispatchers.IO) {
+        val model = modelId?.takeIf { it.isNotBlank() }?.let { aiModelDao.getById(it) }
+            ?: queueFor("tts").firstOrNull()
+            ?: throw IllegalStateException("未配置 TTS 模型")
+        val id = aiClient.uploadTtsVoice(model, file, customName, text)
+        TtsVoice(id = id, name = displayName, custom = true,
+            provider = com.nekobot.app.data.local.ai.MultimodalProviderSupport.ttsProvider(model)).also {
+            ServiceContainer.prefs.addCustomTtsVoice(model.id, it)
         }
     }
 
@@ -10448,9 +10520,11 @@ ${AiOutputLanguage.directive()}
         prompt: String,
         size: String = "1024x1024",
         n: Int = 1,
-        referenceImage: ImageGenerationReference? = null
+        referenceImage: ImageGenerationReference? = null,
+        modelId: String? = null
     ): List<LocalImageResult> = withContext(Dispatchers.IO) {
-        val queue = queueFor("image_generation")
+        val defaults = queueFor("image_generation")
+        val queue = if (modelId.isNullOrBlank()) defaults else defaults.filter { it.id == modelId }
         if (queue.isEmpty()) {
             throw IllegalStateException("未配置图片生成模型，请在 AI 配置中心启用 purpose=image_generation 的模型")
         }
@@ -10463,26 +10537,17 @@ ${AiOutputLanguage.directive()}
         }
         val cacheDir = appContext?.cacheDir
             ?: throw IllegalStateException("应用上下文未初始化，无法缓存生成图片")
-        exec.value.mapNotNull { img ->
-            val bytes = img.bytes ?: run {
-                // 通过 URL 下载
-                val url = img.url ?: return@mapNotNull null
-                try {
-                    val resp = okhttp3.OkHttpClient().newCall(
-                        okhttp3.Request.Builder().url(url).build()
-                    ).execute()
-                    resp.body?.bytes() ?: return@mapNotNull null
-                } catch (_: Exception) {
-                    null
-                } ?: return@mapNotNull null
-            }
-            val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.png").apply {
+        exec.value.map { img ->
+            val bytes = img.bytes ?: aiClient.downloadGeneratedImage(
+                img.url ?: throw IllegalStateException("服务未返回图片"), exec.model.proxyUrl)
+            val format = com.nekobot.app.data.local.ai.generatedImageFormat(bytes)
+            val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.${format.extension}").apply {
                 parentFile?.mkdirs()
                 writeBytes(bytes)
             }
             LocalImageResult(
                 cacheUri = android.net.Uri.fromFile(cacheFile).toString(),
-                mimeType = "image/png",
+                mimeType = format.mimeType,
                 usedModelId = exec.model.id,
                 usedModelName = exec.model.name
             )
@@ -10493,7 +10558,7 @@ ${AiOutputLanguage.directive()}
      * 远程模式图片生成：直接调用远程 AI 模型列表中 purpose=image_generation 的模型供应商 API。
      * 绕过后端（后端目前无通用图片生成端点），复用 [aiClient] 的 OpenAI 兼容 /images/generations 调用逻辑。
      *
-     * 简单故障转移：按 priority 降序遍历模型，第一个成功即返回；全部失败则抛出聚合错误。
+     * 简单故障转移：按 priority 升序遍历模型，第一个成功即返回；全部失败则抛出聚合错误。
      *
      * @param models 远程模型列表（调用方需预先筛选 purpose=image_generation 且 enabled=true）
      * @param prompt 图片描述
@@ -10528,32 +10593,28 @@ ${AiOutputLanguage.directive()}
                     size = size,
                     n = n,
                     referenceImage = referenceImage,
-                    provider = model.provider ?: model.protocol.orEmpty()
+                    appendBaseUrlPath = model.appendBaseUrlPath ?: true,
+                    provider = model.provider.orEmpty().ifBlank { model.protocol.orEmpty() }
                 )
                 if (images.isNotEmpty()) {
-                    return@withContext images.mapNotNull { img ->
-                        val bytes = img.bytes ?: run {
-                            val url = img.url ?: return@mapNotNull null
-                            try {
-                                okhttp3.OkHttpClient().newCall(
-                                    okhttp3.Request.Builder().url(url).build()
-                                ).execute().body?.bytes() ?: return@mapNotNull null
-                            } catch (_: Exception) {
-                                null
-                            } ?: return@mapNotNull null
-                        }
-                        val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.png").apply {
+                    return@withContext images.map { img ->
+                        val bytes = img.bytes ?: aiClient.downloadGeneratedImage(
+                            img.url ?: throw IllegalStateException("服务未返回图片"))
+                        val format = com.nekobot.app.data.local.ai.generatedImageFormat(bytes)
+                        val cacheFile = File(cacheDir, "image_gen/${UUID.randomUUID()}.${format.extension}").apply {
                             parentFile?.mkdirs()
                             writeBytes(bytes)
                         }
                         LocalImageResult(
                             cacheUri = android.net.Uri.fromFile(cacheFile).toString(),
-                            mimeType = "image/png",
+                            mimeType = format.mimeType,
                             usedModelId = model.id ?: "",
                             usedModelName = model.displayName
                         )
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errors.add("${model.displayName}: ${e.message}")
             }
@@ -10970,7 +11031,7 @@ ${AiOutputLanguage.directive()}
             ContextUsageMessageRow(
                 role = message.role,
                 content = message.content,
-                toolHistoryTokens = history?.let(::estimateLocalTextTokens) ?: 0,
+                toolHistoryTokens = estimateToolCallHistoryTokens(history),
                 toolHistoryCount = history?.let { rows -> completedAgentToolCallCount(decodeToolCallHistory(rows)) } ?: 0,
                 isSummary = message.isAgentContextSummary()
             )
@@ -12546,7 +12607,7 @@ ${AiOutputLanguage.directive()}
         persistUserMessage: Boolean = true,
         metadata: Map<String, Any> = emptyMap()
     ): String {
-        val model = aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
+        val model = getRoutedModel(sessionId, prompt)
             ?: throw IllegalStateException("请先配置并启用聊天模型")
         var failure: String? = null
         chatWithPipeline(
@@ -14027,6 +14088,8 @@ ${AiOutputLanguage.directive()}
 
     suspend fun listWorkspaceFiles(sessionId: String, path: String?): JsonElement =
         workspaceRepository.listSessionFiles(sessionId, path)
+
+    suspend fun listWorkspaceSearchEntries(sessionIds: List<String>) = workspaceRepository.searchEntries(sessionIds)
 
     suspend fun uploadWorkspaceFile(sessionId: String, bytes: ByteArray, fileName: String): JsonElement =
         workspaceRepository.uploadSessionFile(sessionId, bytes, fileName)

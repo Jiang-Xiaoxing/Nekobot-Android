@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_filter_all">전체</string>
+    <string name="search_refresh">검색 새로고침</string>
+    <string name="agent_foreground_timed_out">시스템이 백그라운드 작업을 일시 정지했습니다. 채팅에서 계속하세요.</string>
+    <string name="memory_history_title">변경 기록</string>
+    <string name="memory_history_restore">이 버전 복원</string>
+    <string name="memory_history_empty">변경 기록이 없습니다</string>
+    <string name="memory_history_preview">버전 미리보기</string>
+    <string name="memory_history_source">출처 보기</string>
+    <string name="memory_history_before">변경 전</string>
+    <string name="memory_history_after">변경 후</string>
+    <string name="memory_history_empty_content">(비어 있음)</string>
+    <string name="memory_history_manual">직접 편집</string>
+    <string name="memory_history_agent">자동 기억</string>
+    <string name="memory_history_tool">Agent 도구</string>
+    <string name="memory_history_restored">버전 복원</string>
+    <string name="memory_undo">최근 변경 취소</string>
+    <string name="memory_merge_save">병합 후 저장</string>
+    <string name="memory_conflict_message">기억이 변경되었습니다. 초안은 유지됩니다.</string>
+    <string name="memory_merge_conflict">같은 부분의 변경이 충돌합니다. 직접 병합하세요.</string>
+    <string name="model_probe_title">기능 테스트</string>
+    <string name="model_probe_start">테스트 시작</string>
+    <string name="model_probe_running">테스트 중…</string>
+    <string name="model_probe_stream">스트리밍</string>
+    <string name="model_probe_tools">도구 호출</string>
+    <string name="model_probe_vision">이미지 이해</string>
+    <string name="model_probe_reasoning">추론 출력</string>
+    <string name="model_probe_pass">확인됨</string>
+    <string name="model_probe_fail">요청 실패</string>
+    <string name="model_probe_unknown">확인되지 않음</string>
+    <string name="model_probe_mismatch">현재 설정과 다름</string>
+    <string name="model_probe_hint">테스트는 모델을 호출하며 소량의 사용량이 발생합니다.</string>
+    <string name="model_probe_saved">테스트 시간: %1$s</string>
+    <string name="model_probe_apply">확인된 기능 활성화</string>
+    <string name="model_probe_pending">대기 중</string>
+    <string name="model_probe_stale">설정이 변경되었습니다. 다시 테스트하세요.</string>
+    <string name="tokens_source_model_test">모델 테스트</string>
+    <string name="memory_conflict_review">변경 병합</string>
+    <string name="memory_conflict_latest">최신 기억</string>
+    <string name="memory_conflict_draft">초안 편집</string>
+</resources>

@@ -14,9 +14,11 @@ import java.time.Instant
  * 记忆保存在应用 filesDir 下的 `agent/<profile>/global-memory.md`，因此同一数据库
  * 下的所有会话共享同一份记忆，而切换数据库 Profile 会连带切换到该 Profile 自己的记忆。
  */
-class GlobalAgentMemoryStore private constructor(
+class GlobalAgentMemoryStore internal constructor(
     private val memoryFile: File
 ) {
+    private val history by lazy { MemoryVersionHistory(File(memoryFile.parentFile, "global-memory-history")) }
+    private val memoryLock = memoryLocks.computeIfAbsent(memoryFile.absolutePath) { Any() }
     constructor(context: Context, profileName: String) : this(memoryFileFor(context, profileName))
 
     data class Snapshot(
@@ -52,23 +54,51 @@ class GlobalAgentMemoryStore private constructor(
     }
 
     @Synchronized
-    fun replace(content: String): Snapshot {
-        require(content.length <= MAX_CONTENT_CHARS) {
-            "全局 Agent 记忆最多 $MAX_CONTENT_CHARS 个字符"
+    fun replace(content: String, expectedContent: String? = null, source: String = "manual",
+                sourceSessionId: String? = null, sourceMessageId: String? = null,
+                restoredFrom: String? = null): Snapshot {
+        synchronized(memoryLock) {
+            require(content.length <= MAX_CONTENT_CHARS) {
+                "全局 Agent 记忆最多 $MAX_CONTENT_CHARS 个字符"
+            }
+            val current = read().content
+            if (expectedContent != null && expectedContent != current) throw MemoryConflictException()
+            if (content == current) {
+                if (!memoryFile.isFile) writeAtomically(content)
+                return read()
+            }
+            history.list(current)
+            val version = history.newVersion(content, current, source, sourceSessionId, sourceMessageId, restoredFrom)
+            history.prepare(version)
+            try { writeAtomically(content) }
+            catch (error: Exception) { history.discard(version.id); throw error }
+            history.commit(version.id)
+            return read()
         }
-        writeAtomically(content)
-        return read()
+    }
+
+    @Synchronized fun versions(): List<MemoryVersion> = synchronized(memoryLock) { history.list(read().content) }
+
+    @Synchronized fun restoreVersion(id: String, expectedContent: String): Snapshot {
+        val version = versions().firstOrNull { it.id == id } ?: error("Memory version not found")
+        return replace(version.content, expectedContent, source = "restore", restoredFrom = id)
+    }
+
+    @Synchronized fun undo(expectedContent: String): Snapshot {
+        val version = versions().firstOrNull() ?: return read()
+        if (version.content != read().content) throw MemoryConflictException()
+        return replace(version.previousContent, expectedContent, source = "restore", restoredFrom = version.id)
     }
 
     @Synchronized
-    fun append(content: String): Snapshot {
+    fun append(content: String, source: String = "tool", sourceSessionId: String? = null): Snapshot {
         val current = read().content
         val separator = if (current.isBlank() || content.isBlank()) "" else "\n\n"
-        return replace(current + separator + content)
+        return replace(current + separator + content, current, source, sourceSessionId)
     }
 
     @Synchronized
-    fun replaceText(oldText: String, newText: String): Snapshot {
+    fun replaceText(oldText: String, newText: String, sourceSessionId: String? = null): Snapshot {
         require(oldText.isNotEmpty()) { "old_text 不能为空" }
         val current = read().content
         val first = current.indexOf(oldText)
@@ -76,7 +106,7 @@ class GlobalAgentMemoryStore private constructor(
         require(current.lastIndexOf(oldText) == first) {
             "old_text 出现多次，请提供更精确的文本"
         }
-        return replace(current.replaceFirst(oldText, newText))
+        return replace(current.replaceFirst(oldText, newText), current, "tool", sourceSessionId)
     }
 
     private fun writeAtomically(content: String) {
@@ -109,6 +139,7 @@ class GlobalAgentMemoryStore private constructor(
     }
 
     companion object {
+        private val memoryLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
         const val MAX_CONTENT_CHARS = 32_000
 
         private const val MEMORY_DIR = "agent"

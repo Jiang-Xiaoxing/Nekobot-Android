@@ -17,6 +17,10 @@ import com.nekobot.app.data.model.KnowledgeSearchResult
 import com.nekobot.app.data.model.KnowledgeStats
 import java.util.UUID
 import com.nekobot.app.R
+import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * 本地知识库：Room 文档/切片持久化、OpenAI 兼容 Embedding 和离线词法回退。
@@ -27,6 +31,7 @@ class LocalKnowledgeManager(
 ) {
     private val dao = db.knowledgeDao()
     private val gson = Gson()
+    private val scoringCache = KnowledgeScoringCache()
     /** LLM 重排器，懒加载避免未使用时初始化 */
     private val reranker by lazy { KnowledgeReranker(aiClient, db) }
 
@@ -89,11 +94,14 @@ class LocalKnowledgeManager(
 
     suspend fun index(id: String) {
         val document = dao.getDocument(id) ?: error("知识库文档不存在")
-        dao.updateIndexed(id, false, LocalRepository.nowIsoStatic())
-        dao.deleteChunks(id)
         val chunks = LocalKnowledgeSearch.chunkWithOffsets(document.content)
         if (chunks.isEmpty()) {
-            dao.updateIndexed(id, true, LocalRepository.nowIsoStatic())
+            db.withTransaction {
+                if (dao.getDocument(id)?.content == document.content) {
+                    dao.deleteChunks(id)
+                    dao.updateIndexed(id, true, LocalRepository.nowIsoStatic())
+                }
+            }
             return
         }
         val vectors = embedTexts(chunks.map { it.content })
@@ -108,8 +116,14 @@ class LocalKnowledgeManager(
                 charEnd = chunk.charEnd
             )
         }
-        dao.upsertChunks(entities)
-        dao.updateIndexed(id, true, LocalRepository.nowIsoStatic())
+        db.withTransaction {
+            // 网络请求期间可能编辑或删除原文；旧任务不能覆盖新版本。
+            if (dao.getDocument(id)?.content == document.content) {
+                dao.deleteChunks(id)
+                dao.upsertChunks(entities)
+                dao.updateIndexed(id, true, LocalRepository.nowIsoStatic())
+            }
+        }
     }
 
     suspend fun rebuild() {
@@ -135,51 +149,57 @@ class LocalKnowledgeManager(
         characterId: String? = null
     ): List<KnowledgeSearchResult> {
         if (query.isBlank()) return emptyList()
-        val documents = dao.listDocuments().associateBy { it.id }
+        val documents = dao.listSearchDocuments().associateBy { it.id }
         val allowedDocuments = documents.values
-            .filter { isVisibleInScope(it, sessionId, characterId) }
+            .filter { isVisibleInScope(it.tagsJson, sessionId, characterId) }
             .associateBy { it.id }
         if (allowedDocuments.isEmpty()) return emptyList()
-        val chunks = dao.listAllChunks().filter { it.documentId in allowedDocuments }
-        if (chunks.isEmpty()) return emptyList()
-        val hasVectors = chunks.any { !it.embeddingJson.isNullOrBlank() }
+        val documentGroups = allowedDocuments.keys.toList().chunked(400)
+        val hasVectors = documentGroups.any { dao.vectorCount(it) > 0 }
         val queryVector = if (hasVectors) embedTexts(listOf(query))?.firstOrNull() else null
 
         // 混合权重使用 config.semanticWeight
         val semanticWeight = config.semanticWeight.coerceIn(0f, 1f)
         val lexicalWeight = 1f - semanticWeight
 
-        // 1. 计算混合得分，填充 chunkIndex/charOffset/charEnd/semanticScore/lexicalScore
-        val scored = chunks.mapNotNull { chunk ->
-            val document = allowedDocuments[chunk.documentId] ?: return@mapNotNull null
-            val lexical = LocalKnowledgeSearch.lexicalScore(query, "${document.title}\n${chunk.content}")
-            val semantic = queryVector?.let { queryEmbedding ->
-                decodeVector(chunk.embeddingJson)?.let { LocalKnowledgeSearch.cosine(queryEmbedding, it) }
+        val queryTerms = LocalKnowledgeSearch.termCounts(query)
+        val best = KnowledgeCandidates(config.candidateK.coerceAtLeast(1))
+        for (documentIds in documentGroups) {
+            var afterId = ""
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val page = dao.listChunkPage(documentIds, afterId, 128)
+                if (page.isEmpty()) break
+                page.forEach { chunk ->
+                    val document = allowedDocuments[chunk.documentId] ?: return@forEach
+                    val lexical = LocalKnowledgeSearch.lexicalScore(queryTerms,
+                        scoringCache.terms(chunk.id, "${document.title}\n${chunk.content}"))
+                    val semantic = queryVector?.let { queryEmbedding ->
+                        scoringCache.vector(chunk.id, chunk.embeddingJson)?.let { LocalKnowledgeSearch.cosine(queryEmbedding, it) }
+                    }
+                    val score = when {
+                        semantic != null -> (semantic.coerceAtLeast(0f) * semanticWeight) + (lexical * lexicalWeight)
+                        else -> lexical
+                    }
+                    // 得分阈值使用 config.scoreThreshold
+                    if (score > config.scoreThreshold) best.offer(KnowledgeSearchResult(
+                        id = document.id,
+                        title = document.title,
+                        content = chunk.content,
+                        score = score,
+                        source = document.source,
+                        chunkIndex = chunk.chunkIndex,
+                        charOffset = chunk.charOffset,
+                        charEnd = chunk.charEnd,
+                        semanticScore = semantic?.coerceAtLeast(0f),
+                        lexicalScore = lexical
+                    ))
+                }
+                afterId = page.last().id
             }
-            val score = when {
-                semantic != null -> (semantic.coerceAtLeast(0f) * semanticWeight) + (lexical * lexicalWeight)
-                else -> lexical
-            }
-            // 得分阈值使用 config.scoreThreshold
-            if (score <= config.scoreThreshold) null else KnowledgeSearchResult(
-                id = document.id,
-                title = document.title,
-                content = chunk.content,
-                score = score,
-                source = document.source,
-                chunkIndex = chunk.chunkIndex,
-                charOffset = chunk.charOffset,
-                charEnd = chunk.charEnd,
-                semanticScore = semantic?.coerceAtLeast(0f),
-                lexicalScore = lexical
-            )
-        }.sortedByDescending { it.score ?: 0f }
-            .distinctBy { "${it.id}:${it.content}" }
-
-        if (scored.isEmpty()) return emptyList()
-
-        // 2. 初筛取 candidateK 个
-        val candidates = scored.take(config.candidateK.coerceAtLeast(1))
+        }
+        val candidates = best.results()
+        if (candidates.isEmpty()) return emptyList()
 
         // 3. MMR 去重（lambda=config.mmrLambda, k=config.topK*2）
         val mmrResults = MmrSelector.select(
@@ -266,6 +286,7 @@ class LocalKnowledgeManager(
             for (batch in texts.chunked(16)) {
                 val result = runCatching { aiClient.createEmbeddings(model, batch) }
                     .onFailure {
+                        if (it is CancellationException) throw it
                         LocalLogger.w(TAG, R.string.log_kbase_embedding_fallback, model.name, it.message)
                     }
                     .getOrNull()
@@ -291,11 +312,11 @@ class LocalKnowledgeManager(
     }
 
     private fun isVisibleInScope(
-        document: LocalKnowledgeDocumentEntity,
+        tagsJson: String,
         sessionId: String?,
         characterId: String?
     ): Boolean {
-        val tags = decodeTags(document.tagsJson)
+        val tags = decodeTags(tagsJson)
         val scopes = tags.filter { it.startsWith("session:") || it.startsWith("character:") }
         if (scopes.isEmpty()) return true
         return (sessionId != null && "session:$sessionId" in scopes) ||

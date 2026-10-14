@@ -408,4 +408,8 @@
     <string name="aimodel_editor_embedding_dimensions_fixed">此模型使用固定向量維度，無需設定。</string>
     <string name="aimodel_editor_embedding_dimensions_hint">選擇介面預設，或指定1至65536的整數；實際支援的維度以模型服務說明為準。</string>
     <string name="aimodel_editor_embedding_dimensions_invalid">自訂向量維度須為1至65536的整數。</string>
+    <string name="aimodel_editor_provider_elevenlabs">ElevenLabs</string>
+    <string name="aimodel_editor_provider_deepgram">Deepgram</string>
+    <string name="aimodel_editor_provider_groq">Groq</string>
+    <string name="aimodel_editor_provider_stability">Stability AI</string>
 </resources>

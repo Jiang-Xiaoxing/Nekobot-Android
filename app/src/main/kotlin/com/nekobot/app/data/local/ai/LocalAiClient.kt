@@ -26,6 +26,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.BufferedReader
+import okio.buffer
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.util.Base64
@@ -65,7 +66,8 @@ data class LocalAiResult(
 data class LocalAiStreamCallbacks(
     val onStart: () -> Unit = {},
     val onContentChunk: (String) -> Unit = {},
-    val onThinkingChunk: (String) -> Unit = {}
+    val onThinkingChunk: (String) -> Unit = {},
+    val onStreamObserved: () -> Unit = {}
 )
 
 internal class LocalToolCallStreamAccumulator {
@@ -205,6 +207,8 @@ class LocalAiClient(
 ) {
     private val gson = Gson()
     private val proxyClients = ConcurrentHashMap<String, OkHttpClient>()
+    private val taggedCalls = ConcurrentHashMap<String, MutableSet<Call>>()
+    private val activeHttpCalls = ConcurrentHashMap.newKeySet<Call>()
     private var oauthCredentialResolver: (suspend (String) -> OAuthRuntimeCredential)? = null
 
     fun setOAuthCredentialResolver(
@@ -564,6 +568,7 @@ class LocalAiClient(
                 ?: throw IllegalStateException("响应体为空")
             BufferedReader(InputStreamReader(source, Charsets.UTF_8)).use { reader ->
                 readSseEvents(reader) { data ->
+                    streamCallbacks?.onStreamObserved?.invoke()
                     if (data == "[DONE]") return@readSseEvents true
                     protocol.parseStreamUsageDetail(data)?.let { detail ->
                         usage = detail.toUsageMap()
@@ -785,7 +790,10 @@ class LocalAiClient(
             modelName.startsWith("o1") || modelName.startsWith("o3") || modelName.startsWith("o4") ||
             modelName.startsWith("gpt-5")
         return normalized.toMutableMap().apply {
-            if (effort != ReasoningEffort.NONE || knownReasoningTarget) {
+            // Responses 的默认推理强度由模型决定；未指定时不能强行发送 none。
+            val useResponsesDefault = model.protocol == OpenAIResponsesProtocol.name &&
+                !normalized.containsKey("reasoning_effort")
+            if (!useResponsesDefault && (effort != ReasoningEffort.NONE || knownReasoningTarget)) {
                 put("reasoning_effort", mappedEffort)
             } else {
                 remove("reasoning_effort")
@@ -1120,12 +1128,54 @@ class LocalAiClient(
         return lastError ?: LocalAiResult("", error = "所有模型均不可用")
     }
 
+    /** 响应头返回后仍跟踪读取中的响应体，停止操作可以立即中断长流。 */
+    private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
+        activeHttpCalls.add(this)
+        val tag = request().tag(String::class.java)
+        if (tag != null) taggedCalls.compute(tag) { _, calls ->
+            (calls ?: ConcurrentHashMap.newKeySet()).apply { add(this@awaitResponse) }
+        }
+        fun release() {
+            activeHttpCalls.remove(this)
+            if (tag != null) taggedCalls.computeIfPresent(tag) { _, calls ->
+            calls.remove(this)
+            calls.takeUnless { it.isEmpty() }
+        } }
+        cont.invokeOnCancellation { cancel(); release() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, error: java.io.IOException) {
+                release()
+                if (cont.isActive) cont.resumeWithException(error)
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body
+                val tracked = if (body == null) response else {
+                    val source = object : okio.ForwardingSource(body.source()) {
+                        override fun close() { try { super.close() } finally { release() } }
+                    }.buffer()
+                    response.newBuilder().body(object : okhttp3.ResponseBody() {
+                        override fun contentType() = body.contentType()
+                        override fun contentLength() = body.contentLength()
+                        override fun source() = source
+                    }).build()
+                }
+                if (body == null) release()
+                if (cont.isActive) cont.resume(tracked) { _, _, _ -> tracked.close(); release() }
+                else { tracked.close(); release() }
+            }
+        })
+    }
+
     /** 取消指定会话标签下正在排队或执行的非流式模型请求。 */
     fun cancelRequests(requestTag: String) {
-        val calls = client.dispatcher.queuedCalls() + client.dispatcher.runningCalls()
-        calls
-            .filter { call -> call.request().tag(String::class.java) == requestTag }
-            .forEach { call -> runCatching { call.cancel() } }
+        val calls = (listOf(client) + proxyClients.values).flatMap {
+            it.dispatcher.queuedCalls() + it.dispatcher.runningCalls()
+        }.filter { it.request().tag(String::class.java) == requestTag } + taggedCalls[requestTag].orEmpty()
+        calls.distinct().forEach { call -> runCatching { call.cancel() } }
+    }
+
+    fun cancelAllRequests() {
+        activeHttpCalls.toList().forEach { runCatching { it.cancel() } }
     }
 
     /**
@@ -1541,6 +1591,9 @@ class LocalAiClient(
     ): ByteArray {
         val provider = MultimodalProviderSupport.ttsProvider(model)
         return when (provider) {
+            "elevenlabs", "deepgram", "siliconflow" -> NativeMediaProviders {
+                clientFor(model).newCall(it).awaitResponse()
+            }.speech(model, text, voice, speed, volume)
             "xiaomi", "mimo" -> synthesizeSpeechXiaomi(model, text, voice)
             "doubao", "volcengine", "bytedance" ->
                 synthesizeSpeechDoubao(model, text, voice, speed, volume)
@@ -1636,14 +1689,15 @@ class LocalAiClient(
             "model" to model.ttsModel.ifBlank { model.model.ifBlank { "speech-2.8-hd" } },
             "text" to text,
             "stream" to false,
+            "output_format" to "hex",
             "voice_setting" to mapOf(
                 "voice_id" to ((voiceOverride ?: model.ttsVoice).takeUnless { it.isBlank() || it == "default" } ?: "male-qn-qingse"),
                 "speed" to (speedOverride ?: model.ttsSpeed),
                 "vol" to (volumeOverride ?: model.ttsVolume),
-                "pitch" to (pitchOverride ?: model.ttsPitch)
+                "pitch" to (((pitchOverride ?: model.ttsPitch) - 1f) * 12).toInt().coerceIn(-12, 12)
             ),
             "audio_setting" to mapOf(
-                "audio_sample_rate" to 32_000,
+                "sample_rate" to 32_000,
                 "bitrate" to 128_000,
                 "format" to model.ttsFormat.ifBlank { "mp3" },
                 "channel" to 1
@@ -1873,6 +1927,38 @@ class LocalAiClient(
         }
     }
 
+    /** 上传兼容 SiliconFlow 的自定义音色；仅在提供商支持时由试验场开放。 */
+    suspend fun uploadTtsVoice(
+        model: LocalAiModelEntity,
+        file: MultipartBody.Part,
+        customName: okhttp3.RequestBody,
+        text: okhttp3.RequestBody
+    ): String {
+        val url = model.ttsUploadUrl.ifBlank {
+            "${model.baseUrl.trimEnd('/')}/uploads/audio/voice"
+        }
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addPart(file)
+            .addFormDataPart("customName", null, customName)
+            .addFormDataPart("text", null, text)
+            .addFormDataPart("model", model.ttsModel.ifBlank { model.model })
+            .build()
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer ${model.apiKey}")
+            .post(body).build()
+        return clientFor(model).newCall(request).awaitResponse().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw FailoverHttpException(response.code, "TTS HTTP ${response.code}: ${raw.take(500)}")
+            }
+            val json = JsonParser.parseString(raw).asJsonObject
+            sequenceOf("uri", "voice_id", "id")
+                .mapNotNull { json.get(it)?.takeUnless { value -> value.isJsonNull }?.asString }
+                .firstOrNull { it.isNotBlank() }
+                ?: throw IllegalStateException("TTS 服务未返回音色 ID")
+        }
+    }
+
     private suspend fun executeTtsRequest(
         model: LocalAiModelEntity,
         request: Request,
@@ -1893,6 +1979,11 @@ class LocalAiClient(
                 response.code,
                 "$provider TTS 未返回音频: ${responseBytes.toString(Charsets.UTF_8).take(200)}"
             )
+            json.getAsJsonObject("base_resp")?.let { status ->
+                if (status.get("status_code")?.asInt?.let { it != 0 } == true) {
+                    error("$provider TTS: ${status.get("status_msg")?.asString.orEmpty()}")
+                }
+            }
             val audioUrl = sequenceOf(
                 json.get("audio_url"),
                 json.get("url"),
@@ -1931,6 +2022,10 @@ class LocalAiClient(
                     }
             when {
                 !audioUrl.isNullOrBlank() -> downloadAudio(model, audioUrl)
+                !audioData.isNullOrBlank() && provider == "MiniMax" -> {
+                    if (audioData.startsWith("https://") || audioData.startsWith("http://")) downloadAudio(model, audioData)
+                    else decodeMiniMaxAudioHex(audioData)
+                }
                 !audioData.isNullOrBlank() -> decodeAudioBase64(audioData)
                 else -> throw FailoverHttpException(response.code, "$provider TTS 响应缺少音频数据")
             }
@@ -1992,6 +2087,24 @@ class LocalAiClient(
     ): LocalAiResult {
         val provider = MultimodalProviderSupport.sttProvider(model)
         return when (provider) {
+            "elevenlabs", "deepgram" -> NativeMediaProviders {
+                clientFor(model).newCall(it).awaitResponse()
+            }.transcribe(model, audioBytes, filename, language)
+            "groq", "siliconflow", "glm" -> transcribeSpeechOpenAI(
+                model.copy(baseUrl = model.baseUrl.ifBlank {
+                    when (provider) {
+                        "groq" -> "https://api.groq.com/openai/v1"
+                        "glm" -> "https://open.bigmodel.cn/api/paas/v4"
+                        else -> "https://api.siliconflow.cn/v1"
+                    }
+                }, sttModel = model.sttModel.ifBlank { model.model.ifBlank {
+                    when (provider) {
+                        "groq" -> "whisper-large-v3-turbo"
+                        "glm" -> "glm-asr-2512"
+                        else -> "FunAudioLLM/SenseVoiceSmall"
+                    }
+                } }), audioBytes, filename, language
+            )
             "xiaomi", "mimo" -> transcribeSpeechXiaomi(model, audioBytes, filename, language)
             "gemini", "google", "google_gemini" -> transcribeSpeechGemini(model, audioBytes, filename, language)
             "qwen", "dashscope", "tongyi" -> transcribeSpeechQwen(model, audioBytes, filename, language)
@@ -2045,9 +2158,10 @@ class LocalAiClient(
     ): LocalAiResult {
         val url = model.sttUrl.takeIf { it.isNotBlank() }
             ?: MultimodalProviderSupport.endpoint(
-                model.baseUrl,
+                model.baseUrl.replace("/api/v1", "/compatible-mode/v1"),
                 "/chat/completions",
-                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                model.appendBaseUrlPath
             )
         val format = filename.substringAfterLast('.', "wav").lowercase()
         val audioData = Base64.getEncoder().encodeToString(audioBytes)
@@ -2061,7 +2175,7 @@ class LocalAiClient(
             "messages" to listOf(mapOf("role" to "user", "content" to content)),
             "stream" to false
         )
-        language?.takeIf { it.isNotBlank() && it != "auto" }?.let { body["language"] = it }
+        language?.takeIf { it.isNotBlank() && it != "auto" }?.let { body["asr_options"] = mapOf("language" to it) }
         val request = Request.Builder().url(url)
             .post(gson.toJson(body).toRequestBody(JSON_TYPE))
             .header("Authorization", "Bearer ${model.apiKey}")
@@ -2104,7 +2218,10 @@ class LocalAiClient(
         language: String?
     ): LocalAiResult {
         val url = model.sttUrl.takeIf { it.isNotBlank() }
-            ?: resolveAudioUrl(model.baseUrl, model.appendBaseUrlPath, "audio/transcriptions")
+            ?: if (MultimodalProviderSupport.sttProvider(model) == "glm") {
+                MultimodalProviderSupport.endpoint(model.baseUrl, "/audio/transcriptions",
+                    "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions", model.appendBaseUrlPath)
+            } else resolveAudioUrl(model.baseUrl, model.appendBaseUrlPath, "audio/transcriptions")
         val audioMediaType = guessAudioMediaType(filename).toMediaType()
         val sttModel = model.sttModel.ifBlank { model.model }
         LocalLogger.i(TAG, R.string.log_laic_stt_openai_request, url, model.model, filename, audioBytes.size, audioMediaType)
@@ -2113,7 +2230,11 @@ class LocalAiClient(
             .addFormDataPart("model", sttModel)
             .addFormDataPart("file", filename, audioBytes.toRequestBody(audioMediaType))
             .apply {
-                if (!language.isNullOrBlank()) addFormDataPart("language", language)
+                if (!language.isNullOrBlank() && !language.equals("auto", true) &&
+                    MultimodalProviderSupport.sttProvider(model) !in setOf("siliconflow", "glm")) {
+                    addFormDataPart("language", language)
+                }
+                if (MultimodalProviderSupport.sttProvider(model) == "glm") addFormDataPart("stream", "false")
             }
             .build()
         val reqBuilder = Request.Builder().url(url).post(audioPart)
@@ -2298,7 +2419,7 @@ class LocalAiClient(
             if (image.bytes != null || url.isNullOrBlank()) {
                 image
             } else {
-                val bytes = runCatching {
+                val bytes = try {
                     val request = Request.Builder().url(url).get().build()
                     clientFor(model).newCall(request).awaitResponse().use { response ->
                         if (!response.isSuccessful) {
@@ -2309,11 +2430,22 @@ class LocalAiClient(
                         }
                         response.body?.bytes()
                     }
-                }.getOrNull()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw IllegalStateException("下载生成图片失败", e)
+                }
                 image.copy(bytes = bytes)
             }
         }
     }
+
+    suspend fun downloadGeneratedImage(url: String, proxyUrl: String = ""): ByteArray =
+        clientFor(proxyUrl).newCall(Request.Builder().url(url).build()).awaitResponse().use { response ->
+            if (!response.isSuccessful) throw FailoverHttpException(response.code, "图片下载 HTTP ${response.code}")
+            response.body?.bytes()?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalStateException("图片下载返回空内容")
+        }
 
     /**
      * 调用 OpenAI 兼容 `/embeddings` 接口。
@@ -2405,8 +2537,24 @@ class LocalAiClient(
         referenceImage: ImageGenerationReference? = null
     ): List<GeneratedImage> {
         val finalPrompt = appendImagePrompt(prompt, additionalPrompt)
-        val normalizedProvider = provider.trim().lowercase()
+        val normalizedProvider = MultimodalProviderSupport.normalize(provider)
+        require(referenceImage == null || MultimodalProviderSupport.supportsImageReference(provider, modelName)) {
+            com.nekobot.app.ServiceContainer.getString(R.string.playground_reference_unsupported)
+                .ifBlank { "当前图片生成接口不支持参考图" }
+        }
+        // 原生单图接口按用户要求串行生成，避免数量选项被静默忽略。
+        if (n > 1 && normalizedProvider in setOf("gemini", "google", "google_gemini", "minimax")) {
+            return buildList {
+                repeat(n) {
+                    addAll(generateImage(baseUrl, apiKey, modelName, prompt, additionalPrompt, size, 1,
+                        appendBaseUrlPath, proxyUrl, provider, referenceImage))
+                }
+            }
+        }
         when (normalizedProvider) {
+            "siliconflow", "grok", "glm", "stability" -> return NativeMediaProviders {
+                clientFor(proxyUrl).newCall(it).awaitResponse()
+            }.images(normalizedProvider, baseUrl, apiKey, modelName, finalPrompt, size, n, appendBaseUrlPath, referenceImage)
             "gemini", "google", "google_gemini" -> return generateImageGemini(
                 baseUrl, apiKey, modelName, finalPrompt, appendBaseUrlPath, proxyUrl, referenceImage
             )
@@ -2425,7 +2573,7 @@ class LocalAiClient(
                 )
             }
             "doubao", "seed", "seedream", "volcengine", "ark", "volces" -> return generateImageDoubao(
-                baseUrl, apiKey, modelName, finalPrompt, size, n, appendBaseUrlPath, proxyUrl
+                baseUrl, apiKey, modelName, finalPrompt, size, n, appendBaseUrlPath, proxyUrl, referenceImage
             )
         }
         if (referenceImage != null) {
@@ -2613,7 +2761,8 @@ class LocalAiClient(
         size: String,
         n: Int,
         appendBaseUrlPath: Boolean,
-        proxyUrl: String
+        proxyUrl: String,
+        referenceImage: ImageGenerationReference? = null
     ): List<GeneratedImage> {
         val url = MultimodalProviderSupport.endpoint(
             baseUrl,
@@ -2625,7 +2774,7 @@ class LocalAiClient(
             "2K", "4K" -> size.uppercase()
             else -> if (size.contains("x")) "2K" else size
         }
-        val body = mapOf(
+        val body = linkedMapOf<String, Any>(
             "model" to modelName,
             "prompt" to prompt,
             "size" to normalizedSize,
@@ -2634,12 +2783,19 @@ class LocalAiClient(
             "response_format" to "url",
             "watermark" to false
         )
+        referenceImage?.let {
+            body["image"] = "data:${it.mimeType};base64," + Base64.getEncoder().encodeToString(it.bytes)
+        }
         val request = Request.Builder().url(url)
             .post(gson.toJson(body).toRequestBody(JSON_TYPE))
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
             .build()
-        return executeImageJsonRequest(request, proxyUrl, "豆包 Seed image")
+        return buildList {
+            repeat(n.coerceIn(1, 4)) {
+                addAll(executeImageJsonRequest(request, proxyUrl, "豆包 Seed image"))
+            }
+        }
     }
 
     /** Qwen Image 3.0 使用同步多模态生成端点，不走旧版异步文生图任务接口。 */
@@ -2894,26 +3050,6 @@ class LocalAiClient(
             .readTimeout(300, TimeUnit.SECONDS)   // 流式可能较慢
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
-
-        /**
-         * 可取消的 OkHttp Call 执行：协程取消时自动调用 [Call.cancel]，
-         * 中断阻塞的 HTTP 请求。避免用户点"停止"后底层请求仍在进行。
-         */
-        private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
-            cont.invokeOnCancellation { runCatching { cancel() } }
-            enqueue(object : Callback {
-                override fun onFailure(call: Call, e: java.io.IOException) {
-                    if (cont.isActive) cont.resumeWithException(e)
-                }
-                override fun onResponse(call: Call, response: Response) {
-                    if (cont.isActive) {
-                        cont.resume(response) { _, _, _ -> response.close() }
-                    } else {
-                        response.close()
-                    }
-                }
-            })
-        }
 
         /**
          * 解析图片生成端点 URL（/images/generations）。

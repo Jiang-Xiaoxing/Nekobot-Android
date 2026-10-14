@@ -75,11 +75,13 @@ object LocalKnowledgeSearch {
     ): List<String> = chunkWithOffsets(content, chunkSize, overlap).map { it.content }
 
     fun lexicalScore(query: String, text: String): Float {
-        val queryTerms = terms(query)
-        val textTerms = terms(text)
-        if (queryTerms.isEmpty() || textTerms.isEmpty()) return 0f
-        val queryCounts = queryTerms.groupingBy { it }.eachCount()
-        val textCounts = textTerms.groupingBy { it }.eachCount()
+        return lexicalScore(termCounts(query), termCounts(text))
+    }
+
+    internal fun termCounts(text: String): Map<String, Int> = terms(text).groupingBy { it }.eachCount()
+
+    internal fun lexicalScore(queryCounts: Map<String, Int>, textCounts: Map<String, Int>): Float {
+        if (queryCounts.isEmpty() || textCounts.isEmpty()) return 0f
         val dot = queryCounts.entries.sumOf { (term, count) ->
             count.toDouble() * (textCounts[term] ?: 0)
         }

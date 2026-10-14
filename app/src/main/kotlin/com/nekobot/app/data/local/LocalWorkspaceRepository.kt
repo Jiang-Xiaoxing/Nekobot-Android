@@ -9,6 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import com.nekobot.app.data.model.WorkspaceSearchEntry
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * 本地会话工作区与共享工作区的文件边界。
@@ -19,6 +22,29 @@ import java.util.UUID
 internal class LocalWorkspaceRepository(
     private val context: Context?
 ) {
+    suspend fun searchEntries(sessionIds: List<String>): List<WorkspaceSearchEntry> = withContext(Dispatchers.IO) {
+        buildList {
+            for (sessionId in sessionIds) {
+                val root = sessionRoot(sessionId)?.canonicalFile ?: continue
+                val pending = ArrayDeque<File>().apply { add(root) }
+                val visited = hashSetOf<String>()
+                while (pending.isNotEmpty()) {
+                    currentCoroutineContext().ensureActive()
+                    val directory = pending.removeFirst()
+                    if (!visited.add(directory.canonicalPath)) continue
+                    for (file in directory.listFiles().orEmpty()) {
+                        currentCoroutineContext().ensureActive()
+                        val canonical = runCatching { file.canonicalFile }.getOrNull() ?: continue
+                        if (!canonical.path.startsWith(root.path + File.separator) || file.name == ".git") continue
+                        val path = file.relativeTo(root).invariantSeparatorsPath
+                        add(WorkspaceSearchEntry(sessionId, path, file.name))
+                        if (file.isDirectory) pending.add(canonical)
+                    }
+                }
+            }
+        }
+    }
+
     suspend fun listSessionFiles(sessionId: String, path: String?): JsonElement = withContext(Dispatchers.IO) {
         val root = sessionRoot(sessionId)?.canonicalFile ?: return@withContext JsonArray()
         listFiles(root, path)

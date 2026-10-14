@@ -56,7 +56,9 @@ data class LocalModelUsage(
     val totalTokens: Int = promptTokens + completionTokens,
     val cachedPromptTokens: Int = 0,
     val cacheWriteTokens: Int = 0,
-    val cacheReported: Boolean = false
+    val cacheReported: Boolean = false,
+    /** 服务端明确报告的推理 token；是输出量的子集。 */
+    val reasoningTokens: Int = 0
 ) {
     /** 合并成管线内部通用的 usage 字典（键名与协议解析结果一致）。 */
     fun toUsageMap(): Map<String, Int> = buildMap {
@@ -65,6 +67,7 @@ data class LocalModelUsage(
         put("total", totalTokens)
         if (cacheReported || cachedPromptTokens > 0) put(KEY_CACHED_PROMPT, cachedPromptTokens)
         if (cacheWriteTokens > 0) put(KEY_CACHE_WRITE, cacheWriteTokens)
+        if (reasoningTokens > 0) put(KEY_REASONING, reasoningTokens)
     }
 
     companion object {
@@ -73,6 +76,7 @@ data class LocalModelUsage(
 
         /** 缓存写入 token 在 usage 字典中的键名。 */
         const val KEY_CACHE_WRITE = "cache_write"
+        const val KEY_REASONING = "reasoning"
     }
 }
 
@@ -83,7 +87,8 @@ internal fun usageMapToDetail(usage: Map<String, Int>): LocalModelUsage = LocalM
     totalTokens = usage["total"] ?: ((usage["prompt"] ?: 0) + (usage["completion"] ?: 0)),
     cachedPromptTokens = usage[LocalModelUsage.KEY_CACHED_PROMPT] ?: 0,
     cacheWriteTokens = usage[LocalModelUsage.KEY_CACHE_WRITE] ?: 0,
-    cacheReported = usage.containsKey(LocalModelUsage.KEY_CACHED_PROMPT)
+    cacheReported = usage.containsKey(LocalModelUsage.KEY_CACHED_PROMPT),
+    reasoningTokens = usage[LocalModelUsage.KEY_REASONING] ?: 0
 )
 
 /**
@@ -186,10 +191,16 @@ internal fun openAiStyleUsageFromJson(usage: JsonObject): LocalModelUsage {
         ?.takeIf { it > 0 }
         ?: usage.usageInt("cache_creation_input_tokens").takeIf { it > 0 }
         ?: 0
-    return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite).copy(cacheReported =
-        usage.usageObject("prompt_tokens_details")?.has("cached_tokens") == true ||
-        usage.usageObject("input_tokens_details")?.has("cached_tokens") == true ||
-        usage.has("cached_tokens") || usage.has("prompt_cache_hit_tokens"))
+    val reasoning = usage.usageObject("completion_tokens_details")?.usageInt("reasoning_tokens")
+        ?.takeIf { it > 0 }
+        ?: usage.usageObject("output_tokens_details")?.usageInt("reasoning_tokens") ?: 0
+    return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite)
+        .copy(
+            reasoningTokens = reasoning.coerceAtLeast(0),
+            cacheReported = usage.usageObject("prompt_tokens_details")?.has("cached_tokens") == true ||
+                usage.usageObject("input_tokens_details")?.has("cached_tokens") == true ||
+                usage.has("cached_tokens") || usage.has("prompt_cache_hit_tokens")
+        )
 }
 
 /** OpenAI 兼容 Map usage → 用量明细（字段口径同 [openAiStyleUsageFromJson]）。 */
@@ -208,9 +219,15 @@ internal fun openAiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage {
     val cacheWrite = inputDetails?.usageInt("cache_write_tokens")?.takeIf { it > 0 }
         ?: usage.usageInt("cache_creation_input_tokens").takeIf { it > 0 }
         ?: 0
-    return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite).copy(cacheReported =
-        details?.containsKey("cached_tokens") == true || inputDetails?.containsKey("cached_tokens") == true ||
-        usage.containsKey("cached_tokens") || usage.containsKey("prompt_cache_hit_tokens"))
+    val reasoning = (usage["completion_tokens_details"] as? Map<*, *>)?.usageInt("reasoning_tokens")
+        ?.takeIf { it > 0 }
+        ?: (usage["output_tokens_details"] as? Map<*, *>)?.usageInt("reasoning_tokens") ?: 0
+    return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite)
+        .copy(
+            reasoningTokens = reasoning.coerceAtLeast(0),
+            cacheReported = details?.containsKey("cached_tokens") == true || inputDetails?.containsKey("cached_tokens") == true ||
+                usage.containsKey("cached_tokens") || usage.containsKey("prompt_cache_hit_tokens")
+        )
 }
 
 /** 写入量是输入的子集（扣除命中部分）；0 保持原值不动。 */

@@ -84,7 +84,7 @@ object OpenAIChatProtocol : LocalProtocol {
             ?.takeIf { it.isNotEmpty() }
             ?.let {
                 payload["tools"] = it
-                if (extra["deepseek_thinking"] != true) payload["tool_choice"] = "auto"
+                if (extra["deepseek_thinking"] != true) payload["tool_choice"] = extra["tool_choice"] ?: "auto"
             }
         return payload
     }

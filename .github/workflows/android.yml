@@ -8,6 +8,18 @@ permissions:
   contents: read
 
 jobs:
+  verify-website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify website JavaScript syntax
+        run: |
+          node --check docs/i18n.js
+          node --check docs/script.js
+
   verify:
     runs-on: ubuntu-latest
     steps:

@@ -7,7 +7,7 @@ import java.security.MessageDigest
 
 /**
  * 服务端会脱敏 AI 模型密钥；Realtime WebSocket 又必须由手机直接鉴权。
- * 这里只缓存用户在 Android 端保存过的 Live 模型密钥，值由 Android Keystore 加密。
+ * 缓存用户在 Android 端保存过、需要手机直连的 Live/生图模型密钥，由 Android Keystore 加密。
  */
 internal class RealtimeCredentialStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -18,12 +18,12 @@ internal class RealtimeCredentialStore(context: Context) {
 
     fun save(serverUrl: String, request: AiModelRequest) {
         val apiKey = request.apiKey.orEmpty().trim()
-        if (request.purpose != "live" || apiKey.isBlank() || apiKey == MASKED_KEY) return
+        if (request.purpose !in DIRECT_PURPOSES || apiKey.isBlank() || apiKey == MASKED_KEY) return
         put(keyFor(serverUrl, request.name, request.baseUrl, request.model), apiKey)
     }
 
     fun migrate(serverUrl: String, previous: AiModel?, request: AiModelRequest) {
-        if (previous?.purpose == "live") {
+        if (previous != null && previous.purpose in DIRECT_PURPOSES) {
             val previousKey = keyFor(serverUrl, previous.name, previous.baseUrl, previous.model)
             val nextKey = keyFor(serverUrl, request.name, request.baseUrl, request.model)
             val submitted = request.apiKey.orEmpty().trim()
@@ -32,7 +32,7 @@ internal class RealtimeCredentialStore(context: Context) {
                 else -> read(previousKey)
             }
             if (previousKey != nextKey) preferences.edit().remove(previousKey).apply()
-            if (request.purpose == "live" && !secret.isNullOrBlank()) put(nextKey, secret)
+            if (request.purpose in DIRECT_PURPOSES && !secret.isNullOrBlank()) put(nextKey, secret)
         } else {
             save(serverUrl, request)
         }
@@ -63,6 +63,7 @@ internal class RealtimeCredentialStore(context: Context) {
     private companion object {
         const val PREFS_NAME = "realtime_credentials"
         const val MASKED_KEY = "********"
+        val DIRECT_PURPOSES = setOf("live", "image_generation")
 
         fun keyFor(
             serverUrl: String,

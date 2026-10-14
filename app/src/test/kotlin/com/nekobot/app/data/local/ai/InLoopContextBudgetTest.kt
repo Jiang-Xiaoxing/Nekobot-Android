@@ -10,6 +10,83 @@ import org.junit.Test
  */
 class InLoopContextBudgetTest {
 
+    private fun imageResult(id: String): MutableMap<String, Any> = mutableMapOf(
+        "role" to "tool", "tool_call_id" to id, "name" to "read_image",
+        "content" to buildToolMessageContent(mapOf(
+            "path" to "$id.jpg", "_image_urls" to listOf("data:image/jpeg;base64," + "A".repeat(50_000))
+        ))
+    )
+
+    @Test
+    fun `old multimodal results can be elided while recent images remain available`() {
+        val messages = conversation(0, 0)
+        repeat(8) { index ->
+            messages.add(assistantToolCall("image-$index"))
+            messages.add(imageResult("image-$index"))
+        }
+        val lastContent = messages.last()["content"]
+
+        assertTrue(manageInLoopContextBudget(messages, 30_000) != null)
+        assertTrue(estimateLocalMessagesTokens(messages) <= 24_000)
+        assertTrue(messages.first { it["role"] == "tool" }["content"] is String)
+        assertEquals(lastContent, messages.last()["content"])
+    }
+
+    @Test
+    fun `a recent image exceeding the budget can also be released without losing the tool pair`() {
+        val messages = conversation(0, 0)
+        messages.add(assistantToolCall("image-1"))
+        messages.add(imageResult("image-1"))
+
+        assertTrue(manageInLoopContextBudget(messages, 1_000) != null)
+        assertTrue(estimateLocalMessagesTokens(messages) <= 800)
+        assertEquals("image-1", messages.last()["tool_call_id"])
+        assertTrue(messages.last()["content"] is String)
+        assertEquals(4, messages.size)
+    }
+
+    @Test
+    fun `hard trimming still runs when eliding tool results leaves oversized arguments`() {
+        val messages = conversation(8, 8_000)
+        val huge = assistantToolCall("call-0")
+        huge["tool_calls"] = listOf(mapOf(
+            "id" to "call-0", "type" to "function",
+            "function" to mapOf("name" to "file_read", "arguments" to "x".repeat(200_000))
+        ))
+        messages[2] = huge
+
+        assertTrue(manageInLoopContextBudget(messages, 12_000) != null)
+        assertTrue(estimateLocalMessagesTokens(messages) <= 9_600)
+        assertEquals("系统提示", messages.first()["content"])
+        assertTrue(messages.any { it["role"] == "user" && it["content"] == "读取这些文件" })
+        assertEquals(messages.filter { it["role"] == "assistant" }.size, messages.count { it["role"] == "tool" })
+    }
+
+    @Test
+    fun `tool definitions are reserved in the input budget`() {
+        val messages = conversation(6, 2_000)
+        manageInLoopContextBudget(messages, 10_000, inputOverheadTokens = 7_000)
+
+        assertTrue(estimateLocalMessagesTokens(messages) + 7_000 <= 8_000)
+    }
+
+    @Test
+    fun `preserved companion history fails without mutation when tools exhaust the budget`() {
+        val messages = conversation(2, 100)
+        val original = messages.map { it.toMap() }
+        val messageTokens = estimateLocalMessagesTokens(messages)
+        val budget = messageTokens * 4
+        assertTrue(messageTokens < budget * 0.8)
+
+        val failure = runCatching {
+            manageInLoopContextBudget(messages, budget,
+                preserveConversation = true, inputOverheadTokens = budget)
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(original, messages)
+    }
+
     private fun bigContent(repeat: Int) = "x".repeat(repeat)
 
     private fun toolMessage(id: String, content: String): MutableMap<String, Any> = mutableMapOf(

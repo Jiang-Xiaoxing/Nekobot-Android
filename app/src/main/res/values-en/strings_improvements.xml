@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_filter_all">All</string>
+    <string name="search_refresh">Refresh search</string>
+    <string name="agent_foreground_timed_out">Background work paused by the system. Open the chat to continue.</string>
+    <string name="memory_history_title">Change history</string>
+    <string name="memory_history_restore">Restore version</string>
+    <string name="memory_history_empty">No changes yet</string>
+    <string name="memory_history_preview">Version preview</string>
+    <string name="memory_history_source">View source</string>
+    <string name="memory_history_before">Before</string>
+    <string name="memory_history_after">After</string>
+    <string name="memory_history_empty_content">(Empty)</string>
+    <string name="memory_history_manual">Manual edit</string>
+    <string name="memory_history_agent">Automatic memory</string>
+    <string name="memory_history_tool">Agent tool</string>
+    <string name="memory_history_restored">Version restore</string>
+    <string name="memory_undo">Undo last change</string>
+    <string name="memory_merge_save">Merge and save</string>
+    <string name="memory_conflict_message">Memory changed. Your draft is preserved.</string>
+    <string name="memory_merge_conflict">Overlapping edits. Merge them manually.</string>
+    <string name="model_probe_title">Capability test</string>
+    <string name="model_probe_start">Run tests</string>
+    <string name="model_probe_running">Testing…</string>
+    <string name="model_probe_stream">Streaming</string>
+    <string name="model_probe_tools">Tool calls</string>
+    <string name="model_probe_vision">Vision</string>
+    <string name="model_probe_reasoning">Reasoning output</string>
+    <string name="model_probe_pass">Observed</string>
+    <string name="model_probe_fail">Request failed</string>
+    <string name="model_probe_unknown">Not observed</string>
+    <string name="model_probe_mismatch">Differs from current settings</string>
+    <string name="model_probe_hint">Tests use model requests and a small amount of quota.</string>
+    <string name="model_probe_saved">Tested: %1$s</string>
+    <string name="model_probe_apply">Enable verified capabilities</string>
+    <string name="model_probe_pending">Pending</string>
+    <string name="model_probe_stale">Settings changed. Run the tests again.</string>
+    <string name="tokens_source_model_test">Model test</string>
+    <string name="memory_conflict_review">Merge changes</string>
+    <string name="memory_conflict_latest">Latest memory</string>
+    <string name="memory_conflict_draft">Edit draft</string>
+</resources>

@@ -20,6 +20,24 @@ import org.junit.Test
 class LocalAiClientResponsesTest {
 
     @Test
+    fun omittedReasoningUsesModelDefaultAndExplicitEffortIsPreserved() = runBlocking {
+        val bodies = mutableListOf<com.google.gson.JsonObject>()
+        val client = LocalAiClient(OkHttpClient.Builder().addInterceptor { chain ->
+            bodies += JsonParser.parseString(Buffer().also { chain.request().body!!.writeTo(it) }.readUtf8()).asJsonObject
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body("""{"status":"completed","output_text":"hello"}""".toResponseBody("application/json".toMediaType())).build()
+        }.build())
+        val messages = listOf(mapOf("role" to "user", "content" to "hello"))
+        client.chatOnce(responsesModel(), messages, extra = mapOf("max_tokens" to 2048))
+        client.chatOnce(responsesModel(), messages, extra = mapOf("reasoning_effort" to "none"))
+        client.chatOnce(responsesModel(), messages, extra = mapOf("reasoning_effort" to "max"))
+        assertFalse(bodies[0].has("reasoning"))
+        assertEquals(2048, bodies[0].get("max_output_tokens").asInt)
+        assertEquals("none", bodies[1].getAsJsonObject("reasoning").get("effort").asString)
+        assertEquals("xhigh", bodies[2].getAsJsonObject("reasoning").get("effort").asString)
+    }
+
+    @Test
     fun doneOnlySseStillEmitsVisibleContent() = runBlocking {
         val body = buildString {
             appendLine("data: {\"type\":\"response.output_text.done\",\"text\":\"done-only text\"}")
@@ -118,10 +136,7 @@ class LocalAiClientResponsesTest {
         assertFalse(retried.has("temperature"))
         assertFalse(retried.has("max_output_tokens"))
         assertFalse(retried.has("top_p"))
-        assertEquals(
-            "none",
-            retried.getAsJsonObject("reasoning").get("effort").asString
-        )
+        assertFalse(retried.has("reasoning"))
         assertTrue(retried.has("tools"))
     }
 

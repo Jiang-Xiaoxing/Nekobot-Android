@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
@@ -60,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekobot.app.R
@@ -167,6 +169,7 @@ fun KnowledgeScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     val loading by vm.loading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
 
+    var toolbarMenuExpanded by remember { mutableStateOf(false) }
     var showForm by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<KnowledgeDocument?>(null) }
     var deleteTarget by remember { mutableStateOf<KnowledgeDocument?>(null) }
@@ -185,42 +188,46 @@ fun KnowledgeScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.knowledge_title)) },
+                title = { Text(stringResource(R.string.knowledge_title), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
-                    // RAG 检索设置入口
-                    IconButton(onClick = { onNavigate(Routes.RAG_SETTINGS) }) {
-                        Icon(
-                            Icons.Filled.Settings,
-                            contentDescription = stringResource(R.string.rag_settings_title)
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            importLauncher.launch(
-                                arrayOf(
-                                    "text/*",
-                                    "application/pdf",
-                                    "application/epub+zip",
-                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                )
+                    Box {
+                        IconButton(onClick = { toolbarMenuExpanded = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.knowledge_toolbar_menu))
+                        }
+                        DropdownMenu(expanded = toolbarMenuExpanded,
+                            onDismissRequest = { toolbarMenuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.knowledge_new_doc)) },
+                                leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                                onClick = { toolbarMenuExpanded = false; editingItem = null; showForm = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.knowledge_import_document)) },
+                                leadingIcon = { Icon(Icons.Filled.UploadFile, contentDescription = null) },
+                                onClick = {
+                                    toolbarMenuExpanded = false
+                                    importLauncher.launch(arrayOf("text/*", "application/pdf", "application/epub+zip",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+                                }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.knowledge_rebuild_all)) },
+                                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                                onClick = { toolbarMenuExpanded = false; vm.rebuildAll() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.rag_settings_title)) },
+                                leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                                onClick = { toolbarMenuExpanded = false; onNavigate(Routes.RAG_SETTINGS) }
                             )
                         }
-                    ) {
-                        Icon(Icons.Filled.UploadFile, contentDescription = "导入文档")
-                    }
-                    TextButton(onClick = { vm.rebuildAll() }) {
-                        Text(stringResource(R.string.knowledge_rebuild_all), color = MaterialTheme.colorScheme.primary)
-                    }
-                    IconButton(onClick = {
-                        editingItem = null
-                        showForm = true
-                    }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.knowledge_new_doc))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

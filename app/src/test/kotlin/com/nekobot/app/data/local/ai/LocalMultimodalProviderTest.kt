@@ -152,6 +152,30 @@ class LocalMultimodalProviderTest {
         assertEquals("https://example.com/image.png", images.single().url)
     }
 
+    @Test
+    fun geminiImageHonorsMultipleImageCount() = runBlocking {
+        var calls = 0
+        val client = client { request ->
+            calls++
+            response(request, """{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"AQID"}}]}}]}""", "application/json")
+        }
+        val images = LocalAiClient(client).generateImage("", "key", "gemini-image", "a cat", n = 3, provider = "gemini")
+        assertEquals(3, calls)
+        assertEquals(3, images.size)
+    }
+
+    @Test
+    fun unsupportedImageReferencesAreNotSilentlyDropped() = runBlocking {
+        var calls = 0
+        val client = client { request -> calls++; response(request, "{}", "application/json") }
+        try {
+            LocalAiClient(client).generateImage("https://example.com", "key", "image-01", "a cat", provider = "minimax",
+                referenceImage = ImageGenerationReference(byteArrayOf(1, 2, 3)))
+            org.junit.Assert.fail("Unsupported references must be reported")
+        } catch (_: IllegalArgumentException) { }
+        assertEquals(0, calls)
+    }
+
     private fun model(
         provider: String,
         baseUrl: String,

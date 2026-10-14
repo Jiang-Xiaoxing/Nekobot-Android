@@ -1905,6 +1905,7 @@ private fun sourceLabelFor(normalized: String, raw: String): String = when (norm
     "fork" -> ServiceContainer.getString(R.string.tokens_source_fork)
     "local" -> ServiceContainer.getString(R.string.tokens_source_local)
     "agent_memory" -> ServiceContainer.getString(R.string.tokens_source_agent_memory)
+    "model_test" -> ServiceContainer.getString(R.string.tokens_source_model_test)
     "session_name" -> ServiceContainer.getString(R.string.tokens_source_session_name)
     "compression" -> ServiceContainer.getString(R.string.tokens_source_compression)
     "agent_context_compression" -> ServiceContainer.getString(R.string.tokens_source_agent_context_compression)

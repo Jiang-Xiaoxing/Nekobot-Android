@@ -209,10 +209,16 @@ interface MessageDao {
 
     @Query(
         "SELECT * FROM local_messages " +
-            "WHERE deleted = 0 AND (content LIKE '%' || :query || '%' OR reasoning_content LIKE '%' || :query || '%') " +
+            "WHERE deleted = 0 AND (instr(lower(content), lower(:query)) > 0 OR instr(lower(reasoning_content), lower(:query)) > 0) " +
             "ORDER BY created_at DESC LIMIT :limit"
     )
     suspend fun searchContent(query: String, limit: Int): List<LocalMessageEntity>
+
+    @Query("SELECT * FROM local_messages WHERE id IN (:ids) AND deleted = 0 ORDER BY created_at DESC, rowid DESC")
+    suspend fun searchRowsByIds(ids: List<String>): List<LocalMessageEntity>
+
+    @Query("SELECT id FROM local_messages WHERE session_id = :sessionId AND role = 'user' AND content = :content AND deleted = 0 ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    suspend fun findUserMessageId(sessionId: String, content: String): String?
 
     @Query("SELECT * FROM local_messages WHERE session_id = :sessionId AND deleted = 0 ORDER BY created_at ASC")
     fun observeBySession(sessionId: String): Flow<List<LocalMessageEntity>>
@@ -600,6 +606,9 @@ interface AgentRunDao {
     )
     suspend fun pauseAllRunning(updatedAt: String)
 
+    @Query("UPDATE local_agent_runs SET status = 'paused', last_error = :reason, updated_at = :updatedAt WHERE status = 'running'")
+    suspend fun pauseAllRunningWithReason(updatedAt: String, reason: String)
+
     @Query(
         "UPDATE local_agent_runs SET assistant_message_id = :messageId, updated_at = :updatedAt " +
             "WHERE session_id = :sessionId AND run_id = :runId"
@@ -629,6 +638,12 @@ interface AgentRunDao {
 interface AgentToolMessageDao {
     @Insert
     suspend fun insert(message: LocalAgentToolMessageEntity): Long
+
+    @Query("UPDATE local_agent_tool_messages SET payload = :payload WHERE session_id = :sessionId AND id = :id")
+    suspend fun updatePayload(sessionId: String, id: Long, payload: String)
+
+    @Query("DELETE FROM local_agent_tool_messages WHERE session_id = :sessionId AND id = :id")
+    suspend fun deleteById(sessionId: String, id: Long)
 
     /** 按写入顺序返回整轮工具消息，用于中断恢复。 */
     @Query("SELECT * FROM local_agent_tool_messages WHERE session_id = :sessionId ORDER BY id ASC")
@@ -1435,6 +1450,15 @@ interface KnowledgeDao {
 
     @Query("SELECT * FROM local_knowledge_chunks ORDER BY document_id, chunk_index")
     suspend fun listAllChunks(): List<LocalKnowledgeChunkEntity>
+
+    @Query("SELECT id, title, source, tags_json FROM local_knowledge_documents ORDER BY id")
+    suspend fun listSearchDocuments(): List<KnowledgeSearchDocument>
+
+    @Query("SELECT * FROM local_knowledge_chunks WHERE document_id IN (:documentIds) AND id > :afterId ORDER BY id LIMIT :limit")
+    suspend fun listChunkPage(documentIds: List<String>, afterId: String, limit: Int): List<LocalKnowledgeChunkEntity>
+
+    @Query("SELECT COUNT(*) FROM local_knowledge_chunks WHERE document_id IN (:documentIds) AND embedding_json IS NOT NULL AND embedding_json != ''")
+    suspend fun vectorCount(documentIds: List<String>): Int
 
     @Query("SELECT * FROM local_knowledge_chunks WHERE document_id = :documentId ORDER BY chunk_index")
     suspend fun listChunks(documentId: String): List<LocalKnowledgeChunkEntity>

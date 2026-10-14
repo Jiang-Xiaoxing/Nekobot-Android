@@ -8,6 +8,11 @@
     <string name="command_suggestion_detail_title">命令详情</string>
     <string name="command_suggestion_detail_hint">长按选项可查看完整说明</string>
     <string name="command_suggestion_aliases">别名：%1$s</string>
+    <string name="chat_workspace_mention_title">工作区文件</string>
+    <string name="chat_workspace_mention_hint">输入名称筛选，点击文件夹浏览</string>
+    <string name="chat_workspace_mention_empty">没有匹配的文件或文件夹</string>
+    <string name="chat_workspace_mention_load_failed">无法加载工作区文件</string>
+    <string name="chat_workspace_mention_parent">返回上级文件夹</string>
     <string name="command_capsule_goal">目标</string>
     <string name="command_capsule_spec">规格</string>
     <string name="cmd_note_usage">/note &lt;内容&gt;</string>
