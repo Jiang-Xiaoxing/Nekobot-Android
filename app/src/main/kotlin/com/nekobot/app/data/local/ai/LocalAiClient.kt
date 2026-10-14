@@ -1550,6 +1550,9 @@ class LocalAiClient(
     ): ByteArray {
         val provider = MultimodalProviderSupport.ttsProvider(model)
         return when (provider) {
+            "elevenlabs", "deepgram", "siliconflow" -> NativeMediaProviders {
+                clientFor(model).newCall(it).awaitResponse()
+            }.speech(model, text, voice, speed, volume)
             "xiaomi", "mimo" -> synthesizeSpeechXiaomi(model, text, voice)
             "doubao", "volcengine", "bytedance" ->
                 synthesizeSpeechDoubao(model, text, voice, speed, volume)
@@ -1645,14 +1648,15 @@ class LocalAiClient(
             "model" to model.ttsModel.ifBlank { model.model.ifBlank { "speech-2.8-hd" } },
             "text" to text,
             "stream" to false,
+            "output_format" to "hex",
             "voice_setting" to mapOf(
                 "voice_id" to ((voiceOverride ?: model.ttsVoice).takeUnless { it.isBlank() || it == "default" } ?: "male-qn-qingse"),
                 "speed" to (speedOverride ?: model.ttsSpeed),
                 "vol" to (volumeOverride ?: model.ttsVolume),
-                "pitch" to (pitchOverride ?: model.ttsPitch)
+                "pitch" to (((pitchOverride ?: model.ttsPitch) - 1f) * 12).toInt().coerceIn(-12, 12)
             ),
             "audio_setting" to mapOf(
-                "audio_sample_rate" to 32_000,
+                "sample_rate" to 32_000,
                 "bitrate" to 128_000,
                 "format" to model.ttsFormat.ifBlank { "mp3" },
                 "channel" to 1
@@ -1934,6 +1938,11 @@ class LocalAiClient(
                 response.code,
                 "$provider TTS 未返回音频: ${responseBytes.toString(Charsets.UTF_8).take(200)}"
             )
+            json.getAsJsonObject("base_resp")?.let { status ->
+                if (status.get("status_code")?.asInt?.let { it != 0 } == true) {
+                    error("$provider TTS: ${status.get("status_msg")?.asString.orEmpty()}")
+                }
+            }
             val audioUrl = sequenceOf(
                 json.get("audio_url"),
                 json.get("url"),
@@ -1972,6 +1981,10 @@ class LocalAiClient(
                     }
             when {
                 !audioUrl.isNullOrBlank() -> downloadAudio(model, audioUrl)
+                !audioData.isNullOrBlank() && provider == "MiniMax" -> {
+                    if (audioData.startsWith("https://") || audioData.startsWith("http://")) downloadAudio(model, audioData)
+                    else decodeMiniMaxAudioHex(audioData)
+                }
                 !audioData.isNullOrBlank() -> decodeAudioBase64(audioData)
                 else -> throw FailoverHttpException(response.code, "$provider TTS 响应缺少音频数据")
             }
@@ -2033,6 +2046,24 @@ class LocalAiClient(
     ): LocalAiResult {
         val provider = MultimodalProviderSupport.sttProvider(model)
         return when (provider) {
+            "elevenlabs", "deepgram" -> NativeMediaProviders {
+                clientFor(model).newCall(it).awaitResponse()
+            }.transcribe(model, audioBytes, filename, language)
+            "groq", "siliconflow", "glm" -> transcribeSpeechOpenAI(
+                model.copy(baseUrl = model.baseUrl.ifBlank {
+                    when (provider) {
+                        "groq" -> "https://api.groq.com/openai/v1"
+                        "glm" -> "https://open.bigmodel.cn/api/paas/v4"
+                        else -> "https://api.siliconflow.cn/v1"
+                    }
+                }, sttModel = model.sttModel.ifBlank { model.model.ifBlank {
+                    when (provider) {
+                        "groq" -> "whisper-large-v3-turbo"
+                        "glm" -> "glm-asr-2512"
+                        else -> "FunAudioLLM/SenseVoiceSmall"
+                    }
+                } }), audioBytes, filename, language
+            )
             "xiaomi", "mimo" -> transcribeSpeechXiaomi(model, audioBytes, filename, language)
             "gemini", "google", "google_gemini" -> transcribeSpeechGemini(model, audioBytes, filename, language)
             "qwen", "dashscope", "tongyi" -> transcribeSpeechQwen(model, audioBytes, filename, language)
@@ -2086,9 +2117,10 @@ class LocalAiClient(
     ): LocalAiResult {
         val url = model.sttUrl.takeIf { it.isNotBlank() }
             ?: MultimodalProviderSupport.endpoint(
-                model.baseUrl,
+                model.baseUrl.replace("/api/v1", "/compatible-mode/v1"),
                 "/chat/completions",
-                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                model.appendBaseUrlPath
             )
         val format = filename.substringAfterLast('.', "wav").lowercase()
         val audioData = Base64.getEncoder().encodeToString(audioBytes)
@@ -2102,7 +2134,7 @@ class LocalAiClient(
             "messages" to listOf(mapOf("role" to "user", "content" to content)),
             "stream" to false
         )
-        language?.takeIf { it.isNotBlank() && it != "auto" }?.let { body["language"] = it }
+        language?.takeIf { it.isNotBlank() && it != "auto" }?.let { body["asr_options"] = mapOf("language" to it) }
         val request = Request.Builder().url(url)
             .post(gson.toJson(body).toRequestBody(JSON_TYPE))
             .header("Authorization", "Bearer ${model.apiKey}")
@@ -2145,7 +2177,10 @@ class LocalAiClient(
         language: String?
     ): LocalAiResult {
         val url = model.sttUrl.takeIf { it.isNotBlank() }
-            ?: resolveAudioUrl(model.baseUrl, model.appendBaseUrlPath, "audio/transcriptions")
+            ?: if (MultimodalProviderSupport.sttProvider(model) == "glm") {
+                MultimodalProviderSupport.endpoint(model.baseUrl, "/audio/transcriptions",
+                    "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions", model.appendBaseUrlPath)
+            } else resolveAudioUrl(model.baseUrl, model.appendBaseUrlPath, "audio/transcriptions")
         val audioMediaType = guessAudioMediaType(filename).toMediaType()
         val sttModel = model.sttModel.ifBlank { model.model }
         LocalLogger.i(TAG, R.string.log_laic_stt_openai_request, url, model.model, filename, audioBytes.size, audioMediaType)
@@ -2154,7 +2189,11 @@ class LocalAiClient(
             .addFormDataPart("model", sttModel)
             .addFormDataPart("file", filename, audioBytes.toRequestBody(audioMediaType))
             .apply {
-                if (!language.isNullOrBlank()) addFormDataPart("language", language)
+                if (!language.isNullOrBlank() && !language.equals("auto", true) &&
+                    MultimodalProviderSupport.sttProvider(model) !in setOf("siliconflow", "glm")) {
+                    addFormDataPart("language", language)
+                }
+                if (MultimodalProviderSupport.sttProvider(model) == "glm") addFormDataPart("stream", "false")
             }
             .build()
         val reqBuilder = Request.Builder().url(url).post(audioPart)
@@ -2448,7 +2487,7 @@ class LocalAiClient(
         referenceImage: ImageGenerationReference? = null
     ): List<GeneratedImage> {
         val finalPrompt = appendImagePrompt(prompt, additionalPrompt)
-        val normalizedProvider = provider.trim().lowercase()
+        val normalizedProvider = MultimodalProviderSupport.normalize(provider)
         require(referenceImage == null || MultimodalProviderSupport.supportsImageReference(provider, modelName)) {
             com.nekobot.app.ServiceContainer.getString(R.string.playground_reference_unsupported)
                 .ifBlank { "当前图片生成接口不支持参考图" }
@@ -2463,6 +2502,9 @@ class LocalAiClient(
             }
         }
         when (normalizedProvider) {
+            "siliconflow", "grok", "glm", "stability" -> return NativeMediaProviders {
+                clientFor(proxyUrl).newCall(it).awaitResponse()
+            }.images(normalizedProvider, baseUrl, apiKey, modelName, finalPrompt, size, n, appendBaseUrlPath, referenceImage)
             "gemini", "google", "google_gemini" -> return generateImageGemini(
                 baseUrl, apiKey, modelName, finalPrompt, appendBaseUrlPath, proxyUrl, referenceImage
             )
@@ -2481,7 +2523,7 @@ class LocalAiClient(
                 )
             }
             "doubao", "seed", "seedream", "volcengine", "ark", "volces" -> return generateImageDoubao(
-                baseUrl, apiKey, modelName, finalPrompt, size, n, appendBaseUrlPath, proxyUrl
+                baseUrl, apiKey, modelName, finalPrompt, size, n, appendBaseUrlPath, proxyUrl, referenceImage
             )
         }
         if (referenceImage != null) {
@@ -2669,7 +2711,8 @@ class LocalAiClient(
         size: String,
         n: Int,
         appendBaseUrlPath: Boolean,
-        proxyUrl: String
+        proxyUrl: String,
+        referenceImage: ImageGenerationReference? = null
     ): List<GeneratedImage> {
         val url = MultimodalProviderSupport.endpoint(
             baseUrl,
@@ -2681,7 +2724,7 @@ class LocalAiClient(
             "2K", "4K" -> size.uppercase()
             else -> if (size.contains("x")) "2K" else size
         }
-        val body = mapOf(
+        val body = linkedMapOf<String, Any>(
             "model" to modelName,
             "prompt" to prompt,
             "size" to normalizedSize,
@@ -2690,12 +2733,19 @@ class LocalAiClient(
             "response_format" to "url",
             "watermark" to false
         )
+        referenceImage?.let {
+            body["image"] = "data:${it.mimeType};base64," + Base64.getEncoder().encodeToString(it.bytes)
+        }
         val request = Request.Builder().url(url)
             .post(gson.toJson(body).toRequestBody(JSON_TYPE))
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
             .build()
-        return executeImageJsonRequest(request, proxyUrl, "豆包 Seed image")
+        return buildList {
+            repeat(n.coerceIn(1, 4)) {
+                addAll(executeImageJsonRequest(request, proxyUrl, "豆包 Seed image"))
+            }
+        }
     }
 
     /** Qwen Image 3.0 使用同步多模态生成端点，不走旧版异步文生图任务接口。 */

@@ -1193,14 +1193,15 @@ class UnifiedRepository(
         null
     }
 
-    /** Live 对话入口预检：经典链路只需 STT/TTS，原生 Realtime 额外需要 live 模型。 */
+    /** 经典语音需要 STT/TTS，原生实时语音由 Live 模型完成输入和输出。 */
     suspend fun validateLiveConversationConfig(
         requiresRealtimeModel: Boolean = true
     ): Resource<Unit> {
         val purposes = buildList {
-            add("stt")
-            add("tts")
-            if (requiresRealtimeModel) add("live")
+            if (requiresRealtimeModel) add("live") else {
+                add("stt")
+                add("tts")
+            }
         }
         if (isLocal) {
             val missing = purposes.filter { purpose ->

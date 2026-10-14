@@ -390,4 +390,8 @@
     <string name="localai_filter_all">All</string>
     <string name="localai_filter_empty">No models for this function</string>
     <string name="localai_filter_show_all">Show all models</string>
+    <string name="aimodel_editor_provider_elevenlabs">ElevenLabs</string>
+    <string name="aimodel_editor_provider_deepgram">Deepgram</string>
+    <string name="aimodel_editor_provider_groq">Groq</string>
+    <string name="aimodel_editor_provider_stability">Stability AI</string>
 </resources>

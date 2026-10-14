@@ -403,4 +403,8 @@
     <string name="localai_filter_all">全部</string>
     <string name="localai_filter_empty">当前功能下暂无模型</string>
     <string name="localai_filter_show_all">查看全部模型</string>
+    <string name="aimodel_editor_provider_elevenlabs">ElevenLabs</string>
+    <string name="aimodel_editor_provider_deepgram">Deepgram</string>
+    <string name="aimodel_editor_provider_groq">Groq</string>
+    <string name="aimodel_editor_provider_stability">Stability AI</string>
 </resources>

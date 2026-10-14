@@ -390,4 +390,8 @@
     <string name="aimodel_editor_stt_provider_gemini">Gemini 네이티브 음성 인식</string>
     <string name="aimodel_editor_stt_provider_glm">GLM-ASR</string>
     <string name="aimodel_editor_stt_provider_qwen">Qwen ASR</string>
+    <string name="aimodel_editor_provider_elevenlabs">ElevenLabs</string>
+    <string name="aimodel_editor_provider_deepgram">Deepgram</string>
+    <string name="aimodel_editor_provider_groq">Groq</string>
+    <string name="aimodel_editor_provider_stability">Stability AI</string>
 </resources>

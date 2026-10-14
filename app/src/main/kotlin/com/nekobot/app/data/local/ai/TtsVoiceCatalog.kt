@@ -11,12 +11,19 @@ internal object TtsVoiceCatalog {
         "glm", "zhipu", "bigmodel" -> "glm"
         "qwen", "dashscope", "tongyi" -> "qwen"
         "minimax" -> "minimax"
+        "siliconflow", "silicon_flow" -> "siliconflow"
+        "elevenlabs", "eleven_labs" -> "elevenlabs"
+        "deepgram" -> "deepgram"
         else -> "openai"
     }
 
     fun voices(provider: String, configuredVoice: String = ""): List<TtsVoice> {
         val normalized = normalize(provider)
         val builtins = when (normalized) {
+            "siliconflow" -> SILICONFLOW_VOICES.map { TtsVoice(id = it, name = it) }
+            "elevenlabs" -> listOf(TtsVoice(id = "JBFqnCBsd6RMkjVDRZzb", name = "George"))
+            "deepgram" -> listOf("thalia", "andromeda", "helena", "apollo", "arcas", "orion")
+                .map { TtsVoice(id = "aura-2-$it-en", name = it.replaceFirstChar(Char::uppercase)) }
             "xiaomi" -> listOf(
                 TtsVoice(id = "mimo_default", name = "MiMo默认"),
                 TtsVoice(id = "冰糖", name = "冰糖"),
