@@ -18,24 +18,22 @@ import okio.Buffer
 import org.junit.Assert.*
 import org.junit.Test
 
+/** 实际协议请求/响应：原生思考、正文兼容、调用次数与工具续接。 */
 class CharacterThinkingProtocolTest {
     private val user = mapOf<String, Any>("role" to "user", "content" to "哈哈")
     private val prompt = characterThinkingPrompt(CharacterThinkingSettings(), "林小满", "小星")
     private val messages get() = withCharacterThinkingRequest(listOf(user), prompt)
     private val tools = listOf(mapOf("type" to "function", "function" to mapOf(
         "name" to "lookup", "parameters" to mapOf("type" to "object"))))
-
-    private fun extra() = mutableMapOf<String, Any?>("temperature" to 0.7, "tools" to tools).apply {
-        putReasoningParams(this, ReasoningEffort.CUSTOM, true) { error("不读取保存的自定义参数") }
-        // 即使上层意外混入旧参数，最终协议转换也不能重新打开原生思考。
-        put(CustomReasoningParam.EXTRA_KEY, CustomReasoningParam("thinking.type", "enabled"))
-    }
-
+    private fun extra(effort: ReasoningEffort = ReasoningEffort.HIGH,
+        custom: CustomReasoningParam = CustomReasoningParam("thinking.type", "enabled")) =
+        mutableMapOf<String, Any?>("temperature" to 0.7, "tools" to tools).apply {
+            putReasoningParams(this, effort, true) { custom }
+        }
     private fun model(id: String = "mock", protocol: String = OpenAIChatProtocol.name,
         provider: String? = null, modelName: String = "custom-chat") = LocalAiModelEntity(
         id = id, name = id, protocol = protocol, provider = provider, model = modelName,
-        apiKey = "test-key", baseUrl = "https://api.example.com/v1", createdAt = "2026-10-14")
-
+        apiKey = "test-key", baseUrl = "https://api.example.com/v1", createdAt = "2026-10-15")
     private class Http(val response: (Int) -> Triple<Int, String, String>) {
         val bodies = mutableListOf<JsonObject>()
         val client = LocalAiClient(OkHttpClient.Builder().addInterceptor { chain ->
@@ -45,137 +43,163 @@ class CharacterThinkingProtocolTest {
                 .body(body.toResponseBody(type.toMediaType())).build()
         }.build())
     }
-
     private fun json(body: String) = Triple(200, body, "application/json")
-    private fun answer(text: String = "<think>我听见他笑了。</think>怎么啦？") =
+    private fun answer(text: String = "怎么啦？", thinking: String = "我听见小星笑了。") =
         Gson().toJson(mapOf("choices" to listOf(mapOf("message" to mapOf("content" to text,
-            "reasoning_content" to "Native English"), "finish_reason" to "stop"))))
-
+            "reasoning_content" to thinking), "finish_reason" to "stop"))))
     private fun sse(payloads: List<String>) = Triple(200, buildString {
-        payloads.forEach { append("data: $it\n\n") }
-        append("data: [DONE]\n\n")
+        payloads.forEach { append("data: $it\n\n") }; append("data: [DONE]\n\n")
     }, "text/event-stream")
-
     private fun delta(key: String, value: String) = Gson().toJson(mapOf(
         "choices" to listOf(mapOf("delta" to mapOf(key to value)))))
-
-    private fun assertPrefill(body: JsonObject, enabled: Boolean) {
+    private fun assertSystemOnly(body: JsonObject) {
         val sent = body["messages"].asJsonArray
-        assertEquals(if (enabled) 3 else 2, sent.size())
+        assertEquals(2, sent.size())
         assertEquals("system", sent[0].asJsonObject["role"].asString)
+        assertEquals("## $CHARACTER_THINKING_STYLE_KEY\n$prompt", sent[0].asJsonObject["content"].asString)
         assertEquals("user", sent[1].asJsonObject["role"].asString)
         assertEquals("哈哈", sent[1].asJsonObject["content"].asString)
-        if (enabled) {
-            assertEquals("assistant", sent[2].asJsonObject["role"].asString)
-            assertEquals(CHARACTER_THINKING_PREFILL, sent[2].asJsonObject["content"].asString)
-        }
-        assertFalse(body.has(FAKE_CHARACTER_THINKING_EXTRA))
+        assertFalse(body.has(CHARACTER_THINKING_EXTRA))
+        assertFalse(body.has(CustomReasoningParam.EXTRA_KEY))
     }
 
     @Test
-    fun prefillCopiesOnlyRequestListAndNeverTouchesUserImagesOrHistory() {
-        val images = listOf(mapOf("type" to "text", "text" to "原话"),
-            mapOf("type" to "image_url", "image_url" to mapOf("url" to "mock-image")))
-        val imageUser = mapOf<String, Any>("role" to "user", "content" to images)
-        val history = listOf(imageUser)
-        val sent = withCharacterThinkingPrefill(history, true)
-        assertEquals(1, history.size)
-        assertEquals(2, sent.size)
-        assertSame(imageUser, sent.first())
-        assertSame(images, sent.first()["content"])
-        assertEquals(mapOf("role" to "assistant", "content" to "<think>\n"), sent.last())
-        assertSame(history, withCharacterThinkingPrefill(history, false))
-    }
-
-    @Test
-    fun bareContinuationIsParsedUsingPrefillInOneNonstreamRequest() = runBlocking {
-        val http = Http { json(answer("我听见他笑了。</thinking>\n怎么啦？")) }
+    fun nativeThinkingSurvivesWithoutTagsWithOnlySystemInstructionsAndOneCall() = runBlocking {
+        val http = Http { json(answer()) }
         val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
         assertEquals("怎么啦？", result.content)
-        assertEquals("我听见他笑了。", result.thinkingContent)
+        assertEquals("我听见小星笑了。", result.thinkingContent)
         assertEquals(1, http.bodies.size)
-        assertPrefill(http.bodies.single(), true)
+        assertEquals("high", http.bodies.single()["reasoning_effort"].asString)
+        assertSystemOnly(http.bodies.single())
         assertSame(user, messages.last())
+        for (required in listOf("简体中文", "角色第一人称", "林小满", "小星")) assertTrue(prompt.contains(required))
+        assertFalse(prompt.contains("{{"))
     }
 
     @Test
-    fun nativeModeNeverPrefillsOrPrependsResponse() = runBlocking {
-        val http = Http { json(answer("正文")) }
-        val result = http.client.chatOnce(model(), messages, mapOf("reasoning_effort" to "high"))
-        assertEquals("正文", result.content)
-        assertEquals("Native English", result.thinkingContent)
-        assertPrefill(http.bodies.single(), false)
+    fun imageUserAndExistingAssistantHistoryAreNotModifiedOrAppendedWithPrompts() = runBlocking {
+        val images = listOf(mapOf("type" to "text", "text" to "原话"),
+            mapOf("type" to "image_url", "image_url" to mapOf("url" to "mock-image")))
+        val input = listOf(mapOf<String, Any>("role" to "assistant", "content" to "上次回答"),
+            mapOf("role" to "user", "content" to images))
+        val http = Http { json(answer()) }
+        http.client.chatOnce(model(), withCharacterThinkingRequest(input, prompt), extra())
+        val sent = http.bodies.single()["messages"].asJsonArray
+        assertEquals(3, sent.size())
+        assertEquals("上次回答", sent[1].asJsonObject["content"].asString)
+        assertEquals(Gson().toJsonTree(images), sent[2].asJsonObject["content"])
+        assertSame(images, input.last()["content"])
     }
 
     @Test
-    fun rejectedPrefillFallsBackOnceAndNoTagFallbackStaysContent() = runBlocking {
-        for (status in listOf(400, 422, 500)) {
-            val http = Http { if (it == 1) Triple(status, "unsupported assistant prefill", "text/plain")
-                else json(answer("*(我有点担心)* 你好")) }
+    fun plainContentIsNotReclassifiedAndTaggedFallbackDoesNotNeedPrefill() = runBlocking {
+        for ((text, native, expected) in listOf(Triple("普通正文", "", ""),
+            Triple("", "我还在想。", "我还在想。"),
+            Triple("<THINKING>\n我想起小星了。</THINKING>\n你好", "Native English", "我想起小星了。"))) {
+            val http = Http { json(answer(text, native)) }
             val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
-            assertEquals("*(我有点担心)* 你好", result.content)
-            assertEquals("", result.thinkingContent)
-            assertEquals(2, http.bodies.size)
-            assertPrefill(http.bodies[0], true)
-            assertPrefill(http.bodies[1], false)
-            assertTrue(http.bodies[1].has("tools"))
-            assertSame(user, messages.last())
+            assertEquals(if (text.startsWith("<")) "你好" else text, result.content)
+            assertEquals(expected, result.thinkingContent)
+            assertEquals(1, http.bodies.size); assertSystemOnly(http.bodies.single())
         }
     }
 
     @Test
-    fun jsonErrorWithHttp200AlsoFallsBackWithoutExposingFirstError() = runBlocking {
-        val http = Http { if (it == 1) json("""{"error":{"message":"assistant prefill unsupported"}}""")
-            else json(answer("<thinking>我想好了</thinking>回答")) }
-        val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
-        assertEquals("回答", result.content)
-        assertEquals("我想好了", result.thinkingContent)
-        assertEquals(2, http.bodies.size)
-        assertPrefill(http.bodies.last(), false)
-    }
-
-    @Test
-    fun bothRequestsRejectedStopAfterOneFallback() = runBlocking {
-        val http = Http { Triple(400, "unsupported assistant prefill", "text/plain") }
-        try {
-            http.client.chatOnce(model(), messages, extra())
-            fail("两次失败应继续走原错误路径")
-        } catch (error: FailoverHttpException) {
-            assertEquals(400, error.statusCode)
+    fun customReasoningParametersSurviveActualRequest() = runBlocking {
+        for (custom in listOf(CustomReasoningParam("thinking.type", "enabled"), CustomReasoningParam("enable_thinking", "true"))) {
+            val http = Http { json(answer()) }
+            http.client.chatOnce(model(), messages, extra(ReasoningEffort.CUSTOM, custom))
+            val body = http.bodies.single()
+            assertFalse(body.has("reasoning_effort"))
+            if (custom.path == "thinking.type") assertEquals("enabled", body["thinking"].asJsonObject["type"].asString)
+            else assertTrue(body["enable_thinking"].asBoolean)
+            assertSystemOnly(body)
         }
-        assertEquals(2, http.bodies.size)
-        assertPrefill(http.bodies.first(), true)
-        assertPrefill(http.bodies.last(), false)
     }
 
     @Test
-    fun anthropicPrefillRejectionFallsBackEvenOutsideOpenAi400Compatibility() = runBlocking {
-        val http = Http { if (it == 1) Triple(400, "assistant prefill unsupported", "text/plain") else
-            json("""{"content":[{"type":"text","text":"<thinking>我想好了</thinking>回答"}],"stop_reason":"end_turn"}""") }
-        val result = characterThinkingResult(http.client.chatOnce(model(protocol = AnthropicMessagesProtocol.name), messages, extra()), true)
-        assertEquals("回答", result.content)
-        assertEquals("我想好了", result.thinkingContent)
-        assertEquals(2, http.bodies.size)
-        assertEquals(CHARACTER_THINKING_PREFILL, http.bodies.first()["messages"].asJsonArray.last().asJsonObject["content"].asString)
-        assertEquals(1, http.bodies.last()["messages"].asJsonArray.size())
-        http.bodies.forEach { assertEquals("disabled", it["thinking"].asJsonObject["type"].asString) }
+    fun providerReasoningMappingsStayEnabledRatherThanBeingForcedToNone() = runBlocking {
+        for (target in listOf(model(provider = "deepseek"), model(protocol = AnthropicMessagesProtocol.name),
+            model(protocol = OpenAIResponsesProtocol.name), model(modelName = "gpt-5"))) {
+            val response = when (target.protocol) {
+                AnthropicMessagesProtocol.name -> """{"content":[{"type":"thinking","thinking":"我想好了。","signature":"sig"},{"type":"text","text":"回答"}],"stop_reason":"end_turn"}"""
+                OpenAIResponsesProtocol.name -> """{"status":"completed","output_text":"回答"}"""
+                else -> answer("回答")
+            }
+            val http = Http { json(response) }
+            val result = http.client.chatOnce(target, messages, extra())
+            assertEquals("回答", result.content); assertEquals(1, http.bodies.size)
+            val body = http.bodies.single()
+            assertFalse(body.has(CHARACTER_THINKING_EXTRA))
+            when {
+                target.provider == "deepseek" -> assertEquals("enabled", body["thinking"].asJsonObject["type"].asString)
+                target.protocol == AnthropicMessagesProtocol.name -> {
+                    assertEquals("adaptive", body["thinking"].asJsonObject["type"].asString)
+                    assertEquals("high", body["output_config"].asJsonObject["effort"].asString)
+                    assertEquals("我想好了。", result.thinkingContent); assertEquals("sig", result.thinkingSignature)
+                }
+                target.protocol == OpenAIResponsesProtocol.name -> {
+                    assertEquals("high", body["reasoning"].asJsonObject["effort"].asString)
+                    assertEquals("auto", body["reasoning"].asJsonObject["summary"].asString)
+                }
+                else -> assertEquals("high", body["reasoning_effort"].asString)
+            }
+        }
     }
 
     @Test
-    fun prefillAndFallbackStreamingUseTheirOwnParserStartForJsonAndSse() = runBlocking {
-        for (fallback in listOf(false, true)) for (buffered in listOf(false, true)) for (queue in listOf(false, true)) {
-            val text = if (fallback) "<thinking>我想好了</thinking>\n回答" else "我想好了</THINKING>\n回答"
-            val http = Http { if (fallback && it == 1) Triple(422, "unsupported prefill", "text/plain")
-                else if (buffered) json(answer(text)) else sse(text.map { delta("content", it.toString()) }) }
-            val content = StringBuilder()
-            val thinking = StringBuilder()
-            var starts = 0
+    fun ordinary400CompatibilityRetryRetainsReasoningAndTools() = runBlocking {
+        for (provider in listOf(null, "deepseek")) {
+            val http = Http { if (it == 1) Triple(400, "unsupported temperature", "text/plain") else json(answer()) }
+            val result = characterThinkingResult(http.client.chatOnce(model(provider = provider), messages, extra()), true)
+            assertEquals("我听见小星笑了。", result.thinkingContent); assertEquals(2, http.bodies.size)
+            assertTrue(http.bodies.first().has("temperature")); assertFalse(http.bodies.last().has("temperature"))
+            http.bodies.forEach {
+                assertTrue(it.has("tools")); assertSystemOnly(it)
+                assertEquals("high", it["reasoning_effort"].asString)
+                if (provider == "deepseek") assertEquals("enabled", it["thinking"].asJsonObject["type"].asString)
+            }
+        }
+    }
+
+    @Test
+    fun non400FailureDoesNotTriggerACharacterThinkingRetry() = runBlocking {
+        for (status in listOf(422, 500)) {
+            val http = Http { Triple(status, "mock failure", "text/plain") }
+            try { http.client.chatOnce(model(), messages, extra()); fail("应报告原请求错误") }
+            catch (error: FailoverHttpException) { assertEquals(status, error.statusCode) }
+            assertEquals(1, http.bodies.size)
+        }
+    }
+
+    @Test
+    fun failoverKeepsSystemAndReasoningWithoutExtraPrefillRetry() = runBlocking {
+        val http = Http { if (it == 1) Triple(500, "mock failure", "text/plain") else json(answer()) }
+        val result = characterThinkingResult(http.client.chatOnceWithFailover(
+            listOf(model("primary"), model("backup", provider = "deepseek")), messages, extra()), true)
+        assertEquals(2, http.bodies.size); assertEquals("backup", result.usedModelId)
+        assertEquals("我听见小星笑了。", result.thinkingContent)
+        http.bodies.forEach(::assertSystemOnly)
+        assertEquals("enabled", http.bodies.last()["thinking"].asJsonObject["type"].asString)
+    }
+
+    @Test
+    fun streamAndAgentCallbacksMatchFinalResponseForNativeAndTaggedJsonAndSse() = runBlocking {
+        for (tagged in listOf(false, true)) for (buffered in listOf(false, true))
+            for (mode in listOf("agent", "queue", "plain")) for (thinkingOnly in listOf(false, true)) {
+            val expectedContent = if (thinkingOnly) "" else "怎么啦？"
+            val body = (if (tagged) "<think>我听见小星笑了。</think>" else "") + expectedContent
+            val http = Http { if (buffered) json(answer(body)) else sse(
+                listOf(delta("reasoning_content", "我听见小星笑了。")) + body.map { delta("content", it.toString()) }) }
+            val content = StringBuilder(); val thinking = StringBuilder()
             val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
-                onStart = { starts++; content.setLength(0); thinking.setLength(0) },
+                onStart = { content.setLength(0); thinking.setLength(0) },
                 onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
-            val flow = if (queue) http.client.chatStreamWithFailover(listOf(model()), messages, extra())
-                else http.client.chatStream(model(), messages, extra())
-            flow.collect { event ->
+            var final: LocalAiResult? = null
+            if (mode == "agent") final = characterThinkingResult(http.client.chatOnce(model(), messages, extra(), streamCallbacks = relay.callbacks), true)
+            else (if (mode == "queue") http.client.chatStreamWithFailover(listOf(model()), messages, extra())
+                else http.client.chatStream(model(), messages, extra())).collect { event ->
                 when (event) {
                     is RealtimeEvent.StreamStart -> relay.callbacks.onStart()
                     is RealtimeEvent.StreamChunk -> relay.callbacks.onContentChunk(event.chunk)
@@ -183,236 +207,128 @@ class CharacterThinkingProtocolTest {
                     is RealtimeEvent.Error -> fail(event.message)
                     else -> Unit
                 }
-                assertFalse(content.toString().contains("我"))
+                assertFalse(content.toString().contains('<')); assertFalse(content.toString().contains("我听见"))
             }
             relay.finish()
-            assertEquals("回答", content.toString())
-            assertEquals("我想好了", thinking.toString())
-            assertEquals(1, starts)
-            assertEquals(if (fallback) 2 else 1, http.bodies.size)
-            assertPrefill(http.bodies.first(), true)
-            if (fallback) assertPrefill(http.bodies.last(), false)
+            assertEquals(expectedContent, content.toString()); assertEquals("我听见小星笑了。", thinking.toString())
+            final?.let { assertEquals(content.toString(), it.content); assertEquals(thinking.toString(), it.thinkingContent) }
+            assertEquals(1, http.bodies.size); assertSystemOnly(http.bodies.single())
         }
     }
 
     @Test
-    fun agentStreamCallbacksMatchFinalResultForPrefillAndFallback() = runBlocking {
-        for (fallback in listOf(false, true)) for (buffered in listOf(false, true)) {
-            val text = if (fallback) "<think>我先查一下。</think>回答" else "我先查一下。</think>回答"
-            val http = Http { if (fallback && it == 1) Triple(400, "unsupported prefill", "text/plain")
-                else if (buffered) json(answer(text)) else sse(text.map { delta("content", it.toString()) }) }
-            val content = StringBuilder()
-            val thinking = StringBuilder()
-            var starts = 0
-            val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(onStart = { starts++ },
-                onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
-            val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra(), streamCallbacks = relay.callbacks), true)
-            relay.finish()
-            assertEquals("回答", result.content)
-            assertEquals(result.content, content.toString())
-            assertEquals("我先查一下。", result.thinkingContent)
-            assertEquals(result.thinkingContent, thinking.toString())
-            assertEquals(1, starts)
-            assertEquals(if (fallback) 2 else 1, http.bodies.size)
+    fun emptyReasoningAliasDoesNotMaskThinkingContentInJsonOrSse() = runBlocking {
+        for (empty in listOf("null", "\"\"", "\" \"")) for (stream in listOf(false, true)) {
+            val fields = "\"reasoning_content\":$empty,\"thinking_content\":\"我想起小星了。\",\"content\":\"回答\""
+            val http = Http { if (stream) sse(listOf("""{"choices":[{"delta":{$fields}}]}"""))
+                else json("""{"choices":[{"message":{$fields},"finish_reason":"stop"}]}""") }
+            val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra(),
+                streamCallbacks = if (stream) LocalAiStreamCallbacks() else null), true)
+            assertEquals("我想起小星了。", result.thinkingContent); assertEquals("回答", result.content)
         }
     }
 
     @Test
-    fun fallbackDoesNotDisablePrefillForTheNextToolOrChatRequest() = runBlocking {
-        val http = Http { when (it) {
-            1 -> Triple(400, "unsupported prefill", "text/plain")
-            2 -> json(answer("<think>上次思考</think>上次回答"))
-            else -> json(answer("这次思考</think>这次回答"))
-        } }
-        characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
-        val next = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
-        assertEquals("这次回答", next.content)
-        assertEquals("这次思考", next.thinkingContent)
-        assertEquals(3, http.bodies.size)
-        assertPrefill(http.bodies[1], false)
-        assertPrefill(http.bodies[2], true)
-    }
-
-    @Test
-    fun ordinaryEndpointOmitsUnsupportedReasoningAndUsesOnlyOneCallWithSystemPrompt() = runBlocking {
-        val http = Http { json(answer()) }
-        val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
-        assertEquals("怎么啦？", result.content)
-        assertEquals("我听见他笑了。", result.thinkingContent)
-        assertEquals("", result.thinkingSignature)
-        assertEquals(1, http.bodies.size)
-        val body = http.bodies.single()
-        assertFalse(body.has("reasoning_effort")); assertFalse(body.has("thinking"))
-        assertFalse(body.has(FAKE_CHARACTER_THINKING_EXTRA)); assertFalse(body.has(CustomReasoningParam.EXTRA_KEY))
-        val sent = body["messages"].asJsonArray
-        assertEquals("## $CHARACTER_THINKING_STYLE_KEY\n$prompt", sent[0].asJsonObject["content"].asString)
-        assertEquals("system", sent[0].asJsonObject["role"].asString)
-        assertEquals("哈哈", sent[1].asJsonObject["content"].asString)
-        assertEquals("user", sent[1].asJsonObject["role"].asString)
-        assertEquals(3, sent.size())
-        assertEquals("assistant", sent[2].asJsonObject["role"].asString)
-        assertEquals(CHARACTER_THINKING_PREFILL, sent[2].asJsonObject["content"].asString)
-        assertEquals(2, messages.size)
-        assertSame(user, messages.last())
-        assertTrue(sent[0].asJsonObject["content"].asString.contains(CHARACTER_THINKING_FORMAT_PROMPT))
-        assertTrue(body.has("tools"))
-    }
-
-    @Test
-    fun knownProtocolsDisableNativeReasoningAndDoNotLeakInternalOrCustomParameters() = runBlocking {
-        val cases = listOf(
-            model(provider = "deepseek"),
-            model(protocol = AnthropicMessagesProtocol.name),
-            model(protocol = OpenAIResponsesProtocol.name),
-            model(modelName = "gpt-5"),
-            model(protocol = GeminiNativeProtocol.name)
-        )
-        for (target in cases) {
-            val response = when (target.protocol) {
-                AnthropicMessagesProtocol.name -> """{"content":[{"type":"text","text":"回答"}],"stop_reason":"end_turn"}"""
-                OpenAIResponsesProtocol.name -> """{"status":"completed","output_text":"回答"}"""
-                GeminiNativeProtocol.name -> """{"candidates":[{"content":{"parts":[{"text":"回答"}]},"finishReason":"STOP"}]}"""
-                else -> answer("回答")
-            }
-            val http = Http { json(response) }
-            val result = http.client.chatOnce(target, messages, extra())
-            assertNull(result.error)
-            assertEquals(CHARACTER_THINKING_PREFILL + "回答", result.content)
-            assertEquals(1, http.bodies.size)
-            val body = http.bodies.single()
-            assertFalse(body.has(FAKE_CHARACTER_THINKING_EXTRA)); assertFalse(body.has(CustomReasoningParam.EXTRA_KEY))
-            when {
-                target.provider == "deepseek" || target.protocol == AnthropicMessagesProtocol.name -> {
-                    assertEquals("disabled", body["thinking"].asJsonObject["type"].asString)
-                    assertFalse(body.has("output_config")); assertFalse(body.has("reasoning_effort"))
+    fun toolLoopReturnsOnlyNativeThinkingWithItsSignatureAndNeverSignsTaggedDisplay() = runBlocking {
+        for (native in listOf("", "我先核对记录。")) {
+            var count = 0
+            val result = runToolCallLoop(messages, modelCall = { current, _ ->
+                count++
+                if (count == 1) mapOf("content" to "", "thinking_content" to "我有点担心小星。",
+                    NATIVE_CHARACTER_THINKING_CONTENT to native, NATIVE_CHARACTER_THINKING_SIGNATURE to "native-sig",
+                    "tool_calls" to listOf(mapOf("id" to "call-1", "name" to "lookup", "arguments" to emptyMap<String, Any>())))
+                else {
+                    val sent = characterThinkingMessages(current, true)
+                    val assistant = sent.last { it["role"] == "assistant" }
+                    assertFalse(assistant.values.contains("我有点担心小星。"))
+                    if (native.isBlank()) assertFalse(assistant.containsKey("reasoning_content")) else {
+                        assertEquals(native, assistant["reasoning_content"])
+                        assertEquals("native-sig", assistant["reasoning_signature"])
+                        val raw = Gson().toJson(AnthropicMessagesProtocol.buildPayload("claude", sent, false, extra()))
+                        assertTrue(raw.contains("native-sig")); assertFalse(raw.contains("我有点担心小星。"))
+                    }
+                    mapOf("content" to "回答", "finish_reason" to "stop")
                 }
-                target.protocol == OpenAIResponsesProtocol.name -> {
-                    assertEquals("none", body["reasoning"].asJsonObject["effort"].asString)
-                    assertFalse(body["reasoning"].asJsonObject.has("summary"))
+            }, toolExecutor = { _, _, _, _ -> mapOf("content" to "书店") }, maxIterations = 2)
+            assertEquals("回答", result.finalContent); assertEquals(2, count)
+        }
+    }
+
+    @Test
+    fun actualJsonAndSseToolOnlyResponsesKeepNativeReasoningForNextRequest() = runBlocking {
+        for (stream in listOf(false, true)) for (native in listOf("", "我先核对记录。")) {
+            val toolCall = mapOf("id" to "call-1", "type" to "function", "function" to
+                mapOf("name" to "lookup", "arguments" to "{\"query\":\"书店\"}"))
+            val toolMessage = mapOf("content" to "<think>我有点担心小星。</think>",
+                "reasoning_content" to native, "tool_calls" to listOf(toolCall))
+            val http = Http { attempt ->
+                if (attempt != 1) json(answer("回答", "我找到了。"))
+                else if (stream) sse(listOf(Gson().toJson(mapOf("choices" to listOf(mapOf(
+                    "delta" to toolMessage + ("tool_calls" to listOf(toolCall + ("index" to 0))),
+                    "finish_reason" to "tool_calls"))))))
+                else json(Gson().toJson(mapOf("choices" to listOf(mapOf(
+                    "message" to toolMessage, "finish_reason" to "tool_calls")))))
+            }
+            val content = StringBuilder(); val thinking = StringBuilder()
+            var executions = 0
+            val result = runToolCallLoop(messages, modelCall = { current, _ -> runBlocking {
+                val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+                    onStart = { content.setLength(0); thinking.setLength(0) },
+                    onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+                val raw = http.client.chatOnce(model(provider = "deepseek"),
+                    characterThinkingMessages(withCharacterThinkingRequest(current, prompt), true),
+                    extra(), streamCallbacks = if (stream) relay.callbacks else null)
+                relay.finish()
+                val parsed = characterThinkingResult(raw, true)
+                if (http.bodies.size == 1) {
+                    assertEquals("", parsed.content)
+                    assertEquals("我有点担心小星。", parsed.thinkingContent)
+                    assertEquals("tool_calls", parsed.finishReason)
+                    if (stream) {
+                        assertEquals(parsed.content, content.toString())
+                        assertEquals(parsed.thinkingContent, thinking.toString())
+                    }
                 }
-                target.protocol == GeminiNativeProtocol.name -> {
-                    assertFalse(body["generationConfig"].asJsonObject.has("thinkingConfig"))
-                }
-                else -> assertEquals("none", body["reasoning_effort"].asString)
-            }
+                mapOf("content" to parsed.content, "thinking_content" to parsed.thinkingContent,
+                    NATIVE_CHARACTER_THINKING_CONTENT to raw.thinkingContent,
+                    NATIVE_CHARACTER_THINKING_SIGNATURE to raw.thinkingSignature,
+                    "tool_calls" to parsed.toolCalls, "finish_reason" to parsed.finishReason)
+            } }, toolExecutor = { call, displayThinking, _, _ ->
+                executions++
+                assertEquals("lookup", call["name"])
+                assertEquals("我有点担心小星。", displayThinking)
+                assertEquals("书店", (call["arguments"] as Map<*, *>)["query"])
+                mapOf("content" to "书店记录")
+            }, maxIterations = 2)
+            assertEquals("回答", result.finalContent)
+            assertEquals(1, executions); assertEquals(2, http.bodies.size)
+            val sent = http.bodies.last()["messages"].asJsonArray
+            assertEquals(listOf("system", "user", "assistant", "tool"),
+                sent.map { it.asJsonObject["role"].asString })
+            assertEquals(http.bodies.first()["messages"].asJsonArray[0], sent[0])
+            assertEquals("哈哈", sent[1].asJsonObject["content"].asString)
+            val assistant = sent[2].asJsonObject
+            if (native.isBlank()) assertFalse(assistant.has("reasoning_content"))
+            else assertEquals(native, assistant["reasoning_content"].asString)
+            assertFalse(sent.toString().contains("我有点担心小星。"))
+            assertFalse(sent.toString().contains(NATIVE_CHARACTER_THINKING_CONTENT))
+            assertEquals("call-1", sent[3].asJsonObject["tool_call_id"].asString)
+            assertEquals("书店记录", JsonParser.parseString(sent[3].asJsonObject["content"].asString)
+                .asJsonObject["content"].asString)
         }
     }
 
     @Test
-    fun compatibility400RetryKeepsNativeDisabledAndToolInterfaceIntact() = runBlocking {
-        for (provider in listOf(null, "deepseek")) {
-            val http = Http { if (it == 1) Triple(400, """{"error":{"message":"unsupported temperature"}}""", "application/json") else json(answer()) }
-            val result = http.client.chatOnce(model(provider = provider), messages, extra())
-            assertNull(result.error)
-            assertEquals(2, http.bodies.size)
-            assertTrue(http.bodies.first().has("temperature"))
-            assertFalse(http.bodies.last().has("temperature"))
-            http.bodies.forEach { body ->
-                assertTrue(body.has("tools"))
-                assertFalse(body.has(FAKE_CHARACTER_THINKING_EXTRA))
-                if (provider == "deepseek") assertEquals("disabled", body["thinking"].asJsonObject["type"].asString)
-                else assertFalse(body.has("reasoning_effort"))
-            }
-        }
-    }
-
-    @Test
-    fun failoverKeepsFakeRequestForDifferentProviderWithoutAnExtraGeneration() = runBlocking {
-        val http = Http { if (it <= 2) Triple(500, "mock failure", "text/plain") else json(answer()) }
-        val raw = http.client.chatOnceWithFailover(listOf(model("primary"), model("backup", provider = "deepseek")), messages, extra())
-        val result = characterThinkingResult(raw, true)
-        assertEquals(3, http.bodies.size)
-        assertEquals("backup", result.usedModelId)
-        assertEquals("怎么啦？", result.content)
-        assertEquals("我听见他笑了。", result.thinkingContent)
-        assertFalse(http.bodies.first().has("reasoning_effort"))
-        assertEquals("disabled", http.bodies.last()["thinking"].asJsonObject["type"].asString)
-        assertEquals(http.bodies.first()["messages"], http.bodies.last()["messages"])
-    }
-
-    @Test
-    fun realSseRelayIgnoresNativeAndNeverPublishesThinkingAsContent() = runBlocking {
-        val chunks = listOf("<th", "ink>我听见", "他笑了。</th", "ink>怎么", "啦？")
-        val http = Http { sse(listOf(delta("reasoning_content", "Native English")) + chunks.map { delta("content", it) }) }
-        val content = StringBuilder()
-        val thinking = StringBuilder()
-        val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
-            onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
-        http.client.chatStream(model(), messages, extra()).collect { event ->
-            when (event) {
-                is RealtimeEvent.StreamStart -> relay.callbacks.onStart()
-                is RealtimeEvent.StreamChunk -> relay.callbacks.onContentChunk(event.chunk)
-                is RealtimeEvent.ReasoningChunk -> relay.callbacks.onThinkingChunk(event.chunk)
-                else -> Unit
-            }
-            assertFalse(content.toString().contains("我"))
-            assertFalse(content.toString().contains('<'))
-        }
-        relay.finish()
-        assertEquals("怎么啦？", content.toString())
-        assertEquals("我听见他笑了。", thinking.toString())
-        assertEquals(1, http.bodies.size)
-    }
-
-    @Test
-    fun streamedToolOnlyTurnRetainsCallsAndDoesNotDuplicateFakeThinking() = runBlocking {
-        val payloads = listOf(delta("reasoning_content", "Native English"), delta("content", "<think>我先查一下。</think>"),
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}""")
-        val http = Http { sse(payloads) }
-        val content = StringBuilder()
-        val thinking = StringBuilder()
-        val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
-            onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
-        val raw = http.client.chatOnce(model(), messages, extra(), streamCallbacks = relay.callbacks)
-        relay.finish()
-        val result = characterThinkingResult(raw, true)
-        assertEquals("", content.toString()); assertEquals("", result.content)
-        assertEquals("我先查一下。", thinking.toString())
-        assertEquals(thinking.toString(), result.thinkingContent)
-        assertEquals("tool_calls", result.finishReason)
-        assertEquals("lookup", result.toolCalls.single()["name"])
-        assertEquals(emptyMap<String, Any>(), result.toolCalls.single()["arguments"])
-        assertEquals(1, http.bodies.size)
-    }
-
-    @Test
-    fun toolContinuationKeepsOneSystemStyleAndPreservesUserToolArgumentsAndResults() = runBlocking {
-        val http = Http { if (it == 1) json("""{"choices":[{"message":{"content":"<think>我查一下</think>","tool_calls":[{"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}""") else json(answer()) }
-        val first = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
-        val tool = mapOf<String, Any>("role" to "tool", "tool_call_id" to "call-1", "content" to "书店")
-        // 与 ToolLoop 一致：将统一的 name/arguments 结构转回协议消息里的 function 结构。
-        val calls = first.toolCalls.map { mapOf("id" to it.getValue("id"), "type" to "function",
-            "function" to mapOf("name" to it.getValue("name"), "arguments" to Gson().toJson(it["arguments"]))) }
-        val continuation = messages + mapOf("role" to "assistant", "content" to first.content,
-            "thinking_content" to first.thinkingContent, "tool_calls" to calls) + tool
-        val next = characterThinkingMessages(withCharacterThinkingRequest(continuation, prompt), true)
-        val second = characterThinkingResult(http.client.chatOnce(model(), next, extra()), true)
-        assertEquals("怎么啦？", second.content)
-        assertEquals(2, http.bodies.size)
-        val sent = http.bodies.last()["messages"].asJsonArray
-        assertEquals(1, sent.count { it.asJsonObject["role"].asString == "system" })
-        assertEquals("哈哈", sent[1].asJsonObject["content"].asString)
-        assertFalse(sent[2].asJsonObject.has("thinking_content"))
-        assertEquals("{}", sent[2].asJsonObject["tool_calls"].asJsonArray[0].asJsonObject["function"].asJsonObject["arguments"].asString)
-        assertEquals("书店", sent[3].asJsonObject["content"].asString)
-        assertEquals("call-1", sent[3].asJsonObject["tool_call_id"].asString)
-        assertEquals(http.bodies.first()["messages"].asJsonArray[0], sent[0])
-    }
-
-    @Test
-    fun failedSseAttemptCannotLeaveBackupInsideItsUnclosedThinkingTag() = runBlocking {
+    fun failedSseAttemptCannotLeaveNativeOrTaggedThinkingInBackup() = runBlocking {
         val http = Http { if (it == 1) sse(listOf(
-            Gson().toJson(mapOf("type" to "response.output_text.delta", "delta" to "<think>" + "我还在想".repeat(100))),
-            """{"type":"error","message":"mock stream failure"}"""
-        )) else json("""{"status":"completed","output_text":"</think>备用正文"}""") }
-        val content = StringBuilder()
-        val thinking = StringBuilder()
-        var starts = 0
+            """{"type":"response.reasoning_summary_text.delta","delta":"失败原生思考"}""",
+            Gson().toJson(mapOf("type" to "response.output_text.delta", "delta" to "<think>" + "失败念头".repeat(100))),
+            """{"type":"error","message":"mock stream failure"}""")) else json(answer("备用正文", "我重新想好了。")) }
+        val content = StringBuilder(); val thinking = StringBuilder(); var starts = 0
         val relay = CharacterThinkingStream(true, LocalAiStreamCallbacks(
             onStart = { starts++; content.setLength(0); thinking.setLength(0) },
             onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
-        http.client.chatStreamWithFailover(listOf(model("sse-primary", OpenAIResponsesProtocol.name),
-            model("sse-backup", OpenAIResponsesProtocol.name)), messages, extra()).collect { event ->
+        http.client.chatStreamWithFailover(listOf(model("primary", OpenAIResponsesProtocol.name), model("backup")), messages, extra()).collect { event ->
             when (event) {
                 is RealtimeEvent.StreamStart -> relay.callbacks.onStart()
                 is RealtimeEvent.StreamChunk -> relay.callbacks.onContentChunk(event.chunk)
@@ -420,12 +336,9 @@ class CharacterThinkingProtocolTest {
                 is RealtimeEvent.Error -> fail(event.message)
                 else -> Unit
             }
-            assertFalse(content.toString().contains("我还在想"))
         }
         relay.finish()
-        assertEquals(2, starts)
-        assertEquals("备用正文", content.toString())
-        assertEquals("", thinking.toString())
-        assertEquals(2, http.bodies.size)
+        assertEquals(2, starts); assertEquals("备用正文", content.toString())
+        assertEquals("我重新想好了。", thinking.toString()); assertEquals(2, http.bodies.size)
     }
 }

@@ -1,5 +1,9 @@
 package com.nekobot.app.data.local.ai
 
+/** 只在本轮模型返回值与工具循环之间传递，不写入 HTTP 请求或持久化消息。 */
+internal const val NATIVE_CHARACTER_THINKING_CONTENT = "_native_character_thinking_content"
+internal const val NATIVE_CHARACTER_THINKING_SIGNATURE = "_native_character_thinking_signature"
+
 /** 每次模型请求独立解析；只缓冲可能跨 chunk 的标签，不把思考片段先发给正文再撤回。 */
 internal class CharacterThinkingParser(
     private val onContent: (String) -> Unit,
@@ -62,25 +66,53 @@ internal class CharacterThinkingParser(
     }
 }
 
-/** 原生思考只在旧模式转发；伪思考始终来自正文标签，不能带原生签名回传。 */
+/**
+ * 标签内心想法优先，否则保留原生思考。原生片段暂存到本次响应结束，避免先显示
+ * 原生文本、后收到标签时重复或与最终保存不一致；每次主备切换清空暂存。
+ */
 internal class CharacterThinkingStream(
     private val enabled: Boolean,
     private val downstream: LocalAiStreamCallbacks
 ) {
+    private val nativeThinking = StringBuilder()
+    private val taggedPrefix = StringBuilder()
+    private var hasTaggedThinking = false
+    private var finished = false
     private var parser = newParser()
-    private fun newParser() = CharacterThinkingParser(downstream.onContentChunk, downstream.onThinkingChunk)
+    private fun newParser() = CharacterThinkingParser(downstream.onContentChunk) { chunk ->
+        if (hasTaggedThinking) downstream.onThinkingChunk(chunk) else {
+            taggedPrefix.append(chunk)
+            if (taggedPrefix.isNotBlank()) {
+                hasTaggedThinking = true
+                downstream.onThinkingChunk(taggedPrefix.toString())
+                taggedPrefix.setLength(0)
+            }
+        }
+    }
 
     val callbacks = LocalAiStreamCallbacks(
         onStart = {
+            nativeThinking.setLength(0)
+            taggedPrefix.setLength(0)
+            hasTaggedThinking = false
+            finished = false
             parser = newParser()
             downstream.onStart()
         },
         onContentChunk = { if (enabled) parser.append(it) else downstream.onContentChunk(it) },
-        onThinkingChunk = { if (!enabled) downstream.onThinkingChunk(it) },
+        onThinkingChunk = { if (enabled) nativeThinking.append(it) else downstream.onThinkingChunk(it) },
         onStreamObserved = downstream.onStreamObserved
     )
 
-    fun finish() { if (enabled) parser.finish() }
+    fun finish() {
+        if (!enabled || finished) return
+        finished = true
+        parser.finish()
+        if (!hasTaggedThinking && nativeThinking.isNotBlank()) {
+            downstream.onThinkingChunk(nativeThinking.toString())
+        }
+        nativeThinking.setLength(0)
+    }
 }
 
 internal fun characterThinkingResult(result: LocalAiResult, enabled: Boolean): LocalAiResult {
@@ -91,17 +123,23 @@ internal fun characterThinkingResult(result: LocalAiResult, enabled: Boolean): L
         append(result.content)
         finish()
     }
-    return result.copy(content = content.toString(), thinkingContent = thinking.toString(), thinkingSignature = "")
+    return result.copy(content = content.toString(),
+        thinkingContent = thinking.toString().ifBlank { result.thinkingContent },
+        thinkingSignature = if (thinking.isNotBlank()) "" else result.thinkingSignature)
 }
 
-/** 伪思考在 App 的思考字段留档，发往模型时不冒充需要签名的原生思考块。 */
+/** 历史思考不回传；当前用户轮次的原生工具思考及签名必须保留。 */
 internal fun characterThinkingMessages(messages: List<Map<String, Any>>, enabled: Boolean): List<Map<String, Any>> =
-    if (!enabled) messages else messages.map {
-        if (it["role"] == "assistant") withoutHistoricalReasoning(it) else it
+    if (!enabled) messages else messages.indexOfLast { it["role"] == "user" }.let { currentUser ->
+        messages.mapIndexed { index, message ->
+            if (message["role"] == "assistant" && (currentUser < 0 || index < currentUser)) {
+                withoutHistoricalReasoning(message)
+            } else message
+        }
     }
 
-internal fun PipelineContext.usesFakeCharacterThinking(): Boolean =
+internal fun PipelineContext.usesCharacterThinking(): Boolean =
     promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.let { it.enabled && it.content.isNotBlank() } == true
 
-internal fun hasFakeCharacterThinking(message: Map<String, Any>): Boolean =
+internal fun hasCharacterThinking(message: Map<String, Any>): Boolean =
     listOf("reasoning_content", "thinking_content").any { (message[it] as? String)?.isNotBlank() == true }

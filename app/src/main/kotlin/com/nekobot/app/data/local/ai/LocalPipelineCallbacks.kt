@@ -838,7 +838,7 @@ internal class LocalPipelineCallbacks(
                 ctx.finalContent = content
             }
         }
-        if (content.isBlank() && !(ctx.usesFakeCharacterThinking() && hasFakeCharacterThinking(message))) {
+        if (content.isBlank() && !(ctx.usesCharacterThinking() && hasCharacterThinking(message))) {
             try {
                 kotlinx.coroutines.runBlocking {
                     onRoutingCompleted?.invoke(
@@ -1119,14 +1119,14 @@ internal class LocalPipelineCallbacks(
         triggerBeforeTurnHook(ctx)
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
-            val fakeThinking = ctx.usesFakeCharacterThinking()
+            val characterThinking = ctx.usesCharacterThinking()
             val thinkingMessages = withCharacterThinkingRequest(messages,
                 ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
             val recallRequest = recallGuard()?.let { guard -> kotlinx.coroutines.runBlocking {
                 guard.prepare("main", thinkingMessages, tools, activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
             } }
             val accountingMessages = recallRequest?.messages ?: thinkingMessages
-            val requestMessages = characterThinkingMessages(accountingMessages, fakeThinking).map(CompanionRequestUsage::clean)
+            val requestMessages = characterThinkingMessages(accountingMessages, characterThinking).map(CompanionRequestUsage::clean)
             val requestStartedAt = System.currentTimeMillis()
             val requestTools = recallRequest?.tools ?: tools
             val extra = buildMap<String, Any?> {
@@ -1134,13 +1134,13 @@ internal class LocalPipelineCallbacks(
                 activeModel.maxTokens?.let { put("max_tokens", it) }
                 activeModel.topP?.let { put("top_p", it) }
                 if (requestTools.isNotEmpty()) put("tools", requestTools)
-                putReasoningParams(this, reasoningEffort, fakeThinking) { customReasoning }
+                putReasoningParams(this, reasoningEffort, characterThinking) { customReasoning }
             }
             val streamRelay = if (session.sessionMode.equals("agent", ignoreCase = true)) {
                 createStreamEventCoalescer(ctx)
             } else null
             val thinkingStream = streamRelay?.let { relay ->
-                CharacterThinkingStream(fakeThinking, LocalAiStreamCallbacks(
+                CharacterThinkingStream(characterThinking, LocalAiStreamCallbacks(
                     onStart = { relay.onStart() },
                     onContentChunk = relay::onContentChunk,
                     onThinkingChunk = { chunk ->
@@ -1207,7 +1207,7 @@ internal class LocalPipelineCallbacks(
                     callWithoutTools(modelQueueFor(ctx), CompanionRecallFinal.finalMessages(requestMessages), extra) { generationController.isStopped }
                 }
             }
-            val result = characterThinkingResult(resolvedResult, fakeThinking)
+            val result = characterThinkingResult(resolvedResult, characterThinking)
 
             if (session.companionMode && db.isOpen) {
                 val used = modelQueue.firstOrNull { it.id == result.usedModelId } ?: activeModel
@@ -1230,6 +1230,11 @@ internal class LocalPipelineCallbacks(
                 put("_model_name", result.usedModelName ?: activeModel.name)
                 put("_model_actual_name", result.usedModelActualName ?: activeModel.model)
                 if (!forcedFinal && result.toolCalls.isNotEmpty()) put("tool_calls", result.toolCalls)
+                if (characterThinking) {
+                    // 显示文本可能来自正文标签；工具续接只能回传服务商原生思考及其原签名。
+                    put(NATIVE_CHARACTER_THINKING_CONTENT, resolvedResult.thinkingContent)
+                    put(NATIVE_CHARACTER_THINKING_SIGNATURE, resolvedResult.thinkingSignature)
+                }
                 if (reasoningEffort != ReasoningEffort.NONE && result.thinkingContent.isNotBlank()) {
                     put("thinking_content", result.thinkingContent)
                     // Anthropic 扩展思考要求把思考块签名一起带回下一轮请求。
@@ -1249,16 +1254,16 @@ internal class LocalPipelineCallbacks(
 
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
-            val fakeThinking = ctx.usesFakeCharacterThinking()
+            val characterThinking = ctx.usesCharacterThinking()
             val thinkingMessages = withCharacterThinkingRequest(messages,
                 ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
-            val requestMessages = characterThinkingMessages(thinkingMessages, fakeThinking).map(CompanionRequestUsage::clean)
+            val requestMessages = characterThinkingMessages(thinkingMessages, characterThinking).map(CompanionRequestUsage::clean)
             val requestStartedAt = System.currentTimeMillis()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
                 activeModel.maxTokens?.let { put("max_tokens", it) }
                 activeModel.topP?.let { put("top_p", it) }
-                putReasoningParams(this, reasoningEffort, fakeThinking) { customReasoning }
+                putReasoningParams(this, reasoningEffort, characterThinking) { customReasoning }
             }
 
             val fullContent = StringBuilder()
@@ -1269,7 +1274,7 @@ internal class LocalPipelineCallbacks(
             var usedActualModel = activeModel.model
             var usage: Map<String, Any> = emptyMap()
             val streamRelay = createStreamEventCoalescer(ctx)
-            val thinkingStream = CharacterThinkingStream(fakeThinking, LocalAiStreamCallbacks(
+            val thinkingStream = CharacterThinkingStream(characterThinking, LocalAiStreamCallbacks(
                 onStart = { streamRelay.onStart() },
                 onContentChunk = { fullContent.append(it); streamRelay.onContentChunk(it) },
                 onThinkingChunk = {
@@ -1297,7 +1302,7 @@ internal class LocalPipelineCallbacks(
                         }
                         when (event) {
                             is RealtimeEvent.StreamStart -> {
-                                if (strictCharacterQueue || fakeThinking) {
+                                if (strictCharacterQueue || characterThinking) {
                                     fullContent.setLength(0)
                                     fullReasoning.setLength(0)
                                 }

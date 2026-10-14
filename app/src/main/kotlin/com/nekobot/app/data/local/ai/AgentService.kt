@@ -1239,6 +1239,9 @@ suspend fun runToolCallLoop(
         val thinkingContent = responseReasoning.ifBlank { (response["content"] as? String).orEmpty() }
 
         if (toolCalls.isNotEmpty()) {
+            val protocolReasoning = (response[NATIVE_CHARACTER_THINKING_CONTENT] as? String) ?: responseReasoning
+            val protocolSignature = (response[NATIVE_CHARACTER_THINKING_SIGNATURE] as? String)
+                ?: (response["thinking_signature"] as? String)
             // 构造 assistant 消息（含 tool_calls）
             val toolCallEntries = toolCalls.map { tc ->
                 val historyCall = sanitizeSensitiveAgentToolCall(tc)
@@ -1257,12 +1260,12 @@ suspend fun runToolCallLoop(
                 put("role", "assistant")
                 put("content", response["content"] ?: "")
                 put("tool_calls", toolCallEntries)
-                if (responseReasoning.isNotBlank()) {
+                if (protocolReasoning.isNotBlank()) {
                     // DeepSeek 等提供商要求后续工具轮次原样带回 reasoning_content。
-                    put("reasoning_content", responseReasoning)
+                    put("reasoning_content", protocolReasoning)
                     // Anthropic 扩展思考还要求带回思考块签名（signature），
                     // 缺失会让下一轮带工具结果的请求被服务端判为非法。
-                    (response["thinking_signature"] as? String)
+                    protocolSignature
                         ?.takeIf { it.isNotBlank() }
                         ?.let { put("reasoning_signature", it) }
                 }

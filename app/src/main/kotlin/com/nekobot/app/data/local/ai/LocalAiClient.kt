@@ -39,14 +39,6 @@ import kotlin.coroutines.resumeWithException
 private const val TAG = "LocalAiClient"
 private const val IMAGE_GENERATION_TEST_PROMPT = "a test image"
 
-/** 本地 HTTP 请求标签，不是请求体字段；回退请求不带此标签。 */
-private class CharacterThinkingPrefill
-
-private fun Response.characterThinkingContent(content: String): String =
-    if (request.tag(CharacterThinkingPrefill::class.java) != null && content.isNotEmpty()) {
-        CHARACTER_THINKING_PREFILL + content
-    } else content
-
 /**
  * AI 请求结果（非流式）。
  */
@@ -274,9 +266,6 @@ class LocalAiClient(
                 return@flow
             }
 
-            if (response.request.tag(CharacterThinkingPrefill::class.java) != null) {
-                emit(RealtimeEvent.StreamChunk(CHARACTER_THINKING_PREFILL))
-            }
             parseBufferedJsonResponse(response, protocol)?.let { parsed ->
                 parsed.thinkingContent.takeIf(String::isNotBlank)?.let {
                     fullThinking.append(it)
@@ -300,7 +289,8 @@ class LocalAiClient(
                         )
                     )
                 }
-                if (parsed.content.isBlank() && parsed.toolCalls.isEmpty()) {
+                if (parsed.content.isBlank() && parsed.toolCalls.isEmpty() &&
+                    !(extra[CHARACTER_THINKING_EXTRA] == true && parsed.thinkingContent.isNotBlank())) {
                     emit(RealtimeEvent.Error("模型返回了空响应"))
                 }
                 emit(RealtimeEvent.StreamEnd(null))
@@ -367,7 +357,7 @@ class LocalAiClient(
                     fullContent.append(it)
                     emit(RealtimeEvent.StreamChunk(it))
                 }
-            if (fullContent.isEmpty()) {
+            if (fullContent.isEmpty() && !(extra[CHARACTER_THINKING_EXTRA] == true && fullThinking.isNotBlank())) {
                 emit(RealtimeEvent.Error("模型返回了空响应"))
             }
             emit(RealtimeEvent.StreamEnd(null))
@@ -442,14 +432,15 @@ class LocalAiClient(
                     throw FailoverRejectedContentException()
                 }
                 LocalAiResult(
-                    content = resp.characterThinkingContent(parsed.content),
+                    content = parsed.content,
                     usage = parsed.usage,
                     usedModelId = runtimeModel.id,
                     usedModelName = runtimeModel.name,
                     usedModelActualName = runtimeModel.model,
                     toolCalls = parsed.toolCalls,
                     finishReason = parsed.finishReason,
-                    thinkingContent = parsed.thinkingContent
+                    thinkingContent = parsed.thinkingContent,
+                    thinkingSignature = parsed.thinkingSignature
                 )
             }
         } catch (e: FailoverHttpException) {
@@ -518,9 +509,6 @@ class LocalAiClient(
                 if (callbacksStarted || streamCallbacks == null) return
                 callbacksStarted = true
                 streamCallbacks.onStart()
-                if (response.request.tag(CharacterThinkingPrefill::class.java) != null) {
-                    streamCallbacks.onContentChunk(CHARACTER_THINKING_PREFILL)
-                }
             }
             fun releaseThinkingCallbacks() {
                 if (streamCallbacks == null) return
@@ -548,7 +536,8 @@ class LocalAiClient(
             }
             val buffered = parseBufferedJsonResponse(response, protocol)
             if (buffered != null) {
-                if (buffered.content.isBlank() && buffered.toolCalls.isEmpty()) {
+                if (buffered.content.isBlank() && buffered.toolCalls.isEmpty() &&
+                    !(extra[CHARACTER_THINKING_EXTRA] == true && buffered.thinkingContent.isNotBlank())) {
                     throw IllegalStateException("模型返回了空响应")
                 }
                 if (
@@ -565,7 +554,7 @@ class LocalAiClient(
                     streamCallbacks?.onContentChunk?.invoke(it)
                 }
                 return@use LocalAiResult(
-                    content = response.characterThinkingContent(buffered.content),
+                    content = buffered.content,
                     usage = buffered.usage,
                     usedModelId = model.id,
                     usedModelName = model.name,
@@ -626,7 +615,8 @@ class LocalAiClient(
             val finalContent = parsed?.content?.takeIf(String::isNotEmpty) ?: content.toString()
             val finalThinking = parsed?.thinkingContent?.takeIf(String::isNotEmpty) ?: thinking.toString()
             val toolCalls = parsed?.toolCalls?.takeIf(List<*>::isNotEmpty) ?: streamedToolCalls
-            if (finalContent.isBlank() && toolCalls.isEmpty()) {
+            if (finalContent.isBlank() && toolCalls.isEmpty() &&
+                !(extra[CHARACTER_THINKING_EXTRA] == true && finalThinking.isNotBlank())) {
                 throw IllegalStateException("模型返回了空响应")
             }
             if (toolCalls.isEmpty() && shouldFailoverForAssistantContent(finalContent)) {
@@ -646,7 +636,7 @@ class LocalAiClient(
                 }
             }
             LocalAiResult(
-                content = response.characterThinkingContent(finalContent),
+                content = finalContent,
                 usage = parsed?.usage?.takeIf(Map<*, *>::isNotEmpty) ?: usage,
                 usedModelId = model.id,
                 usedModelName = model.name,
@@ -761,12 +751,7 @@ class LocalAiClient(
         } else {
             withStops
         }
-        // 请求级标记保留到兼容重试和主备切换，自定义参数不能重新开启原生思考。
-        // 沿用下方协议映射：已知推理模型明确关闭，普通兼容端点省略不支持的参数。
-        val normalized = if (protocolExtra[FAKE_CHARACTER_THINKING_EXTRA] == true) {
-            (protocolExtra - com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY) +
-                ("reasoning_effort" to ReasoningEffort.NONE.wireValue)
-        } else protocolExtra
+        val normalized = protocolExtra
         val effort = ReasoningEffort.fromValue(normalized["reasoning_effort"] as? String)
         if (effort == ReasoningEffort.CUSTOM) {
             // 自定义思考参数：不做服务商自动换算，由 buildRequest 原样写入请求体。
@@ -838,10 +823,10 @@ class LocalAiClient(
         extra: Map<String, Any?>,
         requestTag: String? = null
     ): Response {
-        fun buildRequest(normalizedExtra: Map<String, Any?>, prefill: Boolean): Request {
+        fun buildRequest(normalizedExtra: Map<String, Any?>): Request {
             val payload = protocol.buildPayload(
                 model.model,
-                withCharacterThinkingPrefill(messages, prefill),
+                messages,
                 stream = stream,
                 extra = normalizedExtra
             ).let { built ->
@@ -854,39 +839,21 @@ class LocalAiClient(
                 .apply {
                     headers.forEach { (name, value) -> header(name, value) }
                     requestTag?.let { tag(String::class.java, it) }
-                    if (prefill) tag(CharacterThinkingPrefill::class.java, CharacterThinkingPrefill())
                 }
                 .build()
         }
 
         val normalizedExtra = normalizeProtocolExtra(model, extra)
-        val prefill = extra[FAKE_CHARACTER_THINKING_EXTRA] == true
-        val response = clientFor(model).newCall(buildRequest(normalizedExtra, prefill)).awaitResponse()
-        // 不支持 assistant 预填的接口会拒绝请求；仅报错时退回原消息一次。
-        // 400 的既有采样参数兼容降级合并在这次重试中，不叠加第三次请求。
-        val jsonError = prefill && response.isSuccessful &&
-            response.body?.contentType()?.toString().orEmpty().contains("json", ignoreCase = true) &&
-            runCatching {
-                val raw = response.peekBody(64 * 1024).string()
-                val error = JsonParser.parseString(raw).asJsonObject.get("error")
-                (error != null && !error.isJsonNull) || protocol.parseStreamError(raw) != null
-            }.getOrDefault(false)
-        val rejectedPrefill = prefill && (!response.isSuccessful || jsonError)
-        if (rejectedPrefill) {
-            val fallbackExtra = if (response.code == 400 && protocol.name in OPENAI_COMPATIBILITY_PROTOCOLS) {
-                normalizeProtocolExtra(model, (extra - OPENAI_OPTIONAL_TUNING_KEYS).toMutableMap().apply {
-                    if (stream && protocol.name == OpenAIChatProtocol.name) put("omit_stream_options", true)
-                })
-            } else normalizedExtra
-            runCatching { LocalLogger.w(TAG, "assistant 预填请求被拒绝（HTTP ${response.code}），无预填重试一次") }
-            response.close()
-            return clientFor(model).newCall(buildRequest(fallbackExtra, false)).awaitResponse()
-        }
+        val response = clientFor(model).newCall(buildRequest(normalizedExtra)).awaitResponse()
         if (response.code != 400 || protocol.name !in OPENAI_COMPATIBILITY_PROTOCOLS) {
             return response
         }
 
-        val fallbackSource = (extra - OPENAI_OPTIONAL_TUNING_KEYS).toMutableMap().apply {
+        // 角色视角模式的推理参数保留，避免采样参数 400 导致回退请求意外关闭原生思考。
+        val optionalKeys = if (extra[CHARACTER_THINKING_EXTRA] == true) {
+            OPENAI_OPTIONAL_TUNING_KEYS - "reasoning_effort"
+        } else OPENAI_OPTIONAL_TUNING_KEYS
+        val fallbackSource = (extra - optionalKeys).toMutableMap().apply {
             if (stream && protocol.name == OpenAIChatProtocol.name) {
                 put("omit_stream_options", true)
             }
@@ -903,7 +870,7 @@ class LocalAiClient(
         (fallbackExtra[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY] as? com.nekobot.app.data.model.CustomReasoningParam)?.let {
             runCatching { LocalLogger.w(TAG, "400 重试仍保留自定义思考参数：${it.path}") }
         }
-        return clientFor(model).newCall(buildRequest(fallbackExtra, false)).awaitResponse()
+        return clientFor(model).newCall(buildRequest(fallbackExtra)).awaitResponse()
     }
 
     /** 某些兼容端点即使收到 stream=true 仍返回完整 JSON；不能按 SSE 逐行直接丢弃。 */
@@ -1263,8 +1230,8 @@ class LocalAiClient(
             exclude.add(model.id)
             val (runtimeModel, credential) = resolveRuntimeModel(model)
 
-            // 伪思考的标签状态属于单次请求；备用模型不能继承上次未闭合的 <think>。
-            if (attempt > 0 && extra[FAKE_CHARACTER_THINKING_EXTRA] == true) {
+            // 标签与暂存原生思考均属于单次请求，备用模型不能继承失败请求的状态。
+            if (attempt > 0 && extra[CHARACTER_THINKING_EXTRA] == true) {
                 emit(RealtimeEvent.StreamStart(null))
             }
             val fullContent = StringBuilder()
@@ -1320,7 +1287,8 @@ class LocalAiClient(
                 }
                 val buffered = parseBufferedJsonResponse(response, protocol)
                 if (buffered != null) {
-                    if (buffered.content.isBlank() && buffered.toolCalls.isEmpty()) {
+                    if (buffered.content.isBlank() && buffered.toolCalls.isEmpty() &&
+                        !(extra[CHARACTER_THINKING_EXTRA] == true && buffered.thinkingContent.isNotBlank())) {
                         lastErrorMsg = "模型返回了空响应"
                         failed = true
                         failover.recordFailure(model.id)
@@ -1343,7 +1311,7 @@ class LocalAiClient(
                     }
                     buffered.content.takeIf(String::isNotBlank)?.let {
                         fullContent.append(it)
-                        emit(RealtimeEvent.StreamChunk(response.characterThinkingContent(it)))
+                        emit(RealtimeEvent.StreamChunk(it))
                     }
                     failover.recordSuccess(model.id)
                     buffered.usage.takeIf { it.isNotEmpty() }?.let { usage ->
@@ -1411,7 +1379,7 @@ class LocalAiClient(
                                         emit(RealtimeEvent.ReasoningChunk(it.toString()))
                                     }
                                 }
-                                emit(RealtimeEvent.StreamChunk(response.characterThinkingContent(fullContent.toString())))
+                                emit(RealtimeEvent.StreamChunk(fullContent.toString()))
                                 contentReleased = true
                             }
                         }
@@ -1431,7 +1399,7 @@ class LocalAiClient(
                     ?.let {
                         fullContent.append(it)
                     }
-                if (fullContent.isEmpty()) {
+                if (fullContent.isEmpty() && !(extra[CHARACTER_THINKING_EXTRA] == true && fullThinking.isNotBlank())) {
                     lastErrorMsg = "模型返回了空响应"
                     failed = true
                     failover.recordFailure(model.id)
@@ -1455,7 +1423,7 @@ class LocalAiClient(
                             emit(RealtimeEvent.ReasoningChunk(it.toString()))
                         }
                     }
-                    emit(RealtimeEvent.StreamChunk(response.characterThinkingContent(fullContent.toString())))
+                    emit(RealtimeEvent.StreamChunk(fullContent.toString()))
                 }
                 if (inputTokens != null || outputTokens != null) {
                     emit(

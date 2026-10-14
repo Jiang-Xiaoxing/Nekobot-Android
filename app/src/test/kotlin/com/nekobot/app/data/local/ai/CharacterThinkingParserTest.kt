@@ -50,9 +50,9 @@ class CharacterThinkingParserTest {
         val result = characterThinkingResult(LocalAiResult("<think>我还没有想完"), true)
         assertEquals("", result.content)
         assertEquals("我还没有想完", result.thinkingContent)
-        assertTrue(hasFakeCharacterThinking(mapOf("thinking_content" to result.thinkingContent)))
-        assertTrue(hasFakeCharacterThinking(mapOf("reasoning_content" to result.thinkingContent)))
-        assertFalse(hasFakeCharacterThinking(mapOf("thinking_content" to " ")))
+        assertTrue(hasCharacterThinking(mapOf("thinking_content" to result.thinkingContent)))
+        assertTrue(hasCharacterThinking(mapOf("reasoning_content" to result.thinkingContent)))
+        assertFalse(hasCharacterThinking(mapOf("thinking_content" to " ")))
     }
 
     @Test
@@ -93,9 +93,9 @@ class CharacterThinkingParserTest {
     }
 
     @Test
-    fun aliasTagsAndRepeatedPrefillCanArriveCharacterByCharacter() {
+    fun aliasTagsAndRepeatedOpeningCanArriveCharacterByCharacter() {
         val output = Output()
-        (CHARACTER_THINKING_PREFILL + "<THINKING>\n我想到他了</THINKING>\n回答").forEach {
+        "<think>\n<THINKING>\n我想到他了</THINKING>\n回答".forEach {
             output.parser.append(it.toString())
             assertFalse(output.content.toString().contains("我"))
             assertFalse(output.content.toString().contains('<'))
@@ -105,9 +105,9 @@ class CharacterThinkingParserTest {
     }
 
     @Test
-    fun prefilledContinuationWithoutClosingTagStaysInThinking() {
+    fun openingTagWithoutClosingTagStaysInThinking() {
         val output = Output()
-        output.parser.append(CHARACTER_THINKING_PREFILL)
+        output.parser.append("<think>\n")
         output.parser.append("我还没想完")
         output.parser.finish()
         output.check("", "我还没想完")
@@ -122,7 +122,7 @@ class CharacterThinkingParserTest {
     }
 
     @Test
-    fun enabledStreamIgnoresNativeThinkingAndResetsTagStateForNextAttempt() {
+    fun enabledStreamResetsNativeAndTagStateForNextAttempt() {
         val content = StringBuilder()
         val thinking = StringBuilder()
         var starts = 0
@@ -169,7 +169,7 @@ class CharacterThinkingParserTest {
     }
 
     @Test
-    fun finalParsingPreservesToolsUsageModelAndErrorButDropsNativeThinkingAndSignature() {
+    fun finalParsingPrefersTaggedThinkingAndRetainsNativeWhenTagsAreAbsent() {
         val original = LocalAiResult("<think>我先查一下。</think>",
             thinkingContent = "Native English", thinkingSignature = "mock-signature",
             toolCalls = listOf(mapOf("id" to "call-1", "function" to mapOf("name" to "lookup", "arguments" to "{}"))),
@@ -179,47 +179,83 @@ class CharacterThinkingParserTest {
         assertEquals(original.copy(content = "", thinkingContent = "我先查一下。", thinkingSignature = ""), parsed)
         val noTags = characterThinkingResult(original.copy(content = "直接回答"), true)
         assertEquals("直接回答", noTags.content)
-        assertEquals("", noTags.thinkingContent)
+        assertEquals("Native English", noTags.thinkingContent)
+        assertEquals("mock-signature", noTags.thinkingSignature)
     }
 
     @Test
-    fun fakeThinkingIsNotReplayedAsSignedNativeBlocksInToolLoop() {
+    fun historicalThinkingIsRemovedButCurrentToolThinkingAndSignatureArePreserved() {
         val user = mapOf<String, Any>("role" to "user", "content" to "哈哈")
         val calls = listOf(mapOf("id" to "call-1", "function" to mapOf("name" to "lookup", "arguments" to "{}")))
         val assistant = mapOf<String, Any>("role" to "assistant", "content" to "", "thinking_content" to "我查一下",
             "thinking_signature" to "mock-signature", "tool_calls" to calls)
         val tool = mapOf<String, Any>("role" to "tool", "content" to "<think>工具原文</think>", "tool_call_id" to "call-1")
-        val messages = listOf(user, assistant, tool)
+        val messages = listOf(assistant, user, assistant, tool)
         val cleaned = characterThinkingMessages(messages, true)
-        assertSame(user, cleaned[0]); assertSame(tool, cleaned[2]); assertSame(calls, cleaned[1]["tool_calls"])
-        assertFalse(cleaned[1].containsKey("thinking_content"))
-        assertFalse(cleaned[1].containsKey("thinking_signature"))
+        assertSame(user, cleaned[1]); assertSame(tool, cleaned[3]); assertSame(calls, cleaned[0]["tool_calls"])
+        assertFalse(cleaned[0].containsKey("thinking_content"))
+        assertFalse(cleaned[0].containsKey("thinking_signature"))
+        assertSame(assistant, cleaned[2])
         assertEquals("我查一下", assistant["thinking_content"])
         assertSame(messages, characterThinkingMessages(messages, false))
     }
 
     @Test
-    fun fakeRequestOverridesCustomWithoutReadingOrMutatingSavedParameter() {
+    fun characterRequestKeepsCustomParameterAndEffortWithoutMutatingPreference() {
         val custom = CustomReasoningParam("thinking.type", "enabled")
         val extra = mutableMapOf<String, Any?>(CustomReasoningParam.EXTRA_KEY to custom)
-        putReasoningParams(extra, ReasoningEffort.CUSTOM, true) { error("伪思考不读取自定义参数") }
-        assertEquals("none", extra["reasoning_effort"])
-        assertEquals(true, extra[FAKE_CHARACTER_THINKING_EXTRA])
-        assertFalse(extra.containsKey(CustomReasoningParam.EXTRA_KEY))
+        putReasoningParams(extra, ReasoningEffort.CUSTOM, true) { custom }
+        assertEquals("custom", extra["reasoning_effort"])
+        assertEquals(true, extra[CHARACTER_THINKING_EXTRA])
+        assertSame(custom, extra[CustomReasoningParam.EXTRA_KEY])
         val native = mutableMapOf<String, Any?>()
         putReasoningParams(native, ReasoningEffort.CUSTOM) { custom }
         assertSame(custom, native[CustomReasoningParam.EXTRA_KEY])
         assertEquals("custom", native["reasoning_effort"])
-        assertFalse(native.containsKey(FAKE_CHARACTER_THINKING_EXTRA))
+        assertFalse(native.containsKey(CHARACTER_THINKING_EXTRA))
     }
 
     @Test
-    fun fakeModeTracksOnlyTheEnabledNonblankSystemStyleSection() {
+    fun characterModeTracksOnlyTheEnabledNonblankSystemStyleSection() {
         val ctx = PipelineContext(ChatRequest.forLocal("fake-mode", "哈哈"))
-        assertFalse(ctx.usesFakeCharacterThinking())
+        assertFalse(ctx.usesCharacterThinking())
         ctx.promptStack.add(CHARACTER_THINKING_STYLE_KEY, "规则", 21)
-        assertTrue(ctx.usesFakeCharacterThinking())
+        assertTrue(ctx.usesCharacterThinking())
         ctx.promptStack.disable(CHARACTER_THINKING_STYLE_KEY)
-        assertFalse(ctx.usesFakeCharacterThinking())
+        assertFalse(ctx.usesCharacterThinking())
+    }
+
+    @Test
+    fun nativeAndTaggedStreamSelectionMatchesFinalParsingRegardlessOfArrivalOrder() {
+        for (tagged in listOf("", "<think></think>", "<think>  </think>", "<think>我想起小星。</think>")) {
+            for (nativeFirst in listOf(false, true)) {
+                val content = StringBuilder()
+                val thinking = StringBuilder()
+                val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+                    onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+                stream.callbacks.onStart()
+                if (nativeFirst) stream.callbacks.onThinkingChunk("我先想想。")
+                (tagged + "回答").forEach { stream.callbacks.onContentChunk(it.toString()) }
+                if (!nativeFirst) stream.callbacks.onThinkingChunk("我先想想。")
+                stream.finish()
+                stream.finish()
+                val final = characterThinkingResult(LocalAiResult(tagged + "回答", thinkingContent = "我先想想。"), true)
+                assertEquals(final.content, content.toString())
+                assertEquals(final.thinkingContent, thinking.toString())
+            }
+        }
+    }
+
+    @Test
+    fun nativeThinkingOnlyResponseIsReleasedOnceAndCanBePersisted() {
+        val thinking = StringBuilder()
+        val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(onThinkingChunk = { thinking.append(it) }))
+        stream.callbacks.onStart()
+        stream.callbacks.onThinkingChunk("我先")
+        stream.callbacks.onThinkingChunk("想想。")
+        stream.finish()
+        stream.finish()
+        assertEquals("我先想想。", thinking.toString())
+        assertTrue(hasCharacterThinking(mapOf("reasoning_content" to thinking.toString())))
     }
 }

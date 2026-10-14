@@ -8,7 +8,7 @@ data class CharacterThinkingSettings(val enabled: Boolean = true, val customProm
 internal const val CHARACTER_THINKING_STYLE_KEY = "output.thinking_style"
 
 internal const val CHARACTER_THINKING_FORMAT_PROMPT =
-    "【思考输出格式】每次回复或调用工具前，在回复正文开头用 <think> 和 </think> 包住简体中文第一人称的内心想法。思考结束必须输出 </think>，正式回复只写在标签外；不要用 Markdown 代码块包住标签。工具仍通过原有工具调用接口发送，工具名和参数不写进思考标签替代调用。"
+    "【本轮思考输出约定】你就是当前角色本人。返回给客户端的思考文本必须是简体中文、角色第一人称的内心想法，以“我”自称，想到对方时用其姓名、平时的称呼或他/她，不用助手分析用户的口吻。接口提供原生思考字段时，直接在原生思考中遵守这项约定，不要在正文重复思考。接口没有提供原生思考字段时，在正文开头用 <think> 和 </think> 包住简体中文第一人称的内心想法，明确闭合后再写正式回复；不要用 Markdown 代码块包住标签。思考与正式回复分开，不把回复全部写进思考。工具仍通过原有工具调用接口发送，工具名和参数保持原样，不写进思考标签替代调用。"
 
 /** 角色思考的会话资格；思考强度和偏好开关只控制注入，不隐藏设置入口。 */
 internal fun isCharacterThinkingSession(
