@@ -7,6 +7,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CharacterThinkingStyleTest {
+    private val confirmedDefaultPrompt = """【思考方式】你的全部思考——包括 reasoning_content，以及调用回忆/记忆等工具前后的每一段思考——都是{{char}}本人的心里话：一律用简体中文，以"我"自称，带着{{char}}此刻的心情和语气去想，可以犹豫、惦记、偷偷开心。想到对方时用{{user}}的名字或"他/她"，不要写"用户""the user""Let me…""让我分析一下"这类旁观者或助手口吻。工具名和参数保持原样，其余一律中文。示例：（{{user}}问我还答应过他什么……我记得是明天一起去书店，先翻翻记忆确认，可别记错了。）思考里只想事情和心情，不预写正式回复。"""
+
+    @Test
+    fun defaultPromptMatchesConfirmedTextExactly() {
+        assertEquals(confirmedDefaultPrompt, DEFAULT_CHARACTER_THINKING_PROMPT)
+    }
+
     @Test
     fun characterWithReasoningGetsChineseFirstPersonPromptAtBehaviorPlusOne() = runBlocking {
         val ctx = context()
@@ -14,15 +21,9 @@ class CharacterThinkingStyleTest {
         val item = requireNotNull(ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY))
         assertEquals(PromptStack.Priority.BEHAVIOR + 1, item.priority)
         assertEquals("session", item.scope)
-        assertTrue(item.content.contains("林小满本人"))
-        assertTrue(item.content.contains("简体中文"))
-        assertTrue(item.content.contains("以“我”的身份"))
-        assertTrue(item.content.contains("当下的情绪"))
-        assertTrue(item.content.contains("想到小禾时"))
-        assertTrue(item.content.contains("不写“用户”或“the user”"))
-        assertTrue(item.content.contains("不要使用助手分析口吻"))
-        assertTrue(item.content.contains("工具名和参数保持原样"))
+        assertEquals(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "小禾"), item.content)
         assertEquals(1, system(ctx).split("## $CHARACTER_THINKING_STYLE_KEY").size - 1)
+        assertUserMessageUnchanged(ctx.messages)
     }
 
     @Test
@@ -84,6 +85,8 @@ class CharacterThinkingStyleTest {
         }
         AIPipeline().prepareContext(ctx, callbacks)
         assertTrue(system(ctx).contains(CHARACTER_THINKING_STYLE_KEY))
+        assertTrue(system(ctx).contains(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "小禾")))
+        assertUserMessageUnchanged(ctx.messages)
     }
 
     @Test
@@ -93,16 +96,15 @@ class CharacterThinkingStyleTest {
         AIPipeline().prepareContext(ctx, callbacks(CharacterThinkingSettings(customPrompt = custom)))
         assertEquals("我是林小满，想到小禾就安心。调用 agent_history_search，参数 {\"query\":\"原样\"}。",
             ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.content)
-        assertFalse(system(ctx).contains("接下来的思考属于"))
+        assertFalse(system(ctx).contains("【思考方式】"))
     }
 
     @Test
     fun whitespacePromptUsesChineseDefaultAndUnknownUserNameIsNotInvented() = runBlocking {
         val ctx = context().apply { metadata.remove("user_name") }
         AIPipeline().prepareContext(ctx, callbacks(CharacterThinkingSettings(customPrompt = " \n\t")))
-        assertTrue(system(ctx).contains("接下来的思考属于林小满本人"))
-        assertTrue(system(ctx).contains("想到对方时"))
-        assertTrue(system(ctx).contains("给出的名字称呼"))
+        assertEquals(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "对方"),
+            ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.content)
         assertFalse(system(ctx).contains("{{user}}"))
     }
 
@@ -116,7 +118,7 @@ class CharacterThinkingStyleTest {
         callbacks.settings = CharacterThinkingSettings(enabled = false)
         pipeline.prepareContext(ctx, callbacks)
         assertAbsent(ctx)
-        assertFalse(system(ctx).contains("接下来的思考属于"))
+        assertFalse(system(ctx).contains("【思考方式】"))
     }
 
     @Test
@@ -178,10 +180,29 @@ class CharacterThinkingStyleTest {
         requests.forEach { request ->
             val text = request.first { it["role"] == "system" }["content"].toString()
             assertEquals(1, text.split("## $CHARACTER_THINKING_STYLE_KEY").size - 1)
-            assertTrue(text.contains("以“我”的身份"))
+            assertTrue(text.contains(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "小禾")))
+            assertUserMessageUnchanged(request)
         }
         assertTrue(requests.last().any { it["reasoning_content"] == "我再回忆一下。" })
         assertEquals(2, requests.last().count { it["role"] == "tool" })
+    }
+
+    @Test
+    fun injectionRequiresAllThreeConditions() = runBlocking {
+        for (role in listOf(true, false)) for (effort in listOf(ReasoningEffort.HIGH, ReasoningEffort.NONE)) for (on in listOf(true, false)) {
+            val ctx = if (role) context(effort = effort) else context(mode = "agent", effort = effort)
+            AIPipeline().prepareContext(ctx, callbacks(CharacterThinkingSettings(enabled = on)))
+            val label = "role=$role effort=$effort on=$on"
+            if (role && effort != ReasoningEffort.NONE && on) {
+                assertNotNull(label, ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY))
+                assertTrue(label, system(ctx).contains("【思考方式】"))
+            } else {
+                assertNull(label, ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY))
+                assertFalse(label, system(ctx).contains(CHARACTER_THINKING_STYLE_KEY))
+                assertFalse(label, system(ctx).contains("【思考方式】"))
+            }
+            assertUserMessageUnchanged(ctx.messages)
+        }
     }
 
     private fun context(mode: String = "character", effort: ReasoningEffort = ReasoningEffort.HIGH,
@@ -201,6 +222,10 @@ class CharacterThinkingStyleTest {
     }
 
     private fun system(ctx: PipelineContext) = ctx.messages.filter { it["role"] == "system" }.joinToString("\n") { it["content"].toString() }
+    private fun assertUserMessageUnchanged(messages: List<Map<String, Any>>) {
+        assertEquals(listOf(mapOf<String, Any>("role" to "user", "content" to "今天怎么样？")),
+            messages.filter { it["role"] == "user" })
+    }
     private fun assertAbsent(ctx: PipelineContext) {
         assertNull(ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY))
         assertFalse(system(ctx).contains(CHARACTER_THINKING_STYLE_KEY))
