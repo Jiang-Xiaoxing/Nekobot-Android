@@ -502,10 +502,10 @@ internal class LocalAgentToolExecutor(
     }
 
     /**
-     * android_step：执行一个 Android 界面动作后自动等待稳定、截图并调用视觉模型描述结果。
+     * android_step：执行一个 Android 界面动作后自动等待稳定并截图。
      *
      * 把「动作 → 观察」合并为一步，减少模型必须显式串联
-     * android_ui_* → android_wait_for_idle → android_screenshot → understand_image 的轮次。
+     * 支持视觉时直接把截图注入当前模型上下文；否则调用视觉模型生成描述。
      * 视觉描述失败时降级返回，不影响动作结果本身。
      */
     private suspend fun androidStep(args: Map<String, Any>): Map<String, Any> {
@@ -523,7 +523,7 @@ internal class LocalAgentToolExecutor(
         val actionResult = androidToolExecutor.execute(action, actionArgs)
         // 等待界面稳定（加载/动画结束）
         val wait = androidToolExecutor.execute("android_wait_for_idle", mapOf("timeout_ms" to 1500))
-        // 自动截图并视觉描述（失败时降级，不影响主结果）
+        // 自动截图；支持视觉时直接注入当前上下文，否则调用视觉模型生成描述。
         var screenshotPath: String? = null
         var observation: String? = null
         try {
@@ -531,16 +531,20 @@ internal class LocalAgentToolExecutor(
             if ((shot["success"] as? Boolean) == true) {
                 screenshotPath = (shot["path"] as? String) ?: (shot["absolute_path"] as? String)
                 if (screenshotPath != null) {
-                    val described = understandImage(
-                        mapOf(
-                            "image_url" to screenshotPath,
-                            "question" to "描述当前屏幕的主要内容：可见的标题、按钮、输入框、列表项、价格和任何弹窗。"
-                        )
-                    )
-                    observation = if ((described["success"] as? Boolean) == true) {
-                        described["description"] as? String
+                    if (supportsVision) {
+                        observation = "截图已附加到当前上下文，请直接查看截图。"
                     } else {
-                        "（视觉描述失败：${described["error"]}）"
+                        val described = understandImage(
+                            mapOf(
+                                "image_url" to screenshotPath,
+                                "question" to "描述当前屏幕的主要内容：可见的标题、按钮、输入框、列表项、价格和任何弹窗。"
+                            )
+                        )
+                        observation = if ((described["success"] as? Boolean) == true) {
+                            described["description"] as? String
+                        } else {
+                            "（视觉描述失败：${described["error"]}）"
+                        }
                     }
                 }
             }

@@ -64,11 +64,11 @@ internal object AndroidUsageGuide {
         "flow" to """
 ### 标准操作流程（flow）
 1. 打开目标应用：android_open_app（按名称/包名），或 android_open_url / android_global_action(home/recents) 切换。
-2. 观察界面：android_ui_tree（interactive_only=true 只看可交互元素），或 android_step（动作+自动截图+视觉描述）。
+2. 观察界面：android_ui_tree（interactive_only=true 只看可交互元素），或 android_step（动作+自动截图；按图片识别能力直接附图或生成描述）。
 3. 定位目标元素：优先用 interactive 编号（index），其次用文字/内容描述（selector+field）。
 4. 执行操作：android_ui_click / android_ui_tap / android_ui_set_text / android_ui_scroll / android_ui_swipe / android_ui_ime_action。
 5. 等待结果：android_wait_for_idle 等待加载/动画结束。
-6. 确认结果：android_screenshot + understand_image（或直接 android_step），比对是否达到预期。
+            6. 确认结果：android_screenshot 后按会话的图片识别能力用 read_image（支持视觉）或 understand_image（不支持）；也可直接用 android_step。
 7. 未达预期：分析错误与界面状态，调整定位方式或滚动后重试，不要盲目重复相同操作。
         """.trimIndent(),
         "selectors" to """
@@ -110,8 +110,8 @@ internal object AndroidUsageGuide {
         "observe" to """
 ### 观察与诊断（observe）
 - android_screenshot 保存当前屏幕到会话工作区（返回 path）；android_ui_tree 返回结构化元素。
-- 图片类内容（商品图、海报、游戏画面）用 understand_image 分析截图（image_url 填截图 path）。
-- android_step 一步完成「执行动作 → 等待稳定 → 自动截图 → 视觉描述」，推荐在需要观察结果的动作后使用。
+- 图片类内容（商品图、海报、游戏画面）按会话的图片识别能力用 read_image（支持视觉）或 understand_image（不支持）分析截图。
+- android_step 一步完成「执行动作 → 等待稳定 → 自动截图」；支持视觉时直接附图，否则生成视觉描述。
 - 操作失败时先截图/读树定位原因，再调整参数重试。
         """.trimIndent(),
         "troubleshooting" to """
@@ -147,11 +147,11 @@ internal object AndroidUsageGuide {
         "flow" to """
 ### 標準操作流程（flow）
 1. 開啟目標應用：android_open_app（按名稱/包名），或 android_open_url / android_global_action(home/recents) 切換。
-2. 觀察介面：android_ui_tree（interactive_only=true 只看可交互元素），或 android_step（動作+自動截圖+視覺描述）。
+2. 觀察介面：android_ui_tree（interactive_only=true 只看可交互元素），或 android_step（動作+自動截圖；依圖片識別能力直接附圖或生成描述）。
 3. 定位目標元素：優先用 interactive 編號（index），其次用文字/內容描述（selector+field）。
 4. 執行操作：android_ui_click / android_ui_tap / android_ui_set_text / android_ui_scroll / android_ui_swipe / android_ui_ime_action。
 5. 等待結果：android_wait_for_idle 等待載入/動畫結束。
-6. 確認結果：android_screenshot + understand_image（或直接 android_step），比對是否達到預期。
+            6. 確認結果：android_screenshot 後依照本會話的圖片識別能力使用 read_image（支援視覺）或 understand_image（不支援）；也可直接使用 android_step。
 7. 未達預期：分析錯誤與介面狀態，調整定位方式或捲動後重試，不要盲目重複相同操作。
         """.trimIndent(),
         "selectors" to """
@@ -193,8 +193,8 @@ internal object AndroidUsageGuide {
         "observe" to """
 ### 觀察與診斷（observe）
 - android_screenshot 儲存當前螢幕到會話工作區（返回 path）；android_ui_tree 返回結構化元素。
-- 圖片類內容（商品圖、海報、遊戲畫面）用 understand_image 分析截圖（image_url 填截圖 path）。
-- android_step 一步完成「執行動作 → 等待穩定 → 自動截圖 → 視覺描述」，推薦在需要觀察結果的動作後使用。
+- 圖片類內容（商品圖、海報、遊戲畫面）依照本會話的圖片識別能力使用 read_image（支援視覺）或 understand_image（不支援）分析截圖。
+- android_step 一步完成「執行動作 → 等待穩定 → 自動截圖」；支援視覺時直接附圖，否則生成視覺描述。
 - 操作失敗時先截圖/讀樹定位原因，再調整參數重試。
         """.trimIndent(),
         "troubleshooting" to """
@@ -230,11 +230,11 @@ internal object AndroidUsageGuide {
         "flow" to """
 ### Standard flow
 1. Open the target app: android_open_app (by name/package), or switch with android_open_url / android_global_action(home/recents).
-2. Observe the screen: android_ui_tree (interactive_only=true to see just interactive elements), or android_step (action + auto screenshot + vision description).
+2. Observe the screen: android_ui_tree (interactive_only=true to see just interactive elements), or android_step (action + auto screenshot; image is attached or described according to vision support).
 3. Locate the target element: prefer the interactive index, then text/content-description (selector+field).
 4. Act: android_ui_click / android_ui_tap / android_ui_set_text / android_ui_scroll / android_ui_swipe / android_ui_ime_action.
 5. Wait: android_wait_for_idle for loading/animation to settle.
-6. Confirm: android_screenshot + understand_image (or android_step) and compare with the goal.
+            6. Confirm: after android_screenshot, use read_image when this session supports vision or understand_image when it does not; android_step is also available.
 7. If not achieved: analyze the error and screen state, adjust targeting or scroll, and retry; do not blindly repeat the same call.
         """.trimIndent(),
         "selectors" to """
@@ -276,8 +276,8 @@ internal object AndroidUsageGuide {
         "observe" to """
 ### Observation and diagnosis
 - android_screenshot saves the screen to the session workspace (returns path); android_ui_tree returns structured elements.
-- For visual content (product images, posters, game frames) analyze the screenshot with understand_image (image_url = screenshot path).
-- android_step performs action → wait → auto screenshot → vision description in one call; prefer it after actions whose results you need to observe.
+- For visual content (product images, posters, game frames), analyze screenshots with read_image when this session supports vision or understand_image when it does not.
+- android_step performs action → wait → auto screenshot; it attaches the image when vision is supported and generates a description otherwise.
 - On failure, screenshot/read the tree first, then adjust and retry.
         """.trimIndent(),
         "troubleshooting" to """
@@ -313,11 +313,11 @@ internal object AndroidUsageGuide {
         "flow" to """
 ### 標準フロー（flow）
 1. 対象アプリを開く：android_open_app（名前/パッケージ名）、または android_open_url / android_global_action(home/recents) で切り替え。
-2. 画面を観察：android_ui_tree（interactive_only=true で操作可能要素のみ）、または android_step（操作＋自動スクリーンショット＋視覚説明）。
+2. 画面を観察：android_ui_tree（interactive_only=true で操作可能要素のみ）、または android_step（操作＋自動スクリーンショット；視覚能力に応じて画像を添付または説明）。
 3. 対象を特定：interactive の番号（index）を優先し、次に文字列（selector+field）。
 4. 操作：android_ui_click / android_ui_tap / android_ui_set_text / android_ui_scroll / android_ui_swipe / android_ui_ime_action。
 5. 待機：android_wait_for_idle で読み込み・アニメーション完了を待つ。
-6. 確認：android_screenshot + understand_image（または android_step）で目標と照合。
+            6. 確認：android_screenshot の後、本会話の画像認識能力に従って read_image（対応時）または understand_image（非対応時）を使用します。android_step も使用できます。
 7. 未達成ならエラーと画面状態を分析し、定位を変えるかスクロールして再試行。同じ呼び出しの無意味な繰り返しはしない。
         """.trimIndent(),
         "selectors" to """
@@ -359,8 +359,8 @@ internal object AndroidUsageGuide {
         "observe" to """
 ### 観察と診断（observe）
 - android_screenshot で画面をセッションワークスペースに保存（path 返却）。android_ui_tree は構造化要素を返します。
-- 画像系（商品画像・ポスター・ゲーム画面）は understand_image でスクリーンショットを分析（image_url に path）。
-- android_step は「操作→安定待機→自動スクリーンショット→視覚説明」を一括実行。結果確認が必要な操作の後に推奨。
+- 画像系（商品画像・ポスター・ゲーム画面）は、本会話が画像認識に対応している場合は read_image、非対応の場合は understand_image でスクリーンショットを分析します。
+- android_step は「操作→安定待機→自動スクリーンショット」を一括実行。視覚対応時は画像を直接添付し、非対応時は説明を生成します。
 - 失敗時は先にスクリーンショット/ツリーで原因を確認してからパラメータを調整。
         """.trimIndent(),
         "troubleshooting" to """
@@ -396,11 +396,11 @@ internal object AndroidUsageGuide {
         "flow" to """
 ### 표준 흐름（flow）
 1. 대상 앱 열기：android_open_app（이름/패키지명），또는 android_open_url / android_global_action(home/recents)로 전환.
-2. 화면 관찰：android_ui_tree（interactive_only=true로 조작 가능 요소만）, 또는 android_step（동작+자동 스크린샷+시각 설명）.
+2. 화면 관찰：android_ui_tree（interactive_only=true로 조작 가능 요소만）, 또는 android_step（동작+자동 스크린샷; 이미지 인식 지원에 따라 이미지 첨부 또는 설명）.
 3. 대상 요소 특정：interactive 번호(index) 우선, 다음으로 텍스트/내용 설명(selector+field).
 4. 조작：android_ui_click / android_ui_tap / android_ui_set_text / android_ui_scroll / android_ui_swipe / android_ui_ime_action.
 5. 대기：android_wait_for_idle로 로딩/애니메이션 완료를 기다림.
-6. 확인：android_screenshot + understand_image（또는 android_step）로 목표와 대조.
+            6. 확인：android_screenshot 후 이 대화의 이미지 인식 능력 안내에 따라 read_image（지원 시）또는 understand_image（미지원 시）를 사용합니다. android_step도 사용할 수 있습니다.
 7. 미달 시 오류와 화면 상태를 분석해定位을 바꾸거나 스크롤 후 재시도. 같은 호출을 무의미하게 반복하지 마세요.
         """.trimIndent(),
         "selectors" to """
@@ -442,8 +442,8 @@ internal object AndroidUsageGuide {
         "observe" to """
 ### 관찰과 진단（observe）
 - android_screenshot으로 화면을 세션 워크스페이스에 저장（path 반환）. android_ui_tree는 구조화된 요소를 반환.
-- 이미지류（상품 이미지·포스터·게임 화면）는 understand_image로 스크린샷 분석（image_url에 path）.
-- android_step은「동작→안정 대기→자동 스크린샷→시각 설명」을 한 번에 수행. 결과 확인이 필요한 동작 후 권장.
+- 이미지류（상품 이미지·포스터·게임 화면）는 이 대화가 이미지 인식을 지원하면 read_image, 지원하지 않으면 understand_image로 스크린샷을 분석합니다.
+- android_step은「동작→안정 대기→자동 스크린샷」을 한 번에 수행. 이미지 인식 지원 시 이미지를 직접 첨부하고, 미지원 시 설명을 생성합니다.
 - 실패 시 먼저 스크린샷/트리로 원인을 확인한 뒤 파라미터를 조정하세요.
         """.trimIndent(),
         "troubleshooting" to """

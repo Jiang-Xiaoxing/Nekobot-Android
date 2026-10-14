@@ -55,6 +55,7 @@ import com.nekobot.app.data.local.ai.currentLocalContextTokens
 import com.nekobot.app.data.local.ai.addLocalAgentBasePrompt
 import com.nekobot.app.data.local.ai.addCharacterInheritanceBridgePrompt
 import com.nekobot.app.data.local.ai.addAgentEnvPrompt
+import com.nekobot.app.data.local.ai.addAgentImageCapabilityPrompt
 import com.nekobot.app.data.local.ai.addAgentTodosPrompt
 import com.nekobot.app.data.local.ai.addAgentGoalPrompt
 import com.nekobot.app.data.local.ai.addAgentSpecPrompt
@@ -6741,6 +6742,10 @@ class LocalRepository(
                 LocaleHelper.getEffectiveLocale(it, ServiceContainer.prefs.language).language
             } ?: Locale.getDefault().language
             ctx.promptStack.addLocalAgentBasePrompt(promptLanguage)
+            ctx.promptStack.addAgentImageCapabilityPrompt(
+                supportsVision = activeModel.purpose.equals("chat", ignoreCase = true) && activeModel.supportsVision,
+                language = promptLanguage
+            )
             if (inheritsCharacter(session.sessionMode, session.inheritCharacter)) {
                 ctx.promptStack.addCharacterInheritanceBridgePrompt(promptLanguage)
             }
@@ -7425,6 +7430,10 @@ class LocalRepository(
             // 重新读取会话实体，确保注入的是最新持久化的目标与规格任务。
             val promptSession = sessionDao.getById(sessionId) ?: session
             ctx.promptStack.addLocalAgentBasePrompt(promptLanguage)
+            ctx.promptStack.addAgentImageCapabilityPrompt(
+                supportsVision = activeModel.purpose.equals("chat", ignoreCase = true) && activeModel.supportsVision,
+                language = promptLanguage
+            )
             // 继承角色能力时补一段「角色身份 + Agent 能力」的衔接说明，
             // 避免角色卡（"你就是 X"）与 Agent 核心规则（"你是通用智能体"）互相打架。
             if (inheritsCharacter(session.sessionMode, session.inheritCharacter)) {

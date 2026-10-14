@@ -181,7 +181,8 @@ class PromptStack {
         "world_book.before_an",
         "world_book.after_an",
         "memory_fs.context",
-        "memory_fs_context"
+        "memory_fs_context",
+        "agent.image_capability"
     )
 
     /** 旧版内联 section 标记 */
