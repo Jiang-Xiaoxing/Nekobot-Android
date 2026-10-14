@@ -1062,6 +1062,7 @@ class AIPipeline {
             ctx.streamedMessage = streamedMsg
 
             callbacks.saveAssistantMessage(ctx, streamedMsg)
+            callbacks.onAssistantMessageSaved(ctx, streamedMsg)
             if (ctx.metadata["companion_question_added"] == true) streamedMsg["content"] = ctx.finalContent
 
             val result = PipelineResult(
@@ -1095,6 +1096,7 @@ class AIPipeline {
                 "timestamp" to Instant.now().toString()
             )
             callbacks.saveAssistantMessage(ctx, assistantMessage)
+            callbacks.onAssistantMessageSaved(ctx, assistantMessage)
             callbacks.sendResponse(ctx, assistantMessage)
 
             val result = PipelineResult(
@@ -1126,6 +1128,7 @@ class AIPipeline {
 
         // 保存历史
         callbacks.saveAssistantMessage(ctx, assistantMessage)
+        callbacks.onAssistantMessageSaved(ctx, assistantMessage)
 
         if (ctx.metadata["companion_question_added"] == true) assistantMessage["content"] = ctx.finalContent
 

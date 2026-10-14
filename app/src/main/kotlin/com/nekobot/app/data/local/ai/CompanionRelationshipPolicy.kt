@@ -46,6 +46,16 @@ internal object CompanionRelationshipPolicy {
         require(at >= 0) { "上次评估的位置已变化，请在页面确认从现在继续；已保存的关系积累不会删除。" }
         return turns.drop(at + 1)
     }
+
+    /** 已成功落库的一轮只通知一次；后续界面结束/取消不能让轮数增长却漏发通知。 */
+    fun onTurnSaved(ctx: PipelineContext, message: Map<String, Any>, companionMode: Boolean,
+        regenerated: Boolean, source: String?, notify: () -> Unit) {
+        if (!companionMode || ctx.error != null || ctx.stoppedPrematurely || regenerated ||
+            ctx.metadata["skip_character_after_turn"] == true ||
+            source in setOf("task_center", "proactive_chat", "companion_incomplete") ||
+            (message["content"] as? String).isNullOrBlank()) return
+        if (ctx.metadata.put("_relationship_turn_notified", true) != true) notify()
+    }
     fun totals(base: Map<String, Int>, deltas: List<Map<String, Int>>) = dimensions.keys.associateWith { key ->
         // 不在每次更新时截断积累，否则纠错无法撤回原事件，连续失信也会被压成相同的底值。
         (base[key] ?: initial.getValue(key)).toLong() + deltas.sumOf { (it[key] ?: 0).toLong() }

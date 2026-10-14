@@ -218,6 +218,9 @@ open class PipelineCallbacks {
     /** 持久化助手消息到会话存储 */
     open fun saveAssistantMessage(ctx: PipelineContext, message: Map<String, Any>) {}
 
+    /** 同步保存返回后、向界面发出完成事件前通知；不能依赖可能被取消的后处理。 */
+    open fun onAssistantMessageSaved(ctx: PipelineContext, message: Map<String, Any>) {}
+
     /**
      * 持久化 Agent 工具循环的协议安全检查点。
      *

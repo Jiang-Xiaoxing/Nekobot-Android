@@ -1770,13 +1770,16 @@ internal class LocalPipelineCallbacks(
 
     // ---- 后处理 ----
 
+    override fun onAssistantMessageSaved(ctx: PipelineContext, message: Map<String, Any>) {
+        onCompanionTurnCompleted?.let { notify ->
+            CompanionRelationshipPolicy.onTurnSaved(ctx, message, session.companionMode,
+                variantTargetMessageId != null, assistantSource, notify)
+        }
+    }
+
     override fun onResponseComplete(ctx: PipelineContext, result: PipelineResult) {
         com.nekobot.app.data.local.LocalLogger.d(TAG, R.string.log_pcb_response_complete, result.finalContent.length, result.error)
-        if (session.companionMode) {
-            if (result.error == null && !ctx.stoppedPrematurely && result.finalContent.isNotBlank() &&
-                variantTargetMessageId == null && ctx.metadata["skip_character_after_turn"] != true) onCompanionTurnCompleted?.invoke()
-            return
-        }
+        if (session.companionMode) return
         // 触发 character.after_turn.finished hook（此时 afterTurn 已完成，状态/关系已是最新）
         triggerAfterTurnHook(ctx)
     }
