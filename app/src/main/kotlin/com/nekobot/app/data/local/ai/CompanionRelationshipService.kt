@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.db.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -280,17 +281,22 @@ internal class CompanionRelationshipService(
                 "材料末轮id" to input.batch.lastOrNull()?.rows?.map { it.id },
                 "纠错目标" to correctionKey, "玩家提出的待核对说法" to claim?.take(2000)))
             val messages = listOf(mapOf("role" to "system", "content" to RULES), mapOf("role" to "user", "content" to payload))
-            val outputBudget = minOf(input.model.maxTokens?.takeIf { it > 0 } ?: 2500, 2500)
+            val outputBudget = CompanionRelationshipRequest.outputBudget(input.model)
             require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
             requestTag = "relationship-${UUID.randomUUID()}"
             tags[id] = requestTag!!
+            val requestStarted = System.nanoTime()
+            LocalLogger.i("Relationship", "开始整批评估：轮数=${input.batch.size}，输出上限=$outputBudget")
             // 关系评估独立等待 300 秒，不修改模型的全局设置。
             val result = runRelationshipEvaluation {
-                client.chatOnce(input.model.copy(maxTokens = outputBudget), messages, requestTag = requestTag)
+                client.chatOnce(input.model, messages, extra = CompanionRelationshipRequest.extra(input.model), requestTag = requestTag)
             }
+            val finish = result.finishReason.takeIf { it in setOf("stop", "length", "max_tokens", "max_output_tokens", "content_filter", "tool_calls") } ?: "other"
+            LocalLogger.i("Relationship", "评估请求完成：耗时毫秒=${(System.nanoTime() - requestStarted) / 1_000_000}，结束原因=$finish，思考字符数=${result.thinkingContent.length}")
             val usage = resolveLocalTokenUsage(result.usage, messages, result.content)
             onUsage(id, input.model, result.copy(usage = result.usage + mapOf("prompt" to usage.inputTokens,
                 "completion" to usage.outputTokens, "estimated" to if (usage.estimated) 1 else 0)))
+            CompanionRelationshipRequest.requireComplete(result)
             require(result.error == null && result.content.isNotBlank()) { "评估模型没有返回有效结果" }
             val json = CompanionRelationshipResponse.json(result.content)
             val evidenceMap = input.evidence.associateBy { it.id }
