@@ -2404,6 +2404,7 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max)
+        ReasoningEffort.CUSTOM -> "自定义"
     }
 
     @Composable
@@ -2414,6 +2415,7 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium_desc)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high_desc)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max_desc)
+        ReasoningEffort.CUSTOM -> "使用自定义参数"
     }
 
     ChatSettingEntry(

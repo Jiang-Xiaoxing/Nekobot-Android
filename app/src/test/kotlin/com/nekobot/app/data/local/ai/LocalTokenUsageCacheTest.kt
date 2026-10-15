@@ -10,6 +10,27 @@ import org.junit.Test
  */
 class LocalTokenUsageCacheTest {
     @Test
+    fun `explicit zero cache hit and reasoning detail both survive json and map round trips`() {
+        val json = JsonParser.parseString(
+            """{"input_tokens":100,"output_tokens":20,"total_tokens":120,
+                "input_tokens_details":{"cached_tokens":0},
+                "output_tokens_details":{"reasoning_tokens":12}}"""
+        ).asJsonObject
+        val map = mapOf(
+            "input_tokens" to 100, "output_tokens" to 20, "total_tokens" to 120,
+            "input_tokens_details" to mapOf("cached_tokens" to 0),
+            "output_tokens_details" to mapOf("reasoning_tokens" to 12)
+        )
+        for (detail in listOf(openAiStyleUsageFromJson(json), openAiStyleUsageFromMap(map))) {
+            assertEquals(true, detail.cacheReported)
+            assertEquals(0, detail.toUsageMap()[LocalModelUsage.KEY_CACHED_PROMPT])
+            assertEquals(12, detail.reasoningTokens)
+            assertEquals(120, detail.totalTokens)
+            assertEquals(detail, usageMapToDetail(detail.toUsageMap()))
+        }
+    }
+
+    @Test
     fun `openai prompt tokens details cached tokens are recognized`() {
         val usage = JsonParser.parseString(
             """

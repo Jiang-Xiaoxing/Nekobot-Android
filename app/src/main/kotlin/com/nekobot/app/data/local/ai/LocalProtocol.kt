@@ -56,6 +56,7 @@ data class LocalModelUsage(
     val totalTokens: Int = promptTokens + completionTokens,
     val cachedPromptTokens: Int = 0,
     val cacheWriteTokens: Int = 0,
+    val cacheReported: Boolean = false,
     /** 服务端明确报告的推理 token；是输出量的子集。 */
     val reasoningTokens: Int = 0
 ) {
@@ -64,7 +65,7 @@ data class LocalModelUsage(
         put("prompt", promptTokens)
         put("completion", completionTokens)
         put("total", totalTokens)
-        if (cachedPromptTokens > 0) put(KEY_CACHED_PROMPT, cachedPromptTokens)
+        if (cacheReported || cachedPromptTokens > 0) put(KEY_CACHED_PROMPT, cachedPromptTokens)
         if (cacheWriteTokens > 0) put(KEY_CACHE_WRITE, cacheWriteTokens)
         if (reasoningTokens > 0) put(KEY_REASONING, reasoningTokens)
     }
@@ -86,6 +87,7 @@ internal fun usageMapToDetail(usage: Map<String, Int>): LocalModelUsage = LocalM
     totalTokens = usage["total"] ?: ((usage["prompt"] ?: 0) + (usage["completion"] ?: 0)),
     cachedPromptTokens = usage[LocalModelUsage.KEY_CACHED_PROMPT] ?: 0,
     cacheWriteTokens = usage[LocalModelUsage.KEY_CACHE_WRITE] ?: 0,
+    cacheReported = usage.containsKey(LocalModelUsage.KEY_CACHED_PROMPT),
     reasoningTokens = usage[LocalModelUsage.KEY_REASONING] ?: 0
 )
 
@@ -193,7 +195,12 @@ internal fun openAiStyleUsageFromJson(usage: JsonObject): LocalModelUsage {
         ?.takeIf { it > 0 }
         ?: usage.usageObject("output_tokens_details")?.usageInt("reasoning_tokens") ?: 0
     return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite)
-        .copy(reasoningTokens = reasoning.coerceAtLeast(0))
+        .copy(
+            reasoningTokens = reasoning.coerceAtLeast(0),
+            cacheReported = usage.usageObject("prompt_tokens_details")?.has("cached_tokens") == true ||
+                usage.usageObject("input_tokens_details")?.has("cached_tokens") == true ||
+                usage.has("cached_tokens") || usage.has("prompt_cache_hit_tokens")
+        )
 }
 
 /** OpenAI 兼容 Map usage → 用量明细（字段口径同 [openAiStyleUsageFromJson]）。 */
@@ -216,7 +223,11 @@ internal fun openAiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage {
         ?.takeIf { it > 0 }
         ?: (usage["output_tokens_details"] as? Map<*, *>)?.usageInt("reasoning_tokens") ?: 0
     return withCacheWrite(openAiStyleUsage(prompt, completion, total, cached), cacheWrite)
-        .copy(reasoningTokens = reasoning.coerceAtLeast(0))
+        .copy(
+            reasoningTokens = reasoning.coerceAtLeast(0),
+            cacheReported = details?.containsKey("cached_tokens") == true || inputDetails?.containsKey("cached_tokens") == true ||
+                usage.containsKey("cached_tokens") || usage.containsKey("prompt_cache_hit_tokens")
+        )
 }
 
 /** 写入量是输入的子集（扣除命中部分）；0 保持原值不动。 */
@@ -235,7 +246,7 @@ internal fun anthropicStyleUsageFromJson(usage: JsonObject): LocalModelUsage = a
     outputTokens = usage.usageInt("output_tokens"),
     cacheReadTokens = usage.usageInt("cache_read_input_tokens"),
     cacheWriteTokens = usage.usageInt("cache_creation_input_tokens")
-)
+).copy(cacheReported = usage.has("cache_read_input_tokens"))
 
 /** Anthropic Map usage → 用量明细。 */
 internal fun anthropicStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage = anthropicStyleUsage(
@@ -243,7 +254,7 @@ internal fun anthropicStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage = ant
     outputTokens = usage.usageInt("output_tokens"),
     cacheReadTokens = usage.usageInt("cache_read_input_tokens"),
     cacheWriteTokens = usage.usageInt("cache_creation_input_tokens")
-)
+).copy(cacheReported = usage.containsKey("cache_read_input_tokens"))
 
 /** Gemini usageMetadata → 用量明细（promptTokenCount 已含命中量，命中量是子集）。 */
 internal fun geminiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage = openAiStyleUsage(
@@ -251,7 +262,7 @@ internal fun geminiStyleUsageFromMap(usage: Map<*, *>): LocalModelUsage = openAi
     completionTokens = usage.usageInt("candidatesTokenCount"),
     totalTokens = usage.usageInt("totalTokenCount").takeIf { it > 0 },
     cachedPromptTokens = usage.usageInt("cachedContentTokenCount")
-)
+).copy(cacheReported = usage.containsKey("cachedContentTokenCount"))
 
 interface LocalProtocol {
     val name: String

@@ -176,5 +176,6 @@ internal object LocalDataCatalog {
         else -> emptySet()
     }
 
-    private val INTERNAL_DATABASE_TABLES = setOf("android_metadata", "room_master_table")
+    // Request context is derived from this device's history/configuration and must be rebuilt after restore.
+    private val INTERNAL_DATABASE_TABLES = setOf("android_metadata", "room_master_table", "companion_context_materials", "companion_transfer_jobs")
 }

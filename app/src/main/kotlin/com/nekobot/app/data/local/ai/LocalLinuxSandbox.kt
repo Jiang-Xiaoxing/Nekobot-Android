@@ -97,6 +97,7 @@ internal object LocalLinuxSandboxCoordinator {
         timeoutMs: Long,
         shouldStop: () -> Boolean,
         maxOutputChars: Int = AgentToolLimits.toolOutputChars(),
+        hostProcAccess: Boolean = true,
     ): CommandResult {
         val candidateLock = Any()
         val lock = sessionLocks.putIfAbsent(sessionId, candidateLock) ?: candidateLock
@@ -108,8 +109,8 @@ internal object LocalLinuxSandboxCoordinator {
 
             val runtime = LocalLinuxRootfsManager.getInstance(context).ensureReady()
             val shell = shells[sessionId]
-                ?.takeIf { it.isAlive && it.workspace == workspace.canonicalFile }
-                ?: createShell(context, sessionId, workspace, runtime)
+                ?.takeIf { it.isAlive && it.workspace == workspace.canonicalFile && it.hostProcAccess == hostProcAccess }
+                ?: createShell(context, sessionId, workspace, runtime, hostProcAccess)
 
             val shellResult = shell.execute(command, timeoutMs, shouldStop, maxOutputChars)
             if (shellResult.timedOut || shellResult.stopped || !shell.isAlive) {
@@ -144,6 +145,7 @@ internal object LocalLinuxSandboxCoordinator {
         timeoutMs: Long,
         maxOutputChars: Int = AgentToolLimits.toolOutputChars(),
         onProcessStarted: (Process) -> Unit = {},
+        hostProcAccess: Boolean = true,
     ): CommandResult {
         val startedAt = System.currentTimeMillis()
         val runtime = LocalLinuxRootfsManager.getInstance(context).ensureReady()
@@ -160,6 +162,7 @@ internal object LocalLinuxSandboxCoordinator {
             workspace = guestWorkspace,
             command = command,
             sharedWorkspace = sharedWorkspace,
+            hostProcAccess = hostProcAccess,
         )
         val process = ProcessBuilder(argv)
             .directory(context.filesDir)
@@ -224,6 +227,7 @@ internal object LocalLinuxSandboxCoordinator {
         sessionId: String,
         workspace: File,
         runtime: LocalLinuxRuntime,
+        hostProcAccess: Boolean,
     ): LocalPersistentLinuxShell {
         shells.remove(sessionId)?.stop()
         // 跨会话共享工作区（filesDir/workspace/shared/）一并挂载到沙箱 /shared
@@ -234,6 +238,7 @@ internal object LocalLinuxSandboxCoordinator {
             workspace = workspace.canonicalFile,
             sharedWorkspace = sharedWorkspace,
             runtime = runtime,
+            hostProcAccess = hostProcAccess,
         )
         shell.start()
         shells[sessionId] = shell
@@ -611,6 +616,7 @@ internal class LocalPersistentLinuxShell(
     val workspace: File,
     private val sharedWorkspace: File?,
     private val runtime: LocalLinuxRuntime,
+    val hostProcAccess: Boolean = true,
 ) {
     @Volatile
     private var process: Process? = null
@@ -639,6 +645,7 @@ internal class LocalPersistentLinuxShell(
             rootfs = runtime.rootfs,
             workspace = workspace,
             sharedWorkspace = sharedWorkspace,
+            hostProcAccess = hostProcAccess,
         )
         val builder = ProcessBuilder(command)
             .directory(context.filesDir)
@@ -857,6 +864,7 @@ internal fun buildLocalProotPrefix(
     workspace: File,
     sharedWorkspace: File? = null,
     guestCwd: String = SANDBOX_WORKSPACE_MOUNT,
+    hostProcAccess: Boolean = true,
 ): List<String> = buildList {
     add(proot.absolutePath)
     add("-0")
@@ -865,8 +873,8 @@ internal fun buildLocalProotPrefix(
     add(rootfs.absolutePath)
     add("-b")
     add("/dev")
-    add("-b")
-    add("/proc")
+    // The companion shell must not reach host app files via /proc/<pid>/root or fd links.
+    if (hostProcAccess) { add("-b"); add("/proc") }
     add("-b")
     add("/sys")
     add("-b")
@@ -885,7 +893,8 @@ internal fun buildLocalProotCommand(
     rootfs: File,
     workspace: File,
     sharedWorkspace: File? = null,
-): List<String> = buildLocalProotPrefix(proot, rootfs, workspace, sharedWorkspace) + listOf("/bin/sh")
+    hostProcAccess: Boolean = true,
+): List<String> = buildLocalProotPrefix(proot, rootfs, workspace, sharedWorkspace, hostProcAccess = hostProcAccess) + listOf("/bin/sh")
 
 /**
  * 生成后台命令（一次性进程）的启动参数：PRoot 前缀 + /bin/sh -c "<command>"。
@@ -899,7 +908,8 @@ internal fun buildLocalDetachedCommand(
     workspace: File,
     command: String,
     sharedWorkspace: File? = null,
-): List<String> = buildLocalProotCommand(proot, rootfs, workspace, sharedWorkspace) + listOf("-c", command)
+    hostProcAccess: Boolean = true,
+): List<String> = buildLocalProotCommand(proot, rootfs, workspace, sharedWorkspace, hostProcAccess) + listOf("-c", command)
 
 /** 写入 PRoot 子进程的固定环境（持久 shell、后台命令、交互终端共用同一套）。 */
 internal fun ProcessBuilder.applyLocalSandboxEnvironment(

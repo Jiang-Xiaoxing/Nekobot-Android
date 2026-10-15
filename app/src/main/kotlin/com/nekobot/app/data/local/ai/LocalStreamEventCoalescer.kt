@@ -18,13 +18,13 @@ internal class LocalStreamEventCoalescer(
     private val pending = StringBuilder()
     private var pendingKind: Kind? = null
     private var lastEmitNanos: Long? = null
-    private var hasEmittedChunk = false
+    private val emittedKinds = mutableSetOf<Kind>()
 
     fun onStart(sessionId: String? = null) {
         flush()
         pendingKind = null
         lastEmitNanos = null
-        hasEmittedChunk = false
+        emittedKinds.clear()
         onEvent(RealtimeEvent.StreamStart(sessionId))
     }
 
@@ -43,7 +43,7 @@ internal class LocalStreamEventCoalescer(
         pending.setLength(0)
         pendingKind = null
         lastEmitNanos = nowNanos()
-        hasEmittedChunk = true
+        emittedKinds.add(kind)
         onEvent(
             when (kind) {
                 Kind.CONTENT -> RealtimeEvent.StreamChunk(chunk)
@@ -60,7 +60,7 @@ internal class LocalStreamEventCoalescer(
 
         val now = nowNanos()
         val elapsed = lastEmitNanos?.let { now - it } ?: Long.MAX_VALUE
-        if (!hasEmittedChunk || pending.length >= charBatch || elapsed >= emitIntervalNanos) {
+        if (kind !in emittedKinds || pending.length >= charBatch || elapsed >= emitIntervalNanos) {
             flush()
         }
     }

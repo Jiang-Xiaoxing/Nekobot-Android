@@ -69,6 +69,7 @@ object LocalPromptBuilder {
             // Unbound Agents use this builder too. A persisted compression summary is
             // quoted conversation data, not a new instruction or authorization. Keep it
             // while ignoring other stored system rows, including for legacy markers.
+            if (session.usesCompanionMemory() && msg.isAgentContextSummary()) return@forEach
             if (session.sessionMode.equals("agent", ignoreCase = true) && msg.isAgentContextSummary()) {
                 messages.add(mapOf("role" to "system", "content" to formatAgentContextSummary(msg.content, session.id)))
                 return@forEach
@@ -80,7 +81,9 @@ object LocalPromptBuilder {
             }
             messages.add(buildMap {
                 put("role", role)
-                put("content", msg.content)
+                put("content", if (session.sessionMode.equals("agent", ignoreCase = true)) {
+                    formatAgentHistoryMessageContent(msg)
+                } else msg.content)
                 if (role == "assistant") {
                     decodeToolCallHistory(msg.toolCallHistory)
                         .takeIf { it.isNotEmpty() }
@@ -97,7 +100,8 @@ object LocalPromptBuilder {
             messages.add(mapOf("role" to "user", "content" to userInput))
         }
 
-        return messages
+        return if (session.sessionMode.equals("agent", ignoreCase = true)) messages
+        else messages.map(::withoutHistoricalReasoning)
     }
 
     /**

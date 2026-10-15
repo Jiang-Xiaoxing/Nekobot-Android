@@ -210,9 +210,10 @@ internal fun sanitizeAgentToolHistoryMessage(message: Map<String, Any>): Map<Str
 
 private fun sanitizeCredentialJsonText(raw: String): String = runCatching {
     val parsed = com.google.gson.JsonParser.parseString(raw)
-    // Gson 的 JsonParser 也会把普通裸文本识别成字符串 primitive；这类工具输出必须原样保留。
-    if (!parsed.isJsonObject && !parsed.isJsonArray) return@runCatching raw
-    agentGson.toJson(redactCredentialJson(parsed))
+    val sanitized = redactCredentialJson(parsed)
+    // Gson accepts bare text as a primitive. Preserve ordinary tool output and
+    // original JSON formatting unless a credential was actually redacted.
+    if (sanitized == parsed) raw else agentGson.toJson(sanitized)
 }.getOrDefault(raw)
 
 private fun redactCredentialJson(element: com.google.gson.JsonElement): com.google.gson.JsonElement = when {
@@ -395,6 +396,7 @@ data class ToolLoopSession(
      * 与"轮次之间"的自动压缩互补：长任务往往在一轮内就堆满上下文。
      */
     val contextBudgetTokens: () -> Int = { 0 },
+    val preserveConversation: Boolean = false,
     val inputOverheadTokens: Int = 0
 )
 
@@ -588,6 +590,7 @@ internal fun manageInLoopContextBudget(
     toolMessages: MutableList<MutableMap<String, Any>>,
     budgetTokens: Int,
     outputReserveRatio: Double = 0.2,
+    preserveConversation: Boolean = false,
     inputOverheadTokens: Int = 0
 ): String? {
     if (budgetTokens <= 0) return null
@@ -595,6 +598,9 @@ internal fun manageInLoopContextBudget(
         inputOverheadTokens.coerceAtLeast(0)).coerceAtLeast(1)
     val before = estimateLocalMessagesTokens(toolMessages)
     if (before <= usable) return null
+    require(!preserveConversation) {
+        "本轮工具结果与完整原话超过模型容量；已保留原文及工具记录。请增大上下文或减少本次工具任务后重试"
+    }
 
     var elided = 0
     val elisionLimit = (toolMessages.size - IN_LOOP_RECENT_MESSAGES_KEPT).coerceAtLeast(0)
@@ -1108,6 +1114,7 @@ suspend fun runToolCallLoop(
     contextBudgetTokens: () -> Int = { 0 },
     /** 输出预留比例：预算中留给模型回复的部分（默认 20%）。 */
     contextOutputReserveRatio: Double = 0.2,
+    preserveConversation: Boolean = false,
     inputOverheadTokens: Int = 0
 ): ToolLoopResult {
     val toolMessages = initialMessages.map { it.toMutableMap() }.toMutableList()
@@ -1185,6 +1192,7 @@ suspend fun runToolCallLoop(
             toolMessages = toolMessages,
             budgetTokens = contextBudgetTokens(),
             outputReserveRatio = contextOutputReserveRatio,
+            preserveConversation = preserveConversation,
             inputOverheadTokens = inputOverheadTokens
         )
         if (contextTrimNotice != null) {
@@ -1231,6 +1239,9 @@ suspend fun runToolCallLoop(
         val thinkingContent = responseReasoning.ifBlank { (response["content"] as? String).orEmpty() }
 
         if (toolCalls.isNotEmpty()) {
+            val protocolReasoning = (response[NATIVE_CHARACTER_THINKING_CONTENT] as? String) ?: responseReasoning
+            val protocolSignature = (response[NATIVE_CHARACTER_THINKING_SIGNATURE] as? String)
+                ?: (response["thinking_signature"] as? String)
             // 构造 assistant 消息（含 tool_calls）
             val toolCallEntries = toolCalls.map { tc ->
                 val historyCall = sanitizeSensitiveAgentToolCall(tc)
@@ -1249,12 +1260,12 @@ suspend fun runToolCallLoop(
                 put("role", "assistant")
                 put("content", response["content"] ?: "")
                 put("tool_calls", toolCallEntries)
-                if (responseReasoning.isNotBlank()) {
+                if (protocolReasoning.isNotBlank()) {
                     // DeepSeek 等提供商要求后续工具轮次原样带回 reasoning_content。
-                    put("reasoning_content", responseReasoning)
+                    put("reasoning_content", protocolReasoning)
                     // Anthropic 扩展思考还要求带回思考块签名（signature），
                     // 缺失会让下一轮带工具结果的请求被服务端判为非法。
-                    (response["thinking_signature"] as? String)
+                    protocolSignature
                         ?.takeIf { it.isNotBlank() }
                         ?.let { put("reasoning_signature", it) }
                 }
@@ -1436,6 +1447,7 @@ suspend fun runToolLoopSession(session: ToolLoopSession): ToolExecutionResult {
         pendingUserMessages = session.pendingUserMessages,
         persistPendingUserMessages = session.persistPendingUserMessages,
         contextBudgetTokens = session.contextBudgetTokens,
+        preserveConversation = session.preserveConversation,
         inputOverheadTokens = session.inputOverheadTokens
     )
     return ToolExecutionResult(loopResult = loopResult, preparedMessages = preparedMessages)

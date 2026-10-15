@@ -50,7 +50,7 @@ class ExperienceSourceReader(private val db: NekobotDatabase) {
     fun changes(): Flow<Unit> = callbackFlow {
         val observer = object : InvalidationTracker.Observer(
             "local_messages", "local_sessions", "local_experience_archives",
-            "local_experience_sources", "local_characters"
+            "local_experience_sources", "local_characters", "companion_memories", "companion_sources", "companion_scopes"
         ) {
             override fun onInvalidated(tables: Set<String>) { trySend(Unit) }
         }

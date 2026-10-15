@@ -96,8 +96,11 @@ object OpenAIChatProtocol : LocalProtocol {
             ?.get(0)?.asJsonObject
             ?.getAsJsonObject("delta")
             ?: return null
-        val value = delta.get("reasoning_content") ?: delta.get("thinking_content") ?: return null
-        value.takeIf { !it.isJsonNull }?.asString?.ifEmpty { null }
+        val values = listOf("reasoning_content", "thinking_content").mapNotNull { key ->
+            delta.get(key)?.takeIf { !it.isJsonNull }?.asString
+        }
+        // 非空别名优先；仅有空白分片时也要保留，避免流式空格/换行被拼接丢失。
+        values.firstOrNull(String::isNotBlank) ?: values.firstOrNull(String::isNotEmpty)
     } catch (_: Exception) {
         null
     }
@@ -185,9 +188,8 @@ object OpenAIChatProtocol : LocalProtocol {
         val message = choice?.get("message") as? Map<*, *>
         val content = extractResponseText(message?.get("content"))
         val finishReason = (choice?.get("finish_reason") as? String).orEmpty()
-        val thinkingContent = (message?.get("reasoning_content") as? String)
-            ?: (message?.get("thinking_content") as? String)
-            ?: ""
+        val thinkingContent = listOf("reasoning_content", "thinking_content")
+            .firstNotNullOfOrNull { (message?.get(it) as? String)?.takeIf(String::isNotBlank) }.orEmpty()
         val toolCalls = (message?.get("tool_calls") as? List<*>)
             ?.mapNotNull { raw ->
                 val call = raw as? Map<*, *> ?: return@mapNotNull null
