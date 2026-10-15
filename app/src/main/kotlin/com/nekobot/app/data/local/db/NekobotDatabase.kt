@@ -51,12 +51,29 @@ import com.nekobot.app.data.local.LocalLogger
         LocalKnowledgeChunkEntity::class,
         RoutingDecisionLogEntity::class,
         LocalMessageVariantEntity::class,
-        LocalStickerEntity::class
+        LocalStickerEntity::class,
+        CompanionScopeEntity::class,
+        CompanionMemoryEntity::class,
+        CompanionSourceEntity::class,
+        CompanionReceiptEntity::class,
+        CompanionForgottenSourceEntity::class,
+        CompanionPendingEntity::class,
+        CompanionVectorEntity::class,
+        CompanionClarificationEntity::class,
+        CompanionOwnerEntity::class,
+        CompanionContextMaterialEntity::class,
+        CompanionRelationshipEntity::class,
+        CompanionRelationshipAssessmentEntity::class,
+        CompanionRelationshipEventEntity::class,
+        CompanionTransferJobEntity::class
     ],
-    version = 52,
+    version = 53,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
+    abstract fun companionRelationshipDao(): CompanionRelationshipDao
+    abstract fun companionTransferDao(): CompanionTransferDao
+    abstract fun companionMemoryDao(): CompanionMemoryDao
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
     abstract fun messageVariantDao(): MessageVariantDao
@@ -97,6 +114,12 @@ abstract class NekobotDatabase : RoomDatabase() {
         private set
 
     companion object {
+        /** 转换临时库不加入资料库实例表；逻辑归属与最终库一致，才能保持来源 ID。 */
+        internal fun conversionStage(context: Context, file: java.io.File, profile: String): NekobotDatabase {
+            val path = file.canonicalFile
+            require(path.name == "conversion.db" && path.toPath().startsWith(java.io.File(context.filesDir, "companion_transfers").canonicalFile.toPath()))
+            return Room.databaseBuilder(context, NekobotDatabase::class.java, path.path).build().also { it.dbName = profile }
+        }
         private const val TAG = "NekobotDatabase"
         /**
          * v1 → v2：local_sessions 新增 custom_prompts 列。
@@ -1211,6 +1234,11 @@ abstract class NekobotDatabase : RoomDatabase() {
          * 完整迁移链同时供生产数据库构建和迁移回归测试使用。
          * 新版本必须把迁移追加到这里；缺少迁移时直接失败，绝不静默清空用户数据。
          */
+        /** v52 → v53: independent memory, ownership, transfer, relationship and model queues. */
+        val MIGRATION_52_53 = object : Migration(52, 53) {
+            override fun migrate(db: SupportSQLiteDatabase) = UpstreamCompanionSchema.migrate(db)
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
@@ -1224,7 +1252,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53
         )
 
         fun get(context: Context): NekobotDatabase =
@@ -1243,6 +1271,8 @@ abstract class NekobotDatabase : RoomDatabase() {
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         installExperienceInvalidationTriggers(db)
+                        CompanionSchema.installTriggers(db)
+                        FusedCompanionSchema.installTriggers(db)
                     }
                 })
                 .build()

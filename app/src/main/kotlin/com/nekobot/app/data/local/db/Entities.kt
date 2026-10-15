@@ -89,12 +89,16 @@ data class LocalSessionEntity(
     @ColumnInfo(name = "inherit_character_greeting", defaultValue = "0") val inheritCharacterGreeting: Boolean = false,
     /** Agent 会话长期记忆增强开关，旧会话默认关闭。 */
     @ColumnInfo(name = "long_conversation_enabled", defaultValue = "0") val longConversationEnabled: Boolean = false,
+    /** 单窗口融合记忆模式；旧长久陪伴记录不自动升级。创建后不可直接切换。 */
+    @ColumnInfo(name = "companion_mode", defaultValue = "0") val companionMode: Boolean = false,
     /** 压缩后近期原话的截止消息 ID；供上下文构建跳过已完成回合的工具轨迹。 */
     @ColumnInfo(name = "long_conversation_tail_until_id") val longConversationTailUntilId: String? = null,
     /** 发送后等待一段时间再触发回复；仅本地普通角色和继承角色能力的 Agent 会话使用。 */
     @ColumnInfo(name = "delay_reply_enabled", defaultValue = "0") val delayReplyEnabled: Boolean = false,
     /** 延迟回复等待秒数。 */
-    @ColumnInfo(name = "delay_reply_delay_seconds", defaultValue = "2") val delayReplyDelaySeconds: Int = 2
+    @ColumnInfo(name = "delay_reply_delay_seconds", defaultValue = "2") val delayReplyDelaySeconds: Int = 2,
+    /** 用户明确重命名后的本会话展示标题；不改变绑定角色的身份。 */
+    @ColumnInfo(name = "list_title_override", defaultValue = "NULL") val listTitleOverride: String? = null
 )
 
 /**
@@ -495,7 +499,8 @@ data class LocalCharacterEntity(
     @ColumnInfo(name = "system_prompt") val systemPrompt: String? = null,
     val greeting: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: String,
-    @ColumnInfo(name = "updated_at") val updatedAt: String
+    @ColumnInfo(name = "updated_at") val updatedAt: String,
+    @ColumnInfo(name = "chat_model_queue", defaultValue = "NULL") val chatModelQueue: String? = null
 )
 
 /**
@@ -782,6 +787,7 @@ data class LocalCharacterMemoryEntity(
 data class LocalExperienceArchiveEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "character_id") val characterId: String? = null,
     @ColumnInfo(name = "start_message_id") val startMessageId: String,
     @ColumnInfo(name = "end_message_id") val endMessageId: String,
     @ColumnInfo(name = "source_started_at") val sourceStartedAt: String,
