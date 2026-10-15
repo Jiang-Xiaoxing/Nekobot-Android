@@ -151,22 +151,22 @@ dependencies {
 val companionTestAssets = layout.buildDirectory.dir("generated/companionTestAssets")
 val generateCompanionLoopbackCertificate by tasks.registering(Exec::class) {
     val certificate = companionTestAssets.map { it.file("companion-loopback.p12") }
+    val output = certificate.get().asFile
+    val executable = if (System.getProperty("os.name").startsWith("Windows")) "keytool.exe" else "keytool"
+    // Resolve script APIs during configuration so task actions can be cached.
+    commandLine(file("${System.getProperty("java.home")}/bin/$executable"),
+        "-genkeypair", "-alias", "companion-loopback", "-keyalg", "RSA", "-keysize", "2048",
+        "-sigalg", "SHA256withRSA", "-validity", "30", "-dname", "CN=localhost",
+        "-ext", "SAN=dns:localhost,ip:127.0.0.1", "-storetype", "PKCS12", "-keystore", output,
+        "-storepass", "fixturepass", "-keypass", "fixturepass", "-noprompt")
     outputs.file(certificate)
     outputs.upToDateWhen {
-        val output = certificate.get().asFile
         output.exists() && System.currentTimeMillis() - output.lastModified() < 7L * 24 * 60 * 60 * 1000
     }
     doFirst {
-        val output = certificate.get().asFile
         output.parentFile.mkdirs()
         // Re-running the task generates a fresh key rather than trying to overwrite an alias.
         if (output.exists()) check(output.delete())
-        val executable = if (System.getProperty("os.name").startsWith("Windows")) "keytool.exe" else "keytool"
-        commandLine(file("${System.getProperty("java.home")}/bin/$executable"),
-            "-genkeypair", "-alias", "companion-loopback", "-keyalg", "RSA", "-keysize", "2048",
-            "-sigalg", "SHA256withRSA", "-validity", "30", "-dname", "CN=localhost",
-            "-ext", "SAN=dns:localhost,ip:127.0.0.1", "-storetype", "PKCS12", "-keystore", output,
-            "-storepass", "fixturepass", "-keypass", "fixturepass", "-noprompt")
     }
 }
 android.sourceSets.getByName("androidTest").assets.srcDir(companionTestAssets)
