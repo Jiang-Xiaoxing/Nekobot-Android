@@ -151,6 +151,7 @@ internal fun CompanionSettingsScreen(
             TextButton(onClick = { onDismiss(); onFavorites() }) { Text("收藏消息") }
             TextButton(onClick = { onDismiss(); onUsage() }) { Text("聊天用量") }
             if (onArchive != null) TextButton(onClick = { onDismiss(); onArchive() }) { Text("查看归档") }
+            CompanionFeedbackEntry()
             Spacer(Modifier.navigationBarsPadding())
         }
     }

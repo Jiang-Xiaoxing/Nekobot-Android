@@ -1,0 +1,4 @@
+<resources>
+    <!-- 反馈收件人经贡献者明确授权；维护者可通过资源覆盖替换，留空时仅显示说明并禁用联系操作。 -->
+    <string name="companion_feedback_email" translatable="false">1795744558@qq.com</string>
+</resources>
