@@ -64,4 +64,56 @@ class CompanionRelationshipResponseTest {
         val result = CompanionRelationshipResponse.events(root(event()), rows, emptyList(), "s", 2, 3, "target")
         assertTrue(result.accepted.isEmpty())
     }
+
+    private fun evaluation(keys: String, events: String = event()) = root(events).apply {
+        add("relationships", JsonParser.parseString("""{
+            "affection":{"action":"update","description":"相处更亲近","reason":"明确表达亲近","sources":["u"],"event_keys":[]},
+            "trust":{"action":"update","description":"愿意多相信一点","reason":"兑现约定","sources":["u"],"event_keys":$keys},
+            "familiarity":{"action":"keep"},"dependency":{"action":"keep"},"security":{"action":"keep"},"jealousy":{"action":"keep"}}
+        """))
+        add("feelings", com.google.gson.JsonNull.INSTANCE)
+    }
+
+    private fun narrative(json: com.google.gson.JsonObject, previous: RelationshipNarrative? = null,
+        skipped: MutableSet<String> = mutableSetOf(), provided: Set<String> = emptySet()): RelationshipNarrative {
+        val events = CompanionRelationshipResponse.events(json, rows, emptyList(), "s", 2, 3)
+        return CompanionRelationshipNarrative.parse(json, previous, rows, rows, emptyList(), events.accepted,
+            setOf("u"), row.createdAt, 3, discardedEventKeys = events.discardedKeys,
+            providedEventKeys = provided, onUnusableEventReference = { skipped.add(it) })
+    }
+
+    @Test fun definitionAndReferenceWhitespaceUseSameKeyIncludingCurrentResponseEvents() {
+        val result = narrative(evaluation("[\" promise \" ]", event(" promise ")))
+        assertEquals(mapOf("promise" to 2L), result.relationships["trust"]?.eventRevisions)
+    }
+
+    @Test fun inventedKeyKeepsOnlyAffectedOldRelationshipAndReportsItsDimension() {
+        val prior = RelationshipDescription("旧信任", "旧依据", listOf(RelationshipSource("u", CompanionRelationshipPolicy.hash(row))))
+        val previous = RelationshipNarrative(relationships = CompanionRelationshipPolicy.dimensions.mapValues { if (it.key == "trust") prior else null }, feelings = null, assessedAt = 1)
+        val skipped = mutableSetOf<String>()
+        val result = narrative(evaluation("[\"undefined-event\"]"), previous, skipped)
+        assertEquals(prior, result.relationships["trust"])
+        assertEquals("相处更亲近", result.relationships["affection"]?.description)
+        assertEquals(setOf("trust"), skipped)
+        assertEquals(3L, result.assessedAt)
+    }
+
+    @Test fun inventedKeyWithoutPreviousJudgmentDoesNotCreateAnUnsupportedRelationship() {
+        val result = narrative(evaluation("[\"undefined-event\"]"))
+        assertNull(result.relationships["trust"])
+    }
+
+    @Test fun rejectedDefinitionAndReferenceWhitespaceStillPreserveOnlyAffectedDimension() {
+        val skipped = mutableSetOf<String>()
+        val result = narrative(evaluation("[\"bad\"]", event(" bad ", "[\"foreign\"]")), skipped = skipped)
+        assertNull(result.relationships["trust"])
+        assertEquals(setOf("trust"), skipped)
+        assertEquals("相处更亲近", result.relationships["affection"]?.description)
+    }
+
+    @Test fun invalidMessageSourcesAreStillRejectedEvenWhenEventKeyIsUnknown() {
+        val json = evaluation("[\"undefined-event\"]")
+        json["relationships"].asJsonObject["trust"].asJsonObject.add("sources", JsonParser.parseString("[\"foreign\"]"))
+        assertThrows(IllegalArgumentException::class.java) { narrative(json) }
+    }
 }

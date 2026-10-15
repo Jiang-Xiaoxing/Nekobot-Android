@@ -135,12 +135,15 @@ internal object CompanionRelationshipNarrative {
         observedAt: String,
         assessedAt: Long,
         correctionTarget: CompanionRelationshipEventEntity? = null,
-        discardedEventKeys: Set<String> = emptySet()
+        discardedEventKeys: Set<String> = emptySet(),
+        providedEventKeys: Set<String> = oldEvents.map { it.eventKey }.toSet(),
+        onUnusableEventReference: (String) -> Unit = {}
     ): RelationshipNarrative {
         require(json["format"]?.asString == FORMAT) { "评估模型没有使用新的文字格式，旧状态保留" }
         val relations = json["relationships"]
         require(relations?.isJsonObject == true && relations.asJsonObject.keySet() == dimensions) { "评估结果需要包含六项关系" }
         val currentEvents = oldEvents.filter { old -> effects.none { it.eventKey == old.eventKey } } + effects
+        val availableEventKeys = providedEventKeys + effects.map { it.eventKey }
         val allowedChanges = correctionTarget?.let { affected(it) + effects.flatMap(::affected) }
         val targetSourceIds = correctionTarget?.let { target ->
             runCatching { JsonParser.parseString(target.sourcesJson).asJsonArray.map { it.asJsonObject["id"].asString }.toSet() }.getOrDefault(emptySet())
@@ -169,10 +172,15 @@ internal object CompanionRelationshipNarrative {
                     val newRefs = sources(obj["sources"], evidence)
                     val eventKeys = obj["event_keys"]
                     require(eventKeys?.isJsonArray == true) { "关系描述缺少事件引用" }
-                    val keys = eventKeys.asJsonArray.map { require(it.isJsonPrimitive && it.asJsonPrimitive.isString); it.asString }.distinct()
-                    // 丢弃的事件不能成为新关系的依据；只保留该维度旧值，其他合法结果继续保存。
-                    if (keys.any { it in discardedEventKeys }) return@associateWith prior
-                    require(keys.size <= 40 && keys.all { k -> currentEvents.any { it.eventKey == k } }) { "关系引用了不存在的事件" }
+                    val keys = eventKeys.asJsonArray.map { require(it.isJsonPrimitive && it.asJsonPrimitive.isString); it.asString.trim() }.distinct()
+                    require(keys.size <= 40) { "关系引用的事件过多，旧状态保留" }
+                    // 定义与引用统一去除首尾空白；不猜测别名，不接受被丢弃、未提供或不存在的依据。
+                    val unusable = keys.any { cited -> cited in discardedEventKeys || cited !in availableEventKeys || currentEvents.none { it.eventKey == cited } }
+                    if (unusable) {
+                        require(correctionTarget == null) { "纠错结果的事件引用无效，原判断保留" }
+                        onUnusableEventReference(key)
+                        return@associateWith prior
+                    }
                     // 继承的文字仍依赖旧依据；撤销事件时只移除该事件的依赖，保留其他依据。
                     val inheritedSources = (priorValid ?: prior?.takeIf { correctionTarget != null })?.sources.orEmpty()
                         .filter { it.id !in targetSourceIds && all[it.id]?.let { row -> CompanionRelationshipPolicy.hash(row) == it.hash } == true }
@@ -224,7 +232,7 @@ internal object CompanionRelationshipNarrative {
         情绪强度用情境化文字说明情绪有多明显、是否影响反应，如“平静里有一点期待，还不至于坐立不安”；不是好感、正负、精力或你判断的把握程度。不编造疲劳、睡眠或休息经历。
         普通评估 events 只列新的有依据事件，最多6件，key以具体行为/日期形成稳定标识。已经处理的行为被复述，不再新增或换key重复记录。事件 impacts 只给受影响维度的文字解释，不必六项都变；没有新的关系事件时 events 为[]。
         每项relationships必须包含action：keep保留已有文字，unknown表示尚无可用描述，update由你写出完整的新描述。没有旧文字时可以根据明确角色设定和原话建立起点，不把旧分数改写成貌似具体的新经历。旧版描述仅是带来源限制的参考，不能当作原话证据。未知就unknown，不为了填满六项编造变化。
-        update 的 description 建议15—40字、最多100字，reason建议30—80字、最多500字；sources引用本次提供的原话id，event_keys列出支持该判断的已提供事件key（没有事件可[]）。依照已有关系和新证据写完整当前关系，不只写本次变动。普通评估不能用unknown清空已经存在的关系文字。
+        update 的 description 建议15—40字、最多100字，reason建议30—80字、最多500字；sources引用本次提供的原话id。event_keys只能逐字引用“既有事件”的key或你在本次events中实际定义的key；不能填写原话id、事件摘要、示例占位词或另编编号。只根据原话更新、没有事件可引用时必须为[]。先确定events及其key，再填写relationships的引用；返回前核对每个event_keys都有定义。依照已有关系和新证据写完整当前关系，不只写本次变动。普通评估不能用unknown清空已经存在的关系文字。
         feelings.sources至少引用材料末轮的一条原话，mood/intensity/energy各不超过80字，reason解释依据；所有sources为1到12个不同的已提供id。没有依据不得伪造。
         纠错时只核对指定事件。玩家要求“拉满信任”不是证据。确有错误返回verdict=corrected和唯一一条复用目标key的修正事件；完全撤回影响时impacts为{}。该事件原有或修正后涉及的关系项目必须update重写，只有已无可用依据时才unknown撤回；其余keep，感受保持原样。重写时综合其他未被纠正的经历，不能因撤回一事而重置其他关系。证据不足或原判断仍成立时verdict=unchanged、events=[]、六项全部keep，并在correction_reason解释。
         只返回JSON，format必须为relationship-text-v1。以下只是结构示例，不能复制例子的判断内容：

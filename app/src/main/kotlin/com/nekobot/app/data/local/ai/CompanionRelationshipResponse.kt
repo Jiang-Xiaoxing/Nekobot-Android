@@ -75,7 +75,7 @@ internal object CompanionRelationshipResponse {
                 result
             }.getOrNull()
             if (event != null) accepted.add(event)
-            else runCatching { item.asJsonObject["key"].takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString }
+            else runCatching { item.asJsonObject["key"].takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString?.trim() }
                 .getOrNull()?.let(discarded::add)
         }
         return Events(accepted, discarded - keys)
