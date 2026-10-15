@@ -7345,9 +7345,7 @@ class LocalRepository(
         activeGenerations.put(sessionId, generationController)?.requestStop()
         // Cancel background extraction before building a fresh foreground request. Its
         // transaction has either committed already or leaves receipts unchanged for retry.
-        val pendingExtraction = synchronized(companionExtractionJobs) {
-            companionExtractionJobs.filterKeys { it.startsWith("${db.dbName}:$sessionId:") }.values.toList()
-        }
+        val pendingExtraction = pendingCompanionExtractionJobs(sessionId)
         pendingExtraction.forEach { it.cancelAndJoin() }
         // 登记全局"生成中"状态：会话列表据此显示运行中竖条
         ServiceContainer.notifySessionGenerating(sessionId, true)
@@ -9350,6 +9348,12 @@ class LocalRepository(
 
     private val companionExtractionJobs = ConcurrentHashMap<String, Job>()
     private val companionReschedule = ConcurrentHashMap.newKeySet<String>()
+
+    // Keep monitor bytecode out of the large flow lambda: Kotlin 2.2.21 recursively
+    // checks its entire control-flow graph for suspension inside synchronized blocks.
+    private fun pendingCompanionExtractionJobs(sessionId: String): List<Job> = synchronized(companionExtractionJobs) {
+        companionExtractionJobs.filterKeys { it.startsWith("${db.dbName}:$sessionId:") }.values.toList()
+    }
 
     /** Independent scheduling: debounce accumulated new content, prioritize explicit maintenance. */
     private fun scheduleCompanionMemoryExtraction(session: LocalSessionEntity, anchor: String = "", userHint: String = ""): Unit = synchronized(companionExtractionJobs) {
