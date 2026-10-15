@@ -8,7 +8,7 @@
     <string name="companion_chat_settings">聊天设置</string>
     <string name="companion_chat_show_reasoning">显示思考</string>
     <string name="companion_chat_show_reasoning_hint">只影响这个角色，开启后可点击查看</string>
-    <string name="companion_chat_reasoning">内心想法</string>
+    <string name="companion_chat_reasoning">内心想法 Beta（测试版）</string>
     <string name="companion_chat_typing">对方正在输入…</string>
     <string name="companion_chat_reply_unfinished">回复尚未完成</string>
     <string name="companion_chat_resume_reply">继续回复</string>

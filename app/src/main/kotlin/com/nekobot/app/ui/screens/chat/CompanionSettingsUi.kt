@@ -171,7 +171,7 @@ internal fun CompanionSettingsScreen(
                             }
                             CompanionPreferenceRow("聊天用量", Icons.Outlined.BarChart, "查看上次请求带入的内容", onClick = onUsage)
                         }
-                        Text("同时开启显示思考和角色视角思考后，可在消息中展开内心想法。正文内心独白由独立开关控制。", Modifier.padding(horizontal = 4.dp),
+                        Text("同时开启显示思考和角色视角思考后，可在消息中展开内心想法 Beta（测试版）。正文内心独白由独立开关控制。", Modifier.padding(horizontal = 4.dp),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     CompanionFeedbackEntry()

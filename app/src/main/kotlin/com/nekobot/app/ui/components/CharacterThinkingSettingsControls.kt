@@ -57,7 +57,7 @@ internal fun CharacterThinkingSettingsControls(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            CharacterThinkingRowLabel(Icons.Outlined.PersonOutline, "角色视角思考",
+            CharacterThinkingRowLabel(Icons.Outlined.PersonOutline, "角色视角思考 Beta（测试版）",
                 "思考用中文、以角色“我”的口吻。", thinkingControlsEnabled, Modifier.weight(1f), compact)
             Switch(checked = characterThinkingSettings.enabled, onCheckedChange = null, enabled = thinkingControlsEnabled)
         }
@@ -71,7 +71,7 @@ internal fun CharacterThinkingSettingsControls(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            CharacterThinkingRowLabel(Icons.Outlined.Edit, "自定义思考提示词",
+            CharacterThinkingRowLabel(Icons.Outlined.Edit, "自定义思考提示词 Beta（测试版）",
                 "留空则使用默认。", thinkingControlsEnabled, Modifier.weight(1f), compact)
             Icon(Icons.Default.ChevronRight, null, Modifier.size(24.dp),
                 tint = if (thinkingControlsEnabled) MaterialTheme.colorScheme.onSurfaceVariant
@@ -81,7 +81,7 @@ internal fun CharacterThinkingSettingsControls(
     if (thinkingControlsEnabled && promptDraft != null) {
         GlassAlertDialog(
             onDismissRequest = { promptDraft = null },
-            title = { Text("自定义思考提示词") },
+            title = { Text("自定义思考提示词 Beta（测试版）") },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
