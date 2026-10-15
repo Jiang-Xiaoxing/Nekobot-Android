@@ -47,6 +47,14 @@ internal object CompanionRelationshipPolicy {
         return turns.drop(at + 1)
     }
 
+    /** 固定作业启动时的末轮；请求期间新增对话留给下一批，不随后台处理扩大范围。 */
+    fun throughBoundary(turns: List<RelationshipTurn>, boundary: String?): List<RelationshipTurn> {
+        if (boundary == null) return emptyList()
+        val at = turns.indexOfFirst { it.endId == boundary }
+        require(at >= 0) { "评估范围内的聊天已经变化，请重新发起" }
+        return turns.take(at + 1)
+    }
+
     /** 已成功落库的一轮只通知一次；后续界面结束/取消不能让轮数增长却漏发通知。 */
     fun onTurnSaved(ctx: PipelineContext, message: Map<String, Any>, companionMode: Boolean,
         regenerated: Boolean, source: String?, notify: () -> Unit) {

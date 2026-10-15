@@ -135,14 +135,14 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                 if (state.enabled && state.awaitingHistory) {
                     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(if (state.historyReviewRequired) "历史范围待确认：${v.pending} 轮" else "有 ${v.pending} 轮尚未评估", style = MaterialTheme.typography.titleMedium)
-                        Text(if (state.historyReviewRequired) "旧版可能把迁入时的初始关系当成了评估进度。无法确认旧历史是否评估或曾被跳过，请选择是否从头补评；现有聊天不变。补评会分批调用所选模型并产生费用。" else "是否补评由你决定。较长历史会分批调用评估模型，每批完成后保存进度。")
+                        Text(if (state.historyReviewRequired) "旧版可能把迁入时的初始关系当成了评估进度。无法确认旧历史是否评估或曾被跳过，请选择是否从头补评；现有聊天不变。补评会一次调用所选模型评估这些对话并产生费用。" else "是否补评由你决定。一次调用评估模型处理本批全部待评估对话，完成后统一保存进度。")
                         Button(onClick = { action { service.start(sessionId) } }, enabled = !working && !v.busy) { Text("补评这些对话") }
                         TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !working && !v.busy) { Text("不补评，从现在继续") }
                     } }
                 }
                 if (v.busy && !state.awaitingHistory) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (v.busy && state.awaitingHistory) RelationshipPaper {
-                    Text("正在分批补评，已完成的进度会保留。")
+                    Text("正在评估本批全部对话，完成后统一保存进度。")
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }

@@ -6,7 +6,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
 import java.net.SocketTimeoutException
@@ -18,53 +17,33 @@ class CompanionRelationshipRecoveryTest {
         RelationshipTurn(listOf(LocalMessageEntity("u$index", "s", "user", "u".repeat(chars), timestamp = "0", createdAt = "2026-10-10T00:00:00Z"),
             LocalMessageEntity("a$index", "s", "assistant", "a".repeat(chars), timestamp = "0", createdAt = "2026-10-10T00:00:00Z")))
     }
-    private suspend fun timeout(): Nothing = withTimeout(1L) { awaitCancellation() }
-
-    @Test fun timeoutRetriesOnceAndUsesReducedBatchMode() = runBlocking {
-        val attempts = mutableListOf<Boolean>()
-        runRelationshipEvaluation(false, beforeRetry = {}) { retrying ->
-            attempts.add(retrying)
-            if (!retrying) timeout()
-        }
-        assertEquals(listOf(false, true), attempts)
-    }
-    @Test fun repeatedTimeoutStopsAfterTwoAttempts() = runBlocking {
-        val attempts = mutableListOf<Boolean>()
-        try {
-            runRelationshipEvaluation(false, beforeRetry = {}) { attempts.add(it); timeout() }
-            fail("超时应向外结束作业")
-        } catch (_: TimeoutCancellationException) { }
-        assertEquals(listOf(false, true), attempts)
-    }
-    @Test fun networkReadTimeoutAlsoRetriesOnce() = runBlocking {
-        var count = 0
-        runRelationshipEvaluation(false, beforeRetry = {}) { retrying ->
-            count++
-            if (!retrying) throw SocketTimeoutException("read timed out")
-        }
-        assertEquals(2, count)
-    }
-    @Test fun repeatedNetworkTimeoutStopsInsteadOfStartingAThirdRequest() = runBlocking {
+    @Test fun timeoutStopsAfterOneRequestAndKeepsAllFiveTurnsPending() = runBlocking {
+        val all = turns(5)
+        var cursor: String? = null
         var count = 0
         try {
-            runRelationshipEvaluation(false, beforeRetry = {}) { count++; throw SocketTimeoutException("read timed out") }
-            fail("第二次超时应结束作业")
-        } catch (_: SocketTimeoutException) { }
-        assertEquals(2, count)
-    }
-    @Test fun restoredTimeoutOrInterruptedRunHasOnlyOneRecoveryAttempt() = runBlocking {
-        var count = 0
-        try {
-            runRelationshipEvaluation(true, beforeRetry = { fail("恢复作业不应再递归重试") }) { retrying ->
-                assertTrue(retrying); count++; timeout()
+            cursor = runRelationshipEvaluation(timeoutMillis = 25L) {
+                count++
+                awaitCancellation()
             }
+            fail("超时应结束本次作业，不能追加或拆分请求")
         } catch (_: TimeoutCancellationException) { }
+        assertEquals(1, count)
+        assertNull(cursor)
+        assertEquals(5, CompanionRelationshipPolicy.pending(all, cursor).size)
+    }
+    @Test fun networkReadTimeoutDoesNotStartASecondRequest() = runBlocking {
+        var count = 0
+        try {
+            runRelationshipEvaluation { count++; throw SocketTimeoutException("read timed out") }
+            fail("网络超时应结束作业")
+        } catch (_: SocketTimeoutException) { }
         assertEquals(1, count)
     }
     @Test fun ordinaryCancellationDoesNotRetry() = runBlocking {
         var count = 0
         try {
-            runRelationshipEvaluation(false, beforeRetry = { fail("取消不能变成超时重试") }) {
+            runRelationshipEvaluation {
                 count++; throw CancellationException("设置已修改")
             }
         } catch (_: CancellationException) { }
@@ -73,7 +52,7 @@ class CompanionRelationshipRecoveryTest {
     @Test fun invalidResultDoesNotRetry() = runBlocking {
         var count = 0
         try {
-            runRelationshipEvaluation(false, beforeRetry = { fail("格式错误不应重试") }) {
+            runRelationshipEvaluation {
                 count++; throw IllegalArgumentException("来源无效")
             }
         } catch (_: IllegalArgumentException) { }
@@ -102,10 +81,13 @@ class CompanionRelationshipRecoveryTest {
         assertEquals(invalidModel, CompanionRelationshipRecovery.clearInterruptedNotice(invalidModel))
     }
     @Test fun repeatedFailureDoesNotLoopInCompletionButNewChatCanResume() {
-        val failed = state(CompanionRelationshipRecovery.TIMEOUT_EXHAUSTED)
-        assertFalse(CompanionRelationshipRecovery.automaticReady(failed, 12, afterEvaluation = true))
-        assertTrue(CompanionRelationshipRecovery.automaticReady(failed, 12))
-        assertFalse(CompanionRelationshipRecovery.automaticReady(failed, 4))
+        for (notice in listOf(CompanionRelationshipRecovery.TIMEOUT, CompanionRelationshipRecovery.TIMEOUT_EXHAUSTED)) {
+            val failed = state(notice)
+            assertFalse(CompanionRelationshipRecovery.automaticReady(failed, 12, afterEvaluation = true))
+            assertTrue(CompanionRelationshipRecovery.automaticReady(failed, 12))
+            assertFalse(CompanionRelationshipRecovery.automaticReady(failed, 4))
+            assertFalse(CompanionRelationshipRecovery.retryable(notice))
+        }
     }
     @Test fun recoveryRespectsDisabledAutomaticAndUnconfirmedHistory() {
         val failed = state(CompanionRelationshipRecovery.TIMEOUT)
@@ -116,29 +98,91 @@ class CompanionRelationshipRecoveryTest {
         assertFalse(CompanionRelationshipRecovery.automaticReady(failed, 0))
         assertFalse(CompanionRelationshipRecovery.automaticReady(state("所选评估模型已不可用，请重新选择"), 12))
     }
-    @Test fun allPendingTurnsUseOneRequestUntilAnActualTimeout() {
-        val all = turns(12)
-        val sizer = RelationshipBatchSizer()
-        assertEquals(all, sizer.select(all, 22_000, false))
-        assertEquals(all, sizer.select(all, 100, false))
+    @Test fun successfulBatchUsesOneRequestAndConsumesEveryPendingTurn() = runBlocking {
+        for (size in listOf(1, 5, 6, 12, 100)) {
+            val all = turns(size)
+            val batch = CompanionRelationshipPolicy.pending(
+                CompanionRelationshipPolicy.throughBoundary(all, all.last().endId), null)
+            var calls = 0
+            val cursor = runRelationshipEvaluation {
+                calls++
+                assertEquals(all, batch)
+                batch.last().endId
+            }
+            assertEquals(1, calls)
+            assertTrue(CompanionRelationshipPolicy.pending(all, cursor).isEmpty())
+        }
         assertEquals(300, CompanionRelationshipRecovery.TIMEOUT_SECONDS)
     }
-    @Test fun timeoutRecoveryProcessesOrderedSingleTurnsWithoutLosingProgress() {
+    @Test fun legacyTimeoutRecoveryConsumesTheEntireRemainderInOneRequest() = runBlocking {
         val all = turns(12)
-        val sizer = RelationshipBatchSizer()
-        var cursor: String? = null
-        val seen = mutableListOf<String>()
-        while (CompanionRelationshipPolicy.pending(all, cursor).isNotEmpty()) {
-            val batch = sizer.select(CompanionRelationshipPolicy.pending(all, cursor), 22_000, true)
-            assertEquals(1, batch.size)
-            seen.addAll(batch.map { it.endId }); cursor = batch.last().endId
+        // 旧版已单独消费三轮；升级后一次处理余下九轮，不重评前三轮。
+        val saved = state(CompanionRelationshipRecovery.LEGACY_TIMEOUT).copy(cursorId = "a3")
+        assertTrue(CompanionRelationshipRecovery.automaticReady(saved, 9))
+        val batch = CompanionRelationshipPolicy.pending(
+            CompanionRelationshipPolicy.throughBoundary(all, "a12"), saved.cursorId)
+        var calls = 0
+        val cursor = runRelationshipEvaluation {
+            calls++
+            assertEquals((4..12).map { "a$it" }, batch.map { it.endId })
+            batch.last().endId
         }
-        assertEquals(all.map { it.endId }, seen)
+        assertEquals(1, calls)
+        assertTrue(CompanionRelationshipPolicy.pending(all, cursor).isEmpty())
     }
-    @Test fun retryKeepsOversizedTurnPendingInsteadOfTruncatingIt() {
-        val sizer = RelationshipBatchSizer()
-        assertTrue(sizer.select(turns(1, 12_000), 22_000, true).isEmpty())
-        assertEquals(1, sizer.select(turns(1, 4_000), 22_000, true).size)
+    @Test fun newTurnsDuringEvaluationRemainPendingAndDoNotEnterThisRequest() = runBlocking {
+        val first = turns(5)
+        val boundary = first.last().endId
+        var withNew = first
+        val batch = CompanionRelationshipPolicy.pending(
+            CompanionRelationshipPolicy.throughBoundary(withNew, boundary), null)
+        var calls = 0
+        val cursor = runRelationshipEvaluation {
+            calls++
+            withNew = turns(7)
+            assertEquals(first, batch)
+            batch.last().endId
+        }
+        assertEquals(1, calls)
+        assertEquals(listOf("a6", "a7"), CompanionRelationshipPolicy.pending(withNew, cursor).map { it.endId })
+    }
+    @Test fun boundaryAlsoExcludesNewTurnsSavedBeforeRequestPreparation() {
+        val first = turns(5)
+        assertEquals(first, CompanionRelationshipPolicy.throughBoundary(turns(7), first.last().endId))
+    }
+    @Test fun largeBatchIsNotSilentlyTruncatedOrSplitBeforeContextValidation() {
+        val all = turns(5, chars = 12_000)
+        val batch = CompanionRelationshipPolicy.pending(
+            CompanionRelationshipPolicy.throughBoundary(all, "a5"), null)
+        assertEquals(all, batch)
+        assertEquals(120_000, batch.flatMap { it.rows }.sumOf { it.content.length })
+    }
+    @Test fun deletedBoundaryIsRejectedAndEmptyBoundaryDoesNotConsumeNewHistory() {
+        assertTrue(CompanionRelationshipPolicy.throughBoundary(turns(5), null).isEmpty())
+        try {
+            CompanionRelationshipPolicy.throughBoundary(turns(4), "a5")
+            fail("边界已变化时必须拒绝旧作业")
+        } catch (_: IllegalArgumentException) { }
+    }
+    @Test fun failedRecoveryPreservesThePreviouslySavedCursor() = runBlocking {
+        val all = turns(7)
+        var cursor = "a2"
+        val batch = CompanionRelationshipPolicy.pending(
+            CompanionRelationshipPolicy.throughBoundary(all, "a7"), cursor)
+        var calls = 0
+        try {
+            val response = runRelationshipEvaluation {
+                calls++
+                assertEquals(5, batch.size)
+                "无效评估结果"
+            }
+            CompanionRelationshipResponse.json(response)
+            cursor = batch.last().endId
+            fail("无效结果不能保存进度")
+        } catch (_: IllegalArgumentException) { }
+        assertEquals(1, calls)
+        assertEquals("a2", cursor)
+        assertEquals(5, CompanionRelationshipPolicy.pending(all, cursor).size)
     }
     @Test fun retryInterruptionPlaceholderIsAlsoClearedWithoutChangingProgress() {
         val interrupted = state(CompanionRelationshipRecovery.RETRY_IN_FLIGHT).copy(cursorId = "a3", version = 9)

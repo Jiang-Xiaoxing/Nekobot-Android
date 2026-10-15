@@ -194,7 +194,6 @@ internal class CompanionRelationshipService(
                 CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), state.cursorId).size,
                 interrupted = id in interruptedSessions))
             val recovering = !manual && (id in interruptedSessions || CompanionRelationshipRecovery.retryable(state.notice))
-            val timedOutRecovery = CompanionRelationshipRecovery.timedOut(state.notice)
             interruptedSessions.remove(id)
             if (state.historyReviewRequired) {
                 require(manual && correctionKey == null) { "请先确认是否补评旧历史" }
@@ -205,11 +204,9 @@ internal class CompanionRelationshipService(
             val boundary = CompanionRelationshipPolicy.turns(rows(id)).lastOrNull()?.endId
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
-                    runRelationshipEvaluation(recovering) { retrying ->
-                        evaluate(id, boundary, correctionKey, claim, retrying, splitBatches = retrying && (!recovering || timedOutRecovery))
-                    }
+                    evaluate(id, boundary, correctionKey, claim, recovering)
                 } catch (_: SocketTimeoutException) {
-                    // 第二次网络超时已保存原因，后台作业正常收尾，不能升级成未捕获崩溃。
+                    // 超时已保存原因，本批保持待评；本次作业不再追加请求。
                 }
                 finally {
                     if (jobs.remove(id, currentCoroutineContext()[Job])) {
@@ -224,135 +221,128 @@ internal class CompanionRelationshipService(
         }
     }
 
-    private suspend fun evaluate(id: String, boundary: String?, correctionKey: String?, claim: String?, retrying: Boolean, splitBatches: Boolean) {
+    private suspend fun evaluate(id: String, boundary: String?, correctionKey: String?, claim: String?, recovering: Boolean) {
         var expected: CompanionRelationshipEntity? = null
         var requestTag: String? = null
         try {
-            while (currentCoroutineContext().isActive) {
-                val input = lock.withLock {
-                    val state = ensure(id)
-                    expected = state
-                    require(state.enabled)
-                    val model = requireNotNull(db.aiModelDao().getById(state.modelId.orEmpty())?.takeIf {
-                        it.enabled && it.purpose in setOf("chat", "compression")
-                    }) { "所选评估模型已不可用，请重新选择" }
-                    val all = rows(id)
-                    val events = dao.currentEvents(id)
-                    val turns = CompanionRelationshipPolicy.turns(all)
-                    require(boundary == null || turns.any { it.endId == boundary }) { "评估范围内的聊天已经变化，请重新发起" }
-                    val available = if (boundary == null) emptyList() else turns.takeWhile { it.endId != boundary } + listOfNotNull(turns.firstOrNull { it.endId == boundary })
-                    val pending = if (correctionKey == null) CompanionRelationshipPolicy.pending(available, state.cursorId) else emptyList()
-                    if (correctionKey == null && pending.isEmpty()) {
-                        dao.save(state.copy(awaitingHistory = false, notice = null)); return
-                    }
-                    val maxChars = (((model.maxContextLength ?: 32000) - 6500).coerceAtLeast(1000).coerceAtMost(Int.MAX_VALUE / 2) * 2)
-                    val sizer = RelationshipBatchSizer()
-                    val batch = sizer.select(pending, maxChars, splitBatches)
-                    require(correctionKey != null || batch.isNotEmpty()) { "单轮对话超过所选评估模型的输入预算，请选择上下文更大的评估模型；原状态保留。" }
-                    val target = correctionKey?.let { key -> requireNotNull(events.firstOrNull { it.eventKey == key }) { "需要纠正的记录已不存在" } }
-                    val evidence = if (target != null) {
-                        val sourceIds = refs(target.sourcesJson).map { it.id }.toSet()
-                        (all.filter { it.id in sourceIds } + available.takeLast(10).flatMap { it.rows }).distinctBy { it.id }
-                    } else batch.flatMap { it.rows }
-                    // 合并旧备份可恢复较早的状态版本；历史记录保留，后续评估编号不能与其碰撞。
-                    val inFlight = state.copy(version = maxOf(state.version, dao.latestRevision(id) ?: 0) + 1,
-                        notice = if (retrying) CompanionRelationshipRecovery.RETRY_IN_FLIGHT else CompanionRelationshipRecovery.IN_FLIGHT)
-                    dao.save(inFlight); expected = inFlight
-                    EvaluationInput(inFlight, model, all, events, batch, evidence, target)
+            val input = lock.withLock {
+                val state = ensure(id)
+                expected = state
+                require(state.enabled)
+                val model = requireNotNull(db.aiModelDao().getById(state.modelId.orEmpty())?.takeIf {
+                    it.enabled && it.purpose in setOf("chat", "compression")
+                }) { "所选评估模型已不可用，请重新选择" }
+                val all = rows(id)
+                val events = dao.currentEvents(id)
+                val turns = CompanionRelationshipPolicy.turns(all)
+                val available = CompanionRelationshipPolicy.throughBoundary(turns, boundary)
+                val pending = if (correctionKey == null) CompanionRelationshipPolicy.pending(available, state.cursorId) else emptyList()
+                if (correctionKey == null && pending.isEmpty()) {
+                    dao.save(state.copy(awaitingHistory = false, notice = null)); return
                 }
-                val byId = input.all.associateBy { it.id }
-                val usable = input.events.filter { valid(refs(it.sourcesJson), byId) }
-                val previous = CompanionRelationshipNarrative.read(input.state.narrativeJson)
-                val legacy = CompanionRelationshipNarrative.legacy(input.state.legacySnapshotJson)
-                val words = input.evidence.joinToString("\n") { it.content }.windowed(2, 2).distinct().filter { it.isNotBlank() }.take(1000)
-                val relevant = usable.sortedByDescending { event -> words.count { it in event.summary } }.take(25)
-                val selectedEvents = (listOfNotNull(input.target) + relevant + usable.take(15)).distinctBy { it.eventKey }
-                val character = db.characterDao().getById(input.state.characterId)
-                val previousDescriptions = previous?.relationships?.mapValues { (_, field) ->
-                    field?.takeIf { CompanionRelationshipNarrative.valid(it, byId, input.events) }?.let {
-                        mapOf("description" to it.description, "reason" to it.reason, "event_keys" to it.eventRevisions.keys)
-                    }
+                val batch = pending
+                val target = correctionKey?.let { key -> requireNotNull(events.firstOrNull { it.eventKey == key }) { "需要纠正的记录已不存在" } }
+                val evidence = if (target != null) {
+                    val sourceIds = refs(target.sourcesJson).map { it.id }.toSet()
+                    (all.filter { it.id in sourceIds } + available.takeLast(10).flatMap { it.rows }).distinctBy { it.id }
+                } else batch.flatMap { it.rows }
+                // 合并旧备份可恢复较早的状态版本；历史记录保留，后续评估编号不能与其碰撞。
+                val inFlight = state.copy(version = maxOf(state.version, dao.latestRevision(id) ?: 0) + 1,
+                    notice = if (recovering) CompanionRelationshipRecovery.RETRY_IN_FLIGHT else CompanionRelationshipRecovery.IN_FLIGHT)
+                dao.save(inFlight); expected = inFlight
+                EvaluationInput(inFlight, model, all, events, batch, evidence, target)
+            }
+            val byId = input.all.associateBy { it.id }
+            val usable = input.events.filter { valid(refs(it.sourcesJson), byId) }
+            val previous = CompanionRelationshipNarrative.read(input.state.narrativeJson)
+            val legacy = CompanionRelationshipNarrative.legacy(input.state.legacySnapshotJson)
+            val words = input.evidence.joinToString("\n") { it.content }.windowed(2, 2).distinct().filter { it.isNotBlank() }.take(1000)
+            val relevant = usable.sortedByDescending { event -> words.count { it in event.summary } }.take(25)
+            val selectedEvents = (listOfNotNull(input.target) + relevant + usable.take(15)).distinctBy { it.eventKey }
+            val character = db.characterDao().getById(input.state.characterId)
+            val previousDescriptions = previous?.relationships?.mapValues { (_, field) ->
+                field?.takeIf { CompanionRelationshipNarrative.valid(it, byId, input.events) }?.let {
+                    mapOf("description" to it.description, "reason" to it.reason, "event_keys" to it.eventRevisions.keys)
                 }
-                val payload = gson.toJson(mapOf(
-                    "角色" to character?.name,
-                    "角色背景参考" to listOfNotNull(character?.basicInfo, character?.description, character?.personality).joinToString("\n").take(4000),
-                    "已有文字关系" to previousDescriptions,
-                    "旧版文字参考_没有原话保证_不能编造细节" to legacy?.descriptions?.filterKeys { previous?.relationships?.get(it) == null && it !in previous?.withdrawnKeys.orEmpty() },
-                    "上次感受_只是历史观察" to previous?.feelings?.takeIf { valid(it.sources, byId) }?.let {
-                        mapOf("mood" to it.mood, "intensity" to it.intensity, "energy" to it.energy, "observed_at" to it.observedAt, "reason" to it.reason)
-                    },
-                    "既有事件" to selectedEvents.map { mapOf("key" to it.eventKey, "summary" to it.summary,
-                        "reason" to it.reason, "文字影响" to it.impactsJson, "受影响项目" to CompanionRelationshipNarrative.affected(it),
-                        "依据有效" to valid(refs(it.sourcesJson), byId)) },
-                    "原话" to input.evidence.map { mapOf("id" to it.id, "role" to it.role, "content" to it.content, "time" to it.createdAt) },
-                    "材料末轮id" to input.batch.lastOrNull()?.rows?.map { it.id },
-                    "纠错目标" to correctionKey, "玩家提出的待核对说法" to claim?.take(2000)))
-                val messages = listOf(mapOf("role" to "system", "content" to RULES), mapOf("role" to "user", "content" to payload))
-                val outputBudget = minOf(input.model.maxTokens?.takeIf { it > 0 } ?: 2500, 2500)
-                require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
-                requestTag = "relationship-${UUID.randomUUID()}"
-                tags[id] = requestTag!!
-                // 关系评估独立等待 300 秒，不修改模型的全局设置。
-                val result = withTimeout(CompanionRelationshipRecovery.TIMEOUT_SECONDS * 1000L) {
-                    client.chatOnce(input.model.copy(maxTokens = outputBudget), messages, requestTag = requestTag)
+            }
+            val payload = gson.toJson(mapOf(
+                "角色" to character?.name,
+                "角色背景参考" to listOfNotNull(character?.basicInfo, character?.description, character?.personality).joinToString("\n").take(4000),
+                "已有文字关系" to previousDescriptions,
+                "旧版文字参考_没有原话保证_不能编造细节" to legacy?.descriptions?.filterKeys { previous?.relationships?.get(it) == null && it !in previous?.withdrawnKeys.orEmpty() },
+                "上次感受_只是历史观察" to previous?.feelings?.takeIf { valid(it.sources, byId) }?.let {
+                    mapOf("mood" to it.mood, "intensity" to it.intensity, "energy" to it.energy, "observed_at" to it.observedAt, "reason" to it.reason)
+                },
+                "既有事件" to selectedEvents.map { mapOf("key" to it.eventKey, "summary" to it.summary,
+                    "reason" to it.reason, "文字影响" to it.impactsJson, "受影响项目" to CompanionRelationshipNarrative.affected(it),
+                    "依据有效" to valid(refs(it.sourcesJson), byId)) },
+                "原话" to input.evidence.map { mapOf("id" to it.id, "role" to it.role, "content" to it.content, "time" to it.createdAt) },
+                "材料末轮id" to input.batch.lastOrNull()?.rows?.map { it.id },
+                "纠错目标" to correctionKey, "玩家提出的待核对说法" to claim?.take(2000)))
+            val messages = listOf(mapOf("role" to "system", "content" to RULES), mapOf("role" to "user", "content" to payload))
+            val outputBudget = minOf(input.model.maxTokens?.takeIf { it > 0 } ?: 2500, 2500)
+            require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
+            requestTag = "relationship-${UUID.randomUUID()}"
+            tags[id] = requestTag!!
+            // 关系评估独立等待 300 秒，不修改模型的全局设置。
+            val result = runRelationshipEvaluation {
+                client.chatOnce(input.model.copy(maxTokens = outputBudget), messages, requestTag = requestTag)
+            }
+            val usage = resolveLocalTokenUsage(result.usage, messages, result.content)
+            onUsage(id, input.model, result.copy(usage = result.usage + mapOf("prompt" to usage.inputTokens,
+                "completion" to usage.outputTokens, "estimated" to if (usage.estimated) 1 else 0)))
+            require(result.error == null && result.content.isNotBlank()) { "评估模型没有返回有效结果" }
+            val json = CompanionRelationshipResponse.json(result.content)
+            val evidenceMap = input.evidence.associateBy { it.id }
+            val now = System.currentTimeMillis()
+            val parsedEvents = CompanionRelationshipResponse.events(json, evidenceMap, input.events,
+                id, input.state.version + 1, now, correctionKey)
+            val effects = parsedEvents.accepted
+            val correctionReason = if (correctionKey != null) CompanionRelationshipNarrative.text(json, "correction_reason", 500) else null
+            if (correctionKey != null) {
+                require(json["verdict"]?.asString in setOf("corrected", "unchanged")) { "纠错结论无效" }
+                if (json["verdict"].asString == "unchanged") require(effects.isEmpty()) { "保留原判断时不能替换事件" }
+                else require(effects.size == 1) { "纠错需要明确给出目标事件的修正影响" }
+            }
+            val narrative = CompanionRelationshipNarrative.parse(json, previous, evidenceMap, byId, input.events,
+                effects, input.batch.lastOrNull()?.rows?.map { it.id }?.toSet().orEmpty(),
+                input.batch.lastOrNull()?.rows?.lastOrNull()?.createdAt.orEmpty(), now, input.target, parsedEvents.discardedKeys)
+            val allowedKeys = (selectedEvents + effects).map { it.eventKey }.toSet()
+            require(narrative.relationships.values.filterNotNull().all { field ->
+                field.eventRevisions.keys.all { it in allowedKeys || it in previous?.relationships?.values.orEmpty().filterNotNull().flatMap { old -> old.eventRevisions.keys } }
+            }) { "关系描述引用了未提供的事件" }
+            val narrativeJson = gson.toJson(narrative)
+            lock.withLock {
+                db.withTransaction {
+                    val current = dao.state(id)
+                    require(current?.enabled == true && current.version == input.state.version && session(id).characterId == input.state.characterId) { "评估期间设置已变化，旧结果不再写入" }
+                    require(db.aiModelDao().getById(input.model.id) == input.model) { "评估模型配置已改变，旧结果不再写入" }
+                    val latest = rows(id).associateBy { it.id }
+                    require(input.evidence.all { old -> latest[old.id]?.let { CompanionRelationshipPolicy.hash(it) == CompanionRelationshipPolicy.hash(old) } == true }) { "评估期间原话已变化，旧结果不再写入" }
+                    require(dao.currentEvents(id) == input.events) { "关系记录已更新，旧结果不再写入" }
+                    // 生成期间先前关系的依据也可能被改动；不得只核对新消息。
+                    require(CompanionRelationshipNarrative.allSources(narrative).all { ref ->
+                        latest[ref.id]?.let { CompanionRelationshipPolicy.hash(it) == ref.hash } == true ||
+                            byId[ref.id]?.let { CompanionRelationshipPolicy.hash(it) == ref.hash } != true
+                    }) { "评估期间已有关系的依据发生变化，旧状态保留" }
+                    dao.append(effects)
+                    dao.appendAssessment(CompanionRelationshipAssessmentEntity(UUID.randomUUID().toString(), id,
+                        current.version + 1, narrativeJson, now, correctionKey))
+                    dao.save(current.copy(version = current.version + 1, awaitingHistory = false,
+                        cursorId = if (correctionKey == null) input.batch.last().endId else current.cursorId,
+                        narrativeJson = narrativeJson, updatedAt = now, notice = null,
+                        correctionResult = if (correctionKey == null) current.correctionResult else if (effects.isEmpty())
+                            "本次核对保留原判断：$correctionReason" else "已修正这件事的判断，其他关系保留：$correctionReason"))
                 }
-                val usage = resolveLocalTokenUsage(result.usage, messages, result.content)
-                onUsage(id, input.model, result.copy(usage = result.usage + mapOf("prompt" to usage.inputTokens,
-                    "completion" to usage.outputTokens, "estimated" to if (usage.estimated) 1 else 0)))
-                require(result.error == null && result.content.isNotBlank()) { "评估模型没有返回有效结果" }
-                val json = CompanionRelationshipResponse.json(result.content)
-                val evidenceMap = input.evidence.associateBy { it.id }
-                val now = System.currentTimeMillis()
-                val parsedEvents = CompanionRelationshipResponse.events(json, evidenceMap, input.events,
-                    id, input.state.version + 1, now, correctionKey)
-                val effects = parsedEvents.accepted
-                val correctionReason = if (correctionKey != null) CompanionRelationshipNarrative.text(json, "correction_reason", 500) else null
-                if (correctionKey != null) {
-                    require(json["verdict"]?.asString in setOf("corrected", "unchanged")) { "纠错结论无效" }
-                    if (json["verdict"].asString == "unchanged") require(effects.isEmpty()) { "保留原判断时不能替换事件" }
-                    else require(effects.size == 1) { "纠错需要明确给出目标事件的修正影响" }
-                }
-                val narrative = CompanionRelationshipNarrative.parse(json, previous, evidenceMap, byId, input.events,
-                    effects, input.batch.lastOrNull()?.rows?.map { it.id }?.toSet().orEmpty(),
-                    input.batch.lastOrNull()?.rows?.lastOrNull()?.createdAt.orEmpty(), now, input.target, parsedEvents.discardedKeys)
-                val allowedKeys = (selectedEvents + effects).map { it.eventKey }.toSet()
-                require(narrative.relationships.values.filterNotNull().all { field ->
-                    field.eventRevisions.keys.all { it in allowedKeys || it in previous?.relationships?.values.orEmpty().filterNotNull().flatMap { old -> old.eventRevisions.keys } }
-                }) { "关系描述引用了未提供的事件" }
-                val narrativeJson = gson.toJson(narrative)
-                lock.withLock {
-                    db.withTransaction {
-                        val current = dao.state(id)
-                        require(current?.enabled == true && current.version == input.state.version && session(id).characterId == input.state.characterId) { "评估期间设置已变化，旧结果不再写入" }
-                        require(db.aiModelDao().getById(input.model.id) == input.model) { "评估模型配置已改变，旧结果不再写入" }
-                        val latest = rows(id).associateBy { it.id }
-                        require(input.evidence.all { old -> latest[old.id]?.let { CompanionRelationshipPolicy.hash(it) == CompanionRelationshipPolicy.hash(old) } == true }) { "评估期间原话已变化，旧结果不再写入" }
-                        require(dao.currentEvents(id) == input.events) { "关系记录已更新，旧结果不再写入" }
-                        // 生成期间先前关系的依据也可能被改动；不得只核对新消息。
-                        require(CompanionRelationshipNarrative.allSources(narrative).all { ref ->
-                            latest[ref.id]?.let { CompanionRelationshipPolicy.hash(it) == ref.hash } == true ||
-                                byId[ref.id]?.let { CompanionRelationshipPolicy.hash(it) == ref.hash } != true
-                        }) { "评估期间已有关系的依据发生变化，旧状态保留" }
-                        dao.append(effects)
-                        dao.appendAssessment(CompanionRelationshipAssessmentEntity(UUID.randomUUID().toString(), id,
-                            current.version + 1, narrativeJson, now, correctionKey))
-                        dao.save(current.copy(version = current.version + 1, awaitingHistory = false,
-                            cursorId = if (correctionKey == null) input.batch.last().endId else current.cursorId,
-                            narrativeJson = narrativeJson, updatedAt = now, notice = null,
-                            correctionResult = if (correctionKey == null) current.correctionResult else if (effects.isEmpty())
-                                "本次核对保留原判断：$correctionReason" else "已修正这件事的判断，其他关系保留：$correctionReason"))
-                    }
-                }
-                if (correctionKey != null || input.batch.last().endId == boundary) return
             }
         } catch (e: CancellationException) {
             saveError(id, expected, if (e is TimeoutCancellationException) {
-                if (retrying) CompanionRelationshipRecovery.TIMEOUT_EXHAUSTED else CompanionRelationshipRecovery.TIMEOUT
-            } else if (retrying) CompanionRelationshipRecovery.RETRY_IN_FLIGHT else CompanionRelationshipRecovery.IN_FLIGHT)
+                CompanionRelationshipRecovery.TIMEOUT
+            } else if (recovering) CompanionRelationshipRecovery.RETRY_IN_FLIGHT else CompanionRelationshipRecovery.IN_FLIGHT)
             throw e
         } catch (e: Exception) {
             if (e is SocketTimeoutException) {
-                saveError(id, expected, if (retrying) CompanionRelationshipRecovery.TIMEOUT_EXHAUSTED else CompanionRelationshipRecovery.TIMEOUT)
+                saveError(id, expected, CompanionRelationshipRecovery.TIMEOUT)
                 throw e
             }
             val safe = if (e is IllegalArgumentException || e is IllegalStateException) e.message?.takeIf { it.length <= 150 && !it.contains("http", true) } else null
