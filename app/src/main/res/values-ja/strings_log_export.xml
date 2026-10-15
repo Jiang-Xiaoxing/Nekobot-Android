@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="logs_export_all">全ログを書き出す（.log）</string>
+    <string name="logs_export_saved">ログを書き出しました</string>
+    <string name="logs_export_failed">ログの書き出しに失敗しました。保存先を選び直してください。</string>
+</resources>
