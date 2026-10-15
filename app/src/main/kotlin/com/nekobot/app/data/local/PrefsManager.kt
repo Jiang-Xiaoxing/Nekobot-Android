@@ -1055,8 +1055,32 @@ class PrefsManager(context: Context) {
     var themeColorOverride: String?
         get() = prefs.getString(KEY_THEME_COLOR, null)
         set(value) {
+            migrateMessageColor()
             prefs.edit().putString(KEY_THEME_COLOR, value).apply()
         }
+
+    /** 首次升级保留旧气泡配色，之后主题色和双方气泡颜色互不联动。 */
+    private fun migrateMessageColor() = synchronized(prefs) {
+        if (!prefs.getBoolean(KEY_MESSAGE_COLOR_MIGRATED, false)) {
+            prefs.edit().putString(KEY_MESSAGE_COLOR, prefs.getString(KEY_THEME_COLOR, null))
+                .putBoolean(KEY_MESSAGE_COLOR_MIGRATED, true).apply()
+        }
+    }
+
+    var messageColorOverride: String?
+        get() { migrateMessageColor(); return prefs.getString(KEY_MESSAGE_COLOR, null) }
+        set(value) { synchronized(prefs) {
+            prefs.edit().putString(KEY_MESSAGE_COLOR, value).putBoolean(KEY_MESSAGE_COLOR_MIGRATED, true).apply()
+        } }
+
+    /** Optional appearance effects; upgrades retain the original presentation. */
+    var dynamicThinking: Boolean
+        get() = prefs.getBoolean(KEY_DYNAMIC_THINKING, false)
+        set(value) { prefs.edit().putBoolean(KEY_DYNAMIC_THINKING, value).apply() }
+
+    var dynamicMessages: Boolean
+        get() = prefs.getBoolean(KEY_DYNAMIC_MESSAGES, false)
+        set(value) { prefs.edit().putBoolean(KEY_DYNAMIC_MESSAGES, value).apply() }
 
     val isLoggedIn: Boolean
         get() = when (appMode) {
@@ -1572,6 +1596,10 @@ class PrefsManager(context: Context) {
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_FONT_COLOR = "font_color"
         const val KEY_THEME_COLOR = "theme_color"
+        const val KEY_MESSAGE_COLOR = "message_color"
+        const val KEY_MESSAGE_COLOR_MIGRATED = "message_color_independent"
+        const val KEY_DYNAMIC_THINKING = "dynamic_thinking"
+        const val KEY_DYNAMIC_MESSAGES = "dynamic_messages"
         const val KEY_CUSTOM_FONT_PATH = "custom_font_path"
         const val KEY_CUSTOM_FONT_NAME = "custom_font_name"
         const val KEY_CHAT_BACKGROUND_MODE = "chat_background_mode"

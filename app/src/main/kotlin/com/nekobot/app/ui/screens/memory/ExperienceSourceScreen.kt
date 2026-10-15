@@ -52,6 +52,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
+import com.nekobot.app.ui.components.chatBubbleAppearance
+import com.nekobot.app.ui.components.bubbleContentColor
 import com.nekobot.app.data.local.ChatHistoryWindow
 import com.nekobot.app.data.local.ExperienceSourcePage
 import com.nekobot.app.data.local.ExperienceSourceReader
@@ -600,14 +602,15 @@ private fun SourceTurnCard(
 private fun SourceMessageBubble(message: LocalMessageEntity, isUser: Boolean) {
     var expanded by rememberSaveable(message.id, message.content) { mutableStateOf(false) }
     var overflows by remember(message.id, message.content) { mutableStateOf(false) }
+    val appearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.TopEnd else Alignment.TopStart) {
         Surface(
             modifier = Modifier.widthIn(max = maxWidth * 0.9f).testTag("source-bubble:${message.id}"),
             shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp,
                 bottomStart = if (isUser) 14.dp else 5.dp, bottomEnd = if (isUser) 5.dp else 14.dp),
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            color = appearance.assistantColor,
+            contentColor = bubbleContentColor(appearance.assistantColor),
+            border = BorderStroke(1.dp, appearance.assistantBorder)
         ) {
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                 SelectionContainer {

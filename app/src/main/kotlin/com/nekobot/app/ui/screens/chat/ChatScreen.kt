@@ -254,6 +254,7 @@ import com.nekobot.app.ui.adaptive.liveRegion
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.chatBubbleAppearance
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.NekoDialog
@@ -303,6 +304,7 @@ fun ChatScreen(
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
     val viewModel: ChatViewModel = viewModel()
+    val messageMotion = remember(sessionId) { MessageMotionRegistry(System.currentTimeMillis()) }
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val delayReplyBubbleStatus by viewModel.delayReplyBubbleStatus.collectAsStateWithLifecycle()
     // 历史分页：是否还有更早消息 / 是否正在加载更早的一页
@@ -358,6 +360,7 @@ fun ChatScreen(
             renderMessages.add(m)
         }
     }
+    val motionKeys = messageMotionKeys(renderMessages)
     // 统一内联提示的锚点：下标 → 提示列表；锚点失效（消息被删/归档或没有锚点）的提示
     // 回退到列表末尾渲染，避免提示整个消失。
     val inlineNoticesByAnchorIndex = LinkedHashMap<Int, MutableList<ChatInlineNotice>>()
@@ -1262,6 +1265,8 @@ fun ChatScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
+                        .then(dynamicChatFollowModifier(listState,
+                            ServiceContainer.prefs.dynamicThinking || ServiceContainer.prefs.dynamicMessages))
                         .liveRegion(),
                     state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -1334,6 +1339,8 @@ fun ChatScreen(
                             if (msg.id == ChatViewModel.STREAMING_ID) {
                                 StreamingAssistantBubble(
                                     placeholder = msg,
+                                    motionRegistry = messageMotion,
+                                    motionKey = motionKeys[index],
                                     contentFlow = viewModel.streamingContentPreview,
                                     reasoningFlow = viewModel.streamingReasoningPreview,
                                     portraitUrl = session?.portraitUrl,
@@ -1361,6 +1368,8 @@ fun ChatScreen(
                                     }
                                     MessageBubble(
                                         message = target,
+                                        motionRegistry = messageMotion,
+                                        motionKey = if (target === msg) motionKeys[index] else "urgent:${target.timestamp}:${target.id}",
                                         delayReplyStatus = delayReplyBubbleStatus?.takeIf { it.bubbleId == target.id },
                                         onWithdrawDelay = viewModel::withdrawDelayedReplyBatch,
                                         generatedImages = messageImagesByMessage[target.id].orEmpty(),
@@ -2602,6 +2611,8 @@ private fun MessageActionSheetItem(
 @Composable
 private fun StreamingAssistantBubble(
     placeholder: Message,
+    motionRegistry: MessageMotionRegistry,
+    motionKey: String,
     contentFlow: StateFlow<String>,
     reasoningFlow: StateFlow<String>,
     portraitUrl: String?,
@@ -2637,6 +2648,8 @@ private fun StreamingAssistantBubble(
             if (content.isNotBlank() || visibleReasoning.isNotBlank()) {
                 MessageBubble(
                     message = liveMessage,
+                    motionRegistry = motionRegistry,
+                    motionKey = motionKey,
                     portraitUrl = portraitUrl,
                     showAiAvatar = showAiAvatar,
                     fillAiWidth = fillAiWidth,
@@ -2665,6 +2678,8 @@ private fun StreamingAssistantBubble(
     }
     MessageBubble(
         message = liveMessage,
+        motionRegistry = motionRegistry,
+        motionKey = motionKey,
         portraitUrl = portraitUrl,
         showAiAvatar = showAiAvatar,
         fillAiWidth = fillAiWidth,
@@ -2720,6 +2735,8 @@ private fun tokenSpeedColor(level: TokenSpeedLevel?): Color = when (level) {
 @Composable
 private fun MessageBubble(
     message: Message,
+    motionRegistry: MessageMotionRegistry? = null,
+    motionKey: String? = null,
     delayReplyStatus: DelayReplyBubbleStatus? = null,
     onWithdrawDelay: (() -> Unit)? = null,
     generatedImages: List<LocalMessageImageEntity> = emptyList(),
@@ -2755,20 +2772,12 @@ private fun MessageBubble(
         Brush.linearGradient(listOf(it.kind.startColor, it.kind.endColor))
     }
     val companionChat = LocalCompanionChatName.current != null
-    // 用户气泡基色：若设置了主题色覆盖则跟随主题，否则使用默认紫色
-    val userBubble = ServiceContainer.prefs.themeColorOverride?.let { parseHexColor(it) }
-        ?: if (isSystemInDarkTheme()) BubbleUser else BubbleUserLight
-    // 用户气泡：基色 → 加深色的对角渐变，营造立体感
-    val userBrush = Brush.linearGradient(
-        colors = listOf(userBubble, deepenColor(userBubble))
-    )
-    // AI 气泡：半透明玻璃质感容器 + 发丝边框
-    val aiContainer = aiBubbleContainerColor()
-    val aiBorder = aiBubbleBorderColor()
-    // 文字颜色：用户气泡始终白色；AI 气泡跟随主题（尊重字体颜色覆盖）
-    val textColor = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
-    // 链接色：用户气泡用气泡基色加深后的深色（主题主色与气泡同色，直接当链接色会看不见）
-    val linkColor = if (isUser) linkColorOnBubble(userBubble) else accentLink()
+    val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
+    val userBubble = bubbleAppearance.userColor
+    val userBrush = bubbleAppearance.userBrush
+    val aiBorder = bubbleAppearance.assistantBorder
+    val textColor = bubbleAppearance.textColor(isUser)
+    val linkColor = linkColorOnBubble(userBubble)
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
     val clipboard = LocalClipboardManager.current
 
@@ -2930,7 +2939,16 @@ private fun MessageBubble(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (companionChat && !isUser) {
+            val showDynamicThinking = ServiceContainer.prefs.dynamicThinking && !isUser && !message.reasoningContent.isNullOrBlank()
+                && (!companionChat || LocalCompanionShowReasoning.current)
+            if (showDynamicThinking) {
+                DynamicThinkingSection(
+                    identity = motionKey ?: "${message.id}:${message.timestamp}",
+                    text = message.reasoningContent.orEmpty(),
+                    thinking = isStreamingPlaceholder && message.content.isNullOrBlank(),
+                    label = if (companionChat) "内心想法 Beta（测试版）" else null
+                )
+            } else if (companionChat && !isUser) {
                 CompanionReasoningSection(
                     messageId = message.id,
                     reasoning = message.reasoningContent,
@@ -3043,6 +3061,8 @@ private fun MessageBubble(
                     )
                     Box(
                         modifier = Modifier
+                            .then(messageEntranceModifier(motionRegistry, motionKey, idx, message.timestamp,
+                                ServiceContainer.prefs.dynamicMessages, isUser))
                             .then(if (!isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
                             // 用户气泡带轻微投影，浮于背景之上
                             .then(if (isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
@@ -3054,7 +3074,7 @@ private fun MessageBubble(
                                     isUser && !segHasUserImage ->
                                         Modifier.background(brush = userBrush, shape = segShape)
                                     !isUser ->
-                                        Modifier.background(color = aiContainer, shape = segShape)
+                                        Modifier.background(brush = userBrush, shape = segShape)
                                     else -> Modifier
                                 }
                             )
@@ -3227,7 +3247,7 @@ private fun MessageBubble(
                 }
             }
 
-            if (isStreamingPlaceholder) {
+            if (isStreamingPlaceholder && !showDynamicThinking) {
                 Spacer(Modifier.height(6.dp))
                 TypingDots(modifier = Modifier.padding(start = 6.dp))
             }
@@ -4110,6 +4130,12 @@ private fun ProgressStepRow(
     step: com.nekobot.app.data.model.ThinkingStep,
     onOpenDetail: () -> Unit = {}
 ) {
+    if (ServiceContainer.prefs.dynamicThinking && isThinkingStep(step)) {
+        DynamicThinkingSection(identity = null,
+            text = step.thinkingContent?.takeIf(String::isNotBlank) ?: step.detail.orEmpty(),
+            thinking = isStreamingThinkingStep(step))
+        return
+    }
     val statusColor = when (step.status?.lowercase()) {
         "done" -> MaterialTheme.colorScheme.primary
         "error" -> MaterialTheme.colorScheme.error
