@@ -507,11 +507,25 @@ class ChatSessionState(
     val streamingContentPreview = MutableStateFlow("")
     /** 仅供当前流式气泡订阅的思考预览（非 Agent 会话）。 */
     val streamingReasoningPreview = MutableStateFlow("")
-    /** 上次流式 chunk 更新 UI 的时间戳，用于节流（避免高频 chunk 触发 MarkdownText 全量重解析） */
+    /** 正文与思考独立节流，避免其中一条流挡住另一条流的首帧或持续刷新。 */
     @Volatile
-    var lastStreamUiUpdateMs: Long = 0L
+    private var lastContentPreviewMs: Long? = null
+    @Volatile
+    private var lastReasoningPreviewMs: Long? = null
     /** 流式节流间隔（毫秒） */
     val streamThrottleMs = 100L
+
+    fun shouldUpdateStreamPreview(reasoning: Boolean, nowMs: Long): Boolean {
+        val last = if (reasoning) lastReasoningPreviewMs else lastContentPreviewMs
+        if (last != null && nowMs - last < streamThrottleMs) return false
+        if (reasoning) lastReasoningPreviewMs = nowMs else lastContentPreviewMs = nowMs
+        return true
+    }
+
+    fun resetStreamPreviewThrottle() {
+        lastContentPreviewMs = null
+        lastReasoningPreviewMs = null
+    }
     /** 用户是否请求停止生成 */
     @Volatile
     var generationStopRequested = false
@@ -541,7 +555,7 @@ class ChatSessionState(
         streamingReasoning.setLength(0)
         streamingContentPreview.value = ""
         streamingReasoningPreview.value = ""
-        lastStreamUiUpdateMs = 0L
+        resetStreamPreviewThrottle()
         generationStopRequested = false
     }
 

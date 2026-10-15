@@ -616,12 +616,6 @@ class ChatViewModel : BaseViewModel() {
      * 以及本轮新建的进度卡片以新 id 追加到父用户消息上（旧卡片也在 → 两张卡片）。
      */
     private var variantRegenerateTargetId: String? = null
-    /** 上次流式 chunk 更新 UI 的时间戳，用于节流（避免高频 chunk 触发 MarkdownText 全量重解析） */
-    private var lastStreamUiUpdateMs: Long
-        get() = runtime.lastStreamUiUpdateMs
-        set(value) { runtime.lastStreamUiUpdateMs = value }
-    /** 流式节流间隔（毫秒） */
-    private val streamThrottleMs: Long get() = runtime.streamThrottleMs
 
     /** 收集 Socket.IO 事件 / 本地 Hook 事件的 Job（挂到 applicationScope，不随 VM 销毁） */
     private var eventsJob: kotlinx.coroutines.Job?
@@ -1033,7 +1027,7 @@ class ChatViewModel : BaseViewModel() {
                 streamingReasoning.setLength(0)
                 runtime.streamingContentPreview.value = ""
                 runtime.streamingReasoningPreview.value = ""
-                lastStreamUiUpdateMs = 0L
+                runtime.resetStreamPreviewThrottle()
                 // 插入流式占位消息
                 val placeholder = Message(
                     id = streamingId,
@@ -1055,8 +1049,7 @@ class ChatViewModel : BaseViewModel() {
                 streamingContent.append(event.chunk)
                 // 节流：距上次 UI 更新不足阈值时跳过，避免高频 chunk 触发 MarkdownText 全量重解析
                 val now = System.currentTimeMillis()
-                if (now - lastStreamUiUpdateMs >= streamThrottleMs) {
-                    lastStreamUiUpdateMs = now
+                if (runtime.shouldUpdateStreamPreview(reasoning = false, nowMs = now)) {
                     runtime.streamingContentPreview.value = buildStreamingDisplayPreview(
                         streamingContent,
                         omittedPrefix = string(R.string.chat_stream_prefix_omitted)
@@ -1071,8 +1064,7 @@ class ChatViewModel : BaseViewModel() {
                     return
                 }
                 val now = System.currentTimeMillis()
-                if (now - lastStreamUiUpdateMs >= streamThrottleMs) {
-                    lastStreamUiUpdateMs = now
+                if (runtime.shouldUpdateStreamPreview(reasoning = true, nowMs = now)) {
                     runtime.streamingReasoningPreview.value = buildStreamingDisplayPreview(
                         streamingReasoning,
                         omittedPrefix = string(R.string.chat_stream_prefix_omitted)
