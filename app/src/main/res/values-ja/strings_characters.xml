@@ -88,4 +88,6 @@
     <string name="character_export_failed">エクスポート失敗</string>
     <string name="character_export_success_msg">ダウンロードにエクスポートしました:\n%1$s</string>
     <string name="character_export_failed_msg">エクスポートに失敗しました。ストレージ権限を確認のうえ再試行してください。</string>
+    <string name="characters_no_linked_sessions">関連する会話はありません</string>
+    <string name="characters_session_modes_unavailable">会話タイプは一時的に利用できません</string>
 </resources>

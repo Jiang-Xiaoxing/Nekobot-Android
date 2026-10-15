@@ -435,4 +435,13 @@
     <string name="sandbox_settings_reset_confirm_message">apk / pip / npm で入れたソフトと /root のデータを削除します（復元不可）。会話ワークスペースは保持されます。</string>
     <string name="sandbox_settings_reset_confirm_action">リセット</string>
     <string name="sandbox_settings_reset_done">サンドボックスを初期状態に戻しました</string>
+    <string name="style_chat_effects">チャットの効果</string>
+    <string name="style_reasoning_style">思考の表示スタイル</string>
+    <string name="style_original_thinking">従来の表示</string>
+    <string name="style_dynamic_thinking">思考のアニメーション</string>
+    <string name="style_original_thinking_hint">従来の思考表示と展開方法を使用します。</string>
+    <string name="style_dynamic_thinking_hint">思考ラベルがゆっくり明滅します。生成中は展開し、本文の開始時に折りたたみます。文字の更新に追従し、上へスクロールして読む間は追従を停止します。</string>
+    <string name="style_dynamic_messages">メッセージのアニメーション</string>
+    <string name="style_dynamic_messages_hint">双方の新しい吹き出しが一度だけ滑らかに現れ、その後の文字も滑らかに表示されます。無効にすると従来の表示になります。</string>
+    <string name="style_effects_scope_hint">外観のみを変更し、モデルの思考は有効にしません。単一セッションキャラクターの表示は、引き続きチャット設定の「思考を表示」で制御します。</string>
 </resources>

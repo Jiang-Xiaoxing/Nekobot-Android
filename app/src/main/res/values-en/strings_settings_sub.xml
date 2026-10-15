@@ -442,4 +442,13 @@
     <string name="sandbox_settings_reset_confirm_message">Removes software installed via apk / pip / npm and all /root data, unrecoverable. Session workspaces are kept.</string>
     <string name="sandbox_settings_reset_confirm_action">Reset</string>
     <string name="sandbox_settings_reset_done">Sandbox restored to its initial state</string>
+    <string name="style_chat_effects">Chat effects</string>
+    <string name="style_reasoning_style">Thought display style</string>
+    <string name="style_original_thinking">Original display</string>
+    <string name="style_dynamic_thinking">Animated thoughts</string>
+    <string name="style_original_thinking_hint">Keep the original thought display and expansion behavior.</string>
+    <string name="style_dynamic_thinking_hint">The thought label gently pulses. Expand during generation and collapse when the reply begins. Follow text updates; pause following when scrolling up to read.</string>
+    <string name="style_dynamic_messages">Animated messages</string>
+    <string name="style_dynamic_messages_hint">New bubbles on both sides slide in once, then text fills in smoothly. Turn off to keep the original display.</string>
+    <string name="style_effects_scope_hint">Changes appearance only; does not enable model reasoning. For single-session characters, visibility is still controlled by “Show thoughts” in chat settings.</string>
 </resources>

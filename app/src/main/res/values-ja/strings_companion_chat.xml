@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="companion_chat_input">メッセージ…</string>
+    <string name="companion_chat_stickers">スタンプ</string>
+    <string name="companion_chat_attachments">画像やファイルを追加</string>
+    <string name="companion_chat_photos">画像</string>
+    <string name="companion_chat_files">ファイル</string>
+    <string name="companion_chat_settings">チャット設定</string>
+    <string name="companion_chat_show_reasoning">思考を表示</string>
+    <string name="companion_chat_show_reasoning_hint">このキャラクターのみに適用。有効にするとタップして表示できます</string>
+    <string name="companion_chat_reasoning">心の声 Beta（テスト版）</string>
+    <string name="companion_chat_typing">入力中…</string>
+    <string name="companion_chat_reply_unfinished">返信が完了していません</string>
+    <string name="companion_chat_resume_reply">返信を続ける</string>
+    <string name="companion_chat_dismiss_reply">今は続けない</string>
+    <string name="companion_chat_details">キャラクターと記憶</string>
+    <string name="companion_chat_search">チャット履歴を検索</string>
+    <string name="companion_chat_favorites">保存したメッセージ</string>
+    <string name="companion_chat_tools">ツールとデバッグ</string>
+    <string name="companion_chat_tools_hint">モデルのパラメータ、ツールの権限、使用量</string>
+    <string name="companion_chat_more_tools">その他のツール設定</string>
+    <string name="companion_chat_terminal_hint">サンドボックスを表示してコマンドを実行</string>
+    <string name="companion_chat_browser_hint">ウェブサイトを開く、または会話内のウェブファイルをプレビュー</string>
+    <string name="companion_chat_clear">チャット履歴を消去</string>
+    <string name="companion_chat_clear_keyword">消去</string>
+    <string name="companion_chat_clear_type">「%1$s」と入力して確認</string>
+    <string name="companion_chat_retry">返信を再生成</string>
+    <string name="companion_chat_reply_versions">ほかの返信</string>
+</resources>

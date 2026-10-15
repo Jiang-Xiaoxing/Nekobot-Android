@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_mode_group_label">그룹 대화</string>
+    <string name="session_mode_character_hint">캐릭터로 대화하기</string>
+    <string name="session_mode_agent_hint">도구로 작업 처리하기</string>
+    <string name="session_mode_companion_hint">하나의 대화에서 함께한 순간들을 계속 기억합니다</string>
+    <string name="single_session_headline">같은 대화에서,\n계속 이야기해요.</string>
+    <string name="single_session_about">이 모드 알아보기</string>
+    <string name="single_session_about_body">캐릭터 하나에 대화창 하나\n생성하면 이 캐릭터는 같은 대화에 고정되며 다른 창을 열지 않습니다.\n\n중요한 일을 기억하기\n단일 세션 캐릭터 기억은 취향, 경험, 약속을 정리합니다. 내용을 확인하고 편집하거나 원래 메시지와 대조할 수 있습니다. 일반 캐릭터 기억 및 전역 Agent 기억과 별도로 저장됩니다.\n\n기존 대화 가져오기\n생성 화면에서 기존 캐릭터와 가져올 대화를 선택하세요. 모델을 설정하고 변환하면 새 복사본이 만들어집니다. 원래 캐릭터와 대화는 보존됩니다.\n\n필요할 때 도구 사용하기\n대화 중에도 설정되어 있고 사용 가능한 Agent 도구를 이용할 수 있습니다. 모델과 도구 사용 시 제공업체 요금이 발생할 수 있습니다.</string>
+</resources>

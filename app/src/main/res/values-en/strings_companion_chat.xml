@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="companion_chat_input">Message…</string>
+    <string name="companion_chat_stickers">Stickers</string>
+    <string name="companion_chat_attachments">Add images or files</string>
+    <string name="companion_chat_photos">Images</string>
+    <string name="companion_chat_files">Files</string>
+    <string name="companion_chat_settings">Chat settings</string>
+    <string name="companion_chat_show_reasoning">Show thoughts</string>
+    <string name="companion_chat_show_reasoning_hint">Applies only to this character. Enable to tap and view thoughts.</string>
+    <string name="companion_chat_reasoning">Inner thoughts Beta (testing)</string>
+    <string name="companion_chat_typing">Typing…</string>
+    <string name="companion_chat_reply_unfinished">Reply unfinished</string>
+    <string name="companion_chat_resume_reply">Continue reply</string>
+    <string name="companion_chat_dismiss_reply">Skip for now</string>
+    <string name="companion_chat_details">Character and memory</string>
+    <string name="companion_chat_search">Search chat history</string>
+    <string name="companion_chat_favorites">Saved messages</string>
+    <string name="companion_chat_tools">Tools and debugging</string>
+    <string name="companion_chat_tools_hint">Model parameters, tool permissions, and usage</string>
+    <string name="companion_chat_more_tools">More tool settings</string>
+    <string name="companion_chat_terminal_hint">View the sandbox and run commands</string>
+    <string name="companion_chat_browser_hint">Open websites or preview web files from this conversation</string>
+    <string name="companion_chat_clear">Clear chat history</string>
+    <string name="companion_chat_clear_keyword">CLEAR</string>
+    <string name="companion_chat_clear_type">Type “%1$s” to confirm</string>
+    <string name="companion_chat_retry">Regenerate reply</string>
+    <string name="companion_chat_reply_versions">Other replies</string>
+</resources>

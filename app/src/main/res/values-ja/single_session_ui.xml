@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_mode_group_label">グループチャット</string>
+    <string name="session_mode_character_hint">キャラクターとして会話する</string>
+    <string name="session_mode_agent_hint">ツールを使ってタスクを処理する</string>
+    <string name="session_mode_companion_hint">ひとつの会話で、一緒に過ごした日々を覚える</string>
+    <string name="single_session_headline">同じ会話で、\nずっと話し続けよう。</string>
+    <string name="single_session_about">このモードについて</string>
+    <string name="single_session_about_body">ひとりのキャラクターに、ひとつのチャット\n作成後、このキャラクターは同じ会話に固定され、別のウィンドウは開きません。\n\n大切なことを覚える\n単一セッションキャラクターの記憶は、好み、体験、約束を整理します。表示や編集ができ、元のメッセージで確認することもできます。通常のキャラクター記憶やグローバル Agent 記憶とは別に保存されます。\n\n既存のチャットを引き継ぐ\n作成画面で既存のキャラクターを選び、移行する会話を選択します。モデルを設定して変換すると、新しいコピーが作成されます。元のキャラクターとチャットは保持されます。\n\n必要に応じてツールを使う\n会話中も、設定済みで利用可能な Agent ツールを使用できます。モデルやツールの利用には、提供元の料金が発生する場合があります。</string>
+</resources>
