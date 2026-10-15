@@ -8,6 +8,14 @@ import org.junit.Test
 class CompanionStreamTurnGateTest {
 
     @Test
+    fun retryResetsFailedPreviewButFollowingToolRoundDoesNotResetItAgain() {
+        val metadata = mutableMapOf<String, Any>()
+        assertTrue(CompanionStreamTurnGate.shouldEmitStart(true, metadata))
+        assertTrue(CompanionStreamTurnGate.shouldEmitStart(true, metadata, retry = true))
+        assertFalse(CompanionStreamTurnGate.shouldEmitStart(true, metadata))
+    }
+
+    @Test
     fun companionTurnEmitsStreamStartOnlyOnceAcrossToolRounds() {
         val metadata = mutableMapOf<String, Any>()
         assertTrue(CompanionStreamTurnGate.shouldEmitStart(true, metadata))

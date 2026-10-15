@@ -16,6 +16,19 @@ class CharacterThinkingStyleTest {
     }
 
     @Test
+    fun everyReplyHasAnUnconditionalThinkingContractAndNoInterfaceGuess() {
+        for (settings in listOf(CharacterThinkingSettings(), CharacterThinkingSettings(customPrompt = "我轻轻地想。"))) {
+            val prompt = characterThinkingPrompt(settings, "林小满", "小星")
+            assertTrue(prompt.contains("每一条正式回复（包括简短闲聊）都必须"))
+            assertTrue(prompt.contains("<think>简短的内心想法</think>"))
+            assertTrue(prompt.contains("不要省略、写空标签"))
+            assertTrue(prompt.contains("不要在任何内心想法里讨论、引用、复述或解释"))
+            assertFalse(prompt.contains("接口没有提供原生思考字段时"))
+            assertFalse(prompt.contains("接口提供原生思考字段时"))
+        }
+    }
+
+    @Test
     fun characterWithReasoningGetsChineseFirstPersonPromptAtBehaviorPlusOne() = runBlocking {
         val ctx = context()
         AIPipeline().prepareContext(ctx, callbacks())

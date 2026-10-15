@@ -465,8 +465,9 @@ internal class LocalPipelineCallbacks(
         com.nekobot.app.ServiceContainer.prefs.customReasoningFor(db.dbName, session.id, session.companionMode, session.sessionMode)
     }
 
-    private fun createStreamEventCoalescer(ctx: PipelineContext): LocalStreamEventCoalescer =
-        LocalStreamEventCoalescer(
+    private fun createStreamEventCoalescer(ctx: PipelineContext): LocalStreamEventCoalescer {
+        var requestStarted = false
+        return LocalStreamEventCoalescer(
             onEvent = { event ->
                 when (event) {
                     is RealtimeEvent.ReasoningChunk -> {
@@ -478,12 +479,16 @@ internal class LocalPipelineCallbacks(
                         }
                     }
                     is RealtimeEvent.StreamStart -> {
-                        if (CompanionStreamTurnGate.shouldEmitStart(session.companionMode, ctx.metadata)) emitEvent(event)
+                        if (CompanionStreamTurnGate.shouldEmitStart(session.companionMode, ctx.metadata, retry = requestStarted)) {
+                            emitEvent(event)
+                        }
+                        requestStarted = true
                     }
                     else -> emitEvent(event)
                 }
             }
         )
+    }
 
     // ---- 会话 / 消息 I/O ----
 
@@ -1136,7 +1141,7 @@ internal class LocalPipelineCallbacks(
                 if (requestTools.isNotEmpty()) put("tools", requestTools)
                 putReasoningParams(this, reasoningEffort, characterThinking) { customReasoning }
             }
-            val streamRelay = if (session.sessionMode.equals("agent", ignoreCase = true)) {
+            val streamRelay = if (shouldRelayModelCall(session.sessionMode, characterThinking)) {
                 createStreamEventCoalescer(ctx)
             } else null
             val thinkingStream = streamRelay?.let { relay ->
@@ -1207,7 +1212,8 @@ internal class LocalPipelineCallbacks(
                     callWithoutTools(modelQueueFor(ctx), CompanionRecallFinal.finalMessages(requestMessages), extra) { generationController.isStopped }
                 }
             }
-            val result = characterThinkingResult(resolvedResult, characterThinking)
+            val result = if (resolvedResult === rawResult && thinkingStream != null) thinkingStream.resolve(resolvedResult)
+                else characterThinkingResult(resolvedResult, characterThinking)
 
             if (session.companionMode && db.isOpen) {
                 val used = modelQueue.firstOrNull { it.id == result.usedModelId } ?: activeModel

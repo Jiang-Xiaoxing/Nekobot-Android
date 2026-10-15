@@ -67,40 +67,80 @@ internal class CharacterThinkingParser(
 }
 
 /**
- * 标签内心想法优先，否则保留原生思考。原生片段暂存到本次响应结束，避免先显示
- * 原生文本、后收到标签时重复或与最终保存不一致；每次主备切换清空暂存。
+ * 先到的有效思考通道立即显示并保持到本次请求结束；后到通道不重复显示。
+ * 正常文本不等待结束，也不在标签到达时撤回已显示的原生文本；主备切换重置状态。
  */
 internal class CharacterThinkingStream(
     private val enabled: Boolean,
     private val downstream: LocalAiStreamCallbacks
 ) {
-    private val nativeThinking = StringBuilder()
+    private enum class Source { NATIVE, TAGGED }
+    private var source: Source? = null
+    private val displayedThinking = StringBuilder()
+    private val nativePrefix = StringBuilder()
     private val taggedPrefix = StringBuilder()
-    private var hasTaggedThinking = false
+    private var received = false
     private var finished = false
+    private var nativeFilter = newFilter(Source.NATIVE)
+    private var taggedFilter = newFilter(Source.TAGGED)
     private var parser = newParser()
-    private fun newParser() = CharacterThinkingParser(downstream.onContentChunk) { chunk ->
-        if (hasTaggedThinking) downstream.onThinkingChunk(chunk) else {
-            taggedPrefix.append(chunk)
-            if (taggedPrefix.isNotBlank()) {
-                hasTaggedThinking = true
-                downstream.onThinkingChunk(taggedPrefix.toString())
-                taggedPrefix.setLength(0)
+
+    private fun newFilter(candidate: Source) = CharacterThinkingEchoFilter { chunk ->
+        val prefix = if (candidate == Source.NATIVE) nativePrefix else taggedPrefix
+        if (source == null) {
+            prefix.append(chunk)
+            // 被过滤的复述可能只剩引号或括号，不能让它抢占后续正常心里话。
+            if (prefix.any(Char::isLetterOrDigit)) {
+                source = candidate
+                relayThinking(prefix.toString())
+                prefix.setLength(0)
             }
-        }
+        } else if (source == candidate) relayThinking(chunk)
+    }
+
+    private fun relayThinking(chunk: String) {
+        displayedThinking.append(chunk)
+        downstream.onThinkingChunk(chunk)
+    }
+
+    private fun newParser() = CharacterThinkingParser(downstream.onContentChunk) { chunk ->
+        taggedFilter.append(chunk)
+    }
+
+    /** 按本次实际到达顺序落库，避免最后换成另一个通道、与流式显示不一致。 */
+    fun resolve(result: LocalAiResult): LocalAiResult {
+        if (!enabled) return result
+        if (!received) return characterThinkingResult(result, true)
+        finish()
+        val content = StringBuilder()
+        CharacterThinkingParser({ content.append(it) }, {}).apply { append(result.content); finish() }
+        return result.copy(content = content.toString(), thinkingContent = displayedThinking.toString(),
+            thinkingSignature = if (source == Source.NATIVE && displayedThinking.toString() == result.thinkingContent) {
+                result.thinkingSignature
+            } else "")
     }
 
     val callbacks = LocalAiStreamCallbacks(
         onStart = {
-            nativeThinking.setLength(0)
+            source = null
+            displayedThinking.setLength(0)
+            nativePrefix.setLength(0)
             taggedPrefix.setLength(0)
-            hasTaggedThinking = false
+            received = false
             finished = false
+            nativeFilter = newFilter(Source.NATIVE)
+            taggedFilter = newFilter(Source.TAGGED)
             parser = newParser()
             downstream.onStart()
         },
-        onContentChunk = { if (enabled) parser.append(it) else downstream.onContentChunk(it) },
-        onThinkingChunk = { if (enabled) nativeThinking.append(it) else downstream.onThinkingChunk(it) },
+        onContentChunk = {
+            received = true
+            if (enabled) parser.append(it) else downstream.onContentChunk(it)
+        },
+        onThinkingChunk = {
+            received = true
+            if (enabled) nativeFilter.append(it) else downstream.onThinkingChunk(it)
+        },
         onStreamObserved = downstream.onStreamObserved
     )
 
@@ -108,24 +148,18 @@ internal class CharacterThinkingStream(
         if (!enabled || finished) return
         finished = true
         parser.finish()
-        if (!hasTaggedThinking && nativeThinking.isNotBlank()) {
-            downstream.onThinkingChunk(nativeThinking.toString())
-        }
-        nativeThinking.setLength(0)
+        nativeFilter.finish()
+        taggedFilter.finish()
     }
 }
 
 internal fun characterThinkingResult(result: LocalAiResult, enabled: Boolean): LocalAiResult {
     if (!enabled) return result
-    val content = StringBuilder()
-    val thinking = StringBuilder()
-    CharacterThinkingParser({ content.append(it) }, { thinking.append(it) }).apply {
-        append(result.content)
-        finish()
-    }
-    return result.copy(content = content.toString(),
-        thinkingContent = thinking.toString().ifBlank { result.thinkingContent },
-        thinkingSignature = if (thinking.isNotBlank()) "" else result.thinkingSignature)
+    // 非流式按协议顺序先读原生思考，再读正文标签，不猜测服务器的生成顺序。
+    val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks())
+    stream.callbacks.onThinkingChunk(result.thinkingContent)
+    stream.callbacks.onContentChunk(result.content)
+    return stream.resolve(result)
 }
 
 /** 历史思考不回传；当前用户轮次的原生工具思考及签名必须保留。 */
@@ -140,6 +174,10 @@ internal fun characterThinkingMessages(messages: List<Map<String, Any>>, enabled
 
 internal fun PipelineContext.usesCharacterThinking(): Boolean =
     promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.let { it.enabled && it.content.isNotBlank() } == true
+
+/** 普通角色有工具时也会走 ModelCall，必须接上与 Agent 相同的实时通道。 */
+internal fun shouldRelayModelCall(sessionMode: String?, characterThinking: Boolean): Boolean =
+    sessionMode.equals("agent", ignoreCase = true) || characterThinking
 
 internal fun hasCharacterThinking(message: Map<String, Any>): Boolean =
     listOf("reasoning_content", "thinking_content").any { (message[it] as? String)?.isNotBlank() == true }

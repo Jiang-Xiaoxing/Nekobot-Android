@@ -8,6 +8,17 @@ import org.junit.Test
 class LocalStreamEventCoalescerTest {
 
     @Test
+    fun contentAndReasoningEachReleaseTheirFirstChunkEvenAtTheSameTime() {
+        val events = mutableListOf<RealtimeEvent>()
+        val coalescer = LocalStreamEventCoalescer(events::add, nowNanos = { 0L })
+        coalescer.onStart()
+        coalescer.onReasoningChunk("我想")
+        coalescer.onContentChunk("你好")
+        assertEquals("我想", events.filterIsInstance<RealtimeEvent.ReasoningChunk>().single().chunk)
+        assertEquals("你好", events.filterIsInstance<RealtimeEvent.StreamChunk>().single().chunk)
+    }
+
+    @Test
     fun tenThousandTinyChunksArePreservedWithoutTenThousandUiEvents() {
         val events = mutableListOf<RealtimeEvent>()
         val coalescer = LocalStreamEventCoalescer(

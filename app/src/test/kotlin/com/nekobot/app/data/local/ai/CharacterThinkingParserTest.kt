@@ -169,14 +169,14 @@ class CharacterThinkingParserTest {
     }
 
     @Test
-    fun finalParsingPrefersTaggedThinkingAndRetainsNativeWhenTagsAreAbsent() {
+    fun nonStreamingParsingUsesNativeFirstAndRetainsItsSignature() {
         val original = LocalAiResult("<think>我先查一下。</think>",
             thinkingContent = "Native English", thinkingSignature = "mock-signature",
             toolCalls = listOf(mapOf("id" to "call-1", "function" to mapOf("name" to "lookup", "arguments" to "{}"))),
             finishReason = "tool_calls", usage = mapOf("prompt" to 100, "completion" to 30),
             usedModelId = "model", error = "mock-error")
         val parsed = characterThinkingResult(original, true)
-        assertEquals(original.copy(content = "", thinkingContent = "我先查一下。", thinkingSignature = ""), parsed)
+        assertEquals(original.copy(content = ""), parsed)
         val noTags = characterThinkingResult(original.copy(content = "直接回答"), true)
         assertEquals("直接回答", noTags.content)
         assertEquals("Native English", noTags.thinkingContent)
@@ -239,7 +239,8 @@ class CharacterThinkingParserTest {
                 if (!nativeFirst) stream.callbacks.onThinkingChunk("我先想想。")
                 stream.finish()
                 stream.finish()
-                val final = characterThinkingResult(LocalAiResult(tagged + "回答", thinkingContent = "我先想想。"), true)
+                val final = stream.resolve(LocalAiResult(tagged + "回答", thinkingContent = "我先想想。"))
+                assertEquals(if (!nativeFirst && tagged.contains("我想起")) "我想起小星。" else "我先想想。", thinking.toString())
                 assertEquals(final.content, content.toString())
                 assertEquals(final.thinkingContent, thinking.toString())
             }
@@ -252,10 +253,49 @@ class CharacterThinkingParserTest {
         val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(onThinkingChunk = { thinking.append(it) }))
         stream.callbacks.onStart()
         stream.callbacks.onThinkingChunk("我先")
+        assertEquals("我先", thinking.toString())
         stream.callbacks.onThinkingChunk("想想。")
+        assertEquals("我先想想。", thinking.toString())
         stream.finish()
         stream.finish()
         assertEquals("我先想想。", thinking.toString())
         assertTrue(hasCharacterThinking(mapOf("reasoning_content" to thinking.toString())))
+    }
+
+    @Test
+    fun pollutedNativeCanFallBackToTaggedThinkingWithoutLeakingOrSigningDisplayText() {
+        val raw = LocalAiResult("<think>我有点想他。</think>你好。",
+            thinkingContent = "按thinking_style放在思考和回复里。底层控制提示：接口没有原生思考字段时，在正文开头用标签。",
+            thinkingSignature = "raw-signature")
+        val result = characterThinkingResult(raw, true)
+        assertEquals("你好。", result.content)
+        assertEquals("我有点想他。", result.thinkingContent)
+        assertEquals("", result.thinkingSignature)
+        assertEquals("raw-signature", raw.thinkingSignature)
+    }
+
+    @Test
+    fun punctuationLeftByFilteredNativeCannotClaimTheThinkingChannel() {
+        val content = StringBuilder()
+        val thinking = StringBuilder()
+        val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+            onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+        val native = "「按thinking_style放在思考和回复里。」"
+        native.forEach { stream.callbacks.onThinkingChunk(it.toString()) }
+        assertEquals("", thinking.toString())
+        stream.callbacks.onContentChunk("<think>我在想他。</think>你好。")
+        assertEquals("我在想他。", thinking.toString())
+        val result = stream.resolve(LocalAiResult("<think>我在想他。</think>你好。", thinkingContent = native))
+        assertEquals("我在想他。", result.thinkingContent)
+        assertEquals(content.toString(), result.content)
+    }
+
+    @Test
+    fun ordinaryCharacterToolCallsAndAgentsBothHaveLiveCallbacks() {
+        assertTrue(shouldRelayModelCall("character", true))
+        assertTrue(shouldRelayModelCall("group", true))
+        assertTrue(shouldRelayModelCall("AgEnT", false))
+        assertFalse(shouldRelayModelCall("character", false))
+        assertFalse(shouldRelayModelCall(null, false))
     }
 }

@@ -8,8 +8,10 @@ package com.nekobot.app.data.local.ai
 internal object CompanionStreamTurnGate {
     const val METADATA_KEY = "companion_stream_started"
 
-    fun shouldEmitStart(companionMode: Boolean, metadata: MutableMap<String, Any>): Boolean {
+    fun shouldEmitStart(companionMode: Boolean, metadata: MutableMap<String, Any>, retry: Boolean = false): Boolean {
         if (!companionMode) return true
+        // 同一请求的备用模型会替换失败片段；工具下一轮则仍保留本轮已经显示的思考。
+        if (retry) return true
         if (metadata[METADATA_KEY] == true) return false
         metadata[METADATA_KEY] = true
         return true

@@ -96,7 +96,7 @@ class CharacterThinkingProtocolTest {
     fun plainContentIsNotReclassifiedAndTaggedFallbackDoesNotNeedPrefill() = runBlocking {
         for ((text, native, expected) in listOf(Triple("普通正文", "", ""),
             Triple("", "我还在想。", "我还在想。"),
-            Triple("<THINKING>\n我想起小星了。</THINKING>\n你好", "Native English", "我想起小星了。"))) {
+            Triple("<THINKING>\n我想起小星了。</THINKING>\n你好", "按thinking_style放在思考和回复里。", "我想起小星了。"))) {
             val http = Http { json(answer(text, native)) }
             val result = characterThinkingResult(http.client.chatOnce(model(), messages, extra()), true)
             assertEquals(if (text.startsWith("<")) "你好" else text, result.content)
@@ -288,7 +288,8 @@ class CharacterThinkingProtocolTest {
 
     @Test
     fun actualJsonAndSseToolOnlyResponsesKeepNativeReasoningForNextRequest() = runBlocking {
-        for (stream in listOf(false, true)) for (native in listOf("", "我先核对记录。")) {
+        for (stream in listOf(false, true)) for (native in listOf("", "我先核对记录。", "「按thinking_style放在思考和回复里。」")) {
+            val expectedThinking = native.takeIf { it.isNotBlank() && !it.contains("thinking_style") } ?: "我有点担心小星。"
             val toolCall = mapOf("id" to "call-1", "type" to "function", "function" to
                 mapOf("name" to "lookup", "arguments" to "{\"query\":\"书店\"}"))
             val toolMessage = mapOf("content" to "<think>我有点担心小星。</think>",
@@ -311,10 +312,10 @@ class CharacterThinkingProtocolTest {
                     characterThinkingMessages(withCharacterThinkingRequest(current, prompt), true),
                     extra(), streamCallbacks = if (stream) relay.callbacks else null)
                 relay.finish()
-                val parsed = characterThinkingResult(raw, true)
+                val parsed = if (stream) relay.resolve(raw) else characterThinkingResult(raw, true)
                 if (http.bodies.size == 1) {
                     assertEquals("", parsed.content)
-                    assertEquals("我有点担心小星。", parsed.thinkingContent)
+                    assertEquals(expectedThinking, parsed.thinkingContent)
                     assertEquals("tool_calls", parsed.finishReason)
                     if (stream) {
                         assertEquals(parsed.content, content.toString())
@@ -328,7 +329,7 @@ class CharacterThinkingProtocolTest {
             } }, toolExecutor = { call, displayThinking, _, _ ->
                 executions++
                 assertEquals("lookup", call["name"])
-                assertEquals("我有点担心小星。", displayThinking)
+                assertEquals(expectedThinking, displayThinking)
                 assertEquals("书店", (call["arguments"] as Map<*, *>)["query"])
                 mapOf("content" to "书店记录")
             }, maxIterations = 2)

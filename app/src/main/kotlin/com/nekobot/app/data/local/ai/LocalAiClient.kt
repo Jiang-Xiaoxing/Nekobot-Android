@@ -139,13 +139,22 @@ internal fun mergeStreamTerminalResponse(
 
 /** 识别短篇、明显的供应商拒答占位文本，避免误判正常长回复。 */
 internal fun shouldFailoverForAssistantContent(content: String): Boolean {
-    val compact = content
-        .trim()
-        .replace(Regex("""[\s，,。.!！：:；;\"'“”‘’`*_#>\-]"""), "")
+    val compact = compactAssistantContent(content)
     if (compact.isBlank() || compact.length > FAILOVER_REFUSAL_MAX_CHARS) return false
     if (compact == "相关内容" || compact == "相关的内容") return true
     return FAILOVER_REFUSAL_PREFIXES.any(compact::startsWith)
 }
+
+/** 只等待仍可能是拒答占位的前缀；普通短回答不再统一攒满 240 字或等流结束。 */
+internal fun shouldBufferAssistantPrefix(content: String): Boolean {
+    if (content.length > FAILOVER_REFUSAL_MAX_CHARS) return false
+    val compact = compactAssistantContent(content)
+    return compact.isBlank() || shouldFailoverForAssistantContent(content) ||
+        (FAILOVER_REFUSAL_PREFIXES + listOf("相关内容", "相关的内容")).any { it.startsWith(compact) }
+}
+
+private fun compactAssistantContent(content: String): String = content.trim()
+    .replace(Regex("""[\s，,。.!！：:；;\"'“”‘’`*_#>\-]"""), "")
 
 private const val FAILOVER_REFUSAL_MAX_CHARS = 240
 
@@ -500,7 +509,7 @@ class LocalAiClient(
             var finishReason = ""
             // 思考正文与正文分开放行：
             // - 思考内容不参与「短篇拒答占位」的故障转移判定，到达即转发给 UI（思考卡片实时增长）；
-            // - 正文仍先缓冲，超过阈值（或流正常结束）才放行，故障转移判定保持原样。
+            // - 正文仅暂存仍可能是拒答占位的前缀，正常内容立即放行。
             var thinkingReleased = false
             var callbacksReleased = false
             var callbacksStarted = false
@@ -603,7 +612,7 @@ class LocalAiClient(
                         content.append(chunk)
                         if (callbacksReleased) {
                             streamCallbacks?.onContentChunk?.invoke(chunk)
-                        } else if (content.length > FAILOVER_REFUSAL_MAX_CHARS) {
+                        } else if (!shouldBufferAssistantPrefix(content.toString())) {
                             releaseBufferedCallbacks()
                         }
                     }
@@ -1372,7 +1381,7 @@ class LocalAiClient(
                             fullContent.append(chunk)
                             if (contentReleased) {
                                 emit(RealtimeEvent.StreamChunk(chunk))
-                            } else if (fullContent.length > FAILOVER_REFUSAL_MAX_CHARS) {
+                            } else if (!shouldBufferAssistantPrefix(fullContent.toString())) {
                                 // 思考若已逐块转发，这里不再整段补发，避免 UI 重复累积
                                 if (!thinkingReleased) {
                                     fullThinking.takeIf { it.isNotEmpty() }?.let {
