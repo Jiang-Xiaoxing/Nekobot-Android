@@ -73,6 +73,18 @@ object ServiceContainer {
         _appForegroundFlow.value = foreground
     }
 
+    /**
+     * 回到前台后继续被系统打断的关系评估。
+     *
+     * 关系评估没有前台服务保活，切到后台后进程可能被冻结/回收而中断；
+     * 这里在回到前台时补跑一次恢复，不必等下一轮聊天。仅本地模式有单会话角色的关系评估。
+     */
+    fun resumeCompanionRelationshipAfterForeground() {
+        if (!this::prefs.isInitialized || !prefs.isLocalMode) return
+        if (!this::localRepository.isInitialized) return
+        runCatching { localRepository.resumeCompanionRelationshipAfterForeground() }
+    }
+
     /** 当前可见的聊天会话 id（聊天界面在前台且处于 resumed 状态）；null 表示不在任何会话内。 */
     @Volatile
     var activeChatSessionId: String? = null
@@ -528,6 +540,8 @@ class NekobotApp : Application(), coil.ImageLoaderFactory {
                     if (startedActivities == 1) {
                         ServiceContainer.updateAppForeground(true)
                         com.nekobot.app.data.local.ai.AgentAttentionCenter.recheck()
+                        // 回到前台继续被系统打断的关系评估（切后台可能被冻结/回收）。
+                        ServiceContainer.resumeCompanionRelationshipAfterForeground()
                     }
                 }
 

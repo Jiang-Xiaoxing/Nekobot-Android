@@ -46,19 +46,36 @@ internal class CompanionRelationshipService(
     fun observe(id: String) = dao.observe(id)
     private val tags = ConcurrentHashMap<String, String>()
     private val interruptedSessions = ConcurrentHashMap.newKeySet<String>()
-    private val startupRecovery = scope.async(start = CoroutineStart.LAZY) {
-        val recoverable = lock.withLock {
-            dao.statesWithNotice().mapNotNull { state ->
-                if (CompanionRelationshipRecovery.interrupted(state.notice)) {
-                    dao.save(CompanionRelationshipRecovery.clearInterruptedNotice(state))
-                    interruptedSessions.add(state.sessionId)
-                    state.sessionId
-                } else state.sessionId.takeIf { CompanionRelationshipRecovery.retryable(state.notice) }
-            }
+    /** 扫描上次被打断、可以继续的评估批次：应用切后台被冻结/回收时状态里会留下“未完成”标记。 */
+    private suspend fun recoverableSessions(): List<String> = lock.withLock {
+        dao.statesWithNotice().mapNotNull { state ->
+            if (CompanionRelationshipRecovery.interrupted(state.notice)) {
+                dao.save(CompanionRelationshipRecovery.clearInterruptedNotice(state))
+                interruptedSessions.add(state.sessionId)
+                state.sessionId
+            } else state.sessionId.takeIf { CompanionRelationshipRecovery.retryable(state.notice) }
         }
-        recoverable.forEach { afterChat(it, afterEvaluation = true) }
+    }
+    private val startupRecovery = scope.async(start = CoroutineStart.LAZY) {
+        recoverableSessions().forEach { afterChat(it, afterEvaluation = true) }
     }
     init { startupRecovery.start() }
+
+    /**
+     * 应用回到前台后继续被打断的评估。
+     *
+     * 关系评估在应用级作用域上运行，但切到后台后没有前台服务保活：系统可能冻结甚至回收进程，
+     * 正在请求的批次会中断，状态里留下 IN_FLIGHT／RETRY_IN_FLIGHT 标记。
+     * 回到前台立即续跑，不必等下一轮聊天，也不用重新进入关系状态页触发恢复。
+     */
+    fun resumeAfterForeground() {
+        scope.launch {
+            runCatching {
+                startupRecovery.await()
+                recoverableSessions().forEach { afterChat(it, afterEvaluation = true) }
+            }
+        }
+    }
     private suspend fun session(id: String) = requireNotNull(db.sessionDao().getById(id)?.takeIf { it.companionMode && it.characterId != null }) { "当前会话不是单会话角色" }
     private suspend fun rows(id: String): List<LocalMessageEntity> {
         val s = session(id)

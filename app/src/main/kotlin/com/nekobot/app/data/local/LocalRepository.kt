@@ -1693,6 +1693,11 @@ class LocalRepository(
         }
     }
 
+    /** 回到前台后继续被系统打断的关系评估（切后台可能冻结/回收进程）。 */
+    internal fun resumeCompanionRelationshipAfterForeground() {
+        companionRelationship.resumeAfterForeground()
+    }
+
     /** 按资料库、会话与失败版本持久去重，离开页面或重启也不重复弹同一条提示。 */
     @Synchronized
     internal fun claimCompanionRelationshipNotice(state: com.nekobot.app.data.local.db.CompanionRelationshipEntity, busy: Boolean): String? {
