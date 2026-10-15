@@ -118,6 +118,23 @@ class CompanionRelationshipNarrativeTest {
         assertThrows(IllegalArgumentException::class.java) { parse(root) }
     }
 
+    @Test fun correctionCannotSilentlyKeepOldTextWhenItsNewReferenceIsUnknown() {
+        val root = json(); update(root, eventKeys = "[\"invented\"]")
+        assertThrows(IllegalArgumentException::class.java) {
+            parse(root, effects = listOf(event(revision = 2, row = recent)), target = event())
+        }
+    }
+
+    @Test fun existingButUnprovidedEventCannotBecomeANewDependency() {
+        val root = json(); update(root, eventKeys = "[\"promise\"]")
+        val skipped = mutableSetOf<String>()
+        val result = CompanionRelationshipNarrative.parse(root, previous(), rows, rows, listOf(event()), emptyList(),
+            setOf("new"), recent.createdAt, 99, providedEventKeys = emptySet(),
+            onUnusableEventReference = { skipped.add(it) })
+        assertEquals(previous().relationships["trust"], result.relationships["trust"])
+        assertEquals(setOf("trust"), skipped)
+    }
+
     @Test fun oldRecordsAreLabeledAndRawScoresAreNotInjected() {
         val prompt = CompanionRelationshipPrompt.build(null, legacy(), rows, emptyList())
         assertTrue(prompt.contains("旧版记录，未经新版核对"))
