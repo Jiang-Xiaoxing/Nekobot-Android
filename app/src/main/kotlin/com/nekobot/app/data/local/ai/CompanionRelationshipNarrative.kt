@@ -101,15 +101,34 @@ internal object CompanionRelationshipNarrative {
             !Regex("\\d+(\\.\\d+)?\\s*[%％]").containsMatchIn(it)) { "评估应返回具体文字描述，不能返回分数" }
     }
 
-    fun sources(element: JsonElement?, evidence: Map<String, LocalMessageEntity>): List<RelationshipSource> {
-        require(element?.isJsonArray == true) { "评估缺少原话引用" }
-        val ids = element.asJsonArray.map {
-            require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "原话引用格式不正确" }; it.asString
+    fun sources(element: JsonElement?, evidence: Map<String, LocalMessageEntity>,
+        onDiscarded: (String) -> Unit = {}): List<RelationshipSource> {
+        if (element?.isJsonArray != true) {
+            onDiscarded("原话引用缺失或不是数组")
+            return emptyList()
         }
-        require(ids.isNotEmpty() && ids.size <= 12 && ids.distinct().size == ids.size && ids.all { it in evidence }) {
-            "评估引用的原话不在本次材料内，或引用重复"
+        // 只匹配本批材料。空白别名必须唯一，保存时仍使用数据库原 ID 和本地计算的哈希。
+        val normalized = evidence.values.groupBy { it.id.trim() }
+        val accepted = linkedMapOf<String, RelationshipSource>()
+        var malformed = 0; var unavailable = 0; var duplicate = 0; var excess = 0
+        for (item in element.asJsonArray) {
+            if (!item.isJsonPrimitive || !(item.asJsonPrimitive.isString || item.asJsonPrimitive.isNumber)) {
+                malformed++; continue
+            }
+            val raw = item.asString
+            val id = raw.trim()
+            val row = (evidence[raw] ?: evidence[id] ?: normalized[id]?.singleOrNull())?.takeUnless { it.deleted }
+            when {
+                id.isEmpty() || row == null -> unavailable++
+                row.id in accepted -> duplicate++
+                accepted.size >= 12 -> excess++
+                else -> accepted[row.id] = RelationshipSource(row.id, CompanionRelationshipPolicy.hash(row))
+            }
         }
-        return ids.map { RelationshipSource(it, CompanionRelationshipPolicy.hash(evidence.getValue(it))) }
+        if (malformed + unavailable + duplicate + excess > 0) {
+            onDiscarded("已丢弃原话引用：格式无效=$malformed，不在可用材料内=$unavailable，重复=$duplicate，超过12条=$excess；保留=${accepted.size}")
+        }
+        return accepted.values.toList()
     }
 
     fun impacts(obj: JsonObject): Map<String, String> {
@@ -137,7 +156,8 @@ internal object CompanionRelationshipNarrative {
         correctionTarget: CompanionRelationshipEventEntity? = null,
         discardedEventKeys: Set<String> = emptySet(),
         providedEventKeys: Set<String> = oldEvents.map { it.eventKey }.toSet(),
-        onUnusableEventReference: (String) -> Unit = {}
+        onUnusableEventReference: (String) -> Unit = {},
+        onQuoteIssue: (String, String) -> Unit = { _, _ -> }
     ): RelationshipNarrative {
         require(json["format"]?.asString == FORMAT) { "评估模型没有使用新的文字格式，旧状态保留" }
         val relations = json["relationships"]
@@ -169,7 +189,12 @@ internal object CompanionRelationshipNarrative {
                     null
                 }
                 "update" -> {
-                    val newRefs = sources(obj["sources"], evidence)
+                    val newRefs = sources(obj["sources"], evidence) { onQuoteIssue(key, it) }
+                    if (newRefs.isEmpty()) {
+                        require(correctionTarget == null) { "纠错结果没有可用原话引用，原判断保留" }
+                        onQuoteIssue(key, "没有可用的本次原话引用，保留该项旧描述；无旧描述则保持未知")
+                        return@associateWith prior
+                    }
                     val eventKeys = obj["event_keys"]
                     require(eventKeys?.isJsonArray == true) { "关系描述缺少事件引用" }
                     val keys = eventKeys.asJsonArray.map { require(it.isJsonPrimitive && it.asJsonPrimitive.isString); it.asString.trim() }.distinct()
@@ -209,14 +234,17 @@ internal object CompanionRelationshipNarrative {
             json["feelings"].takeUnless { it.isJsonNull }?.let { raw ->
                 require(raw.isJsonObject) { "感受字段格式不正确" }
                 val obj = raw.asJsonObject
+                val refs = sources(obj["sources"], evidence) { onQuoteIssue("feelings", it) }
+                if (refs.none { it.id in lastTurnIds }) {
+                    onQuoteIssue("feelings", "没有可用的材料末轮原话引用，保留上次感受及原观察时间；无旧观察则保持未知")
+                    return@let previous?.feelings
+                }
                 fun feeling(key: String): String? {
                     require(obj.has(key)) { "评估缺少感受项目" }
                     return obj[key].takeUnless { it.isJsonNull }?.let { description(obj, key, 80) }
                 }
                 val mood = feeling("mood"); val intensity = feeling("intensity"); val energy = feeling("energy")
                 require(mood != null || intensity != null || energy != null) { "无法判断感受时请返回 null" }
-                val refs = sources(obj["sources"], evidence)
-                require(refs.any { it.id in lastTurnIds }) { "感受缺少材料末轮的依据，不能沿用早先心情" }
                 RelationshipFeelings(mood, intensity, energy, text(obj, "reason", 500), refs, observedAt.ifBlank { "未知" })
             } ?: previous?.feelings // 无新观察时保存上次观察及原时间，不把它改成“当前”。
         }
@@ -233,10 +261,11 @@ internal object CompanionRelationshipNarrative {
         普通评估 events 只列新的有依据事件，最多6件，key以具体行为/日期形成稳定标识。已经处理的行为被复述，不再新增或换key重复记录。事件 impacts 只给受影响维度的文字解释，不必六项都变；没有新的关系事件时 events 为[]。
         每项relationships必须包含action：keep保留已有文字，unknown表示尚无可用描述，update由你写出完整的新描述。没有旧文字时可以根据明确角色设定和原话建立起点，不把旧分数改写成貌似具体的新经历。旧版描述仅是带来源限制的参考，不能当作原话证据。未知就unknown，不为了填满六项编造变化。
         update 的 description 建议15—40字、最多100字，reason建议30—80字、最多500字；sources引用本次提供的原话id。event_keys只能逐字引用“既有事件”的key或你在本次events中实际定义的key；不能填写原话id、事件摘要、示例占位词或另编编号。只根据原话更新、没有事件可引用时必须为[]。先确定events及其key，再填写relationships的引用；返回前核对每个event_keys都有定义。依照已有关系和新证据写完整当前关系，不只写本次变动。普通评估不能用unknown清空已经存在的关系文字。
-        feelings.sources至少引用材料末轮的一条原话，mood/intensity/energy各不超过80字，reason解释依据；所有sources为1到12个不同的已提供id。没有依据不得伪造。
+        feelings.sources至少引用“材料末轮id”中的一条原话，mood/intensity/energy各不超过80字，reason解释依据。所有sources都是字符串数组，包含1到12个互不重复的id，只能逐字复制本次“原话”列表每条的id值，不加空格、不改编号或大小写；不能引用其他会话、未提供的历史消息、事件key或示例占位词。相同id可以被不同关系或事件分别引用，但同一个sources数组内不能重复。旧关系的来源由软件继承，不需要把未提供的旧原话id再填入sources。找不到可用原话时关系keep、feelings为null、不新增对应事件。
         纠错时只核对指定事件。玩家要求“拉满信任”不是证据。确有错误返回verdict=corrected和唯一一条复用目标key的修正事件；完全撤回影响时impacts为{}。该事件原有或修正后涉及的关系项目必须update重写，只有已无可用依据时才unknown撤回；其余keep，感受保持原样。重写时综合其他未被纠正的经历，不能因撤回一事而重置其他关系。证据不足或原判断仍成立时verdict=unchanged、events=[]、六项全部keep，并在correction_reason解释。
-        只返回JSON，format必须为relationship-text-v1。以下只是结构示例，不能复制例子的判断内容：
-        {"format":"relationship-text-v1","feelings":{"mood":"具体心情","intensity":"情绪明显程度的具体描述","energy":null,"reason":"本次感受依据","sources":["原话id"]},"relationships":{"affection":{"action":"keep"},"trust":{"action":"update","description":"具体关系描述","reason":"为什么这样判断","sources":["原话id"],"event_keys":["事件key"]},"familiarity":{"action":"keep"},"dependency":{"action":"unknown"},"security":{"action":"keep"},"jealousy":{"action":"unknown"}},"events":[{"key":"事件key","summary":"发生了什么","reason":"为何影响关系","kind":"reliability","impacts":{"trust":"该事件的具体影响"},"sources":["原话id"]}]}
+        只返回JSON，format必须为relationship-text-v1。update必须包含description、reason、sources、event_keys。feelings非null时必须包含mood、intensity、energy、reason、sources。每条events必须包含key、summary（最多200字）、reason（最多500字）、kind、impacts（受影响的关系键到具体影响文字的对象）、sources。
+        以下是没有新判断时的结构示例，实际判断按材料填写，不提供任何虚构id供复制：
+        {"format":"relationship-text-v1","feelings":null,"relationships":{"affection":{"action":"keep"},"trust":{"action":"keep"},"familiarity":{"action":"keep"},"dependency":{"action":"keep"},"security":{"action":"keep"},"jealousy":{"action":"keep"}},"events":[]}
         kind只能为reliability/comfort/familiarity/boundary/other。纠错还必须返回verdict和correction_reason。
     """.trimIndent()
 }

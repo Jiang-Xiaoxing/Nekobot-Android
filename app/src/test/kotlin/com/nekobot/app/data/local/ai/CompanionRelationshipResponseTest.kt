@@ -111,9 +111,11 @@ class CompanionRelationshipResponseTest {
         assertEquals("相处更亲近", result.relationships["affection"]?.description)
     }
 
-    @Test fun invalidMessageSourcesAreStillRejectedEvenWhenEventKeyIsUnknown() {
+    @Test fun invalidMessageSourcesKeepOnlyTheirDimensionEvenWhenEventKeyIsUnknown() {
         val json = evaluation("[\"undefined-event\"]")
         json["relationships"].asJsonObject["trust"].asJsonObject.add("sources", JsonParser.parseString("[\"foreign\"]"))
-        assertThrows(IllegalArgumentException::class.java) { narrative(json) }
+        val result = narrative(json)
+        assertNull(result.relationships["trust"])
+        assertEquals("相处更亲近", result.relationships["affection"]?.description)
     }
 }

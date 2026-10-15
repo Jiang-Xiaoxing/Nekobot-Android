@@ -57,15 +57,15 @@ class CompanionRelationshipNarrativeTest {
         assertEquals(recent.createdAt, result.feelings?.observedAt)
         assertNull(result.feelings?.energy)
         root["feelings"].asJsonObject.add("sources", JsonParser.parseString("[\"old\"]"))
-        assertThrows(IllegalArgumentException::class.java) { parse(root) }
+        assertEquals(previous().feelings, parse(root).feelings)
     }
 
-    @Test fun percentagesAndUnknownMessageIdsAreRejected() {
+    @Test fun percentagesAreRejectedAndUnknownMessageIdsKeepOldDescription() {
         val root = json(); update(root, text = "35%")
         assertThrows(IllegalArgumentException::class.java) { parse(root) }
         update(root)
         root["relationships"].asJsonObject["trust"].asJsonObject.add("sources", JsonParser.parseString("[\"someone-elses-message\"]"))
-        assertThrows(IllegalArgumentException::class.java) { parse(root) }
+        assertEquals(previous().relationships["trust"], parse(root).relationships["trust"])
     }
 
     @Test fun editingEvidenceInvalidatesBothDisplayEligibilityAndChatReference() {

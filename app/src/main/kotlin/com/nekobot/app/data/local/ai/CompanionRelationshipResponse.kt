@@ -7,18 +7,22 @@ import com.nekobot.app.data.local.db.CompanionRelationshipEventEntity
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import java.util.UUID
 
-/** 容忍模型的解释/代码围栏，但不放宽来源、纠错归属和重复事件校验。 */
+/** 容忍解释、代码围栏和思考标签；逐条清理引用，仍核对来源、纠错归属和重复事件。 */
 internal object CompanionRelationshipResponse {
     private val gson = Gson()
+    private val thinkingBlock = Regex("^\\s*<(think|thinking)\\b[^>]*>.*?(?:</\\1\\s*>|$)",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE))
     data class Events(val accepted: List<CompanionRelationshipEventEntity>, val discardedKeys: Set<String>)
 
     fun json(content: String): JsonObject {
-        for (start in content.indices.filter { content[it] == '{' }) {
+        // 思考内可能有带 format 的草稿/示例，不能抢在最终正文之前被采用。
+        val answer = content.replace(thinkingBlock, "")
+        for (start in answer.indices.filter { answer[it] == '{' }) {
             var depth = 0
             var quoted = false
             var escaped = false
-            for (end in start until content.length) {
-                val ch = content[end]
+            for (end in start until answer.length) {
+                val ch = answer[end]
                 if (quoted) {
                     if (escaped) escaped = false
                     else if (ch == '\\') escaped = true
@@ -29,7 +33,7 @@ internal object CompanionRelationshipResponse {
                     '}' -> {
                         depth--
                         if (depth == 0) {
-                            val obj = runCatching { JsonParser.parseString(content.substring(start, end + 1)).asJsonObject }.getOrNull()
+                            val obj = runCatching { JsonParser.parseString(answer.substring(start, end + 1)).asJsonObject }.getOrNull()
                             if (obj?.get("format")?.let { it.isJsonPrimitive && it.asString == CompanionRelationshipNarrative.FORMAT } == true) return obj
                             break
                         }
@@ -41,14 +45,15 @@ internal object CompanionRelationshipResponse {
     }
 
     fun events(json: JsonObject, evidence: Map<String, LocalMessageEntity>, old: List<CompanionRelationshipEventEntity>,
-        sessionId: String, revision: Long, now: Long, correctionKey: String? = null): Events {
+        sessionId: String, revision: Long, now: Long, correctionKey: String? = null,
+        onQuoteIssue: (String, String) -> Unit = { _, _ -> }): Events {
         val proposals = json["events"]
         require(proposals?.isJsonArray == true) { "评估结果缺少事件列表" }
         val accepted = mutableListOf<CompanionRelationshipEventEntity>()
         val discarded = mutableSetOf<String>()
         val keys = mutableSetOf<String>()
         val sourceSets = mutableSetOf<List<String>>()
-        for (item in proposals.asJsonArray) {
+        for ((index, item) in proposals.asJsonArray.withIndex()) {
             val event = runCatching {
                 val obj = item.asJsonObject
                 val key = CompanionRelationshipNarrative.text(obj, "key", 100)
@@ -62,7 +67,12 @@ internal object CompanionRelationshipResponse {
                 require(correctionKey != null || impacts.isNotEmpty()) { "没有关系影响时不必新增事件" }
                 val reason = CompanionRelationshipNarrative.text(obj, "reason", 500)
                 val summary = CompanionRelationshipNarrative.text(obj, "summary", 200)
-                val sources = CompanionRelationshipNarrative.sources(obj["sources"], evidence)
+                val sourceScope = "event#${index + 1}"
+                val sources = CompanionRelationshipNarrative.sources(obj["sources"], evidence) { onQuoteIssue(sourceScope, it) }
+                if (sources.isEmpty()) {
+                    onQuoteIssue(sourceScope, "没有可用的本次原话引用，丢弃该事件；已有事件保留")
+                    error("事件没有可用的本次原话引用")
+                }
                 val ids = sources.map { it.id }.sorted()
                 require(ids !in sourceSets) { "重复引用同一份材料新增事件" }
                 require(prior != null || old.none { previous ->

@@ -318,8 +318,13 @@ internal class CompanionRelationshipService(
             val json = CompanionRelationshipResponse.json(result.content)
             val evidenceMap = input.evidence.associateBy { it.id }
             val now = System.currentTimeMillis()
+            val quoteIssueScopes = mutableSetOf<String>()
+            val onQuoteIssue: (String, String) -> Unit = { field, detail ->
+                quoteIssueScopes.add(field)
+                LocalLogger.w("Relationship", "评估原话引用降级：项目=$field；$detail；其他合法结果继续保存")
+            }
             val parsedEvents = CompanionRelationshipResponse.events(json, evidenceMap, input.events,
-                id, input.state.version + 1, now, correctionKey)
+                id, input.state.version + 1, now, correctionKey, onQuoteIssue)
             val effects = parsedEvents.accepted
             val correctionReason = if (correctionKey != null) CompanionRelationshipNarrative.text(json, "correction_reason", 500) else null
             if (correctionKey != null) {
@@ -332,7 +337,7 @@ internal class CompanionRelationshipService(
             val narrative = CompanionRelationshipNarrative.parse(json, previous, evidenceMap, byId, input.events,
                 effects, input.batch.lastOrNull()?.rows?.map { it.id }?.toSet().orEmpty(),
                 input.batch.lastOrNull()?.rows?.lastOrNull()?.createdAt.orEmpty(), now, input.target, parsedEvents.discardedKeys,
-                selectedEvents.map { it.eventKey }.toSet() + inheritedKeys, skippedKeys::add)
+                selectedEvents.map { it.eventKey }.toSet() + inheritedKeys, skippedKeys::add, onQuoteIssue)
             if (skippedKeys.isNotEmpty()) LocalLogger.w("Relationship", "评估有 ${skippedKeys.size} 项关系的事件引用无效，保留这些项目的旧描述；其他合法结果继续保存。项目=${skippedKeys.joinToString()}")
             val allowedKeys = (selectedEvents + effects).map { it.eventKey }.toSet()
             require(narrative.relationships.values.filterNotNull().all { field ->
@@ -362,7 +367,7 @@ internal class CompanionRelationshipService(
                             "本次核对保留原判断：$correctionReason" else "已修正这件事的判断，其他关系保留：$correctionReason"))
                 }
             }
-            LocalLogger.i("Relationship", "评估保存完成：事件=${effects.size}，丢弃事件=${parsedEvents.discardedKeys.size}，保留旧关系=${skippedKeys.size}")
+            LocalLogger.i("Relationship", "评估保存完成：事件=${effects.size}，丢弃事件=${parsedEvents.discardedKeys.size}，事件引用保留旧关系=${skippedKeys.size}，原话引用降级项=${quoteIssueScopes.size}")
         } catch (e: CancellationException) {
             saveError(id, expected, if (e is TimeoutCancellationException) {
                 CompanionRelationshipRecovery.TIMEOUT
