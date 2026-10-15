@@ -35,6 +35,7 @@ import com.nekobot.app.data.local.CompanionConversionModel
 import com.nekobot.app.data.local.ai.*
 import com.nekobot.app.data.local.db.CompanionRelationshipEventEntity
 import com.nekobot.app.data.local.db.LocalMessageEntity
+import com.nekobot.app.data.model.userFacingTitle
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,7 +67,10 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     var settingsExpanded by remember { mutableStateOf(false) }
     var evidenceExpanded by rememberSaveable { mutableStateOf(false) }
     var background by remember { mutableStateOf(ServiceContainer.prefs.relationshipBackground) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { background = ServiceContainer.prefs.relationshipBackground }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        background = ServiceContainer.prefs.relationshipBackground
+        refresh++
+    }
     var characterName by remember(sessionId) { mutableStateOf<String?>(null) }
     var assessments by remember { mutableStateOf<List<com.nekobot.app.data.local.db.CompanionRelationshipAssessmentEntity>?>(null) }
     var showCount by remember { mutableIntStateOf(12) }
@@ -82,7 +86,7 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     BackHandler(onBack = onBack)
     suspend fun reload() {
         view = service.view(sessionId)
-        characterName = repository.getCharacter(requireNotNull(view).state.characterId)?.name
+        characterName = repository.getSession(sessionId)?.userFacingTitle()
         models = repository.companionConversionModels()
     }
     fun action(block: suspend () -> Unit) {
@@ -95,6 +99,9 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     }
     LaunchedEffect(sessionId, stored, running, refresh) {
         try { reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "读取状态失败" }
+    }
+    LaunchedEffect(sessionId) {
+        ServiceContainer.sessionChanged.collect { if (it == sessionId) refresh++ }
     }
     RelationshipSkinTheme(background) {
     RelationshipJournalBackdrop(background) {
