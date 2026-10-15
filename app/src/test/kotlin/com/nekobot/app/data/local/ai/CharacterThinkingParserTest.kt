@@ -18,6 +18,155 @@ class CharacterThinkingParserTest {
     }
 
     @Test
+    fun leadingParenthesesAreThinkingAtEveryPossibleSplit() {
+        for ((opening, closing) in listOf("(" to ")", "（" to "）")) {
+            val text = "${opening}都说了要睡觉，还嘀嘀笑…${closing}都没什么好笑的…（正文括号）"
+            for (first in 0..text.length) for (second in first..text.length) {
+                val output = Output()
+                listOf(text.take(first), text.substring(first, second), text.drop(second)).forEach {
+                    output.parser.append(it)
+                    assertFalse(output.content.toString().contains("都说了"))
+                }
+                output.parser.finish()
+                output.check("都没什么好笑的…（正文括号）", "都说了要睡觉，还嘀嘀笑…")
+            }
+        }
+    }
+
+    @Test
+    fun nestedParenthesesAndLeadingWhitespaceWorkCharacterByCharacter() {
+        val output = Output()
+        " \r\n\t（我想（再想一步）和(另一个念头)\n好了）  回答\n第二行".forEach {
+            output.parser.append(it.toString())
+        }
+        output.parser.finish()
+        output.check("  回答\n第二行", "我想（再想一步）和(另一个念头)\n好了")
+    }
+
+    @Test
+    fun onlyTheFirstLeadingParenthesisBlockIsExtracted() {
+        for ((input, body) in listOf(
+            "(我想)(第二段)正文（中间）" to "(第二段)正文（中间）",
+            "（我想）\n（第二段）正文" to "\n（第二段）正文",
+            "()（第二段）正文" to "（第二段）正文"
+        )) {
+            val output = Output()
+            input.forEach { output.parser.append(it.toString()) }
+            output.parser.finish()
+            output.check(body, if (input.startsWith("()")) "" else "我想")
+        }
+    }
+
+    @Test
+    fun parenthesesAfterBodyMarkupOrTagsAreNotLeadingParentheses() {
+        for (text in listOf("正文(保留)（也保留）", " \n正文（保留）", "`(代码)`", "```\n(代码)\n```",
+            "\"(引用)\"", "<b>(文字)</b>", "[说明](链接)")) {
+            val output = Output()
+            text.forEach { output.parser.append(it.toString()) }
+            output.parser.finish()
+            output.check(text, "")
+        }
+        val output = Output()
+        "<think>标签想法</think>(正文括号)回答".forEach { output.parser.append(it.toString()) }
+        output.parser.finish()
+        output.check("(正文括号)回答", "标签想法")
+    }
+
+    @Test
+    fun leadingParenthesesDoNotDisableSubsequentThinkingTags() {
+        val output = Output()
+        "(我想)<thinking>再想一步</thinking>回答(保留)".forEach { output.parser.append(it.toString()) }
+        output.parser.finish()
+        output.check("回答(保留)", "我想再想一步")
+    }
+
+    @Test
+    fun unclosedLeadingParenthesesStreamWithoutLeakingIntoBody() {
+        val output = Output()
+        output.parser.append("（")
+        output.check("", "")
+        output.parser.append("我还没想完")
+        output.check("", "我还没想完")
+        output.parser.finish()
+        output.parser.finish()
+        output.check("", "我还没想完")
+        val result = characterThinkingResult(LocalAiResult("（我还没想完"), true)
+        assertEquals("", result.content)
+        assertEquals("我还没想完", result.thinkingContent)
+    }
+
+    @Test
+    fun whitespaceOnlyContentIsPreservedAtFinish() {
+        val output = Output()
+        output.parser.append(" \r")
+        output.parser.append("\n\t")
+        output.parser.finish()
+        output.parser.finish()
+        output.check(" \r\n\t", "")
+    }
+
+    @Test
+    fun parenthesizedThinkingSharesNativeChannelSelectionAndFinalResult() {
+        val raw = LocalAiResult("(我想先休息)睡吧（正文括号）", thinkingContent = "原生想法", thinkingSignature = "mock-signature")
+        for (nativeFirst in listOf(false, true)) {
+            val content = StringBuilder()
+            val thinking = StringBuilder()
+            val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+                onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+            stream.callbacks.onStart()
+            if (nativeFirst) stream.callbacks.onThinkingChunk(raw.thinkingContent)
+            raw.content.forEach { stream.callbacks.onContentChunk(it.toString()) }
+            if (!nativeFirst) stream.callbacks.onThinkingChunk(raw.thinkingContent)
+            val saved = stream.resolve(raw)
+            assertEquals("睡吧（正文括号）", saved.content)
+            assertEquals(saved.content, content.toString())
+            assertEquals(if (nativeFirst) "原生想法" else "我想先休息", thinking.toString())
+            assertEquals(thinking.toString(), saved.thinkingContent)
+            assertEquals(if (nativeFirst) "mock-signature" else "", saved.thinkingSignature)
+        }
+        assertEquals(raw.copy(content = "睡吧（正文括号）"), characterThinkingResult(raw, true))
+        val noNative = characterThinkingResult(raw.copy(thinkingContent = "", thinkingSignature = ""), true)
+        assertEquals("我想先休息", noNative.thinkingContent)
+        assertEquals("睡吧（正文括号）", noNative.content)
+    }
+
+    @Test
+    fun retryResetsUnclosedParenthesesAndAllowsANewLeadingBlock() {
+        val content = StringBuilder()
+        val thinking = StringBuilder()
+        val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(
+            onStart = { content.setLength(0); thinking.setLength(0) },
+            onContentChunk = { content.append(it) }, onThinkingChunk = { thinking.append(it) }))
+        stream.callbacks.onStart()
+        stream.callbacks.onContentChunk("(失败尝试")
+        stream.callbacks.onStart()
+        stream.callbacks.onContentChunk("备用正文（保留）")
+        stream.finish()
+        assertEquals("备用正文（保留）", content.toString())
+        assertEquals("", thinking.toString())
+        stream.callbacks.onStart()
+        stream.callbacks.onContentChunk("（重新想）回答")
+        stream.finish()
+        assertEquals("回答", content.toString())
+        assertEquals("重新想", thinking.toString())
+    }
+
+    @Test
+    fun disabledModeAndUserMessagesKeepParenthesesUntouched() {
+        val raw = LocalAiResult("（原样）正文(保留)", thinkingContent = "原生思考")
+        assertSame(raw, characterThinkingResult(raw, false))
+        val content = StringBuilder()
+        val stream = CharacterThinkingStream(false, LocalAiStreamCallbacks(onContentChunk = { content.append(it) }))
+        raw.content.forEach { stream.callbacks.onContentChunk(it.toString()) }
+        stream.finish()
+        assertEquals(raw.content, content.toString())
+        val user = mapOf<String, Any>("role" to "user", "content" to raw.content)
+        val cleaned = characterThinkingMessages(listOf(user), true)
+        assertSame(user, cleaned.single())
+        assertEquals(raw.content, cleaned.single()["content"])
+    }
+
+    @Test
     fun everyPossibleSplitKeepsThinkingOutOfContent() {
         val text = "前言<think>我想起他了。</think>你好。"
         for (first in 0..text.length) for (second in first..text.length) {

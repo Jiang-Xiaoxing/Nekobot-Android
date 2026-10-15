@@ -4,7 +4,7 @@ package com.nekobot.app.data.local.ai
 internal const val NATIVE_CHARACTER_THINKING_CONTENT = "_native_character_thinking_content"
 internal const val NATIVE_CHARACTER_THINKING_SIGNATURE = "_native_character_thinking_signature"
 
-/** 每次模型请求独立解析；只缓冲可能跨 chunk 的标签，不把思考片段先发给正文再撤回。 */
+/** 每次模型请求独立解析标签与正文开头第一段圆括号，不把思考片段先发给正文再撤回。 */
 internal class CharacterThinkingParser(
     private val onContent: (String) -> Unit,
     private val onThinking: (String) -> Unit
@@ -13,10 +13,13 @@ internal class CharacterThinkingParser(
     private var thinking = false
     private var finished = false
     private var skipTagNewlines = false
+    private var atStart = true
+    private val leadingWhitespace = StringBuilder()
+    private val parenClosers = mutableListOf<Char>()
 
     fun append(chunk: String) {
         check(!finished)
-        pending += chunk
+        pending += consumeLeadingParentheses(chunk)
         while (pending.isNotEmpty()) {
             val tagStart = pending.indexOf('<')
             if (tagStart < 0) {
@@ -48,8 +51,52 @@ internal class CharacterThinkingParser(
     fun finish() {
         if (finished) return
         finished = true
+        if (leadingWhitespace.isNotEmpty()) onContent(leadingWhitespace.toString())
+        leadingWhitespace.setLength(0)
         // 未完整输出的 <thi / </thi 等格式碎片不进入任何气泡。
         pending = ""
+    }
+
+    private fun consumeLeadingParentheses(chunk: String): String {
+        var index = 0
+        if (atStart) {
+            while (index < chunk.length && chunk[index].isWhitespace()) {
+                leadingWhitespace.append(chunk[index++])
+            }
+            if (index == chunk.length) return ""
+            atStart = false
+            val closer = closingParenthesis(chunk[index])
+            if (closer == null) {
+                val prefix = leadingWhitespace.toString()
+                leadingWhitespace.setLength(0)
+                return prefix + chunk.substring(index)
+            }
+            leadingWhitespace.setLength(0)
+            parenClosers += closer
+            index++
+        }
+        if (parenClosers.isEmpty()) return chunk.substring(index)
+        val thought = StringBuilder()
+        while (index < chunk.length && parenClosers.isNotEmpty()) {
+            val char = chunk[index++]
+            val closer = closingParenthesis(char)
+            when {
+                closer != null -> { parenClosers += closer; thought.append(char) }
+                char == parenClosers.last() -> {
+                    parenClosers.removeAt(parenClosers.lastIndex)
+                    if (parenClosers.isNotEmpty()) thought.append(char)
+                }
+                else -> thought.append(char)
+            }
+        }
+        if (thought.isNotEmpty()) onThinking(thought.toString())
+        return chunk.substring(index)
+    }
+
+    private fun closingParenthesis(char: Char): Char? = when (char) {
+        '(' -> ')'
+        '（' -> '）'
+        else -> null
     }
 
     private fun emit(text: String) {

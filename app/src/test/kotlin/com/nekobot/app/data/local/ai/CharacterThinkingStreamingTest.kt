@@ -28,9 +28,8 @@ class CharacterThinkingStreamingTest {
     private val model = LocalAiModelEntity(id = "live-test", name = "Live", protocol = OpenAIChatProtocol.name,
         model = "custom-chat", apiKey = "test-key", baseUrl = "https://api.example.com/v1", createdAt = "2026-10-15")
     private val prompt = characterThinkingPrompt(CharacterThinkingSettings(), "林小满", "小星")
-    private val messages get() = withCharacterThinkingRequest(listOf(mapOf("role" to "user", "content" to "没什么")), prompt)
-
-    private suspend fun verify(mode: String, steps: List<Step>) {
+    private suspend fun verify(mode: String, steps: List<Step>, userText: String = "没什么") {
+        val messages = withCharacterThinkingRequest(listOf(mapOf("role" to "user", "content" to userText)), prompt)
         val content = StringBuilder()
         val thinking = StringBuilder()
         val checkpoints = steps.map { CountDownLatch(if (it.content.isEmpty() && it.thinking.isEmpty()) 0 else 1) }
@@ -105,7 +104,28 @@ class CharacterThinkingStreamingTest {
         assertEquals(2, sent.size())
         assertEquals("system", sent[0].asJsonObject["role"].asString)
         assertEquals("## $CHARACTER_THINKING_STYLE_KEY\n$prompt", sent[0].asJsonObject["content"].asString)
-        assertEquals("没什么", sent[1].asJsonObject["content"].asString)
+        assertEquals(userText, sent[1].asJsonObject["content"].asString)
+    }
+
+    @Test
+    fun leadingParenthesesStreamBeforeClosingOrDoneInAllThreePaths() = runBlocking {
+        for (mode in listOf("callbacks", "direct", "queue")) {
+            for ((opening, closing) in listOf("(" to ")", "（" to "）")) verify(mode, listOf(
+                Step("content", opening, "", ""),
+                Step("content", "都说了要睡觉，", "", "都说了要睡觉，"),
+                Step("content", "还嘀嘀笑…", "", "都说了要睡觉，还嘀嘀笑…"),
+                Step("content", closing + "都没什么", "都没什么", "都说了要睡觉，还嘀嘀笑…"),
+                Step("content", "好笑的…（正文括号）", "都没什么好笑的…（正文括号）", "都说了要睡觉，还嘀嘀笑…")),
+                userText = "(用户原话)没什么（中间括号）")
+        }
+    }
+
+    @Test
+    fun secondParenthesisBlockRemainsBodyWhileBothChannelsStream() = runBlocking {
+        for (mode in listOf("callbacks", "direct", "queue")) verify(mode, listOf(
+            Step("content", "（我想", "", "我想"),
+            Step("content", "先睡了）（第二段", "（第二段", "我想先睡了"),
+            Step("content", "）回答", "（第二段）回答", "我想先睡了")))
     }
 
     @Test
