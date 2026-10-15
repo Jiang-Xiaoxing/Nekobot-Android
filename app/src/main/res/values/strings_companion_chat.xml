@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="companion_chat_input">发消息…</string>
+    <string name="companion_chat_stickers">表情</string>
+    <string name="companion_chat_attachments">添加图片或文件</string>
+    <string name="companion_chat_photos">图片</string>
+    <string name="companion_chat_files">文件</string>
+    <string name="companion_chat_settings">聊天设置</string>
+    <string name="companion_chat_show_reasoning">显示思考</string>
+    <string name="companion_chat_show_reasoning_hint">只影响这个角色，开启后可点击查看</string>
+    <string name="companion_chat_reasoning">内心想法 Beta（测试版）</string>
+    <string name="companion_chat_typing">对方正在输入…</string>
+    <string name="companion_chat_reply_unfinished">回复尚未完成</string>
+    <string name="companion_chat_resume_reply">继续回复</string>
+    <string name="companion_chat_dismiss_reply">暂不继续</string>
+    <string name="companion_chat_details">角色与记忆</string>
+    <string name="companion_chat_search">查找聊天记录</string>
+    <string name="companion_chat_favorites">收藏的消息</string>
+    <string name="companion_chat_tools">工具与调试</string>
+    <string name="companion_chat_tools_hint">模型参数、工具权限与用量</string>
+    <string name="companion_chat_more_tools">更多工具设置</string>
+    <string name="companion_chat_terminal_hint">查看沙盒并运行命令</string>
+    <string name="companion_chat_browser_hint">打开网页或预览会话里的网页文件</string>
+    <string name="companion_chat_clear">清空聊天记录</string>
+    <string name="companion_chat_clear_keyword">清空</string>
+    <string name="companion_chat_clear_type">输入“%1$s”确认</string>
+    <string name="companion_chat_retry">重新回复</string>
+    <string name="companion_chat_reply_versions">其他回复</string>
+</resources>

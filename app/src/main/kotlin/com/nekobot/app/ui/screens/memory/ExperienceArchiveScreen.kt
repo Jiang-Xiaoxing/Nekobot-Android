@@ -78,6 +78,10 @@ class ExperienceArchiveViewModel(
 
     private val _characterMemories = MutableStateFlow<List<LegacyMemory>>(emptyList())
     val characterMemories: StateFlow<List<LegacyMemory>> = _characterMemories.asStateFlow()
+    private val _companionMemories = MutableStateFlow<List<com.nekobot.app.data.local.db.CompanionMemoryEntity>>(emptyList())
+    val companionMemories = _companionMemories.asStateFlow()
+    private val _companionError = MutableStateFlow<String?>(null)
+    val companionError = _companionError.asStateFlow()
 
     private val _hasMore = MutableStateFlow(false)
     val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
@@ -93,6 +97,7 @@ class ExperienceArchiveViewModel(
     val historyCopyProgress: StateFlow<Long?> = _historyCopyProgress.asStateFlow()
 
     private var currentSessionId: String? = null
+    private var companionObserver: Job? = null
 
     fun ownsCurrentDatabase(revision: Long = dataSourceRevision.value): Boolean = ownerRevision == revision &&
         runCatching { ownerRepository === ServiceContainer.localRepository }.getOrDefault(false)
@@ -101,9 +106,12 @@ class ExperienceArchiveViewModel(
         viewModelScope.launch { dataSourceRevision.collect {
             if (!ownsCurrentDatabase()) {
                 runningBackfill?.cancel()
+                companionObserver?.cancel()
                 currentSessionId = null
                 _archives.value = emptyList()
                 _characterMemories.value = emptyList()
+                _companionMemories.value = emptyList()
+                _companionError.value = null
                 _hasMore.value = false
                 _backfillInfo.value = null
                 _backfillJob.value = null
@@ -118,27 +126,55 @@ class ExperienceArchiveViewModel(
         if (!ownsCurrentDatabase() || sessionId.isBlank()) return
         val local = ownerRepository
         currentSessionId = sessionId
+        if (companionObserver?.isActive != true) companionObserver = viewModelScope.launch {
+            ownerRepository.experienceSourceReader().changes().collect {
+                val currentId = currentSessionId ?: return@collect
+                if (!ownsCurrentDatabase()) return@collect
+                val fresh = ownerRepository.listCompanionMemories(currentId)
+                val failure = ownerRepository.companionMemoryError(currentId)
+                val loaded = _archives.value.map { it.id }
+                val refreshed = ownerRepository.refreshExperienceArchives(currentId, loaded)
+                if (ownsCurrentDatabase() && currentSessionId == currentId) {
+                    _companionMemories.value = fresh
+                    _companionError.value = failure
+                    if (_archives.value.map { it.id } == loaded) _archives.value = refreshed
+                }
+            }
+        }
         launchResult(
             block = {
                 val session = local.getSession(sessionId)
                 val page = local.listExperienceArchives(sessionId, PAGE_SIZE, 0)
                 val info = local.experienceBackfillInfo(sessionId)
-                val memories = if (session?.inheritCharacter == true && !session.characterId.isNullOrBlank()) {
+                val memories = if (session?.inheritCharacter == true && session.longConversationEnabled != true && !session.characterId.isNullOrBlank()) {
                     local.listMemories(session.characterId).filter { it.targetId == "local-user" }
                 } else {
                     emptyList()
                 }
-                Resource.Success(Triple(page, memories, info))
+                Resource.Success(Pair(Triple(page, memories, info),
+                    Pair(local.listCompanionMemories(sessionId), local.companionMemoryError(sessionId))))
             },
-            onSuccess = { (page, memories, info) ->
+            onSuccess = { (ordinary, companion) ->
+                val (page, memories, info) = ordinary
                 if (!ownsCurrentDatabase() || currentSessionId != sessionId) return@launchResult
                 _archives.value = page
                 _characterMemories.value = memories
+                _companionMemories.value = companion.first
+                _companionError.value = companion.second
                 _hasMore.value = page.size == PAGE_SIZE
                 _backfillInfo.value = info
                 if (runningBackfill?.isActive != true) _backfillJob.value = info.job
             }
         )
+    }
+
+    fun lockMemory(key: String, locked: Boolean) {
+        if (!ownsCurrentDatabase()) return
+        val sessionId = currentSessionId ?: return
+        viewModelScope.launch {
+            ownerRepository.lockCompanionMemory(sessionId, key, locked)
+            if (ownsCurrentDatabase()) load(sessionId)
+        }
     }
 
     /** Called only after the explicit cost confirmation dialog has been accepted. */
@@ -236,8 +272,13 @@ fun ExperienceArchiveScreen(
     sessionId: String,
     onBack: () -> Unit,
     onOpenSource: (String) -> Unit = {},
-    viewModel: ExperienceArchiveViewModel = viewModel()
+    viewModel: ExperienceArchiveViewModel = viewModel(),
+    onLocateMemory: (String) -> Unit = {}
 ) {
+    var fused by remember(sessionId) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(sessionId) { fused = ServiceContainer.localRepository.getSession(sessionId)?.companionMode == true }
+    if (fused == null) { LoadingOverlay(visible = true); return }
+    if (fused == true) { FusedCompanionMemoryScreen(sessionId, onBack, onLocateMemory); return }
     val databaseRevision by viewModel.dataSourceRevision.collectAsStateWithLifecycle()
     if (!viewModel.ownsCurrentDatabase(databaseRevision)) {
         Scaffold(topBar = { TopAppBar(
@@ -251,6 +292,8 @@ fun ExperienceArchiveScreen(
     }
     val archives by viewModel.archives.collectAsStateWithLifecycle()
     val memories by viewModel.characterMemories.collectAsStateWithLifecycle()
+    val companionMemories by viewModel.companionMemories.collectAsStateWithLifecycle()
+    val companionError by viewModel.companionError.collectAsStateWithLifecycle()
     val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
     val backfillInfo by viewModel.backfillInfo.collectAsStateWithLifecycle()
     val backfillJob by viewModel.backfillJob.collectAsStateWithLifecycle()
@@ -311,6 +354,26 @@ fun ExperienceArchiveScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (companionError != null) {
+                    item(key = "companion_error") {
+                        Text(stringResource(R.string.companion_memory_pending_error, companionError!!),
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (companionMemories.isNotEmpty()) {
+                    item(key = "companion_header") { SectionHeader(title = stringResource(R.string.companion_memory_title)) }
+                    items(companionMemories, key = { "companion_${it.id}" }) { memory ->
+                        GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
+                            Text(memory.factKey, style = MaterialTheme.typography.titleSmall)
+                            Text(memory.content, style = MaterialTheme.typography.bodySmall)
+                            Text("v${memory.version} · ${memory.status} · ${memory.eventDate.orEmpty()}",
+                                style = MaterialTheme.typography.labelSmall)
+                            if (memory.current) TextButton(onClick = { viewModel.lockMemory(memory.factKey, !memory.locked) }) {
+                                Text(stringResource(if (memory.locked) R.string.companion_memory_unlock else R.string.companion_memory_lock))
+                            }
+                        }
+                    }
+                }
                 item(key = "backfill") {
                     GlassCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16) {
                         Text(stringResource(R.string.experience_backfill_title), style = MaterialTheme.typography.titleSmall)

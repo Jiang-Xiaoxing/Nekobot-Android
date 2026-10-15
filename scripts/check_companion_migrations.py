@@ -61,8 +61,18 @@ def verify(root, results):
         insert_sample(db, 'local_characters', {'id': 'character-1', 'name': 'Synthetic character'})
         insert_sample(db, 'local_sessions', {'id': 'session-1', 'character_id': 'character-1', 'name': 'Synthetic session'})
         insert_sample(db, 'local_messages', {'id': 'message-1', 'session_id': 'session-1', 'role': 'user', 'content': 'Synthetic original message'})
+        insert_sample(db, 'local_character_memories', {'id': 'author-memory', 'character_id': 'character-1', 'content': 'Original author memory'})
+        insert_sample(db, 'local_experience_archives', {'id': 'archive-1', 'session_id': 'session-1',
+                      'start_message_id': 'message-1', 'end_message_id': 'message-1', 'summary': 'Original manual archive',
+                      'summary_edited': 1, 'tags_edited': 1})
+        insert_sample(db, 'local_experience_sources', {'archive_id': 'archive-1', 'message_id': 'message-1'})
         if start >= 49:
             insert_sample(db, 'local_subagent_tasks', {'task_id': 'task-1', 'session_id': 'session-1', 'request_key': 'request-1'})
+        if start >= 50:
+            insert_sample(db, 'local_subagent_messages', {'task_id': 'task-1', 'sequence': 1, 'payload_json': '{}'})
+        if start >= 51:
+            insert_sample(db, 'local_subagent_tool_calls', {'task_id': 'task-1', 'call_id': 'call-1', 'assistant_sequence': 1})
+            insert_sample(db, 'local_agent_notices', {'notice_id': 'notice-1', 'task_id': 'task-1', 'session_id': 'session-1'})
         old_rows = {e['tableName']: (list(db.execute(f'SELECT * FROM `{e["tableName"]}`')),
                     [f['columnName'] for f in e['fields']]) for e in original['entities']}
         db.commit()
@@ -78,6 +88,7 @@ def verify(root, results):
             assert list(db.execute(f'SELECT {selected} FROM `{table}`')) == rows, f'v{start}: changed rows in {table}'
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+        assert db.execute("SELECT character_id,summary_edited,tags_edited FROM local_experience_archives WHERE id='archive-1'").fetchone() == ('character-1', 1, 1)
         # Opening twice must keep all guards and data, without duplicate trigger installation.
         for sql in triggers: db.executescript(sql)
         insert_sample(db, 'local_characters', {'id': 'companion-character', 'name': 'Synthetic companion'})
@@ -91,8 +102,22 @@ def verify(root, results):
         else:
             raise AssertionError('Ownership guard accepted a second session')
         assert db.execute("SELECT companion_mode FROM local_sessions WHERE id='session-1'").fetchone() == (0,)
+        # Actual open triggers must enqueue new quotes and invalidate facts/vectors after an edit.
+        insert_sample(db, 'companion_scopes', {'id': 'scope-1', 'profile': 'synthetic',
+                      'sessionId': 'companion-session', 'characterId': 'companion-character'})
+        insert_sample(db, 'local_messages', {'id': 'companion-quote', 'session_id': 'companion-session', 'role': 'user', 'content': 'Original quote'})
+        assert db.execute("SELECT messageId FROM companion_pending WHERE scopeId='scope-1'").fetchone() == ('companion-quote',)
+        insert_sample(db, 'companion_memories', {'id': 'fact-1', 'scopeId': 'scope-1', 'factKey': 'synthetic-fact', 'current': 1, 'valid': 1})
+        insert_sample(db, 'companion_sources', {'memoryId': 'fact-1', 'messageId': 'companion-quote', 'role': 'user'})
+        insert_sample(db, 'companion_receipts', {'scopeId': 'scope-1', 'messageId': 'companion-quote'})
+        insert_sample(db, 'companion_vectors', {'scopeId': 'scope-1', 'itemType': 'fact', 'itemId': 'fact-1', 'modelKey': 'synthetic-model'})
+        db.execute("UPDATE local_messages SET content='Edited quote' WHERE id='companion-quote'")
+        assert db.execute("SELECT valid,current FROM companion_memories WHERE id='fact-1'").fetchone() == (0, 0)
+        assert db.execute("SELECT COUNT(*) FROM companion_vectors WHERE itemId='fact-1'").fetchone() == (0,)
         checks.append({'from': start, 'to': 53, 'tables': len(actual), 'preservedTables': len(old_rows),
-                       'schemaMatchesFresh': True, 'integrity': 'ok', 'foreignKeys': 'ok', 'ownershipGuard': 'ok'})
+                       'preservedRows': sum(len(rows) for rows, _ in old_rows.values()),
+                       'schemaMatchesFresh': True, 'integrity': 'ok', 'foreignKeys': 'ok',
+                       'ownershipGuard': 'ok', 'sourceInvalidation': 'ok'})
         db.close()
     return {'checks': checks, 'freshTables': len(expected), 'migrationSqlSource': 'executed JVM Migration.migrate calls',
             'triggerStatements': len(triggers), 'androidRoomExecuted': False}

@@ -267,6 +267,9 @@ class ChatViewModel : BaseViewModel() {
     private val _runtime = MutableStateFlow<ChatSessionState>(ChatSessionState(""))
     private val runtime: ChatSessionState get() = _runtime.value
 
+    /** 关闭聊天中的记忆整理失败提示（临时界面状态）。 */
+    fun dismissCompanionMemoryFailure() = runtime.dismissCompanionMemoryFailure()
+
     val messages: StateFlow<List<Message>> = _runtime
         .map { it.messages }
         .distinctUntilChanged()
@@ -504,10 +507,17 @@ class ChatViewModel : BaseViewModel() {
     }
 
     private fun isReasoningEnabled(): Boolean =
-        currentReasoningEffort() != ReasoningEffort.NONE
+        // Local companion callbacks already enforce the effort captured for this request.
+        // Re-reading a changed setting here would wrongly hide an in-flight reply or old messages.
+        (isLocalMode && _session.value?.companionMode == true) || currentReasoningEffort() != ReasoningEffort.NONE
 
     private fun currentReasoningEffort(): ReasoningEffort =
-        ServiceContainer.prefs.getReasoningEffort(isAgentSession())
+        if (isLocalMode && _session.value?.companionMode == true) {
+            ServiceContainer.localRepository.companionReasoningEffort(currentSessionId)
+        } else ServiceContainer.prefs.getReasoningEffort(isAgentSession())
+
+    private fun keepsStandaloneReasoning(): Boolean =
+        _session.value?.companionMode == true || (isReasoningEnabled() && !isAgentSession())
 
     private fun isAgentSession(): Boolean =
         _session.value?.sessionMode.equals("agent", ignoreCase = true) ||
@@ -606,12 +616,6 @@ class ChatViewModel : BaseViewModel() {
      * 以及本轮新建的进度卡片以新 id 追加到父用户消息上（旧卡片也在 → 两张卡片）。
      */
     private var variantRegenerateTargetId: String? = null
-    /** 上次流式 chunk 更新 UI 的时间戳，用于节流（避免高频 chunk 触发 MarkdownText 全量重解析） */
-    private var lastStreamUiUpdateMs: Long
-        get() = runtime.lastStreamUiUpdateMs
-        set(value) { runtime.lastStreamUiUpdateMs = value }
-    /** 流式节流间隔（毫秒） */
-    private val streamThrottleMs: Long get() = runtime.streamThrottleMs
 
     /** 收集 Socket.IO 事件 / 本地 Hook 事件的 Job（挂到 applicationScope，不随 VM 销毁） */
     private var eventsJob: kotlinx.coroutines.Job?
@@ -1023,7 +1027,7 @@ class ChatViewModel : BaseViewModel() {
                 streamingReasoning.setLength(0)
                 runtime.streamingContentPreview.value = ""
                 runtime.streamingReasoningPreview.value = ""
-                lastStreamUiUpdateMs = 0L
+                runtime.resetStreamPreviewThrottle()
                 // 插入流式占位消息
                 val placeholder = Message(
                     id = streamingId,
@@ -1045,8 +1049,7 @@ class ChatViewModel : BaseViewModel() {
                 streamingContent.append(event.chunk)
                 // 节流：距上次 UI 更新不足阈值时跳过，避免高频 chunk 触发 MarkdownText 全量重解析
                 val now = System.currentTimeMillis()
-                if (now - lastStreamUiUpdateMs >= streamThrottleMs) {
-                    lastStreamUiUpdateMs = now
+                if (runtime.shouldUpdateStreamPreview(reasoning = false, nowMs = now)) {
                     runtime.streamingContentPreview.value = buildStreamingDisplayPreview(
                         streamingContent,
                         omittedPrefix = string(R.string.chat_stream_prefix_omitted)
@@ -1056,13 +1059,12 @@ class ChatViewModel : BaseViewModel() {
             is RealtimeEvent.ReasoningChunk -> {
                 if (!isReasoningEnabled()) return
                 streamingReasoning.append(event.chunk)
-                if (isAgentSession()) {
+                if (isAgentSession() && _session.value?.companionMode != true) {
                     applyAgentReasoningToLatestCard(streamingReasoning.toString())
                     return
                 }
                 val now = System.currentTimeMillis()
-                if (now - lastStreamUiUpdateMs >= streamThrottleMs) {
-                    lastStreamUiUpdateMs = now
+                if (runtime.shouldUpdateStreamPreview(reasoning = true, nowMs = now)) {
                     runtime.streamingReasoningPreview.value = buildStreamingDisplayPreview(
                         streamingReasoning,
                         omittedPrefix = string(R.string.chat_stream_prefix_omitted)
@@ -1077,7 +1079,7 @@ class ChatViewModel : BaseViewModel() {
                 // 若再生成随机 ID 的正式消息，刷新时会因时间戳不同同时保留两条相同气泡。
                 val finalContent = streamingContent.toString()
                 val finalReasoning = streamingReasoning.toString()
-                    .takeIf { isReasoningEnabled() && !isAgentSession() }
+                    .takeIf { keepsStandaloneReasoning() }
                     .orEmpty()
                 _messages.value = finalizeStreamEndMessages(
                     current = _messages.value,
@@ -1100,7 +1102,7 @@ class ChatViewModel : BaseViewModel() {
                 // 检查是否需要发送通知（用户不在聊天界面时）
                 trySendNotification(streamingContent.toString())
                 // 如果剧情模式开启，显示骨架并加载新剧情选项
-                if (_session.value?.plotMode == true) {
+                if ((_session.value?.companionMode != true && _session.value?.plotMode == true)) {
                     _plotChoices.value = emptyList()
                     _plotChoicesLoading.value = true
                     if (isLocalMode) {
@@ -1134,7 +1136,7 @@ class ChatViewModel : BaseViewModel() {
                 _execConfirmation.value = null
                 _askUserQuestion.value = null
                 val msg = event.message?.let { incoming ->
-                    if (isReasoningEnabled() && !isAgentSession()) incoming
+                    if (keepsStandaloneReasoning()) incoming
                     else incoming.copy(reasoningContent = null)
                 }
                 if (msg != null && !msg.content.isNullOrBlank()) {
@@ -1158,7 +1160,7 @@ class ChatViewModel : BaseViewModel() {
                 // 这里补一次 DB 刷新，候选下标与进度卡片才会立刻正确。
                 finishVariantRegenerate(alreadyReloaded = false)
                 // 非流式回复也需刷新剧情选项
-                if (_session.value?.plotMode == true) {
+                if ((_session.value?.companionMode != true && _session.value?.plotMode == true)) {
                     _plotChoices.value = emptyList()
                     _plotChoicesLoading.value = true
                     ServiceContainer.applicationScope.launch {
@@ -1170,7 +1172,7 @@ class ChatViewModel : BaseViewModel() {
             }
             is RealtimeEvent.NewMessage -> {
                 val msg = event.message.let { incoming ->
-                    if (isReasoningEnabled() && !isAgentSession()) incoming
+                    if (keepsStandaloneReasoning()) incoming
                     else incoming.copy(reasoningContent = null)
                 }
                 // 过滤进度卡片（thinking_card），不展示在聊天列表
@@ -1442,7 +1444,11 @@ class ChatViewModel : BaseViewModel() {
         launchResult(
             block = { unified.getSession(sessionId) },
             onSuccess = {
+                val companionJustResolved = _session.value?.companionMode != true && it?.companionMode == true
                 _session.value = it
+                // Session and message loads run in parallel on entry. Re-read saved reasoning
+                // if the first page arrived before the companion mode was known.
+                if (companionJustResolved && runtime.shouldLoadPersistedMessagesOnEntry()) loadMessages()
                 // Agent 任务列表：进入会话时从持久化数据恢复
                 _agentTodos.value = com.nekobot.app.data.model.AgentTodo.fromJsonList(it?.agentTodos)
                 // Agent 会话目标与规格任务：进入会话时从持久化数据恢复
@@ -1456,7 +1462,7 @@ class ChatViewModel : BaseViewModel() {
                 // 会话模式就绪后重试一次：进入会话时可能已有排队的待发送消息
                 maybeAutoSendQueuedMessage()
                 // 剧情模式：立即标记加载中，避免输入框先出现再消失的滑动动画
-                if (it?.plotMode == true) {
+                if ((it?.companionMode != true && it?.plotMode == true)) {
                     _plotChoicesLoading.value = true
                     ServiceContainer.applicationScope.launch {
                         if (isLocalMode) loadLocalPlotChoices() else loadPlotChoices()
@@ -1467,12 +1473,13 @@ class ChatViewModel : BaseViewModel() {
     }
 
     /**
-     * 刷新当前会话信息（用于角色卡立绘变更后同步头像）。
-     * 仅重新拉取 session 数据，不重置消息列表和 Socket 连接。
+     * 刷新当前会话信息（用于角色卡立绘变更后同步头像，或改名后同步标题）。
+     * [reloadMessages] 为 false 时只更新会话资料，不重拉消息列表。
+     * 生成中或延迟回复未完成时也不重拉。
      */
-    fun refreshSession() {
+    fun refreshSession(reloadMessages: Boolean = true) {
         val sid = currentSessionId.takeIf { it.isNotBlank() } ?: return
-        if (!runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
+        if (reloadMessages && !runtime.hasActiveGeneration() && !runtime.delayReply.hasPending()) {
             loadMessages()
         }
         launchResult(
@@ -1509,7 +1516,7 @@ class ChatViewModel : BaseViewModel() {
                     message.thinkingCards.orEmpty().any(ThinkingCard::isAgent)
                 }
                 val showStandaloneReasoning =
-                    isReasoningEnabled() && !isAgentSession() && !hasAgentCards
+                    _session.value?.companionMode == true || (keepsStandaloneReasoning() && !hasAgentCards)
                 // 合并：保留现有 thinking_cards，避免被刷新覆盖（对齐原仓库 nbot-methods.js:6221）
                 val current = _messages.value.map { message ->
                     if (showStandaloneReasoning || message.isUser) message
@@ -3029,7 +3036,7 @@ class ChatViewModel : BaseViewModel() {
         generationStopRequested = false
         _sending.value = true
         // 如果剧情模式开启，清除旧选项并显示骨架（仅服务器模式）
-        if (!isLocalMode && _session.value?.plotMode == true) {
+        if (!isLocalMode && (_session.value?.companionMode != true && _session.value?.plotMode == true)) {
             _plotChoices.value = emptyList()
             _plotChoicesLoading.value = true
         }
@@ -3572,8 +3579,9 @@ class ChatViewModel : BaseViewModel() {
      * 避免 plotToggle API 要求会话已加载到 server.sessions 内存字典的限制。
      */
     fun togglePlotMode() {
+        if (_session.value?.companionMode == true) return
         val sid = currentSessionId.ifBlank { return }
-        val current = _session.value?.plotMode == true
+        val current = (_session.value?.companionMode != true && _session.value?.plotMode == true)
         // 乐观更新：先翻转 UI 状态，再调用 API；API 失败时回滚并 Toast 提示
         _session.value = _session.value?.copy(plotMode = !current)
         if (current) {
@@ -3621,7 +3629,7 @@ class ChatViewModel : BaseViewModel() {
      */
     fun togglePlotRealTimeSync() {
         val sid = currentSessionId.ifBlank { return }
-        if (_session.value?.plotMode != true) return
+        if (_session.value?.companionMode == true || _session.value?.plotMode != true) return
         val current = _session.value?.plotRealTimeSync == true
         // 乐观更新：先翻转 UI，再调用 API；API 失败回滚
         _session.value = _session.value?.copy(plotRealTimeSync = !current)
@@ -4114,7 +4122,7 @@ class ChatViewModel : BaseViewModel() {
                 try {
                     val repo = com.nekobot.app.ServiceContainer.localRepository
                     val session = repo.getSession(currentSessionId)
-                    if (session?.plotMode == true) {
+                    if ((session?.companionMode != true && session?.plotMode == true)) {
                         // 调用本地重新生成（复用 LocalRepository 的 regeneratePlotChoices）
                         val flow = repo.regeneratePlotChoicesLocal(currentSessionId)
                         flow.collect { event ->

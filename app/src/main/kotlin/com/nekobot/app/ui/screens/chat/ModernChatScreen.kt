@@ -51,10 +51,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AccountCircle
@@ -123,6 +129,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -140,6 +147,7 @@ import com.nekobot.app.data.local.AgentLiveContextUsage
 import com.nekobot.app.data.local.ai.ContextUsageBreakdown
 import com.nekobot.app.data.local.ai.ContextUsagePartTokens
 import com.nekobot.app.data.local.ai.AgentRunStage
+import com.nekobot.app.data.local.ai.isCharacterThinkingSession
 import com.nekobot.app.data.local.ChatInputLayoutMode
 import com.nekobot.app.data.local.LocalCommandAction
 import com.nekobot.app.data.local.LocalCommandSuggestion
@@ -155,6 +163,7 @@ import com.nekobot.app.data.model.SessionCacheStats
 import com.nekobot.app.data.model.Skill
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.components.AgentToolSetPickerDialog
+import com.nekobot.app.ui.components.CharacterThinkingSettingsControls
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.toolSetModeLabel
@@ -180,6 +189,7 @@ fun ModernChatScreen(
     onBack: () -> Unit,
     onOpenChat: (String) -> Unit = {},
     onOpenContextAnalysis: (String) -> Unit = {},
+    onOpenCompanionMemory: (String) -> Unit = {},
     onOpenSessionDetail: (String) -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
     onOpenStoryGraph: (String) -> Unit = {},
@@ -213,6 +223,19 @@ fun ModernChatScreen(
     val plotChoices by viewModel.plotChoices.collectAsStateWithLifecycle()
     val plotChoicesLoading by viewModel.plotChoicesLoading.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    if (session?.companionMode == true && ServiceContainer.prefs.isLocalMode) {
+        val stateService = remember { ServiceContainer.localRepository.companionRelationship }
+        val relationship by remember(sessionId) { stateService.observe(sessionId) }.collectAsStateWithLifecycle(null)
+        val evaluating by stateService.running.collectAsStateWithLifecycle()
+        val noticeContext = LocalContext.current
+        LaunchedEffect(relationship?.version, relationship?.notice, evaluating) {
+            relationship?.let { state ->
+                ServiceContainer.localRepository.claimCompanionRelationshipNotice(state, sessionId in evaluating)?.let { reason ->
+                    android.widget.Toast.makeText(noticeContext, reason, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
     val agentRecovery by viewModel.agentRecovery.collectAsStateWithLifecycle()
     val queuedMessages by viewModel.queuedMessages.collectAsStateWithLifecycle()
     // 已导入表情包：名称 → 图片地址，供消息气泡把 `[名称]` 渲染为原图
@@ -227,6 +250,25 @@ fun ModernChatScreen(
     // Agent 会话目标/规格任务（/goal、/spec 命令设置，输入框上方横幅展示）
     val agentGoal by viewModel.agentGoal.collectAsStateWithLifecycle()
     val agentSpec by viewModel.agentSpec.collectAsStateWithLifecycle()
+    val companionName = if (session?.companionMode == true) companionChatTitle(session) else null
+    var companionSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var companionSearchRequest by remember(sessionId) { mutableStateOf(0) }
+    var companionFavoritesRequest by remember(sessionId) { mutableStateOf(0) }
+    val settingsKeyboard = LocalSoftwareKeyboardController.current
+    var companionShowReasoning by remember(sessionId, companionName != null) {
+        mutableStateOf(companionName != null && ServiceContainer.localRepository.companionShowReasoning(sessionId))
+    }
+    val characterThinkingSettings by ServiceContainer.prefs.characterThinkingSettings.collectAsStateWithLifecycle()
+    val companionReasoningRevision by ServiceContainer.prefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
+    val companionEffort = companionReasoningRevision.let {
+        if (companionName != null) ServiceContainer.localRepository.companionReasoningEffort(sessionId) else ReasoningEffort.NONE
+    }
+    val savedContext = LocalContext.current
+    val savedNotice = remember(savedContext) { Toast.makeText(savedContext, "已保存", Toast.LENGTH_SHORT) }
+    var showInnerMonologue by remember(sessionId) {
+        mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
+    }
+    var companionUtilityRequest by remember(sessionId) { mutableStateOf<CompanionChatUtility?>(null) }
     val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
     val yoloAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode
     var yoloEnabled by remember(sessionId, yoloAvailable) {
@@ -241,7 +283,16 @@ fun ModernChatScreen(
         if (lastIndex >= 0) composerScope.launch { listState.animateScrollToItem(lastIndex) }
     }
 
-    CompositionLocalProvider(LocalStickerLookup provides stickerLookup) {
+    CompositionLocalProvider(
+        LocalStickerLookup provides stickerLookup,
+        LocalCompanionChatName provides companionName,
+        LocalCompanionShowReasoning provides companionThoughtsEnabled(companionShowReasoning, characterThinkingSettings.enabled),
+        com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue,
+        LocalOpenCompanionMemory provides if (companionName != null) ({ onOpenCompanionMemory(sessionId) }) else null
+    ) {
+    Box(Modifier.fillMaxSize()) {
+    // Keep the chat and its list/composer state alive beneath the full page, but hide it from accessibility.
+    Box(if (companionName != null && companionSettingsOpen) Modifier.fillMaxSize().clearAndSetSemantics {} else Modifier.fillMaxSize()) {
     ChatScreen(
     sessionId = sessionId,
     onBack = onBack,
@@ -251,26 +302,35 @@ fun ModernChatScreen(
     onOpenStoryGraph = onOpenStoryGraph,
     onOpenBrowserSettings = onOpenBrowserSettings,
     externalListState = listState,
+    onOpenCompanionSettings = { settingsKeyboard?.hide(); companionSettingsOpen = true },
+    companionUtilityRequest = companionUtilityRequest,
+    onCompanionUtilityHandled = { companionUtilityRequest = null },
     embeddedBottomBarClearance = embeddedBottomBarClearance,
     customBottomBar = {
         Column(
             modifier = Modifier.padding(bottom = embeddedBottomBarClearance)
         ) {
             if (agentRecovery != null && !replyBusy) {
-                AgentRecoveryBar(
+                if (companionName != null) CompanionReplyRecovery(
+                    onResume = viewModel::resumeAgentRun,
+                    onDismiss = viewModel::discardAgentRun
+                ) else AgentRecoveryBar(
                     state = agentRecovery!!,
                     onResume = viewModel::resumeAgentRun,
                     onDiscard = viewModel::discardAgentRun
                 )
             }
             // Agent 会话目标/规格任务横幅（/goal、/spec 命令设置）
-            GoalSpecBanner(goal = agentGoal, spec = agentSpec)
+            if (session?.companionMode != true) GoalSpecBanner(goal = agentGoal, spec = agentSpec)
             // Agent 任务列表（todo_write 工具写入，输入框上方可折叠面板）
-            AgentTodosPanel(todos = agentTodos)
+            if (session?.companionMode != true) AgentTodosPanel(todos = agentTodos)
             ModernChatComposer(
             modifier = Modifier.fillMaxWidth(),
             sessionId = sessionId,
             session = session,
+            companionSearchRequest = companionSearchRequest,
+            companionFavoritesRequest = companionFavoritesRequest,
+            onDismissCompanionSettings = { companionSettingsOpen = false },
             messages = messages,
             sending = sending,
             delayReplyPending = delayReplyPending,
@@ -325,6 +385,37 @@ fun ModernChatScreen(
         }
     }
     )
+    }
+    if (companionName != null && companionSettingsOpen) {
+        CompanionSettingsScreen(
+            characterName = companionName,
+            portraitUrl = session?.portraitUrl,
+            checked = companionShowReasoning,
+            onCheckedChange = { show ->
+                ServiceContainer.localRepository.setCompanionShowReasoning(sessionId, show)
+                companionShowReasoning = show
+            },
+            onDismiss = { companionSettingsOpen = false },
+            onDetails = { onOpenSessionDetail(sessionId) },
+            onSearch = { companionSearchRequest++ },
+            onFavorites = { companionFavoritesRequest++ },
+            onUsage = { onOpenContextAnalysis(sessionId) },
+            showInnerMonologue = showInnerMonologue,
+            onShowInnerMonologueChange = { show ->
+                ServiceContainer.localRepository.setCompanionShowInnerMonologue(sessionId, show)
+                showInnerMonologue = show
+            },
+            reasoningEffort = companionEffort,
+            customReasoning = ServiceContainer.localRepository.companionCustomReasoning(sessionId),
+            onReasoningEffortChange = { ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, it) },
+            onCustomReasoningChange = { ServiceContainer.localRepository.setCompanionCustomReasoning(sessionId, it) },
+            onSaved = { savedNotice.cancel(); savedNotice.show() },
+            onArchive = if (!session?.archiveSessionId.isNullOrBlank()) {
+                { companionUtilityRequest = CompanionChatUtility.VIEW_ARCHIVE }
+            } else null
+        )
+    }
+    }
     }
 }
 
@@ -875,6 +966,9 @@ private fun ModernChatComposer(
     modifier: Modifier,
     sessionId: String,
     session: Session?,
+    companionSearchRequest: Int,
+    companionFavoritesRequest: Int,
+    onDismissCompanionSettings: () -> Unit,
     messages: List<Message>,
     sending: Boolean,
     delayReplyPending: Boolean,
@@ -937,6 +1031,7 @@ private fun ModernChatComposer(
     LaunchedEffect(input.isNotBlank()) {
         onDelayInputContentChanged(input.isNotBlank())
     }
+    val companionChat = session?.companionMode == true
     var panelExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 表情包选择面板开关
     var stickerPickerOpen by remember { mutableStateOf(false) }
@@ -950,9 +1045,13 @@ private fun ModernChatComposer(
     }
     var quickActionsCollapsed by remember { mutableStateOf(ServiceContainer.prefs.chatQuickActionsCollapsed) }
     var showQuickActionEditor by remember { mutableStateOf(false) }
-    var reasoningEffort by remember(sessionId, isAgentSession) {
-        mutableStateOf(ServiceContainer.prefs.getReasoningEffort(isAgentSession))
+    val reasoningPrefs = ServiceContainer.prefs
+    val reasoningRevision by reasoningPrefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
+    val companionReasoningRepository = if (companionChat && reasoningPrefs.isLocalMode) ServiceContainer.localRepository else null
+    val readReasoningEffort = {
+        companionReasoningRepository?.companionReasoningEffort(sessionId) ?: reasoningPrefs.getReasoningEffort(isAgentSession)
     }
+    val reasoningEffort = reasoningRevision.let { readReasoningEffort() }
     var inputExpanded by remember { mutableStateOf(false) }
     var chatInputLayout by remember {
         mutableStateOf(ServiceContainer.prefs.chatInputLayoutMode)
@@ -969,6 +1068,12 @@ private fun ModernChatComposer(
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
+    LaunchedEffect(companionSearchRequest) {
+        if (companionSearchRequest > 0) showSearch = true
+    }
+    LaunchedEffect(companionFavoritesRequest) {
+        if (companionFavoritesRequest > 0) showFavorites = true
+    }
     var favoritesLoading by remember { mutableStateOf(false) }
     var favorites by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var favoritesVersion by remember { mutableStateOf(0) }
@@ -1319,7 +1424,7 @@ private fun ModernChatComposer(
             ChatQuickAction.CONTEXT -> onOpenContextAnalysis()
             ChatQuickAction.COMPRESS -> {
                 // AI 持续 loop 期间禁用（按钮已置灰，这里兜底防御）
-                if (!compressing && !replyBusy) onCompress()
+                if (session?.companionMode != true && !compressing && !replyBusy) onCompress()
             }
             ChatQuickAction.CLEAR -> showClearConfirm = true
             ChatQuickAction.LATEST -> onJumpToLatest()
@@ -1366,7 +1471,7 @@ private fun ModernChatComposer(
                 if (isAgentSession) {
                     val liveUsage = ServiceContainer.unified.agentLiveContextUsage(sessionId)
                     // 服务端模式没有本地工具信息，构成回退为按消息估算
-                    val liveBreakdown = liveUsage.breakdown.takeIf { !it.isEmpty }
+                    val liveBreakdown = liveUsage.breakdown.takeIf { liveUsage.companionSnapshotMode || !it.isEmpty }
                     usedTokens = if (liveBreakdown != null) {
                         liveUsage.totalTokens
                     } else {
@@ -1389,7 +1494,7 @@ private fun ModernChatComposer(
         }
     }
     val hasPlotSurface = plotChoicesLoading || plotChoices.isNotEmpty()
-    val inputVisible = shouldShowChatInput(
+    val inputVisible = companionChat || shouldShowChatInput(
         layoutMode = chatInputLayout,
         inputExpanded = inputExpanded,
         hasPlotSurface = hasPlotSurface,
@@ -1443,7 +1548,7 @@ private fun ModernChatComposer(
                 .navigationBarsPadding()
                 .imePadding()
         ) {
-            if (plotChoicesLoading || plotChoices.isNotEmpty()) {
+            if (!companionChat && (plotChoicesLoading || plotChoices.isNotEmpty())) {
                 ModernPlotChoices(
                     loading = plotChoicesLoading,
                     choices = plotChoices,
@@ -1480,12 +1585,9 @@ private fun ModernChatComposer(
                 )
             }
 
-            AnimatedVisibility(
-                visible = panelExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
+            val actionPanel: @Composable () -> Unit = {
                 ModernChatActionPanel(
+                    showClearAction = !companionChat,
                     sessionId = sessionId,
                     modelSwitchEnabled = !sessionGenerating && !replyBusy && !compressing,
                     messageCount = messageCount,
@@ -1506,28 +1608,38 @@ private fun ModernChatComposer(
                     toolSetSummary = rememberToolSetSummary(sessionId, toolSetRevision),
                     toolSetAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode,
                     onReasoningEffortChange = { effort ->
-                        reasoningEffort = effort
-                        ServiceContainer.prefs.setReasoningEffort(isAgentSession, effort)
+                        companionReasoningRepository?.setCompanionReasoningEffort(sessionId, effort)
+                            ?: reasoningPrefs.setReasoningEffort(isAgentSession, effort)
                     },
+                    customReasoning = companionReasoningRepository?.companionCustomReasoning(sessionId) ?: reasoningPrefs.getCustomReasoning(isAgentSession),
+                    onCustomReasoningChange = {
+                        companionReasoningRepository?.setCompanionCustomReasoning(sessionId, it)
+                            ?: reasoningPrefs.setCustomReasoning(isAgentSession, it)
+                    },
+                    showCharacterThinkingSettings = isCharacterThinkingSession(session),
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
+                        if (companionChat) onDismissCompanionSettings()
                         showToolSetDialog = true
                     },
                     onCompress = { onCompress() },
+                    allowCompression = session?.companionMode != true,
                     onOpenContextAnalysis = {
-                        panelExpanded = true
+                        if (companionChat) onDismissCompanionSettings() else panelExpanded = true
                         onOpenContextAnalysis()
                     },
                     onSendFile = {
+                        if (companionChat) onDismissCompanionSettings()
                         filePickMode = "send"
                         pickFile.launch("*/*")
                     },
-                    onOpenWorkspace = { onOpenWorkspace() },
-                    onSearch = { showSearch = true },
-                    onFavorites = { showFavorites = true },
-                    onJumpToLatest = { onJumpToLatest() },
-                    onMyMessages = { showMyMessages = true },
+                    onOpenWorkspace = { if (companionChat) onDismissCompanionSettings(); onOpenWorkspace() },
+                    onSearch = { if (companionChat) onDismissCompanionSettings(); showSearch = true },
+                    onFavorites = { if (companionChat) onDismissCompanionSettings(); showFavorites = true },
+                    onJumpToLatest = { if (companionChat) onDismissCompanionSettings(); onJumpToLatest() },
+                    onMyMessages = { if (companionChat) onDismissCompanionSettings(); showMyMessages = true },
                     onUploadOnly = {
+                        if (companionChat) onDismissCompanionSettings()
                         filePickMode = "upload"
                         pickFile.launch("*/*")
                     },
@@ -1535,6 +1647,12 @@ private fun ModernChatComposer(
                     onTogglePlotRealTimeSync = onTogglePlotRealTimeSync,
                     onClear = { showClearConfirm = true }
                 )
+            }
+            run {
+                AnimatedVisibility(visible = panelExpanded,
+                    enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    actionPanel()
+                }
             }
 
             AnimatedVisibility(
@@ -1796,7 +1914,7 @@ private fun ModernChatComposer(
                                             pendingAttachments = emptyList()
                                             closePanel()
                                             if (!keepComposerOpen) keyboard?.hide()
-                                            onSend(text, choiceId, attachments, reasoningEffort)
+                                            onSend(text, choiceId, attachments, readReasoningEffort())
                                         }
                                         ModernComposerAction.VOICE -> requestMicPermission.launch(
                                             android.Manifest.permission.RECORD_AUDIO
@@ -1849,7 +1967,7 @@ private fun ModernChatComposer(
                         exit = shrinkVertically() + fadeOut()
                     ) {
                         ChatQuickActionBar(
-                            actions = quickActions,
+                            actions = quickActions.filter { session?.companionMode != true || it != ChatQuickAction.COMPRESS },
                             onCollapse = {
                                 quickActionsCollapsed = true
                                 ServiceContainer.prefs.chatQuickActionsCollapsed = true
@@ -1869,7 +1987,11 @@ private fun ModernChatComposer(
     }
 
     if (showClearConfirm) {
-        AlertDialog(
+        if (companionChat) CompanionClearMessagesDialog(
+            enabled = !replyBusy && !sessionGenerating,
+            onDismiss = { showClearConfirm = false },
+            onConfirm = { if (!replyBusy && !sessionGenerating) { showClearConfirm = false; onClear() } }
+        ) else AlertDialog(
             onDismissRequest = { showClearConfirm = false },
             title = { Text(stringResource(R.string.chat_clear_current_session)) },
             text = { Text(stringResource(R.string.chat_clear_current_confirm)) },
@@ -1901,7 +2023,14 @@ private fun ModernChatComposer(
     }
 
     if (showSearch) {
-        ModernSearchDialog(
+        if (companionChat) CompanionMessageSearch(
+            messages, searchQuery, { searchQuery = it }, companionChatTitle(session),
+            onDismiss = { showSearch = false }, onResultClick = { message ->
+                onDismissCompanionSettings()
+                onJumpToMessage(message)
+            }
+        ) else ModernSearchDialog(
+            allowRoleFilter = companionChat,
             messages = messages,
             query = searchQuery,
             onQueryChange = { searchQuery = it },
@@ -1912,6 +2041,8 @@ private fun ModernChatComposer(
 
     if (showFavorites) {
         ModernFavoritesDialog(
+            companion = companionChat,
+            characterName = if (companionChat) companionChatTitle(session) else session?.characterName,
             favorites = favorites,
             loading = favoritesLoading,
             sessionId = sessionId,
@@ -2392,9 +2523,12 @@ private fun ModernPlotChoices(
 private fun ReasoningEffortSelector(
     selected: ReasoningEffort,
     enabled: Boolean,
-    onSelected: (ReasoningEffort) -> Unit
+    onSelected: (ReasoningEffort) -> Unit,
+    customReasoning: com.nekobot.app.data.model.CustomReasoningParam,
+    onCustomReasoningChange: (com.nekobot.app.data.model.CustomReasoningParam) -> Unit,
+    showCharacterThinkingSettings: Boolean
 ) {
-    var open by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
 
     @Composable
     fun label(effort: ReasoningEffort): String = when (effort) {
@@ -2415,39 +2549,128 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium_desc)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high_desc)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max_desc)
-        ReasoningEffort.CUSTOM -> "使用自定义参数"
+        ReasoningEffort.CUSTOM -> "发送时用这组替换自动换算的思考参数"
     }
 
-    ChatSettingEntry(
-        icon = Icons.Outlined.Psychology,
-        title = stringResource(R.string.reasoning_effort_title),
-        value = label(selected),
-        enabled = enabled,
-        onClick = { open = true }
-    )
-    if (open) {
-        NekoDialog(
-            onDismiss = { open = false },
-            title = stringResource(R.string.reasoning_effort_title),
-            message = stringResource(R.string.chat_setting_reasoning_hint),
-            confirmText = stringResource(R.string.common_close),
-            onConfirm = { open = false },
-            cancelText = null,
-            contentScrollable = true
-        ) {
-            Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ReasoningEffort.entries.forEach { effort ->
-                    ChatSettingChoice(
-                        title = label(effort),
-                        subtitle = description(effort),
-                        selected = effort == selected,
-                        enabled = enabled,
-                        onClick = {
-                            onSelected(effort)
-                            open = false
-                        }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+        border = null
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled) { expanded = !expanded }
+                    .padding(horizontal = 13.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Psychology,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.reasoning_effort_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = description(selected),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+                Text(
+                    text = selected.wireValue,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.width(5.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+                    ReasoningEffort.entries.forEach { effort ->
+                        val active = effort == selected
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = enabled) {
+                                    onSelected(effort)
+                                    expanded = false
+                                }
+                                .background(
+                                    if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                    else Color.Transparent
+                                )
+                                .padding(horizontal = 13.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.size(18.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (active) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = label(effort),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = description(effort),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                            Text(
+                                text = effort.wireValue,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+                            )
+                        }
+                    }
+                }
+            }
+            if (selected == ReasoningEffort.CUSTOM) {
+                CustomReasoningFields(customReasoning, enabled,
+                    onChange = onCustomReasoningChange,
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp))
+            }
+            if (showCharacterThinkingSettings) {
+                CharacterThinkingSettingsControls(selected, Modifier.padding(16.dp))
             }
         }
     }
@@ -2455,6 +2678,8 @@ private fun ReasoningEffortSelector(
 
 @Composable
 private fun ModernChatActionPanel(
+    allowCompression: Boolean = true,
+    showClearAction: Boolean = true,
     sessionId: String,
     modelSwitchEnabled: Boolean,
     messageCount: Int,
@@ -2475,6 +2700,9 @@ private fun ModernChatActionPanel(
     toolSetSummary: String,
     toolSetAvailable: Boolean,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
+    customReasoning: com.nekobot.app.data.model.CustomReasoningParam,
+    onCustomReasoningChange: (com.nekobot.app.data.model.CustomReasoningParam) -> Unit,
+    showCharacterThinkingSettings: Boolean,
     onToggleYolo: () -> Unit,
     onOpenToolSet: () -> Unit,
     onCompress: () -> Unit,
@@ -2506,6 +2734,7 @@ private fun ModernChatActionPanel(
         ) {
             item {
                 ModernContextCard(
+                    allowCompression = allowCompression,
                     messageCount = messageCount,
                     cacheHitRate = cacheHitRate,
                     usedTokens = usedTokens,
@@ -2560,43 +2789,42 @@ private fun ModernChatActionPanel(
                     )
                 }
             }
+            if (ServiceContainer.prefs.isLocalMode) {
+                item {
+                    SessionChatModelPickerEntry(sessionId, enabled = modelSwitchEnabled)
+                }
+            }
             item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.43f)
-                ) {
-                    Column {
-                        if (ServiceContainer.prefs.isLocalMode) {
-                            SessionChatModelPickerEntry(sessionId, enabled = modelSwitchEnabled)
-                            ModernMenuDivider()
-                        }
-                        ReasoningEffortSelector(
-                            selected = reasoningEffort,
-                            enabled = !sending,
-                            onSelected = onReasoningEffortChange
-                        )
-                        if (toolSetAvailable) {
-                            ModernMenuDivider()
-                            ChatSettingEntry(
-                                icon = Icons.Outlined.Extension,
-                                title = stringResource(R.string.toolset_entry_title),
-                                value = toolSetSummary,
-                                onClick = onOpenToolSet
-                            )
-                        }
-                        if (yoloAvailable) {
-                            ModernMenuDivider()
-                            ModernToggleRow(
-                                icon = Icons.Outlined.Terminal,
-                                title = stringResource(R.string.chat_yolo_mode),
-                                subtitle = stringResource(R.string.chat_yolo_mode_subtitle),
-                                checked = yoloEnabled,
-                                enabled = true,
-                                onCheckedChange = { onToggleYolo() }
-                            )
-                        }
-                    }
+                ReasoningEffortSelector(
+                    selected = reasoningEffort,
+                    enabled = !sending,
+                    onSelected = onReasoningEffortChange,
+                    customReasoning = customReasoning,
+                    onCustomReasoningChange = onCustomReasoningChange,
+                    showCharacterThinkingSettings = showCharacterThinkingSettings
+                )
+            }
+            if (toolSetAvailable) {
+                item {
+                    ModernToolRow(
+                        icon = Icons.Filled.Extension,
+                        title = stringResource(R.string.toolset_entry_title),
+                        subtitle = toolSetSummary,
+                        enabled = true,
+                        onClick = onOpenToolSet
+                    )
+                }
+            }
+            if (yoloAvailable) {
+                item {
+                    ModernToggleRow(
+                        icon = Icons.Filled.Terminal,
+                        title = stringResource(R.string.chat_yolo_mode),
+                        subtitle = stringResource(R.string.chat_yolo_mode_subtitle),
+                        checked = yoloEnabled,
+                        enabled = true,
+                        onCheckedChange = { onToggleYolo() }
+                    )
                 }
             }
             item { ModernSectionTitle(stringResource(R.string.chat_session_tools)) }
@@ -2653,6 +2881,7 @@ private fun ModernChatActionPanel(
                     }
                 }
             }
+            if (showClearAction) {
             item { ModernSectionTitle(stringResource(R.string.chat_danger_zone)) }
             item {
                 Surface(
@@ -2669,6 +2898,7 @@ private fun ModernChatActionPanel(
                         onClick = onClear
                     )
                 }
+            }
             }
         }
     }
@@ -2800,6 +3030,7 @@ private fun AgentToolSetDialog(
 
 @Composable
 private fun ModernContextCard(
+    allowCompression: Boolean = true,
     messageCount: Int,
     cacheHitRate: Double?,
     usedTokens: Long,
@@ -2872,7 +3103,7 @@ private fun ModernContextCard(
                         )
                     }
                 }
-                TextButton(
+                if (allowCompression) TextButton(
                     onClick = onCompress,
                     // 延迟回复等待期间同样禁止压缩：压缩会重写历史边界，待发批次会因此错乱
                     enabled = !sending && !delayPending && messageCount > 0 && !compressing
@@ -3123,15 +3354,14 @@ internal fun ModernToolRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(accent.copy(alpha = if (enabled) 0.13f else 0.06f)),
             contentAlignment = Alignment.Center
         ) {
@@ -3142,7 +3372,7 @@ internal fun ModernToolRow(
                 modifier = Modifier.size(20.dp)
             )
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
@@ -3159,7 +3389,6 @@ internal fun ModernToolRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -3174,7 +3403,7 @@ internal fun ModernToolRow(
 @Composable
 private fun ModernMenuDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(start = 52.dp),
+        modifier = Modifier.padding(start = 64.dp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
     )
 }
@@ -3196,15 +3425,14 @@ private fun ModernToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(horizontal = 10.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(accent.copy(alpha = if (enabled) 0.13f else 0.06f)),
             contentAlignment = Alignment.Center
         ) {
@@ -3215,7 +3443,7 @@ private fun ModernToggleRow(
                 modifier = Modifier.size(20.dp)
             )
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
@@ -3228,7 +3456,6 @@ private fun ModernToggleRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -3295,17 +3522,19 @@ private fun ModernMessageListDialog(
 
 @Composable
 private fun ModernSearchDialog(
+    allowRoleFilter: Boolean = false,
     messages: List<Message>,
     query: String,
     onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onResultClick: (Message) -> Unit
 ) {
-    val results = remember(query, messages) {
+    var onlyMine by remember { mutableStateOf(false) }
+    val results = remember(query, messages, onlyMine) {
         val normalized = query.trim().lowercase()
-        if (normalized.isBlank()) emptyList()
+        if (normalized.isBlank() && !onlyMine) emptyList()
         else messages.filter {
-            it.role != "system" && it.displayContent.lowercase().contains(normalized)
+            it.role != "system" && (!onlyMine || it.role == "user") && it.displayContent.lowercase().contains(normalized)
         }.take(80)
     }
     NekoDialog(
@@ -3321,9 +3550,10 @@ private fun ModernSearchDialog(
             placeholder = { Text(stringResource(R.string.chat_search_placeholder)) },
             singleLine = true
         )
+        if (allowRoleFilter) FilterChip(selected = onlyMine, onClick = { onlyMine = !onlyMine }, label = { Text("只看我发送的") })
         Spacer(Modifier.height(12.dp))
         when {
-            query.isBlank() -> Text(
+            query.isBlank() && !onlyMine -> Text(
                 stringResource(R.string.chat_search_keyword_hint),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp)
@@ -3395,6 +3625,8 @@ private fun ModernSearchDialog(
 
 @Composable
 private fun ModernFavoritesDialog(
+    companion: Boolean = false,
+    characterName: String? = null,
     favorites: List<JsonObject>,
     loading: Boolean,
     sessionId: String,
@@ -3457,6 +3689,13 @@ private fun ModernFavoritesDialog(
             cancelText = if (deleting) null else stringResource(R.string.common_cancel),
             onCancel = { deletingCollection = null }
         )
+    }
+
+    if (companion) {
+        CompanionFavoritesReading(favorites, loading, selectedCollection, characterName,
+            onBack = { if (selectedCollection != null) selectedCollection = null else onDismiss() },
+            onSelect = { selectedCollection = it }, onDelete = { deletingCollection = it })
+        return
     }
 
     // 主弹窗

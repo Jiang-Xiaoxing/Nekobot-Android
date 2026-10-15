@@ -1002,7 +1002,8 @@ fun RenderContentSegments(
     sessionId: String = "",
     chatMode: Boolean = false,
     processParens: Boolean = true,
-    linkColor: Color = accentLink()
+    linkColor: Color = accentLink(),
+    isStreaming: Boolean = false
 ) {
     var previewUrl by remember { mutableStateOf<String?>(null) }
     Column(modifier = modifier) {
@@ -1013,7 +1014,8 @@ fun RenderContentSegments(
                     color = textColor,
                     style = MaterialTheme.typography.bodyMedium,
                     chatMode = chatMode,
-                    processParens = processParens
+                    processParens = processParens,
+                    isStreaming = isStreaming
                 )
                 SegmentType.IMAGE -> ImageRenderer(url = segment.url)
                 SegmentType.VIDEO -> VideoRenderer(url = segment.url)

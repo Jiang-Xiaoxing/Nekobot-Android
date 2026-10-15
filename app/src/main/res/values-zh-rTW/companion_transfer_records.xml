@@ -1,0 +1,16 @@
+<resources>
+    <string name="companion_delete_conversion">刪除這次轉換</string>
+    <string name="companion_record_created">建立時間：%1$s</string>
+    <string name="companion_record_identifier">記錄編號：%1$s</string>
+    <string name="companion_record_backup_deleted">已完成，備份已刪除</string>
+    <string name="companion_record_not_started">尚未開始</string>
+    <string name="companion_record_failed">處理失敗，可繼續</string>
+    <string name="companion_record_paused">已暫停</string>
+    <string name="companion_record_deleting">清理未完成，請再次刪除</string>
+    <string name="companion_record_incomplete">尚未完成</string>
+    <string name="companion_record_total">原話共 %1$d 條</string>
+    <string name="companion_record_processed">已整理 %1$d 條原話</string>
+    <string name="companion_record_progress_unknown">暫時無法讀取整理進度</string>
+    <string name="companion_delete_pending_record_hint">將刪除這條轉換記錄、本次備份、暫存副本、錯誤報告和已整理進度，刪除後無法繼續這次轉換。\n原角色、原聊天及原記憶保留。以後仍可重新發起轉換。</string>
+    <string name="companion_delete_completed_record_hint">將刪除這條轉換記錄、本次備份和錯誤報告。\n已經產生的 Agent 角色、會話、記憶和附件保留，原資料也保留。</string>
+</resources>

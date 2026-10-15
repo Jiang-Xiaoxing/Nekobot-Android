@@ -1,0 +1,24 @@
+<resources>
+    <string name="companion_conversion_configure">Configure</string>
+    <string name="companion_conversion_start">Convert</string>
+    <string name="companion_conversion_no_model">Choose a conversion model first</string>
+    <string name="companion_conversion_intro">Turn this conversation into independent Agent character memories. Results are imported into a new copy automatically. The original stays intact.</string>
+    <string name="companion_conversion_service_notice">The selected provider receives the conversation and old memory references and charges its normal fees. Large histories take time; stopped conversions can resume.</string>
+    <string name="companion_conversion_rules">Conversion rules</string>
+    <string name="companion_conversion_model_title">Choose a conversion model</string>
+    <string name="companion_conversion_model_hint">Use an existing chat model. This selection does not change your everyday chat model.</string>
+    <string name="companion_conversion_empty_models">No available chat model. Add a provider and model, then return to select it.</string>
+    <string name="companion_conversion_manage_models">Add or manage models</string>
+    <string name="companion_conversion_rule_version">Rules version: %1$s</string>
+    <string name="companion_conversion_rules_hint">These are the instructions actually sent to the model. You can also inspect the output format or copy the complete instructions.</string>
+    <string name="companion_conversion_output_format">View model output format</string>
+    <string name="companion_conversion_copy_rules">Copy complete rules</string>
+    <string name="companion_conversion_copied">Copied</string>
+    <string name="companion_conversion_stopped">Conversion stopped. Completed batches are saved. Tap Convert to continue.</string>
+    <string name="companion_conversion_copy_error_report">Copy error report</string>
+    <string name="companion_conversion_view_report">View error report</string>
+    <string name="companion_conversion_hide_report">Hide error report</string>
+    <string name="companion_conversion_previous_errors">Previous error reports</string>
+    <string name="companion_conversion_report_hint">Share with a developer or AI for troubleshooting. No API keys or chat text are included. The latest 5 errors stay with this conversion record on your device.</string>
+    <string name="companion_conversion_wait_limit">Wait limit per batch: %1$d seconds</string>
+</resources>

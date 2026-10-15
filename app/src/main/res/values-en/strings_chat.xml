@@ -131,10 +131,10 @@
     <string name="sessions_detail_inherit_character_desc">Reply in character while keeping all Agent tools; loads the character card, memories, world book, and relationship state.</string>
     <string name="sessions_detail_inherit_character_on">Inherit full character abilities: on</string>
     <string name="sessions_detail_inherit_character_off">Inherit full character abilities: off</string>
-    <string name="sessions_detail_long_conversation">Long conversation memory</string>
-    <string name="sessions_detail_long_conversation_desc">Keep recent dialogue and look up memories, episodes, and original messages. Enabling this will not automatically process old history; building old episodes requires separate cost confirmation.</string>
-    <string name="sessions_detail_long_conversation_on">Long conversation memory: on</string>
-    <string name="sessions_detail_long_conversation_off">Long conversation memory: off</string>
+    <string name="sessions_detail_long_conversation">Lasting companionship</string>
+    <string name="sessions_detail_long_conversation_desc">Keep chatting with your AI companion in the same window. Keep recent dialogue and look up memories, episodes, and original messages. Enabling this will not automatically process old history; building old episodes requires separate cost confirmation.</string>
+    <string name="sessions_detail_long_conversation_on">Lasting companionship: on</string>
+    <string name="sessions_detail_long_conversation_off">Lasting companionship: off</string>
     <string name="sessions_detail_delay_reply">Delayed reply</string>
     <string name="sessions_detail_delay_reply_desc">Wait before replying after you send a message. The timer pauses while you keep typing, and messages sent during the wait are given to the AI together.</string>
     <string name="sessions_detail_delay_reply_on">Delayed reply: on</string>
@@ -605,6 +605,9 @@
     <!-- ==================== Automatic long-term memory notice (same shape as the skill hint) ==================== -->
     <string name="chat_auto_memory_running">Organizing long-term memory…</string>
     <string name="chat_auto_memory_done">%1$d memory item(s) saved</string>
+    <string name="chat_companion_memory_failed">Memory consolidation failed; will retry automatically</string>
+    <string name="chat_companion_memory_failed_view">View</string>
+    <string name="chat_companion_memory_failed_dismiss">Dismiss</string>
 
     <!-- ==================== Workspace (WorkspaceScreen) ==================== -->
     <string name="workspace_title">Workspace</string>

@@ -1,0 +1,16 @@
+<resources>
+    <string name="companion_delete_conversion">Delete this conversion</string>
+    <string name="companion_record_created">Created: %1$s</string>
+    <string name="companion_record_identifier">Record ID: %1$s</string>
+    <string name="companion_record_backup_deleted">Completed; backup deleted</string>
+    <string name="companion_record_not_started">Not started</string>
+    <string name="companion_record_failed">Failed; can resume</string>
+    <string name="companion_record_paused">Paused</string>
+    <string name="companion_record_deleting">Cleanup incomplete; delete again</string>
+    <string name="companion_record_incomplete">Not completed</string>
+    <string name="companion_record_total">Original messages: %1$d</string>
+    <string name="companion_record_processed">Messages processed: %1$d</string>
+    <string name="companion_record_progress_unknown">Processing progress is currently unavailable</string>
+    <string name="companion_delete_pending_record_hint">This deletes this conversion record, its backup, temporary copy, error reports, and saved progress. This conversion cannot be resumed afterward.\nYour original character, chats, and memories remain. You can start a new conversion later.</string>
+    <string name="companion_delete_completed_record_hint">This deletes this conversion record, its backup, and error reports.\nThe created Agent character, conversation, memories, and attachments remain, as do the original materials.</string>
+</resources>

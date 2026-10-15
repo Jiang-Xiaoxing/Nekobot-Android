@@ -35,6 +35,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.model.LegacyMemory
 import com.nekobot.app.data.model.MemoryFile
+import com.nekobot.app.data.model.userFacingTitle
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.navigation.Routes
@@ -87,6 +88,9 @@ class GlobalSearchViewModel : BaseViewModel() {
     fun refresh() { catalogCache.clear(); updateQuery(_query.value) }
 
     init {
+        viewModelScope.launch {
+            ServiceContainer.sessionChanged.collect { refresh() }
+        }
         viewModelScope.launch {
             ServiceContainer.dataSourceRevision.collect {
                 catalogCache.clear()
@@ -141,6 +145,7 @@ class GlobalSearchViewModel : BaseViewModel() {
                 val sessionResults = sessions.mapNotNull { session ->
                     val score = matchScore(
                         query,
+                        session.displayName,
                         session.name,
                         session.characterName,
                         session.lastMessage,
@@ -151,7 +156,8 @@ class GlobalSearchViewModel : BaseViewModel() {
                         key = "session:$id",
                         kind = GlobalSearchKind.SESSION,
                         title = session.displayName,
-                        subtitle = listOfNotNull(session.characterName, session.lastMessage?.oneLine()).joinToString(" · ").take(180),
+                        subtitle = listOfNotNull(if (session.companionMode == true) session.userFacingTitle() else session.characterName,
+                            session.lastMessage?.oneLine()).joinToString(" · ").take(180),
                         route = Routes.chat(id),
                         score = score
                     )

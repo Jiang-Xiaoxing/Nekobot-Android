@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.ui.platform.testTag
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
@@ -14,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.StartOffset
@@ -293,6 +296,9 @@ fun ChatScreen(
     onOpenBrowserSettings: () -> Unit = {},
     externalListState: androidx.compose.foundation.lazy.LazyListState? = null,
     customBottomBar: (@Composable () -> Unit)? = null,
+    onOpenCompanionSettings: (() -> Unit)? = null,
+    companionUtilityRequest: CompanionChatUtility? = null,
+    onCompanionUtilityHandled: () -> Unit = {},
     // 平板双栏嵌入会话页时，底部悬浮导航栏盖住覆盖层输入区，需要整体抬升避让
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
@@ -308,8 +314,10 @@ fun ChatScreen(
     val session by viewModel.session.collectAsStateWithLifecycle()
     // Agent 会话开启「继承完整角色能力」后按角色会话渲染：显示角色头像，气泡不再占满整宽。
     val inheritsCharacter = session?.sessionMode == "agent" && session?.inheritCharacter == true
-    val showAiAvatar = session?.sessionMode != "agent" || inheritsCharacter
-    val fillAiWidth = session?.sessionMode == "agent" && !inheritsCharacter
+    val companionChat = session?.companionMode == true
+    val companionName = companionChatTitle(session)
+    val showAiAvatar = companionChat || session?.sessionMode != "agent" || inheritsCharacter
+    val fillAiWidth = !companionChat && session?.sessionMode == "agent" && !inheritsCharacter
     val groupCharacters by viewModel.groupCharacters.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
@@ -367,7 +375,8 @@ fun ChatScreen(
     // 进度卡片，卡片自身已经表达了“正在处理”，这里就不再渲染独立气泡，融合成一个卡片。
     val progressCardsVisible = shouldRenderProgressCards(
         isLocalMode = ServiceContainer.prefs.isLocalMode,
-        sessionMode = session?.sessionMode
+        sessionMode = session?.sessionMode,
+        companionMode = companionChat
     )
     val streamingPlaceholderIndex = renderMessages.indexOfLast { it.id == ChatViewModel.STREAMING_ID }
     val progressCardHost = if (streamingPlaceholderIndex > 0) {
@@ -425,6 +434,17 @@ fun ChatScreen(
     var showSandboxTerminal by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 内置浏览器：输入网址或直接打开当前会话工作区里的 HTML 文件
     var showBuiltinBrowser by rememberSaveable(sessionId) { mutableStateOf(false) }
+    LaunchedEffect(sessionId, companionUtilityRequest) {
+        if (companionChat && companionUtilityRequest != null) {
+            when (companionUtilityRequest) {
+                CompanionChatUtility.TERMINAL -> if (ServiceContainer.prefs.isLocalMode) showSandboxTerminal = true
+                CompanionChatUtility.BROWSER -> showBuiltinBrowser = true
+                CompanionChatUtility.RESTORE_ARCHIVE -> if (!session?.archiveSessionId.isNullOrBlank()) showRestoreArchiveDialog = true
+                CompanionChatUtility.VIEW_ARCHIVE -> if (!session?.archiveSessionId.isNullOrBlank()) showArchiveViewer = true
+            }
+            onCompanionUtilityHandled()
+        }
+    }
     // 沙盒文件浏览器：覆盖在终端之上，复用同一会话沙盒 shell 的命令通道
     var showSandboxFiles by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 展开状态必须高于 LazyColumn item：工具步骤更新或卡片离屏回收后仍保留用户选择。
@@ -667,17 +687,30 @@ fun ChatScreen(
     }
 
     // 标记是否为首次加载，用于跳过滚动动画直接定位到最新消息
-    var initialLoad by remember { mutableStateOf(true) }
+    var initialLoad by rememberSaveable(sessionId) { mutableStateOf(true) }
+    var firstRenderedMessageId by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
+    var renderedMessageCount by rememberSaveable(sessionId) { mutableIntStateOf(0) }
 
     // 进入页面加载
     LaunchedEffect(sessionId) {
-        initialLoad = true
+        // 单会话设置的二级页面返回时沿用列表锚点；其他模式保持原有进入即定位末尾的行为。
+        if (!companionChat) {
+            initialLoad = true
+            firstRenderedMessageId = null
+            renderedMessageCount = 0
+        }
         viewModel.init(sessionId)
     }
     // 角色卡立绘/头像变更后刷新当前会话，使顶栏头像和消息头像跟随更新
     LaunchedEffect(Unit) {
         ServiceContainer.characterChanged.collect {
             viewModel.refreshSession()
+        }
+    }
+    // 当前会话改名等资料保存后只刷新顶栏标题和会话信息，不整页重载消息
+    LaunchedEffect(sessionId) {
+        ServiceContainer.sessionChanged.collect { changedId ->
+            if (changedId == sessionId) viewModel.refreshSession(reloadMessages = false)
         }
     }
     // 生命周期绑定：聊天界面可见性追踪（用于通知提醒判断）
@@ -716,18 +749,18 @@ fun ChatScreen(
     // 新消息时滚动：首次加载用瞬时滚动（无动画），后续用动画滚动。
     // 向上分页会在头部插入更早历史，此时首条消息与列表长度同时变化——
     // 这种"前插"必须保持用户当前位置（LazyColumn 依稳定 key 会自然锚定），不能滚到底部。
-    var firstRenderedMessageId by remember(sessionId) { mutableStateOf<String?>(null) }
-    var renderedMessageCount by remember(sessionId) { mutableIntStateOf(0) }
     LaunchedEffect(visibleMessages.size) {
         if (visibleMessages.isNotEmpty()) {
             val currentFirstId = renderMessages.firstOrNull()?.id
+            val unchangedCompanionHistory = companionChat && !initialLoad &&
+                currentFirstId == firstRenderedMessageId && visibleMessages.size == renderedMessageCount
             val prepended = firstRenderedMessageId != null &&
                 currentFirstId != null &&
                 currentFirstId != firstRenderedMessageId &&
                 visibleMessages.size > renderedMessageCount
             firstRenderedMessageId = currentFirstId
             renderedMessageCount = visibleMessages.size
-            if (prepended) return@LaunchedEffect
+            if (prepended || unchangedCompanionHistory) return@LaunchedEffect
             if (initialLoad) {
                 // 首次加载：直接跳到底部，无动画
                 listState.scrollToItem(renderMessages.lastIndex)
@@ -896,10 +929,11 @@ fun ChatScreen(
                     )
                 } else {
                     val conversationLabel = stringResource(R.string.chat_conversation)
-                    val typingLabel = stringResource(R.string.chat_typing)
+                    val typingLabel = stringResource(if (companionChat) R.string.companion_chat_typing else R.string.chat_typing)
                     TopAppBar(
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+
                                 ChatAvatar(
                                     portraitUrl = session?.portraitUrl,
                                     size = 34.dp,
@@ -912,16 +946,17 @@ fun ChatScreen(
                                     }
                                 )
                                 Spacer(Modifier.width(10.dp))
+
                                 Column {
                                     Text(
-                                        text = session?.displayName ?: conversationLabel,
+                                        text = if (companionChat) companionName else session?.displayName ?: conversationLabel,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    // 副标题：生成中显示“正在输入…”，否则显示消息总数
+                                    // 陪伴聊天只在实际回复中显示输入状态，不展示消息统计。
                                     Text(
                                         text = if (sending) typingLabel
                                         else stringResource(R.string.chat_message_count, totalMessageCount),
@@ -956,7 +991,10 @@ fun ChatScreen(
                                 }
                             }
                             Box {
-                                IconButton(onClick = { menuExpanded = true }) {
+                                IconButton(onClick = {
+                                    if (companionChat && onOpenCompanionSettings != null) onOpenCompanionSettings()
+                                    else menuExpanded = true
+                                }) {
                                     Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.chat_more), tint = MaterialTheme.colorScheme.onSurface)
                                 }
                                 DropdownMenu(
@@ -1097,6 +1135,7 @@ fun ChatScreen(
                     onStop = { viewModel.stop() },
                     onClear = { showClearConfirm = true },
                     onCompress = { viewModel.compressContext() },
+                    allowCompression = session?.companionMode != true,
                     compressing = agentContextCompressionInProgress,
                     onSendFile = {
                         filePickMode = "send"
@@ -1135,7 +1174,7 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            // 氛围背景：顶部一抹主题色微光，向下渐隐，增加层次感
+            // 陪伴聊天保持安静的纯色底，不覆盖用户自己设置的聊天背景。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1211,9 +1250,8 @@ fun ChatScreen(
                         stringResource(
                             R.string.chat_send_prompt,
                             // 优先显示角色名：characterName（本地模式）→ senderName（远程模式后端字段）→ displayName（会话名）→ AI
-                            session?.characterName?.takeIf { it.isNotBlank() }
-                                ?: session?.senderName?.takeIf { it.isNotBlank() }
-                                ?: session?.displayName?.takeIf { it.isNotBlank() }
+                            // 自定义标题优先，与顶栏、列表一致
+                            companionChatTitle(session).takeIf { it.isNotBlank() }
                                 ?: stringResource(R.string.chat_ai_label)
                         ),
                         style = MaterialTheme.typography.bodySmall,
@@ -1390,12 +1428,12 @@ fun ChatScreen(
                             // 统一内联提示：锚定到触发它的气泡下方；锚点失效时回退到列表末尾。
                             inlineNoticesByAnchorIndex[index]?.forEach { notice ->
                                 Spacer(Modifier.height(4.dp))
-                                ChatInlineNoticeDivider(notice)
+                                ChatInlineNoticeDivider(notice, onDismissMemoryFailure = viewModel::dismissCompanionMemoryFailure)
                             }
                             if (index == renderMessages.lastIndex) {
                                 fallbackInlineNotices.forEach { notice ->
                                     Spacer(Modifier.height(4.dp))
-                                    ChatInlineNoticeDivider(notice)
+                                    ChatInlineNoticeDivider(notice, onDismissMemoryFailure = viewModel::dismissCompanionMemoryFailure)
                                 }
                             }
                             if (
@@ -1457,7 +1495,9 @@ fun ChatScreen(
                 ) {
                     ErrorBanner(
                         message = errorMsg,
-                        onRetry = { viewModel.clearError() }
+                        // Clearing an error is not a retry. Companion recovery uses the saved-run action.
+                        onRetry = if (companionChat) null else ({ viewModel.clearError() }),
+                        onDismiss = if (companionChat) ({ viewModel.clearError() }) else null
                     )
                 }
             }
@@ -1555,6 +1595,7 @@ fun ChatScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             dragHandle = { BottomSheetDefaults.DragHandle() }
         ) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             Text(
                 text = stringResource(R.string.chat_message_actions),
                 style = MaterialTheme.typography.titleMedium,
@@ -1562,6 +1603,24 @@ fun ChatScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
             )
+            if (companionChat) {
+                MessageActionSheetItem(text = stringResource(R.string.common_copy), icon = Icons.Filled.ContentCopy) {
+                    clipboard.setText(AnnotatedString(target.displayContent))
+                    messageActionTarget = null
+                }
+                if (!target.isUser && !target.isLocalCommandMessage()) {
+                    MessageActionSheetItem(text = stringResource(R.string.companion_chat_retry), icon = Icons.Filled.Refresh,
+                        enabled = targetId != null && !sending) {
+                        messageActionTarget = null
+                        if (renderMessages.firstOrNull()?.id == target.id && !hasOlderMessages) viewModel.regenerateGreeting()
+                        else viewModel.regenerateMessage(target)
+                    }
+                }
+                val details = listOfNotNull(target.timestamp, target.tokens?.let { "${formatTokenCount(it)} tok" },
+                    formatTokenSpeed(target.outputTokens, target.durationMs)).joinToString(" · ")
+                if (details.isNotBlank()) Text(details, Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             MessageActionSheetItem(
                 text = stringResource(R.string.chat_message_edit),
                 icon = Icons.Filled.Edit,
@@ -1619,6 +1678,7 @@ fun ChatScreen(
                 }
             )
             Spacer(Modifier.height(24.dp))
+            }
         }
     }
 
@@ -2554,7 +2614,40 @@ private fun StreamingAssistantBubble(
 ) {
     val content by contentFlow.collectAsStateWithLifecycle()
     val reasoning by reasoningFlow.collectAsStateWithLifecycle()
-    if (content.isBlank() && reasoning.isBlank()) {
+    val companionChat = LocalCompanionChatName.current != null
+    val visibleReasoning = reasoning.takeIf { !companionChat || LocalCompanionShowReasoning.current }.orEmpty()
+    if (companionChat) {
+        // 本轮一旦开始回忆，“回忆一下”持续显示，直到第一段正文出现时淡出。
+        val recalling by com.nekobot.app.data.local.ai.CompanionRecallActivity.active.collectAsStateWithLifecycle()
+        val recallActive = (recalling[sessionId] ?: 0) > 0
+        var recallLatched by remember(sessionId, placeholder.timestamp) { mutableStateOf(false) }
+        if (recallActive && !recallLatched) recallLatched = true
+        val showRecallPill = com.nekobot.app.data.local.ai.CompanionRecallActivity
+            .pillVisible(recallLatched, recallActive, content.isBlank())
+        val liveMessage = remember(placeholder, content, reasoning) {
+            placeholder.copy(content = content, reasoningContent = reasoning.takeIf(String::isNotBlank))
+        }
+        Column {
+            AnimatedVisibility(
+                visible = showRecallPill,
+                enter = EnterTransition.None,
+                exit = fadeOut(tween(300))
+            ) { CompanionRecallingPill() }
+            // Companion waiting feedback lives only in the header, even when hidden reasoning is streaming.
+            if (content.isNotBlank() || visibleReasoning.isNotBlank()) {
+                MessageBubble(
+                    message = liveMessage,
+                    portraitUrl = portraitUrl,
+                    showAiAvatar = showAiAvatar,
+                    fillAiWidth = fillAiWidth,
+                    onLongClick = {},
+                    sessionId = sessionId
+                )
+            }
+        }
+        return
+    }
+    if (content.isBlank() && visibleReasoning.isBlank()) {
         if (fuseTypingIndicator) return
         ThinkingIndicator(
             portraitUrl = portraitUrl,
@@ -2597,7 +2690,6 @@ private fun SafePlainMessageText(
         SelectionContainer {
             Text(
                 text = visibleText,
-                modifier = Modifier.fillMaxWidth(),
                 color = color,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -2662,6 +2754,7 @@ private fun MessageBubble(
     val commandCapsuleBrush = commandCapsule?.let {
         Brush.linearGradient(listOf(it.kind.startColor, it.kind.endColor))
     }
+    val companionChat = LocalCompanionChatName.current != null
     // 用户气泡基色：若设置了主题色覆盖则跟随主题，否则使用默认紫色
     val userBubble = ServiceContainer.prefs.themeColorOverride?.let { parseHexColor(it) }
         ?: if (isSystemInDarkTheme()) BubbleUser else BubbleUserLight
@@ -2816,6 +2909,7 @@ private fun MessageBubble(
 
         Column(
             modifier = when {
+                companionChat -> Modifier.weight(1f, fill = false).widthIn(max = maxBubbleWidth)
                 !isUser && fillAiWidth -> Modifier.weight(1f)
                 hasUserImage -> Modifier.widthIn(min = 300.dp, max = maxBubbleWidth)
                 isUser -> Modifier.widthIn(max = maxBubbleWidth).width(IntrinsicSize.Max)
@@ -2836,7 +2930,13 @@ private fun MessageBubble(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (!isUser && !fillAiWidth && !message.reasoningContent.isNullOrBlank()) {
+            if (companionChat && !isUser) {
+                CompanionReasoningSection(
+                    messageId = message.id,
+                    reasoning = message.reasoningContent,
+                    enabled = LocalCompanionShowReasoning.current
+                )
+            } else if (!isUser && !fillAiWidth && !message.reasoningContent.isNullOrBlank()) {
                 var reasoningExpanded by remember(message.id) {
                     mutableStateOf(isStreamingPlaceholder)
                 }
@@ -2998,6 +3098,7 @@ private fun MessageBubble(
                                             sessionId = sessionId,
                                             chatMode = true,
                                             processParens = !isUser,
+                                            isStreaming = isStreamingPlaceholder,
                                             linkColor = accentLink()
                                         )
                                     } else {
@@ -3015,6 +3116,7 @@ private fun MessageBubble(
                                                 sessionId = sessionId,
                                                 chatMode = true,
                                                 processParens = !isUser,
+                                                isStreaming = isStreamingPlaceholder,
                                                 linkColor = linkColor
                                             )
                                         }
@@ -3030,6 +3132,7 @@ private fun MessageBubble(
                                 sessionId = sessionId,
                                 chatMode = true,
                                 processParens = !isUser,
+                                isStreaming = isStreamingPlaceholder,
                                 linkColor = linkColor
                             )
                         } else if (commandStyle != null && isUser) {
@@ -3055,19 +3158,20 @@ private fun MessageBubble(
                                             color = textColor,
                                             style = MaterialTheme.typography.bodyMedium,
                                             chatMode = true,
-                                            processParens = false
+                                            processParens = false,
+                                            isStreaming = isStreamingPlaceholder
                                         )
                                     }
                                 }
                             }
                         } else {
                             // 文本内容：用 Markdown 渲染
-                            // 用户气泡：宽度跟随实际内容（短消息不撑满）；AI 气泡：填满最大宽度
+                            // 角色和用户文字都按内容定宽；无角色 Agent 的整宽模式由外层保留。
                             if (useSafePlainText) {
                                 SafePlainMessageText(
                                     text = segment,
                                     color = textColor,
-                                    modifier = if (isUser) Modifier.widthIn(max = maxBubbleWidth) else Modifier.fillMaxWidth()
+                                    modifier = Modifier.widthIn(max = maxBubbleWidth)
                                 )
                             } else {
                                 MarkdownText(
@@ -3076,7 +3180,8 @@ private fun MessageBubble(
                                     style = MaterialTheme.typography.bodyMedium,
                                     chatMode = true,
                                     processParens = !isUser,
-                                    modifier = if (isUser) Modifier.widthIn(max = maxBubbleWidth) else Modifier.fillMaxWidth()
+                                    isStreaming = isStreamingPlaceholder,
+                                    modifier = Modifier.widthIn(max = maxBubbleWidth)
                                 )
                             }
                         }
@@ -3146,6 +3251,7 @@ private fun MessageBubble(
                     modifier = Modifier.widthIn(max = 280.dp)
                 )
             }
+
 
             // 元信息：时间（精简到分钟）/ token 数 / 生成速度 + 操作按钮，AI 气泡合并到同一行。
             // 左侧信息栏内容变长（时间 + token + tok/s + 候选切换器）时可能超出气泡宽度，
@@ -3269,7 +3375,10 @@ private fun MessageBubble(
                     }
                 }
             }
+
+
         }
+
         // 多选模式：用户气泡右侧显示勾选框
         if (selectionMode && isUser) {
             Spacer(Modifier.width(4.dp))
@@ -3883,8 +3992,9 @@ internal fun resolveProgressCardExpanded(
 /** 进度卡片只属于本地执行链路或远程 Agent 工具链路，远程角色/群聊不展示。 */
 internal fun shouldRenderProgressCards(
     isLocalMode: Boolean,
-    sessionMode: String?
-): Boolean = isLocalMode || sessionMode.equals("agent", ignoreCase = true)
+    sessionMode: String?,
+    companionMode: Boolean = false
+): Boolean = !companionMode && (isLocalMode || sessionMode.equals("agent", ignoreCase = true))
 
 /**
  * 本轮的“思考中”占位气泡是否应融进进度卡片。
@@ -5469,8 +5579,11 @@ private fun ChatAvatar(
     size: androidx.compose.ui.unit.Dp,
     ring: Boolean = false,
     fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.SmartToy,
-    fallbackPainter: androidx.compose.ui.graphics.painter.Painter? = null
+    fallbackPainter: androidx.compose.ui.graphics.painter.Painter? = null,
+    fallbackName: String? = null
 ) {
+    val companionName = LocalCompanionChatName.current
+    val avatarShape = CircleShape
     val resolved = resolveAvatarUrl(portraitUrl)
     Box(
         modifier = Modifier
@@ -5483,12 +5596,16 @@ private fun ChatAvatar(
                 ) else Modifier
             )
             .padding(if (ring) 2.dp else 0.dp)
-            .clip(CircleShape)
+            .clip(avatarShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
         contentAlignment = Alignment.Center
     ) {
         val fallback: @Composable () -> Unit = {
-            if (fallbackPainter != null) {
+            if (companionName != null) {
+                Text((fallbackName ?: companionName).trim().take(1),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary)
+            } else if (fallbackPainter != null) {
                 Icon(
                     painter = fallbackPainter,
                     contentDescription = null,
@@ -5568,8 +5685,12 @@ private fun AgentContextCompressionDivider(inProgress: Boolean) {
  * 锚定位置与外观自动与其他提示保持一致。
  */
 @Composable
-private fun ChatInlineNoticeDivider(notice: ChatInlineNotice) {
+private fun ChatInlineNoticeDivider(notice: ChatInlineNotice, onDismissMemoryFailure: () -> Unit = {}) {
     when (notice) {
+        is CompanionMemoryFailureUiState -> CompanionMemoryFailurePill(
+            onOpen = LocalOpenCompanionMemory.current,
+            onDismiss = onDismissMemoryFailure
+        )
         is ContextCompressionUiState -> InlineNoticeDivider(
             text = stringResource(
                 if (notice.running) R.string.chat_agent_context_compressing
@@ -5596,6 +5717,44 @@ private fun ChatInlineNoticeDivider(notice: ChatInlineNotice) {
             icon = Icons.Filled.Psychology,
             running = notice.running
         )
+    }
+}
+
+/** 记忆整理失败：居中淡琥珀色胶囊，警告图标 + 文案 + 「查看」链接 + 关闭。 */
+@Composable
+private fun CompanionMemoryFailurePill(onOpen: (() -> Unit)?, onDismiss: () -> Unit) {
+    val amberBg = androidx.compose.ui.graphics.Color(0xFFFFF4DC)
+    val amberFg = androidx.compose.ui.graphics.Color(0xFF8A5A00)
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+            color = amberBg,
+            modifier = Modifier.testTag("companion-memory-failure-notice")
+        ) {
+            Row(
+                Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(androidx.compose.material.icons.Icons.Outlined.WarningAmber, null,
+                    tint = amberFg, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.chat_companion_memory_failed),
+                    style = MaterialTheme.typography.labelMedium, color = amberFg)
+                if (onOpen != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.chat_companion_memory_failed_view),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                            .clickable(onClick = onOpen).padding(horizontal = 2.dp, vertical = 4.dp))
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(androidx.compose.material.icons.Icons.Filled.Close,
+                        stringResource(R.string.chat_companion_memory_failed_dismiss),
+                        tint = amberFg.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                }
+            }
+        }
     }
 }
 
@@ -6494,6 +6653,7 @@ private fun ChatInputBar(
     onCompress: () -> Unit,
     /** 上下文压缩进行中：压缩按钮切换为进行中样式。 */
     compressing: Boolean = false,
+    allowCompression: Boolean = true,
     onSendFile: () -> Unit = {},
     onUploadToWorkspace: () -> Unit = {},
     onOpenWorkspace: () -> Unit = {},
@@ -6605,7 +6765,7 @@ private fun ChatInputBar(
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ActionChip(
+                        if (allowCompression) ActionChip(
                             icon = Icons.Filled.Compress,
                             label = stringResource(
                                 if (compressing) R.string.chat_compressing else R.string.chat_compress_context

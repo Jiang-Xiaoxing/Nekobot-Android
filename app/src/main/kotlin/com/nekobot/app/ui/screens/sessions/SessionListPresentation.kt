@@ -9,6 +9,7 @@ data class SessionOverview(
     val total: Int = 0,
     val characterSessions: Int = 0,
     val agentSessions: Int = 0,
+    val agentCharacterSessions: Int = 0,
     val pinned: Int = 0,
     val favorite: Int = 0,
     val archived: Int = 0
@@ -39,8 +40,19 @@ data class SessionListRow(
     /** Agent 会话开启「继承完整角色能力」：按角色会话展示绑定角色名与立绘。 */
     val inheritCharacter: Boolean = false,
     /** 群聊会话：列表项无立绘时回退到群聊图标而非默认聊天图标。 */
-    val isGroupSession: Boolean = false
-)
+    val isGroupSession: Boolean = false,
+    val modeLabel: SessionModeLabel = SessionModeLabel.CHARACTER,
+    val listTitleOverride: String? = null
+) {
+    /** Tool chats are tasks; companion and character chats are people. */
+    val listTitle: String get() = com.nekobot.app.data.model.sessionTitle(listTitleOverride, when (modeLabel) {
+        SessionModeLabel.CHARACTER, SessionModeLabel.COMPANION -> characterLabel?.takeIf(String::isNotBlank) ?: displayName
+        SessionModeLabel.AGENT, SessionModeLabel.GROUP -> displayName
+    })
+    val listDate: String? get() = updatedAt?.let {
+        if (it.length == 10 && it[4] == '-' && it[7] == '-') it.substring(5) else it
+    }
+}
 
 /**
  * 列表只展示日期部分，避免完整 ISO 时间戳挤占会话标题和消息预览的空间。
@@ -60,6 +72,7 @@ internal fun formatSessionListDate(value: String?): String? {
 val QUICK_SESSION_FILTERS = listOf(
     SessionFilter.CHARACTER_SESSIONS,
     SessionFilter.AGENT_SESSIONS,
+    SessionFilter.AGENT_CHARACTERS,
     SessionFilter.FAVORITE,
     SessionFilter.ARCHIVED
 )
@@ -68,6 +81,7 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
     var total = 0
     var characterSessions = 0
     var agentSessions = 0
+    var agentCharacterSessions = 0
     var pinned = 0
     var favorite = 0
     var archived = 0
@@ -76,6 +90,7 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
         total++
         if (session.archived != true) {
             when {
+                session.isAgentCharacterSession() -> agentCharacterSessions++
                 session.isAgentSession() -> agentSessions++
                 session.isCharacterSession() -> characterSessions++
             }
@@ -88,6 +103,7 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
         total = total,
         characterSessions = characterSessions,
         agentSessions = agentSessions,
+        agentCharacterSessions = agentCharacterSessions,
         pinned = pinned,
         favorite = favorite,
         archived = archived
@@ -96,6 +112,9 @@ fun buildSessionOverview(sessions: List<Session>): SessionOverview {
 
 internal fun Session.isAgentSession(): Boolean =
     sessionMode.equals("agent", ignoreCase = true)
+
+internal fun Session.isAgentCharacterSession(): Boolean =
+    isAgentSession() && companionMode == true
 
 internal fun Session.isCharacterSession(): Boolean =
     sessionMode.isNullOrBlank() || sessionMode.equals("character", ignoreCase = true)
@@ -141,7 +160,7 @@ fun buildSessionListRows(
         val isGroupSession =
             session.sessionMode == "group" || !session.characterIds.isNullOrEmpty()
         val characterLabel = when {
-            isAgentSession && !inheritCharacter -> null
+            isAgentSession && !inheritCharacter && !session.isAgentCharacterSession() -> null
             isGroupSession -> fallbackCharacterName
             else -> session.characterName?.takeIf { it.isNotBlank() }
                 ?: senderCharacterName
@@ -160,6 +179,7 @@ fun buildSessionListRows(
             id = sessionId,
             name = session.name.orEmpty(),
             displayName = session.displayName,
+            listTitleOverride = session.listTitleOverride,
             portraitUrl = rawPortraitUrl?.let(portraitUrlResolver),
             characterLabel = characterLabel,
             updatedAt = formatSessionListDate(session.updatedAt),
@@ -171,7 +191,13 @@ fun buildSessionListRows(
             archived = session.archived == true,
             isAgentSession = isAgentSession,
             inheritCharacter = inheritCharacter,
-            isGroupSession = isGroupSession
+            isGroupSession = isGroupSession,
+            modeLabel = when {
+                session.isAgentCharacterSession() -> SessionModeLabel.COMPANION
+                isAgentSession -> SessionModeLabel.AGENT
+                isGroupSession -> SessionModeLabel.GROUP
+                else -> SessionModeLabel.CHARACTER
+            }
         )
     }
 }

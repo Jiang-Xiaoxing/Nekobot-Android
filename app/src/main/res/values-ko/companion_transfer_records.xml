@@ -1,0 +1,16 @@
+<resources>
+    <string name="companion_delete_conversion">이 변환 삭제</string>
+    <string name="companion_record_created">생성 시간: %1$s</string>
+    <string name="companion_record_identifier">기록 ID: %1$s</string>
+    <string name="companion_record_backup_deleted">완료됨 · 백업 삭제됨</string>
+    <string name="companion_record_not_started">시작 전</string>
+    <string name="companion_record_failed">실패 · 이어서 진행 가능</string>
+    <string name="companion_record_paused">일시 중지됨</string>
+    <string name="companion_record_deleting">정리가 완료되지 않았습니다. 다시 삭제하세요</string>
+    <string name="companion_record_incomplete">미완료</string>
+    <string name="companion_record_total">원본 메시지: %1$d개</string>
+    <string name="companion_record_processed">정리한 메시지: %1$d개</string>
+    <string name="companion_record_progress_unknown">현재 정리 진행 상황을 읽을 수 없습니다</string>
+    <string name="companion_delete_pending_record_hint">이 변환 기록, 백업, 임시 사본, 오류 보고서와 저장된 진행 상황을 삭제합니다. 이후에는 이 변환을 이어서 진행할 수 없습니다.\n원래 캐릭터, 대화와 기억은 유지됩니다. 나중에 새 변환을 시작할 수 있습니다.</string>
+    <string name="companion_delete_completed_record_hint">이 변환 기록, 백업과 오류 보고서를 삭제합니다.\n생성된 Agent 캐릭터, 대화, 기억, 첨부파일과 원본 자료는 유지됩니다.</string>
+</resources>

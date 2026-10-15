@@ -137,10 +137,10 @@
     <string name="sessions_detail_inherit_character_desc">以角色身份回應，同時保留全部 Agent 工具能力；載入角色卡、記憶、世界書與關係狀態。</string>
     <string name="sessions_detail_inherit_character_on">繼承完整角色能力：開</string>
     <string name="sessions_detail_inherit_character_off">繼承完整角色能力：關</string>
-    <string name="sessions_detail_long_conversation">長期單會話記憶</string>
-    <string name="sessions_detail_long_conversation_desc">保留近期原話，按需查角色記憶、經歷摘要和舊原話。開啟不會自動付費整理已有歷史；補建舊檔案需另行確認模型費用。</string>
-    <string name="sessions_detail_long_conversation_on">長期單會話記憶：開</string>
-    <string name="sessions_detail_long_conversation_off">長期單會話記憶：關</string>
+    <string name="sessions_detail_long_conversation">長久陪伴</string>
+    <string name="sessions_detail_long_conversation_desc">和你的 AI 伴侶，在同一個視窗一直聊下去。保留近期原話，按需查角色記憶、經歷摘要和舊原話。開啟不會自動付費整理已有歷史；補建舊檔案需另行確認模型費用。</string>
+    <string name="sessions_detail_long_conversation_on">長久陪伴：開</string>
+    <string name="sessions_detail_long_conversation_off">長久陪伴：關</string>
     <string name="sessions_detail_delay_reply">延遲迴復</string>
     <string name="sessions_detail_delay_reply_desc">發送訊息後等待一段時間再回復。繼續輸入時暫停計時，期間發送的多條訊息會一起交給 AI。</string>
     <string name="sessions_detail_delay_reply_on">延遲迴復：開</string>
@@ -611,6 +611,9 @@
     <!-- ==================== 自动长期记忆提示（与技能沉淀提示同形态） ==================== -->
     <string name="chat_auto_memory_running">正在整理長期記憶…</string>
     <string name="chat_auto_memory_done">已自動記憶 %1$d 條</string>
+    <string name="chat_companion_memory_failed">記憶整理失敗，稍後會自動重試</string>
+    <string name="chat_companion_memory_failed_view">查看</string>
+    <string name="chat_companion_memory_failed_dismiss">關閉提示</string>
 
     <!-- ==================== 工作区页 (WorkspaceScreen) ==================== -->
     <string name="workspace_title">工作區</string>

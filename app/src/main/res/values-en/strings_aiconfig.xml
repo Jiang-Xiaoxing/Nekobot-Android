@@ -390,6 +390,11 @@
     <string name="localai_filter_all">All</string>
     <string name="localai_filter_empty">No models for this function</string>
     <string name="localai_filter_show_all">Show all models</string>
+    <string name="aimodel_editor_embedding_dimensions_default">Provider default</string>
+    <string name="aimodel_editor_embedding_dimensions_custom">Custom</string>
+    <string name="aimodel_editor_embedding_dimensions_fixed">This model uses fixed vector dimensions; no setting is needed.</string>
+    <string name="aimodel_editor_embedding_dimensions_hint">Use the provider default or an integer from 1 to 65536. Supported dimensions depend on the model service.</string>
+    <string name="aimodel_editor_embedding_dimensions_invalid">Custom dimensions must be an integer from 1 to 65536.</string>
     <string name="aimodel_editor_provider_elevenlabs">ElevenLabs</string>
     <string name="aimodel_editor_provider_deepgram">Deepgram</string>
     <string name="aimodel_editor_provider_groq">Groq</string>

@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,9 @@ import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.ai.ModelPricingCatalog
 import com.nekobot.app.data.local.ai.ModelPricingEntry
 import com.nekobot.app.data.local.ai.LocalProtocols
+import com.nekobot.app.data.local.ai.EMBEDDING_DIMENSION_PRESETS
+import com.nekobot.app.data.local.ai.usesFixedEmbeddingDimensions
+import com.nekobot.app.data.local.ai.validEmbeddingDimensionsInput
 import com.nekobot.app.data.local.ai.parseModelProxyUrl
 import com.nekobot.app.data.local.ai.REALTIME_OPENAI_VOICES
 import com.nekobot.app.data.local.ai.REALTIME_GLM_DEFAULT_BASE_URL
@@ -130,7 +134,7 @@ data class AiModelEditorState(
     val sttUrl: String = "",
     val sttModel: String = "",
     val sttHeaders: String = "",
-    val dimensions: String = "1536",
+    val dimensions: String = "",
     val size: String = "1024x1024",
     val promptTemplate: String = ""
 )
@@ -297,6 +301,9 @@ fun AiModelEditorDialog(
     val presetConfigTemplate = stringResource(R.string.aimodel_editor_preset_config_name)
     val purposeNameTemplate = stringResource(R.string.aimodel_editor_default_name_purpose)
     var state by remember(initial) { mutableStateOf(initial.ensureProtocol(protocolOptions)) }
+    var customDimensions by remember(initial) {
+        mutableStateOf(initial.dimensions.isNotBlank() && initial.dimensions !in EMBEDDING_DIMENSION_PRESETS)
+    }
     var validationError by remember { mutableStateOf<String?>(null) }
     // 已保存 Key 下拉框当前选中的 Key id（仅用于回显选择，实际密钥仍存 state.apiKey）
     var selectedSavedKeyId by remember { mutableStateOf<String?>(null) }
@@ -354,6 +361,10 @@ fun AiModelEditorDialog(
                 state.model.isBlank() -> context.getString(R.string.aimodel_editor_validation_model)
                 state.apiKey.isBlank() && !(state.purpose == "stt" && state.sttProvider == "local") ->
                     context.getString(R.string.aimodel_editor_validation_api_key)
+                state.purpose == "embedding" && !usesFixedEmbeddingDimensions(state.model) &&
+                    (customDimensions || state.dimensions.isNotBlank()) &&
+                    !validEmbeddingDimensionsInput(state.dimensions) ->
+                    context.getString(R.string.aimodel_editor_embedding_dimensions_invalid)
                 proxyError != null -> proxyError
                 else -> null
             }
@@ -406,6 +417,13 @@ fun AiModelEditorDialog(
                 labelFor = { purposeLabels[it] ?: it },
                 onSelect = { state = state.applyPurpose(it, isEditing, purposeLabels, purposeNameTemplate) }
             )
+            if (state.purpose == "embedding") {
+                Text(
+                    stringResource(R.string.companion_embedding_free_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             EditorDropdownField(
                 label = stringResource(R.string.aimodel_editor_field_provider),
                 value = state.provider,
@@ -878,12 +896,12 @@ fun AiModelEditorDialog(
 
                 "embedding" -> {
                     FormSection(stringResource(R.string.aimodel_editor_section_embedding))
-                    EditorDropdownField(
-                        label = stringResource(R.string.aimodel_editor_embedding_dimensions),
-                        value = state.dimensions,
-                        options = listOf("384", "768", "1024", "1536", "3072"),
-                        onSelect = { state = state.copy(dimensions = it) }
-                    )
+                    EmbeddingDimensionFields(state.model, state.dimensions, customDimensions,
+                        onSelect = {
+                            customDimensions = it == "custom"
+                            if (!customDimensions) state = state.copy(dimensions = it)
+                        },
+                        onValueChange = { state = state.copy(dimensions = it) })
                 }
 
                 "image_generation" -> {
@@ -922,6 +940,47 @@ private fun FormSection(title: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 6.dp)
     )
+}
+
+@Composable
+internal fun EmbeddingDimensionFields(
+    modelName: String,
+    dimensions: String,
+    custom: Boolean,
+    onSelect: (String) -> Unit,
+    onValueChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+    if (usesFixedEmbeddingDimensions(modelName)) {
+        Text(stringResource(R.string.aimodel_editor_embedding_dimensions_fixed),
+            style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    EditorDropdownField(
+        label = stringResource(R.string.aimodel_editor_embedding_dimensions),
+        value = if (custom) "custom" else dimensions,
+        options = listOf("") + EMBEDDING_DIMENSION_PRESETS + "custom",
+        modifier = Modifier.testTag("embedding-dimensions-selector"),
+        labelFor = {
+            when (it) {
+                "" -> context.getString(R.string.aimodel_editor_embedding_dimensions_default)
+                "custom" -> context.getString(R.string.aimodel_editor_embedding_dimensions_custom)
+                else -> it
+            }
+        },
+        onSelect = onSelect
+    )
+    if (custom) {
+        EditorTextField(
+            label = stringResource(R.string.aimodel_editor_embedding_dimensions_custom),
+            value = dimensions,
+            modifier = Modifier.testTag("embedding-dimensions-custom-input"),
+            onValueChange = onValueChange
+        )
+    }
+    Text(stringResource(R.string.aimodel_editor_embedding_dimensions_hint),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -1205,8 +1264,7 @@ private fun AiModelEditorState.applyPurpose(
             supportsTools = false,
             supportsReasoning = false,
             supportsStream = false,
-            supportsVision = false,
-            dimensions = dimensions.ifBlank { "1536" }
+            supportsVision = false
         )
         "image_generation" -> copy(
             name = renamed,
@@ -1268,7 +1326,7 @@ fun AiModel?.toEditorState(protocols: List<ProtocolOption>): AiModelEditorState 
         sttUrl = model.sttUrl.orEmpty(),
         sttModel = model.sttModel.orEmpty(),
         sttHeaders = model.sttHeaders.orEmpty(),
-        dimensions = (model.dimensions ?: 1536).toString(),
+        dimensions = model.dimensions?.takeIf { it > 0 }?.toString().orEmpty(),
         size = model.size ?: "1024x1024",
         promptTemplate = model.promptTemplate.orEmpty()
     ).ensureProtocol(protocols)
@@ -1323,7 +1381,7 @@ fun LocalAiModelEntity?.toEditorState(protocols: List<ProtocolOption>): AiModelE
         sttUrl = model.sttUrl,
         sttModel = model.sttModel,
         sttHeaders = model.sttHeaders,
-        dimensions = model.dimensions.toString(),
+        dimensions = model.dimensions.takeIf { it > 0 }?.toString().orEmpty(),
         size = model.size,
         promptTemplate = model.promptTemplate
     ).ensureProtocol(protocols)
@@ -1372,7 +1430,7 @@ fun AiModelEditorState.toRequest(): AiModelRequest = AiModelRequest(
     sttModel = sttModel.ifBlank { null },
     sttLanguage = language,
     sttHeaders = sttHeaders.ifBlank { null },
-    dimensions = dimensions.toIntOrNull(),
+        dimensions = dimensions.trim().toIntOrNull(),
     size = size.ifBlank { null },
     promptTemplate = promptTemplate.ifBlank { null }
 )
@@ -1421,7 +1479,7 @@ fun AiModelEditorState.toLocalEntity(existing: LocalAiModelEntity?): LocalAiMode
         sttUrl = sttUrl,
         sttModel = sttModel,
         sttHeaders = sttHeaders,
-        dimensions = dimensions.toIntOrNull() ?: 1536,
+        dimensions = dimensions.trim().toIntOrNull() ?: 0,
         size = size,
         promptTemplate = promptTemplate,
         createdAt = existing?.createdAt ?: now,

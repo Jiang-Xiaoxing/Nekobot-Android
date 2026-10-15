@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="companion_create_title">Create Agent character</string>
+  <string name="companion_create_intro">Independent memory and one dedicated conversation.</string>
+  <string name="companion_profile_changed">The database changed. Reopen this page.</string>
+  <string name="companion_operation_failed">The operation did not finish. Your originals are preserved. Check the details or preview again.</string>
+  <string name="companion_transfer_title">Transfer to Agent character</string>
+  <string name="companion_transfer_record">View transfer record</string>
+  <string name="companion_transfer_records">Transfer records</string>
+  <string name="companion_delete_backup">Delete this backup</string>
+  <string name="companion_delete_backup_hint">Only this transfer backup and the old summaries for review will be deleted. The new conversation, independent memory and attachments remain. The backup contents will no longer be available.</string>
+  <string name="companion_open_new">Open new conversation</string>
+  <string name="companion_processing">Processing…</string>
+  <string name="companion_backup_transfer">Back up and transfer</string>
+  <string name="companion_open_existing">Open existing conversation</string>
+  <string name="companion_select_session">Choose conversation</string>
+  <string name="companion_choose_character">Choose character</string>
+  <string name="companion_available">Unused and ready to create</string>
+  <string name="companion_has_main">Already has an Agent conversation</string>
+  <string name="companion_has_sessions">Has conversations; create an independent copy</string>
+  <string name="companion_reserved">Main conversation ownership is reserved</string>
+  <string name="companion_select_hint">Usage will be checked after selection</string>
+  <string name="companion_change">Change</string>
+  <string name="companion_group_unsupported">This character is used in a group or an Agent conversation without character inheritance. This source cannot be transferred yet. Choose another character.</string>
+  <string name="companion_copy_hint">A new character and conversation will be created. The originals remain.</string>
+  <string name="companion_session_messages">%1$d messages · Tap to preview</string>
+  <string name="companion_less_settings">Hide more settings</string>
+  <string name="companion_more_settings">More settings</string>
+  <string name="companion_optional_name">Conversation name (optional)</string>
+  <string name="companion_optional_greeting">Greeting (optional)</string>
+  <string name="companion_initial_state">Initial state comes from the character card.</string>
+  <string name="companion_new_character">Create character card</string>
+  <string name="companion_complete_hint">Your independent copy is ready. The original character and conversation remain.</string>
+  <string name="companion_preview_hint">Review the data to bring over. A local backup will be kept before transfer.</string>
+  <string name="companion_copy_name">New character and conversation name</string>
+  <string name="companion_preview_counts">%1$d originals · %2$d variants\n%3$d memories · %4$d local attachments</string>
+  <string name="companion_preview_space">Approximately %1$s MB of additional space required</string>
+  <string name="companion_skipped_count">%1$d old memories are not automatically included. Summaries remain in the record for review; other users and conversations are excluded.</string>
+  <string name="companion_remote_count">%1$d remote addresses will be retained and still require access to their original locations.</string>
+  <string name="companion_technical_details">Technical details</string>
+  <string name="companion_completed">Completed</string>
+  <string name="companion_resume">Continue</string>
+  <string name="companion_search_character">Search character names</string>
+</resources>

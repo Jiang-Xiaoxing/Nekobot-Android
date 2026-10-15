@@ -74,6 +74,8 @@ class CharacterViewModel(characterId: String) : com.nekobot.app.ui.BaseViewModel
 
     private val _character = MutableStateFlow<CharacterPreset?>(null)
     val character: StateFlow<CharacterPreset?> = _character.asStateFlow()
+    val companionRole = MutableStateFlow<Boolean?>(if (isNew) false else null)
+    private var originalInitialState: com.google.gson.JsonObject? = null
 
     // 各编辑字段（与服务端 custom-presets 完整字段对应）
     val name = MutableStateFlow("")
@@ -107,10 +109,15 @@ class CharacterViewModel(characterId: String) : com.nekobot.app.ui.BaseViewModel
 
     /** 加载现有角色并填充编辑字段 */
     fun load(id: String) {
+        companionRole.value = null
         launchResult(
-            block = { unified.getCharacter(id) },
+            block = {
+                val companion = isLocalMode && ServiceContainer.localRepository.companionSessionForCharacter(id) != null
+                unified.getCharacter(id).also { if (it is Resource.Success) companionRole.value = companion }
+            },
             onSuccess = { c ->
                 _character.value = c
+                originalInitialState = c.state?.deepCopy()
                 name.value = c.name.orEmpty()
                 description.value = c.description.orEmpty()
                 avatar.value = c.avatar.orEmpty()
@@ -147,6 +154,7 @@ class CharacterViewModel(characterId: String) : com.nekobot.app.ui.BaseViewModel
      *  - state 包含六维初始关系值 + 初始心情
      */
     fun save(onSuccess: () -> Unit) {
+        if (companionRole.value == null) { showError("角色归属尚未读取完成，请重新打开后再保存。"); return }
         val nameVal = name.value.trim()
         if (nameVal.isBlank()) {
             showToast(string(R.string.character_name_required))
@@ -179,7 +187,7 @@ class CharacterViewModel(characterId: String) : com.nekobot.app.ui.BaseViewModel
                 addProperty("jealousy", jealousy.value)
                 addProperty("mood", mood.value.trim().ifBlank { string(R.string.character_default_mood) })
             }
-            put("state", stateObj)
+            put("state", if (companionRole.value == true) originalInitialState else stateObj)
             // 显式不传：id / systemPrompt / greeting / created_at / updated_at
         }
         val json = com.nekobot.app.ServiceContainer.gson.toJsonTree(payload)
@@ -227,7 +235,7 @@ class CharacterViewModel(characterId: String) : com.nekobot.app.ui.BaseViewModel
             responseFormat = responseFormat.value,
             rules = rulesText.value.lines().map { it.trim() }.filter { it.isNotEmpty() },
             tags = tagsText.value.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-            state = com.google.gson.JsonObject().apply {
+            state = if (companionRole.value == true) originalInitialState else com.google.gson.JsonObject().apply {
                 addProperty("affection", affection.value)
                 addProperty("trust", trust.value)
                 addProperty("familiarity", familiarity.value)
@@ -379,6 +387,7 @@ fun CharacterDetailScreen(
         factory = viewModelFactory { initializer { CharacterViewModel(characterId) } }
     )
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val companionRole by vm.companionRole.collectAsStateWithLifecycle()
     val name by vm.name.collectAsStateWithLifecycle()
     val description by vm.description.collectAsStateWithLifecycle()
     val avatar by vm.avatar.collectAsStateWithLifecycle()
@@ -411,6 +420,11 @@ fun CharacterDetailScreen(
     // 订阅全局 appMode Flow，模式切换时自动刷新
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val isLocalMode = appMode == AppMode.LOCAL
+    var modelQueueOpen by androidx.compose.runtime.saveable.rememberSaveable(characterId) { mutableStateOf(false) }
+    if (!isNew && isLocalMode && modelQueueOpen) {
+        CharacterModelQueueScreen(characterId) { modelQueueOpen = false }
+        return
+    }
     val toast by vm.toast.collectAsStateWithLifecycle()
     var fullscreenPortrait by remember { mutableStateOf<String?>(null) }
 
@@ -516,6 +530,11 @@ fun CharacterDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 角色名（必填）
+                if (!isNew && isLocalMode) {
+                    OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("聊天模型")
+                    }
+                }
                 LabeledField(label = stringResource(R.string.character_name_label), value = name, onValueChange = { vm.name.value = it }, singleLine = true)
                 // 描述
                 LabeledField(
@@ -602,6 +621,7 @@ fun CharacterDetailScreen(
                     singleLine = true
                 )
                 // 六维初始关系状态
+                if (companionRole == false) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.character_initial_state),
@@ -622,6 +642,7 @@ fun CharacterDetailScreen(
                     onValueChange = { vm.mood.value = it },
                     singleLine = true
                 )
+                }
                 Spacer(Modifier.height(24.dp))
             }
             LoadingOverlay(visible = loading)

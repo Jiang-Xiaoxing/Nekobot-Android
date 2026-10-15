@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
+import com.nekobot.app.data.model.userFacingTitle
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.animation.animateColorAsState
@@ -154,6 +156,7 @@ enum class SessionFilter(val labelResId: Int) {
     ALL(R.string.sessions_recent),
     CHARACTER_SESSIONS(R.string.sessions_filter_character_sessions),
     AGENT_SESSIONS(R.string.sessions_filter_agent_sessions),
+    AGENT_CHARACTERS(R.string.sessions_filter_agent_characters),
     UNARCHIVED(R.string.sessions_filter_unarchived),
     ARCHIVED(R.string.sessions_filter_archived),
     FAVORITE(R.string.sessions_filter_favorite),
@@ -560,10 +563,15 @@ fun SessionsScreen(
                                 expanded = showCreateModeMenu,
                                 onDismissRequest = { showCreateModeMenu = false }
                             ) {
+                                if (ServiceContainer.prefs.isLocalMode) DropdownMenuItem(
+                                    text = { SessionModeMenuText(SessionModeLabel.COMPANION, R.string.session_mode_companion_hint) },
+                                    leadingIcon = { Icon(SessionModeLabel.COMPANION.icon(), null, tint = SessionModeLabel.COMPANION.color()) },
+                                    onClick = { showCreateModeMenu = false; onNavigate(com.nekobot.app.ui.navigation.Routes.COMPANION_CREATE) }
+                                )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessions_mode_role)) },
+                                    text = { SessionModeMenuText(SessionModeLabel.CHARACTER, R.string.session_mode_character_hint) },
                                     leadingIcon = {
-                                        Icon(Icons.Filled.Person, contentDescription = null)
+                                        Icon(SessionModeLabel.CHARACTER.icon(), null, tint = SessionModeLabel.CHARACTER.color())
                                     },
                                     onClick = {
                                         showCreateModeMenu = false
@@ -571,10 +579,11 @@ fun SessionsScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessions_mode_agent)) },
+                                    text = { SessionModeMenuText(SessionModeLabel.AGENT, R.string.session_mode_agent_hint) },
                                     leadingIcon = {
                                         Icon(
-                                            painter = painterResource(R.drawable.ic_agent_neko),
+                                            imageVector = SessionModeLabel.AGENT.icon(),
+                                            tint = SessionModeLabel.AGENT.color(),
                                             contentDescription = null
                                         )
                                     },
@@ -811,7 +820,7 @@ fun SessionsScreen(
                     ) {
                         ErrorBanner(
                             message = errorMsg,
-                            onRetry = { viewModel.clearError() }
+                            onDismiss = { viewModel.clearError() }
                         )
                     }
                 }
@@ -890,7 +899,7 @@ fun SessionsScreen(
         NekoDialog(
             onDismiss = { deleting = null },
             title = deleteTitle,
-            message = deleteConfirmFmt.format(row.displayName),
+            message = deleteConfirmFmt.format(row.listTitle),
             confirmText = deleteText,
             onConfirm = {
                 viewModel.deleteSession(row.id.orEmpty()) { deleting = null }
@@ -952,7 +961,7 @@ private fun SessionCountBadge(count: Int) {
  * 已选中的卡片再次点按会恢复到默认「最近会话」筛选。
  */
 @Composable
-private fun SessionStatFilters(
+internal fun SessionStatFilters(
     overview: SessionOverview,
     selected: SessionFilter,
     onToggle: (SessionFilter) -> Unit
@@ -964,22 +973,33 @@ private fun SessionStatFilters(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         StatFilterCard(
             label = characterSessionsLabel,
             value = overview.characterSessions,
-            icon = Icons.AutoMirrored.Outlined.Chat,
+            icon = SessionModeLabel.CHARACTER.icon(),
+            accent = SessionModeLabel.CHARACTER.color(),
             selected = selected == SessionFilter.CHARACTER_SESSIONS,
             onClick = { onToggle(SessionFilter.CHARACTER_SESSIONS) }
         )
         StatFilterCard(
             label = agentSessionsLabel,
             value = overview.agentSessions,
-            icon = Icons.Filled.DashboardCustomize,
+            icon = SessionModeLabel.AGENT.icon(),
+            accent = SessionModeLabel.AGENT.color(),
             selected = selected == SessionFilter.AGENT_SESSIONS,
             onClick = { onToggle(SessionFilter.AGENT_SESSIONS) }
+        )
+        StatFilterCard(
+            label = stringResource(R.string.sessions_filter_agent_characters),
+            value = overview.agentCharacterSessions,
+            icon = SessionModeLabel.COMPANION.icon(),
+            accent = SessionModeLabel.COMPANION.color(),
+            selected = selected == SessionFilter.AGENT_CHARACTERS,
+            onClick = { onToggle(SessionFilter.AGENT_CHARACTERS) }
         )
         StatFilterCard(
             label = favoriteLabel,
@@ -999,24 +1019,25 @@ private fun SessionStatFilters(
 }
 
 @Composable
-private fun RowScope.StatFilterCard(
+private fun StatFilterCard(
     label: String,
     value: Int,
     icon: ImageVector,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    accent: Color? = null
 ) {
-    val contentColor =
+    val contentColor = accent ?:
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     val containerColor =
-        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        if (selected) contentColor.copy(alpha = 0.16f)
+        else accent?.copy(alpha = 0.07f) ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     // 选中时加一条主题色描边，增强点按反馈与可辨识性
     val borderStroke = if (selected) {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+        BorderStroke(1.dp, contentColor.copy(alpha = 0.65f))
     } else null
     Surface(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.widthIn(min = 92.dp),
         shape = RoundedCornerShape(14.dp),
         color = containerColor,
         border = borderStroke
@@ -1029,7 +1050,7 @@ private fun RowScope.StatFilterCard(
                     indication = null,
                     onClick = onClick
                 )
-                .padding(vertical = 9.dp),
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
@@ -1878,7 +1899,7 @@ private fun SessionItem(
             .listItemSemantics(
                 stringResource(
                     R.string.sessions_item_description,
-                    row.displayName,
+                    row.listTitle,
                     listOfNotNull(
                         row.lastMessage ?: stringResource(R.string.sessions_no_message),
                         row.updatedAt
@@ -1926,6 +1947,11 @@ private fun SessionItem(
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
+                } else if (row.modeLabel == SessionModeLabel.COMPANION) {
+                    val name = row.listTitle
+                    Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                        color = row.modeLabel.color())
                 } else {
                     val fallbackPainter = if (row.isAgentSession && !row.inheritCharacter) {
                         painterResource(R.drawable.ic_agent_neko)
@@ -1947,7 +1973,7 @@ private fun SessionItem(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = row.displayName,
+                    text = row.listTitle,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
@@ -1955,6 +1981,7 @@ private fun SessionItem(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
                 )
+                SessionModeBadge(row.modeLabel, Modifier.padding(top = 4.dp, bottom = 3.dp))
                 if (row.lastMessage != null || row.updatedAt != null) {
                     Spacer(Modifier.height(3.dp))
                     Row(
@@ -2212,7 +2239,7 @@ class SessionsViewModel : BaseViewModel() {
             .filter { it.isArchive != true }
             .let { sessions ->
                 when {
-                    f == SessionFilter.CHARACTER_SESSIONS || f == SessionFilter.AGENT_SESSIONS -> {
+                    f in setOf(SessionFilter.CHARACTER_SESSIONS, SessionFilter.AGENT_SESSIONS, SessionFilter.AGENT_CHARACTERS) -> {
                         sessions.filter { it.archived != true }
                     }
                     f == SessionFilter.ALL && !includeArchived -> {
@@ -2695,7 +2722,8 @@ class SessionsViewModel : BaseViewModel() {
         return when (f) {
             SessionFilter.ALL -> all
             SessionFilter.CHARACTER_SESSIONS -> all.filter(Session::isCharacterSession)
-            SessionFilter.AGENT_SESSIONS -> all.filter(Session::isAgentSession)
+            SessionFilter.AGENT_SESSIONS -> all.filter { it.isAgentSession() && !it.isAgentCharacterSession() }
+            SessionFilter.AGENT_CHARACTERS -> all.filter(Session::isAgentCharacterSession)
             SessionFilter.UNARCHIVED -> all.filter { it.archived != true }
             SessionFilter.ARCHIVED -> all.filter { it.archived == true }
             SessionFilter.FAVORITE -> all.filter { it.favorite == true }
