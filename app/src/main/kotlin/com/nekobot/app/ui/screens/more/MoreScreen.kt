@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Landscape
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Search
@@ -100,6 +101,14 @@ fun MoreScreen(
                     title = stringResource(R.string.more_style_settings),
                     desc = stringResource(R.string.more_style_settings_desc),
                     onClick = { onNavigate("style_settings") }
+                )
+                Spacer(Modifier.height(4.dp))
+                MoreRow(
+                    icon = Icons.Filled.Landscape,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "关系页皮肤",
+                    desc = "七套背景、按钮与图标，不随主题色改变",
+                    onClick = { onNavigate(Routes.RELATIONSHIP_BACKGROUND) }
                 )
             }
 

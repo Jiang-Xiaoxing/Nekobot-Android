@@ -1,12 +1,19 @@
 package com.nekobot.app.ui.screens.sessions
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,9 +23,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.view.WindowCompat
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.CompanionConversionModel
 import com.nekobot.app.data.local.ai.*
@@ -54,10 +63,24 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     var detail by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
     var oldRecordsOpen by remember { mutableStateOf(false) }
     var settingsExpanded by remember { mutableStateOf(false) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
+    var evidenceExpanded by rememberSaveable { mutableStateOf(false) }
+    var background by remember { mutableStateOf(ServiceContainer.prefs.relationshipBackground) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        background = ServiceContainer.prefs.relationshipBackground
+        refresh++
+    }
     var characterName by remember(sessionId) { mutableStateOf<String?>(null) }
     var assessments by remember { mutableStateOf<List<com.nekobot.app.data.local.db.CompanionRelationshipAssessmentEntity>?>(null) }
     var showCount by remember { mutableIntStateOf(12) }
+    val androidView = LocalView.current
+    val systemBars = remember(androidView) {
+        (androidView.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, androidView) }
+    }
+    DisposableEffect(systemBars) {
+        val wasLight = systemBars?.isAppearanceLightStatusBars
+        onDispose { if (wasLight != null) systemBars?.isAppearanceLightStatusBars = wasLight }
+    }
+    SideEffect { systemBars?.isAppearanceLightStatusBars = false }
     BackHandler(onBack = onBack)
     suspend fun reload() {
         view = service.view(sessionId)
@@ -78,11 +101,27 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     LaunchedEffect(sessionId) {
         ServiceContainer.sessionChanged.collect { if (it == sessionId) refresh++ }
     }
-    Scaffold(topBar = { TopAppBar(title = { Column { Text("关系状态"); characterName?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }, navigationIcon = {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-    }) }) { padding ->
+    RelationshipSkinTheme(background) {
+    RelationshipJournalBackdrop(background) {
+    Scaffold(containerColor = Color.Transparent, topBar = { TopAppBar(title = { Text("关系状态", color = Color.White) }, navigationIcon = {
+        Surface(shape = RoundedCornerShape(16.dp), color = journalPaperColor(), shadowElevation = 2.dp,
+            modifier = Modifier.padding(start = 10.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        }
+    }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
-            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            characterName?.let { name ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Surface(shape = CircleShape, color = journalPaperColor(), shadowElevation = 3.dp) {
+                        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+                            Text(name.trim().take(1), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = Color.White)
+                }
+            }
             val v = view
             if (v == null) { if (error == null) LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else {
@@ -100,25 +139,24 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                     } }
                 }
                 if (v.busy && !state.awaitingHistory) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (v.busy && state.awaitingHistory) { Text("正在评估本批全部对话，完成后统一保存进度。"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                if (!v.busy) state.notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                state.correctionResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                v.sourceWarning?.let { warning ->
-                    Text(warning, color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !v.busy && !working) { Text("保留已有积累，从现在继续") }
+                if (v.busy && state.awaitingHistory) RelationshipPaper {
+                    Text("正在评估本批全部对话，完成后统一保存进度。")
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-                if (state.updatedAt > 0) Text("最近评估：${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(state.updatedAt))}", style = MaterialTheme.typography.labelMedium)
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
-                    Column(Modifier.padding(horizontal = 14.dp)) {
-                        RelationshipSettingsRow("查看旧版记录", onClick = { oldRecordsOpen = true }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
-                        }
-                        HorizontalDivider()
-                        RelationshipSettingsRow("评估设置", onClick = { settingsExpanded = !settingsExpanded }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
-                        }
+                if (!v.busy) state.notice?.let { RelationshipPaper { Text(it, color = MaterialTheme.colorScheme.error) } }
+                state.correctionResult?.let { RelationshipPaper { Text(it, style = MaterialTheme.typography.bodySmall) } }
+                v.sourceWarning?.let { warning ->
+                    RelationshipPaper {
+                        Text(warning, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !v.busy && !working) { Text("保留已有积累，从现在继续") }
                     }
                 }
+                if (state.updatedAt > 0) Surface(shape = RoundedCornerShape(8.dp), color = journalPaperColor()) {
+                    Text("最近评估：${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(state.updatedAt))}",
+                        Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
+                }
+                JournalAction("评估设置", "模型与更新频率", Icons.Filled.Tune, onClick = { settingsExpanded = !settingsExpanded })
                 if (settingsExpanded) RelationshipSection("评估设置") {
                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
                         Column(Modifier.padding(horizontal = 12.dp)) {
@@ -152,7 +190,12 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                     }
                     Text("单独调用所选模型，会产生对应费用。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("变化依据", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+                    JournalAction("变化依据", icon = Icons.Filled.History, onClick = { evidenceExpanded = !evidenceExpanded }, modifier = Modifier.weight(1f).fillMaxHeight())
+                    JournalAction("旧版记录", icon = Icons.Filled.Archive, onClick = { oldRecordsOpen = true }, modifier = Modifier.weight(1f).fillMaxHeight())
+                }
+                if (evidenceExpanded) {
+                RelationshipPaper { JournalHeading("变化依据") }
                 if (v.events.isEmpty()) Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
                     Text("暂无新的评估记录", Modifier.fillMaxWidth().padding(20.dp), style = MaterialTheme.typography.bodyMedium,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -170,10 +213,15 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                     } }
                 }
                 if (v.events.size > showCount) TextButton(onClick = { showCount += 12 }) { Text("查看更多依据") }
+                }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = { refresh++ }) { Text("重新读取") } }
+            error?.let { RelationshipPaper {
+                Text(it, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { refresh++ }) { Text("重新读取") }
+            } }
             Spacer(Modifier.height(24.dp))
         }
+    }
     }
     detail?.let { item -> AlertDialog(onDismissRequest = { detail = null }, title = { Text(item.first) }, text = {
         Text(item.second, modifier = Modifier.verticalScroll(rememberScrollState()))
@@ -253,4 +301,5 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
             items.forEach { Text("${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it.createdAt))}\n${it.summary}\n${it.reason}") }
         }
     }, confirmButton = { TextButton(onClick = { history = null }) { Text("关闭") } }) }
+    }
 }

@@ -770,6 +770,9 @@ fun NekobotNavGraph() {
             composable(Routes.STYLE_SETTINGS) {
                 StyleSettingsScreen(onBack = { navController.popBackStack() })
             }
+            composable(Routes.RELATIONSHIP_BACKGROUND) {
+                com.nekobot.app.ui.screens.settings.RelationshipBackgroundScreen(onBack = { navController.popBackStack() })
+            }
             composable(
                 route = Routes.WORKSPACE,
                 arguments = listOf(navArgument("sessionId") { type = NavType.StringType })

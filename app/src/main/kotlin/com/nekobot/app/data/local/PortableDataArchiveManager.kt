@@ -1018,6 +1018,7 @@ class PortableDataArchiveManager(private val context: Context) {
             addProperty("custom_font_name", prefs.customFontName)
             addProperty("font_scale", prefs.fontScale)
             addProperty("chat_background_mode", prefs.chatBackgroundMode)
+            addProperty("relationship_background", prefs.relationshipBackground.id)
             addProperty("custom_chat_background_file", portableFileName(prefs.customChatBackgroundPath))
             addProperty("custom_chat_background_name", prefs.customChatBackgroundName)
             addProperty("chat_background_opacity", prefs.chatBackgroundOpacity)
@@ -1053,6 +1054,7 @@ class PortableDataArchiveManager(private val context: Context) {
         prefs.customFontName = root.string("custom_font_name")
         root.float("font_scale")?.let { prefs.fontScale = it }
         root.string("chat_background_mode")?.let { prefs.chatBackgroundMode = it }
+        root.string("relationship_background")?.let { prefs.relationshipBackground = RelationshipBackground.fromId(it) }
         prefs.customChatBackgroundName = root.string("custom_chat_background_name")
         root.float("chat_background_opacity")?.let { prefs.chatBackgroundOpacity = it }
         prefs.fontColorOverride = root.string("font_color_override")
