@@ -37,6 +37,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 private const val TAG = "LocalAiClient"
+/** 辅助作业要求一次请求时，不因 HTTP 400 自动删参数再调用；各协议不会发送这个内部标记。 */
+internal const val NO_COMPATIBILITY_RETRY_EXTRA = "_no_compatibility_retry"
 private const val IMAGE_GENERATION_TEST_PROMPT = "a test image"
 
 /**
@@ -854,7 +856,7 @@ class LocalAiClient(
 
         val normalizedExtra = normalizeProtocolExtra(model, extra)
         val response = clientFor(model).newCall(buildRequest(normalizedExtra)).awaitResponse()
-        if (response.code != 400 || protocol.name !in OPENAI_COMPATIBILITY_PROTOCOLS) {
+        if (response.code != 400 || protocol.name !in OPENAI_COMPATIBILITY_PROTOCOLS || extra[NO_COMPATIBILITY_RETRY_EXTRA] == true) {
             return response
         }
 
