@@ -11,6 +11,12 @@
     <string name="memory_history_before">変更前</string>
     <string name="memory_history_after">変更後</string>
     <string name="memory_history_empty_content">（空）</string>
+    <string name="memory_history_diff_summary">追加 %1$d · 削除 %2$d</string>
+    <string name="memory_history_show_all">全文を表示</string>
+    <string name="memory_history_focus_changes">変更のみ</string>
+    <string name="memory_history_unchanged_lines">… 変更なし %1$d 行 …</string>
+    <string name="memory_history_no_changes">内容の変更なし</string>
+    <string name="memory_history_line_endings_only">改行形式のみ変更</string>
     <string name="memory_history_manual">手動編集</string>
     <string name="memory_history_agent">自動メモリ</string>
     <string name="memory_history_tool">Agent ツール</string>

@@ -657,10 +657,13 @@ fun NekobotNavGraph() {
                 SystemOperationsScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.AGENT_MEMORY) {
-                GlobalAgentMemoryScreen(onBack = { navController.popBackStack() },
+                GlobalAgentMemoryScreen(
+                    onBack = { navController.popBackStack() },
+                    isCurrentDestination = currentRoute == Routes.AGENT_MEMORY,
                     onLocate = { sessionId, messageId ->
                         navController.navigate(if (messageId == null) Routes.chat(sessionId) else Routes.chatLocation(sessionId, messageId))
-                    })
+                    }
+                )
             }
             composable(Routes.AI_CONFIG_CENTER) {
                 AiConfigCenterScreen(

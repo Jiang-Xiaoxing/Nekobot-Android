@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -64,10 +65,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.drop
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
 import com.nekobot.app.data.local.ai.MemoryVersion
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,6 +84,8 @@ data class GlobalAgentMemoryUiState(
     val message: String? = null,
     val messageIsError: Boolean = false,
     val versions: List<MemoryVersion> = emptyList(),
+    val historyVisible: Boolean = false,
+    val historyVersionId: String? = null,
     val conflict: Boolean = false,
     val conflictLatest: String? = null,
     val ownerRevision: Long = -1
@@ -185,6 +184,22 @@ class GlobalAgentMemoryViewModel : com.nekobot.app.ui.BaseViewModel() {
         }
     }
 
+    fun openHistory() {
+        _uiState.update { it.copy(historyVisible = true, historyVersionId = null) }
+    }
+
+    fun previewHistoryVersion(version: MemoryVersion) {
+        _uiState.update { it.copy(historyVisible = true, historyVersionId = version.id) }
+    }
+
+    fun closeHistoryPreview() {
+        _uiState.update { it.copy(historyVersionId = null) }
+    }
+
+    fun closeHistory() {
+        _uiState.update { it.copy(historyVisible = false, historyVersionId = null) }
+    }
+
     fun dismissConflict() { _uiState.update { it.copy(conflictLatest = null) } }
 
     fun confirmConflictMerge(content: String, expected: String) {
@@ -246,25 +261,33 @@ internal fun formatGlobalMemorySavedAt(raw: String?, zoneId: ZoneId = ZoneId.sys
 fun GlobalAgentMemoryScreen(
     onBack: () -> Unit,
     onLocate: (String, String?) -> Unit = { _, _ -> },
+    isCurrentDestination: Boolean = true,
     viewModel: GlobalAgentMemoryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showHistory by remember { mutableStateOf(false) }
-    var preview by remember { mutableStateOf<MemoryVersion?>(null) }
-    val revision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
-    LaunchedEffect(revision) { showHistory = false; preview = null }
-    MemoryHistoryDialogs(showHistory, preview, uiState.versions, { showHistory = false },
-        { preview = it }, { preview = null }, { id -> viewModel.restore(id); preview = null; showHistory = false }, onLocate)
+    val historyVisible = uiState.historyVisible && isCurrentDestination
+    MemoryHistoryDialogs(
+        visible = historyVisible,
+        preview = uiState.versions.firstOrNull { it.id == uiState.historyVersionId },
+        versions = uiState.versions,
+        onDismiss = viewModel::closeHistory,
+        onPreview = viewModel::previewHistoryVersion,
+        onClosePreview = viewModel::closeHistoryPreview,
+        onRestore = { id -> viewModel.closeHistory(); viewModel.restore(id) },
+        // 来源页覆盖当前目的地时只隐藏窗口，版本选择保留在 ViewModel 中。
+        onLocate = onLocate
+    )
     uiState.conflictLatest?.let { latest ->
         MemoryConflictDialog(uiState.draft, latest, viewModel::dismissConflict,
             onConfirm = { content -> viewModel.confirmConflictMerge(content, latest) })
     }
 
     GlobalAgentMemoryContent(
+        modifier = if (historyVisible) Modifier.blur(16.dp) else Modifier,
         uiState = uiState,
         onBack = onBack,
         onDraftChange = viewModel::updateDraft,
-        onHistory = { showHistory = true },
+        onHistory = viewModel::openHistory,
         onUndo = viewModel::undo,
         onDiscard = { viewModel.reload() },
         onSave = viewModel::save,
@@ -282,10 +305,12 @@ private fun GlobalAgentMemoryContent(
     onUndo: () -> Unit,
     onDiscard: () -> Unit,
     onSave: () -> Unit,
-    onMerge: () -> Unit
+    onMerge: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val busy = uiState.loading || uiState.saving
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = {
