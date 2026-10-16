@@ -11,7 +11,9 @@ internal data class RelationshipDescription(
     val description: String,
     val reason: String,
     val sources: List<RelationshipSource>,
-    val eventRevisions: Map<String, Long> = emptyMap()
+    val eventRevisions: Map<String, Long> = emptyMap(),
+    /** 旧版文字没有分数，由下一次模型评估初始化，不能套用旧词表/默认分。 */
+    val score: Int? = null
 )
 
 internal data class RelationshipFeelings(
@@ -56,15 +58,21 @@ internal object CompanionRelationshipNarrative {
     fun read(json: String?): RelationshipNarrative? = json?.let {
         runCatching {
             gson.fromJson(it, RelationshipNarrative::class.java).also { value ->
-                require(value.format == FORMAT && value.relationships.keys == dimensions)
+                require(value.format in setOf(FORMAT, CompanionRelationshipScores.FORMAT) && value.relationships.keys == dimensions)
                 require(value.withdrawnKeys.all { key -> key in dimensions && value.relationships[key] == null })
                 value.relationships.values.filterNotNull().forEach { field ->
-                    require(field.description.isNotBlank() && field.reason.isNotBlank())
-                    require(field.sources.isNotEmpty() && field.sources.all { ref -> ref.id.isNotBlank() && ref.hash.isNotBlank() })
+                    require(field.description.isNotBlank())
+                    field.reason.length; field.sources.size // 新版也不能接受备份中损坏的空字段。
+                    if (field.score != null) require(field.score in 0..100)
+                    else {
+                        require(field.reason.isNotBlank())
+                        require(field.sources.isNotEmpty() && field.sources.all { ref -> ref.id.isNotBlank() && ref.hash.isNotBlank() })
+                    }
                     field.eventRevisions.size // 检查损坏/旧备份中缺少的必需字段。
                 }
                 value.feelings?.let { feeling ->
-                    require(feeling.sources.isNotEmpty() && feeling.observedAt.isNotBlank() && feeling.reason.isNotBlank())
+                    require(feeling.sources.isNotEmpty() && feeling.observedAt.isNotBlank())
+                    if (value.format == FORMAT) require(feeling.reason.isNotBlank())
                     require(listOfNotNull(feeling.mood, feeling.intensity, feeling.energy).any { text -> text.isNotBlank() })
                 }
             }
@@ -83,7 +91,7 @@ internal object CompanionRelationshipNarrative {
         refs.isNotEmpty() && refs.all { ref -> rows[ref.id]?.let { !it.deleted && CompanionRelationshipPolicy.hash(it) == ref.hash } == true }
 
     fun valid(field: RelationshipDescription, rows: Map<String, LocalMessageEntity>, events: List<CompanionRelationshipEventEntity>): Boolean =
-        validSources(field.sources, rows) && field.eventRevisions.all { (key, revision) ->
+        field.score != null || validSources(field.sources, rows) && field.eventRevisions.all { (key, revision) ->
             events.any { it.eventKey == key && it.revision == revision }
         }
 

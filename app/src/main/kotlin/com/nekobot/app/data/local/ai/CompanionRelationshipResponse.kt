@@ -34,7 +34,7 @@ internal object CompanionRelationshipResponse {
                         depth--
                         if (depth == 0) {
                             val obj = runCatching { JsonParser.parseString(answer.substring(start, end + 1)).asJsonObject }.getOrNull()
-                            if (obj?.get("format")?.let { it.isJsonPrimitive && it.asString == CompanionRelationshipNarrative.FORMAT } == true) return obj
+                            if (obj?.get("format")?.let { it.isJsonPrimitive && it.asString in setOf(CompanionRelationshipNarrative.FORMAT, CompanionRelationshipScores.FORMAT) } == true) return obj
                             break
                         }
                     }

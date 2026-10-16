@@ -25,6 +25,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.BufferedReader
 import okio.buffer
 import java.io.ByteArrayOutputStream
@@ -461,7 +462,9 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            LocalLogger.e(TAG, R.string.log_laic_chat_once_failed, e.message)
+            if (extra[CompanionRelationshipRequest.EVALUATION_EXTRA] == true) {
+                LocalLogger.w(TAG, "关系评估请求失败：异常=${e.javaClass.simpleName}")
+            } else LocalLogger.e(TAG, R.string.log_laic_chat_once_failed, e.message)
             throw e
         }
     }
@@ -855,7 +858,25 @@ class LocalAiClient(
         }
 
         val normalizedExtra = normalizeProtocolExtra(model, extra)
-        val response = clientFor(model).newCall(buildRequest(normalizedExtra)).awaitResponse()
+        val evaluation = extra[CompanionRelationshipRequest.EVALUATION_EXTRA] == true
+        val transport = if (evaluation) clientFor(model).newBuilder()
+            .callTimeout((extra[CompanionRelationshipRequest.CALL_TIMEOUT_EXTRA] as? Number)?.toLong()
+                ?.coerceIn(1L, CompanionRelationshipRecovery.TIMEOUT_SECONDS * 1000L)
+                ?: CompanionRelationshipRecovery.TIMEOUT_SECONDS * 1000L, TimeUnit.MILLISECONDS)
+            .eventListener(RelationshipHttpDiagnostics(requestTag)).build() else clientFor(model)
+        val request = buildRequest(normalizedExtra)
+        if (evaluation) {
+            val body = protocol.buildPayload(model.model, messages, stream, normalizedExtra)
+            val budgetField = when {
+                body.containsKey("max_completion_tokens") -> "max_completion_tokens"
+                body.containsKey("max_output_tokens") -> "max_output_tokens"
+                body.containsKey("generationConfig") -> "maxOutputTokens"
+                else -> "max_tokens"
+            }
+            val safeModel = model.model.filter { it.isLetterOrDigit() || it in "-._/:" }.take(100)
+            LocalLogger.i("RelationshipHttp", "tag=$requestTag，model=$safeModel，协议=${protocol.name}，输出字段=$budgetField，输出上限=${extra["max_tokens"]}，关闭思考=${extra["_disable_thinking"] == true || extra["reasoning_effort"] == "none" || extra["enable_thinking"] == false}，stream=$stream，硬超时毫秒=${transport.callTimeoutMillis}")
+        }
+        val response = transport.newCall(request).awaitResponse(bufferBody = evaluation)
         if (response.code != 400 || protocol.name !in OPENAI_COMPATIBILITY_PROTOCOLS || extra[NO_COMPATIBILITY_RETRY_EXTRA] == true) {
             return response
         }
@@ -1149,7 +1170,7 @@ class LocalAiClient(
     }
 
     /** 响应头返回后仍跟踪读取中的响应体，停止操作可以立即中断长流。 */
-    private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
+    private suspend fun Call.awaitResponse(bufferBody: Boolean = false): Response = suspendCancellableCoroutine { cont ->
         activeHttpCalls.add(this)
         val tag = request().tag(String::class.java)
         if (tag != null) taggedCalls.compute(tag) { _, calls ->
@@ -1168,6 +1189,23 @@ class LocalAiClient(
                 if (cont.isActive) cont.resumeWithException(error)
             }
             override fun onResponse(call: Call, response: Response) {
+                if (bufferBody) {
+                    // 评估在可取消的挂起期间读完整份正文。取消钩子一直保留到body关闭，
+                    // 外层协程取消会立即Call.cancel()，硬超时也覆盖停住/滴流的正文。
+                    try {
+                        val buffered = response.use {
+                            val body = it.body
+                            it.newBuilder().body(body?.bytes()?.toResponseBody(body.contentType())).build()
+                        }
+                        release()
+                        if (cont.isActive) cont.resume(buffered) { _, _, _ -> buffered.close() }
+                        else buffered.close()
+                    } catch (error: Exception) {
+                        release()
+                        if (cont.isActive) cont.resumeWithException(error)
+                    }
+                    return
+                }
                 val body = response.body
                 val tracked = if (body == null) response else {
                     val source = object : okio.ForwardingSource(body.source()) {

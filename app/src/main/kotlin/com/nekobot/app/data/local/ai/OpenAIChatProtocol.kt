@@ -56,13 +56,14 @@ object OpenAIChatProtocol : LocalProtocol {
         extra["temperature"]?.let { payload["temperature"] = it }
         extra["max_tokens"]?.let {
             val normalizedModel = model.lowercase()
-            val usesCompletionLimit = normalizedModel.startsWith("o1") ||
+            val usesCompletionLimit = extra["_completion_token_limit"] == true || normalizedModel.startsWith("o1") ||
                 normalizedModel.startsWith("o3") ||
                 normalizedModel.startsWith("o4") ||
                 normalizedModel.startsWith("gpt-5")
             payload[if (usesCompletionLimit) "max_completion_tokens" else "max_tokens"] = it
         }
         extra["top_p"]?.let { payload["top_p"] = it }
+        (extra["enable_thinking"] as? Boolean)?.let { payload["enable_thinking"] = it }
         // 停止字符串：OpenAI 兼容端点接受字符串或字符串数组（最多 4 条）。
         @Suppress("UNCHECKED_CAST")
         (extra["stop"] as? List<String>)
@@ -70,7 +71,9 @@ object OpenAIChatProtocol : LocalProtocol {
             ?.take(4)
             ?.takeIf { it.isNotEmpty() }
             ?.let { payload["stop"] = it }
-        if (extra["deepseek_thinking"] == true) {
+        if (extra["_disable_thinking"] == true) {
+            payload["thinking"] = mapOf("type" to "disabled")
+        } else if (extra["deepseek_thinking"] == true) {
             val effort = extra["reasoning_effort"]
             payload["thinking"] = mapOf(
                 "type" to if (effort == "none") "disabled" else "enabled"

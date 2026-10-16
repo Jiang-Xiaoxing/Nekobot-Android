@@ -12,7 +12,7 @@ internal object CompanionRelationshipPrompt {
         CompanionRelationshipPolicy.dimensions.forEach { (key, label) ->
             val field = narrative?.relationships?.get(key)
             if (field != null && CompanionRelationshipNarrative.valid(field, sources, events)) {
-                append("$label：${field.description}\n判断依据：${field.reason}\n")
+                append("$label${field.score?.let { " $it" }.orEmpty()}：${field.description}\n")
             } else if (field == null && key !in narrative?.withdrawnKeys.orEmpty() && !legacy?.descriptions?.get(key).isNullOrBlank()) {
                 append("$label（${legacy!!.origin}，未经新版核对）：${legacy.descriptions[key]}\n")
             }
@@ -23,9 +23,8 @@ internal object CompanionRelationshipPrompt {
             feeling.mood?.let { append("心情：$it\n") }
             feeling.intensity?.let { append("情绪强度：$it\n") }
             feeling.energy?.let { append("精力：$it\n") }
-            append("当时依据：${feeling.reason}\n")
         } else if (narrative == null && legacy != null && CompanionRelationshipNarrative.validSources(legacy.sources, sources)) {
-            append("\n旧版观察（历史，未经新版核对）：原话时间${legacy.observedAt ?: "未知"}；心情${legacy.mood}；精力${legacy.energy}。${legacy.reason}\n")
+            append("\n旧版观察（历史，未经新版核对）：原话时间${legacy.observedAt ?: "未知"}；心情${legacy.mood}；精力${legacy.energy}。\n")
         }
         append("\n当前感受要结合本轮原话、消息时间与最新情境重新判断。经过时间不能证明仍然难过，也不能证明已经平静；不把历史观察写成此刻的既定状态。临时安慰不自动抹去长期失信，长期关系变化需要新的相处证据。依赖和嫉妒不要求控制、排斥或迎合对方。")
     }

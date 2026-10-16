@@ -99,7 +99,7 @@ internal fun RelationshipSummary(view: CompanionRelationshipView, working: Boole
                     val oldText = view.legacy?.shortDescriptions?.get(key)?.takeUnless { key in narrative?.withdrawnKeys.orEmpty() }
                     val value = if (field != null && !isValid) "依据待核对" else field?.description ?: oldText ?: "尚未评估"
                     Surface(onClick = {
-                        val text = if (field != null) "${field.description}\n\n判断依据：${field.reason}" + if (!isValid) "\n\n原话或事件依据已变化，暂不用于聊天。" else ""
+                        val text = if (field != null) field.description + field.reason.takeIf { it.isNotBlank() }?.let { "\n\n判断依据：$it" }.orEmpty() + if (!isValid) "\n\n原话或事件依据已变化，暂不用于聊天。" else ""
                             else (view.legacy?.descriptions?.get(key)?.takeIf { oldText != null } ?: "还没有可用的文字评估。") +
                                 if (oldText != null) "\n\n${view.legacy?.origin}，尚未重新评估；旧数值不能充当原话依据。" else ""
                         onDetail(label, text, field?.sources?.takeIf { it.isNotEmpty() }?.let { Gson().toJson(it) })
@@ -114,12 +114,16 @@ internal fun RelationshipSummary(view: CompanionRelationshipView, working: Boole
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(top = 10.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            field?.score?.let { score ->
+                                Text(score.toString(), Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelSmall,
+                                    color = androidx.compose.ui.graphics.Color(0xFF999999))
+                            }
                         }
                     }
             if (index < CompanionRelationshipPolicy.dimensions.size - 1) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (narrative == null) "这些是已有记录，尚未生成新版文字。" else "点开可看具体理由和原话依据。",
+            Text(if (narrative == null) "这些是已有记录，尚未生成新版文字。" else if (narrative.format == CompanionRelationshipScores.FORMAT) "点开可看角色自述。" else "点开可看具体理由和原话依据。",
                 Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             JournalEmblem(7, Modifier.size(width = 70.dp, height = 52.dp))
         }
