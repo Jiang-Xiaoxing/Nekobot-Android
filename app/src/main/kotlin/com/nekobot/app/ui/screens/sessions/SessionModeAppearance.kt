@@ -2,8 +2,6 @@ package com.nekobot.app.ui.screens.sessions
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
@@ -39,8 +37,8 @@ internal fun SessionModeLabel.title(): String = stringResource(when (this) {
 })
 
 @Composable
-internal fun SessionModeLabel.color(): Color {
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+internal fun SessionModeLabel.color(onLightSurface: Boolean = false): Color {
+    val dark = !onLightSurface && MaterialTheme.colorScheme.background.luminance() < 0.5f
     return when (this) {
         SessionModeLabel.CHARACTER -> if (dark) Color(0xFFE5A7BF) else Color(0xFFA05B77)
         SessionModeLabel.AGENT -> if (dark) Color(0xFFE1B778) else Color(0xFF916025)
@@ -59,10 +57,6 @@ internal fun SessionModeBadge(mode: SessionModeLabel, modifier: Modifier = Modif
 }
 
 @Composable
-internal fun SessionModeMenuText(mode: SessionModeLabel, hint: Int) {
-    Column(Modifier.widthIn(max = 230.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(mode.title(), style = MaterialTheme.typography.titleSmall)
-        Text(stringResource(hint), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+internal fun SessionModeMenuText(mode: SessionModeLabel) {
+    Text(mode.title(), style = MaterialTheme.typography.titleSmall)
 }
