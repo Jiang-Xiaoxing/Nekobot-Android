@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -95,23 +96,32 @@ internal fun RelationshipSummary(view: CompanionRelationshipView, working: Boole
                     val field = narrative?.relationships?.get(key)
                     val oldText = view.legacy?.shortDescriptions?.get(key)?.takeUnless { key in narrative?.withdrawnKeys.orEmpty() }
                     val value = field?.description ?: oldText ?: "尚未评估"
+                    val score = relationshipScorePresentation(key, field?.score)
                     Surface(onClick = {
                         val text = if (field != null) field.description + field.reason.takeIf { it.isNotBlank() }?.let { "\n\n判断依据：$it" }.orEmpty()
                             else (view.legacy?.descriptions?.get(key)?.takeIf { oldText != null } ?: "还没有可用的角色自述。")
                         onDetail(label, text, field?.sources?.takeIf { it.isNotEmpty() }?.let { Gson().toJson(it) })
                     }, modifier = Modifier.fillMaxWidth(), color = androidx.compose.ui.graphics.Color.Transparent) {
-                        Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(vertical = 14.dp), verticalAlignment = Alignment.Top,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            JournalEmblem(index, Modifier.padding(top = 4.dp).size(38.dp))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text(value, style = MaterialTheme.typography.bodyMedium)
+                        Column(Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(vertical = 14.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                JournalEmblem(index, Modifier.padding(top = 4.dp).size(38.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(value, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                score.score?.let { number ->
+                                    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text(number.toString(), style = MaterialTheme.typography.labelSmall,
+                                            color = androidx.compose.ui.graphics.Color(0xFF999999))
+                                        if (score.showSparkle) Icon(Icons.Filled.AutoAwesome, null, Modifier.size(12.dp), tint = score.color)
+                                    }
+                                }
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(top = 10.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(top = 10.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            field?.score?.let { score ->
-                                Text(score.toString(), Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelSmall,
-                                    color = androidx.compose.ui.graphics.Color(0xFF999999))
-                            }
+                            Spacer(Modifier.height(10.dp))
+                            RelationshipScoreBar(score)
                         }
                     }
             if (index < CompanionRelationshipPolicy.dimensions.size - 1) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
