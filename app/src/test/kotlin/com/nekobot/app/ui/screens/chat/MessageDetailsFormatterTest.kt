@@ -1,6 +1,8 @@
 package com.nekobot.app.ui.screens.chat
 
 import com.nekobot.app.data.model.Message
+import com.nekobot.app.testString
+import com.nekobot.app.R
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.*
@@ -8,7 +10,10 @@ import org.junit.Test
 
 class MessageDetailsFormatterTest {
     private val shanghai = ZoneId.of("Asia/Shanghai")
-    private fun format(message: Message) = formatMessageDetails(message, shanghai)
+    private fun format(message: Message) = formatMessageDetails(message, shanghai, ::testString)
+
+    private fun formatMessageTimestamp(raw: String?, zone: ZoneId) =
+        com.nekobot.app.ui.screens.chat.formatMessageTimestamp(raw, zone, testString(R.string.single_role_not_recorded))
 
     @Test fun isoTimeConvertsToPhoneZoneAndDropsSeconds() {
         assertEquals("2026-10-13 15:30", formatMessageTimestamp("2026-10-13T07:30:59Z", shanghai))

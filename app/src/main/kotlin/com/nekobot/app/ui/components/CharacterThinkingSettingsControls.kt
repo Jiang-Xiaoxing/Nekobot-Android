@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.components
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -37,6 +41,7 @@ internal fun CharacterThinkingSettingsControls(
     compact: Boolean = false,
     onSaved: () -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     val prefs = ServiceContainer.prefs
     val characterThinkingSettings by prefs.characterThinkingSettings.collectAsStateWithLifecycle()
     var promptDraft by rememberSaveable { mutableStateOf<String?>(null) }
@@ -57,8 +62,8 @@ internal fun CharacterThinkingSettingsControls(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            CharacterThinkingRowLabel(Icons.Outlined.PersonOutline, "角色视角思考 Beta（测试版）",
-                "思考用中文、以角色“我”的口吻。", thinkingControlsEnabled, Modifier.weight(1f), compact)
+            CharacterThinkingRowLabel(Icons.Outlined.PersonOutline, textResources.getString(R.string.single_role_character_perspective_thinking_beta),
+                textResources.getString(R.string.single_role_think_in_chinese_in_the_character_s_first_person_voice), thinkingControlsEnabled, Modifier.weight(1f), compact)
             Switch(checked = characterThinkingSettings.enabled, onCheckedChange = null, enabled = thinkingControlsEnabled)
         }
         HorizontalDivider(Modifier.padding(start = if (compact) 56.dp else 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -71,8 +76,8 @@ internal fun CharacterThinkingSettingsControls(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            CharacterThinkingRowLabel(Icons.Outlined.Edit, "自定义思考提示词 Beta（测试版）",
-                "留空则使用默认。", thinkingControlsEnabled, Modifier.weight(1f), compact)
+            CharacterThinkingRowLabel(Icons.Outlined.Edit, textResources.getString(R.string.single_role_custom_thinking_prompt_beta),
+                textResources.getString(R.string.single_role_leave_blank_to_use_the_default), thinkingControlsEnabled, Modifier.weight(1f), compact)
             Icon(Icons.Default.ChevronRight, null, Modifier.size(24.dp),
                 tint = if (thinkingControlsEnabled) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
@@ -81,16 +86,16 @@ internal fun CharacterThinkingSettingsControls(
     if (thinkingControlsEnabled && promptDraft != null) {
         GlassAlertDialog(
             onDismissRequest = { promptDraft = null },
-            title = { Text("自定义思考提示词 Beta（测试版）") },
+            title = { Text(textResources.getString(R.string.single_role_custom_thinking_prompt_beta)) },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("留空则使用默认。")
+                    Text(textResources.getString(R.string.single_role_leave_blank_to_use_the_default))
                     OutlinedTextField(
                         value = promptDraft.orEmpty(),
                         onValueChange = { promptDraft = it },
                         modifier = Modifier.fillMaxWidth().testTag("character-thinking-prompt-editor"),
-                        label = { Text("思考提示词") },
+                        label = { Text(textResources.getString(R.string.single_role_thinking_prompt)) },
                         minLines = 8,
                         maxLines = 12,
                         shape = RoundedCornerShape(12.dp)
@@ -99,12 +104,12 @@ internal fun CharacterThinkingSettingsControls(
             },
             confirmButton = {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
-                    TextButton(onClick = { promptDraft = DEFAULT_CHARACTER_THINKING_PROMPT }) { Text("恢复默认") }
+                    TextButton(onClick = { promptDraft = DEFAULT_CHARACTER_THINKING_PROMPT }) { Text(textResources.getString(R.string.chat_quick_bar_reset_default)) }
                     TextButton(onClick = {
                         prefs.characterThinkingPrompt = characterThinkingPromptToSave(promptDraft.orEmpty())
                         promptDraft = null
                         onSaved()
-                    }) { Text("保存") }
+                    }) { Text(textResources.getString(R.string.common_save)) }
                 }
             }
         )

@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -54,6 +58,7 @@ internal fun companionUsagePartColor(part: ContextUsagePart, primary: Color): Co
 @Composable
 internal fun CompanionUsageRing(arcs: List<CompanionUsageArc>, selected: ContextUsagePart?, onSelect: (ContextUsagePart) -> Unit,
     usedTokens: Long, noSnapshot: Boolean, modifier: Modifier = Modifier) {
+    val textResources = LocalResources.current
     val primary = MaterialTheme.colorScheme.primary
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val track = MaterialTheme.colorScheme.surfaceVariant
@@ -69,8 +74,8 @@ internal fun CompanionUsageRing(arcs: List<CompanionUsageArc>, selected: Context
         Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize().testTag("usage-ring")
                 .semantics {
-                    contentDescription = "上下文组成圆环，本地估算 ${companionUsageNumber(usedTokens)} Token"
-                    customActions = arcs.map { arc -> CustomAccessibilityAction("选择${descriptions[arc.value.part]}") { onSelect(arc.value.part); true } }
+                    contentDescription = textResources.getString(R.string.single_role_context_breakdown_chart_locally_estimated_at_1_s_tokens, companionUsageNumber(usedTokens))
+                    customActions = arcs.map { arc -> CustomAccessibilityAction(textResources.getString(R.string.single_role_select_1_s, descriptions[arc.value.part])) { onSelect(arc.value.part); true } }
                 }
                 .pointerInput(arcs, onSelect) {
                     detectTapGestures { point ->
@@ -104,7 +109,7 @@ internal fun CompanionUsageRing(arcs: List<CompanionUsageArc>, selected: Context
                 diameter.value * 0.59f / (total.length.coerceAtLeast(1) * 0.62f) / density.fontScale).sp
             Column(Modifier.width(diameter * 0.61f).offset(y = (-4).dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(if (noSnapshot) "暂无请求记录" else "本地估算", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (noSnapshot) textResources.getString(R.string.single_role_no_requests_recorded) else textResources.getString(R.string.single_role_local_estimate), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (noSnapshot) "—" else total, style = MaterialTheme.typography.headlineLarge.copy(fontSize = fittedSize),
                     fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.testTag("usage-total"))
                 Text("Token", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

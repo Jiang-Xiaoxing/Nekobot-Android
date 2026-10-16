@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.settings
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +35,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RelationshipBackgroundScreen(onBack: () -> Unit) {
+    val textResources = LocalResources.current
     val prefs = ServiceContainer.prefs
     var applied by remember { mutableStateOf(prefs.relationshipBackground.id) }
     var selectedId by rememberSaveable { mutableStateOf(applied) }
@@ -38,37 +43,37 @@ internal fun RelationshipBackgroundScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     Scaffold(topBar = {
-        TopAppBar(title = { Text("关系页皮肤") }, navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        TopAppBar(title = { Text(textResources.getString(R.string.single_role_relationship_page_skins)) }, navigationIcon = {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back)) }
         })
     }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
         Surface(shadowElevation = 3.dp) {
             Button(onClick = {
                 prefs.relationshipBackground = selected
                 applied = selected.id
-                scope.launch { snackbar.showSnackbar("已使用${selected.title}") }
+                scope.launch { snackbar.showSnackbar(textResources.getString(R.string.single_role_using_1_s, textResources.getString(selected.titleRes))) }
             }, modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)
                 .heightIn(min = 48.dp).testTag("relationship_background_apply"),
                 colors = ButtonDefaults.buttonColors(contentColor = readableOn(MaterialTheme.colorScheme.primary))) {
-                Text("使用这个皮肤")
+                Text(textResources.getString(R.string.single_role_use_this_skin))
             }
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).verticalScroll(rememberScrollState())
             .padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("背景、按钮和图标成套切换，不随主题色改变", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(textResources.getString(R.string.single_role_switch_backgrounds_buttons_and_icons_together_independent_of_them), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).testTag("relationship_background_preview"),
                 contentAlignment = Alignment.Center) {
                 RelationshipScene(selected, Modifier.matchParentSize())
                 RelationshipSkinTheme(selected) {
                 RelationshipPaper(Modifier.fillMaxWidth(.82f)) {
-                    Text("心情", style = MaterialTheme.typography.labelMedium)
+                    Text(textResources.getString(R.string.sessions_detail_mood), style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.height(8.dp))
-                    Text("轻松随和，带有一点好奇", style = MaterialTheme.typography.titleMedium)
+                    Text(textResources.getString(R.string.single_role_relaxed_and_easygoing_with_a_little_curiosity), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(12.dp))
                     val skin = LocalJournalSkin.current
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("心情", "强度", "精力").forEachIndexed { index, label ->
+                        listOf(textResources.getString(R.string.sessions_detail_mood), textResources.getString(R.string.sessions_detail_intensity), textResources.getString(R.string.state_history_metric_energy)).forEachIndexed { index, label ->
                             Surface(modifier = Modifier.weight(1f), shape = skin.buttonShape,
                                 color = if (index == 0) skin.accent else skin.paper,
                                 contentColor = if (index == 0) readableOn(skin.accent) else skin.ink,
@@ -82,7 +87,7 @@ internal fun RelationshipBackgroundScreen(onBack: () -> Unit) {
                 }
                 }
             }
-            Text(if (selectedId == applied) "当前：${selected.title}" else "预览：${selected.title}", style = MaterialTheme.typography.bodyMedium)
+            Text(if (selectedId == applied) textResources.getString(R.string.more_current_user, textResources.getString(selected.titleRes)) else textResources.getString(R.string.single_role_preview_1_s, textResources.getString(selected.titleRes)), style = MaterialTheme.typography.bodyMedium)
             BoxWithConstraints {
                 val columns = if (maxWidth < 300.dp) 1 else 2
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -100,8 +105,8 @@ internal fun RelationshipBackgroundScreen(onBack: () -> Unit) {
                                     Column(Modifier.padding(7.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         RelationshipScene(background, Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(9.dp)))
                                         Row(Modifier.fillMaxWidth().heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Text(background.title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                                            if (isSelected) Icon(Icons.Filled.CheckCircle, "已选中", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                            Text(textResources.getString(background.titleRes), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                                            if (isSelected) Icon(Icons.Filled.CheckCircle, textResources.getString(R.string.single_role_selected), Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                                         }
                                     }
                                 }

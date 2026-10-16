@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.settings
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,23 +29,24 @@ import com.nekobot.app.ui.theme.parseHexColor
 @Composable
 internal fun ChatColorSettings(themeColor: String?, messageColor: String?, options: List<Pair<String?, String>>,
     onThemeColor: (String?) -> Unit, onMessageColor: (String?) -> Unit) {
+    val textResources = LocalResources.current
     var choosing by remember { mutableStateOf<String?>(null) }
     GlassCard(Modifier.fillMaxWidth()) {
-        Text("颜色", style = MaterialTheme.typography.titleMedium)
-        listOf("主题色" to "按钮、导航和强调色", "消息颜色" to "同时设置双方聊天气泡").forEachIndexed { index, (label, hint) ->
+        Text(textResources.getString(R.string.single_role_colors), style = MaterialTheme.typography.titleMedium)
+        listOf(textResources.getString(R.string.style_theme_color) to textResources.getString(R.string.single_role_buttons_navigation_and_accents), textResources.getString(R.string.single_role_message_colors) to textResources.getString(R.string.single_role_set_both_chat_bubble_colors_together)).forEachIndexed { index, (label, hint) ->
             if (index > 0) AppearanceDivider()
             val hex = if (index == 0) themeColor else messageColor
             AppearanceSettingRow(label, hint, onClick = { choosing = label }) {
                 Box(Modifier.size(22.dp).clip(CircleShape).background(parseHexColor(hex) ?: defaultPrimaryColor()))
-                Text(options.firstOrNull { it.first == hex }?.second ?: "自定义", style = MaterialTheme.typography.labelLarge)
+                Text(options.firstOrNull { it.first == hex }?.second ?: textResources.getString(R.string.aimodel_editor_provider_custom), style = MaterialTheme.typography.labelLarge)
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
     choosing?.let { label ->
-        val selected = if (label == "主题色") themeColor else messageColor
+        val selected = if (label == textResources.getString(R.string.style_theme_color)) themeColor else messageColor
         ColorChoiceDialog(label, selected, options, onDismiss = { choosing = null }, onSelect = { hex ->
-            if (label == "主题色") onThemeColor(hex) else onMessageColor(hex)
+            if (label == textResources.getString(R.string.style_theme_color)) onThemeColor(hex) else onMessageColor(hex)
             choosing = null
         })
     }
@@ -51,6 +56,7 @@ internal fun ChatColorSettings(themeColor: String?, messageColor: String?, optio
 @Composable
 private fun ColorChoiceDialog(title: String, selected: String?, options: List<Pair<String?, String>>,
     onDismiss: () -> Unit, onSelect: (String?) -> Unit) {
+    val textResources = LocalResources.current
     var custom by remember { mutableStateOf(selected.orEmpty()) }
     val normalized = custom.trim().let { if (it.startsWith("#")) it else "#$it" }
     val valid = Regex("#[0-9a-fA-F]{6}").matches(normalized)
@@ -67,28 +73,29 @@ private fun ColorChoiceDialog(title: String, selected: String?, options: List<Pa
                     }
                 }
             }
-            OutlinedTextField(custom, { custom = it }, singleLine = true, label = { Text("自定义颜色") },
-                placeholder = { Text("#RRGGBB") }, supportingText = { Text("输入六位颜色代码，例如 #8B6CFF") },
+            OutlinedTextField(custom, { custom = it }, singleLine = true, label = { Text(textResources.getString(R.string.style_custom_color)) },
+                placeholder = { Text("#RRGGBB") }, supportingText = { Text(textResources.getString(R.string.single_role_enter_a_six_digit_color_code_such_as_8b6cff)) },
                 isError = custom.isNotBlank() && !valid, modifier = Modifier.fillMaxWidth())
         }
-    }, confirmButton = { TextButton(enabled = valid, onClick = { onSelect(normalized.uppercase()) }) { Text("使用自定义颜色") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+    }, confirmButton = { TextButton(enabled = valid, onClick = { onSelect(normalized.uppercase()) }) { Text(textResources.getString(R.string.single_role_use_custom_color)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(textResources.getString(R.string.common_cancel)) } })
 }
 
 @Composable
 internal fun ChatAppearancePreview(messageColor: String?) {
+    val textResources = LocalResources.current
     val appearance = chatBubbleAppearance(messageColor)
     GlassCard(Modifier.fillMaxWidth()) {
-        Text("聊天预览", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(textResources.getString(R.string.single_role_chat_preview), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Box(Modifier.clip(chatBubbleShape(true)).background(appearance.userBrush).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("今天过得怎么样？", color = appearance.assistantText, style = MaterialTheme.typography.bodyMedium)
+                Text(textResources.getString(R.string.single_role_how_was_your_day), color = appearance.assistantText, style = MaterialTheme.typography.bodyMedium)
             }
         }
         Spacer(Modifier.height(12.dp))
         Box(Modifier.clip(chatBubbleShape(false)).background(appearance.userBrush).padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text("还不错，正想和你聊聊。", color = appearance.assistantText, style = MaterialTheme.typography.bodyMedium)
+            Text(textResources.getString(R.string.single_role_pretty_good_i_was_just_thinking_of_talking_to_you), color = appearance.assistantText, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

@@ -1,5 +1,9 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.ServiceContainer
+
+import com.nekobot.app.R
+
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.JsonParser
@@ -76,7 +80,7 @@ internal class CompanionRelationshipService(
             }
         }
     }
-    private suspend fun session(id: String) = requireNotNull(db.sessionDao().getById(id)?.takeIf { it.companionMode && it.characterId != null }) { "当前会话不是单会话角色" }
+    private suspend fun session(id: String) = requireNotNull(db.sessionDao().getById(id)?.takeIf { it.companionMode && it.characterId != null }) { ServiceContainer.getString(R.string.single_role_error_not_companion) }
     private suspend fun rows(id: String): List<LocalMessageEntity> {
         val s = session(id)
         return CompanionMemoryStore(db).permittedHistory(s, db.messageDao().listBySession(id)).filter { !it.deleted }
@@ -84,7 +88,7 @@ internal class CompanionRelationshipService(
     private suspend fun ensure(id: String): CompanionRelationshipEntity {
         val s = session(id)
         dao.state(id)?.let {
-            require(it.characterId == s.characterId) { "角色归属已变化，不能读取旧关系" }
+            require(it.characterId == s.characterId) { ServiceContainer.getString(R.string.single_role_error_relationship_owner_changed) }
             return reviewHistoryScope(freezeLegacy(it, existing = true))
         }
         val old = db.relationshipDao().get(s.characterId!!, sessionRelationshipTargetId(id))
@@ -148,7 +152,7 @@ internal class CompanionRelationshipService(
         val feelingChanged = feelingRefs.isNotEmpty() && !valid(feelingRefs, byId)
         val staleNarrative = narrative?.relationships.orEmpty().any { (key, field) -> field != null && key !in validKeys }
         val warning = if (validEvents.size != events.size || feelingChanged || staleNarrative || state.narrativeJson != null && narrative == null)
-            "部分评估依据已变化或不可读取，对应描述暂不提供给聊天，请核对变化记录。" else count.exceptionOrNull()?.message
+            ServiceContainer.getString(R.string.single_role_warning_relationship_sources) else count.exceptionOrNull()?.message
         val descriptions = CompanionRelationshipPolicy.dimensions.mapValues { (key, _) ->
             if (narrative != null) narrative.relationships[key]?.description ?: legacy?.descriptions?.get(key)?.takeUnless { key in narrative.withdrawnKeys } ?: "尚未评估"
             else legacy?.descriptions?.get(key) ?: "尚未评估"
@@ -162,8 +166,8 @@ internal class CompanionRelationshipService(
 
     suspend fun configure(id: String, enabled: Boolean, automatic: Boolean, modelId: String?, interval: Int) = withContext(Dispatchers.IO) {
         startupRecovery.await()
-        require(interval in 1..100) { "更新间隔请填写 1—100 轮" }
-        if (enabled) require(db.aiModelDao().getById(modelId.orEmpty())?.let { it.enabled && it.purpose in setOf("chat", "compression") } == true) { "请先选择可用的状态评估模型" }
+        require(interval in 1..100) { ServiceContainer.getString(R.string.single_role_error_interval) }
+        if (enabled) require(db.aiModelDao().getById(modelId.orEmpty())?.let { it.enabled && it.purpose in setOf("chat", "compression") } == true) { ServiceContainer.getString(R.string.single_role_error_choose_assessment_model) }
         lock.withLock {
             val old = ensure(id)
             interruptedSessions.remove(id)
@@ -206,15 +210,15 @@ internal class CompanionRelationshipService(
         startupRecovery.await()
         lock.withLock {
             val state = ensure(id)
-            require(state.enabled) { "请先开启关系状态" }
-            require(jobs[id]?.isActive != true) { "正在评估，请等待完成" }
+            require(state.enabled) { ServiceContainer.getString(R.string.single_role_error_enable_relationship) }
+            require(jobs[id]?.isActive != true) { ServiceContainer.getString(R.string.single_role_error_assessment_running) }
             if (!manual) require(CompanionRelationshipRecovery.automaticReady(state,
                 CompanionRelationshipPolicy.pending(CompanionRelationshipPolicy.turns(rows(id)), state.cursorId).size,
                 interrupted = id in interruptedSessions))
             val recovering = !manual && (id in interruptedSessions || CompanionRelationshipRecovery.retryable(state.notice))
             interruptedSessions.remove(id)
             if (state.historyReviewRequired) {
-                require(manual && correctionKey == null) { "请先确认是否补评旧历史" }
+                require(manual && correctionKey == null) { ServiceContainer.getString(R.string.single_role_error_confirm_history) }
                 // 仅“补评这些对话”的明确操作才会回到历史开头；原游标在确认之前保持原样。
                 dao.save(state.copy(cursorId = null, legacy = false, historyReviewRequired = false,
                     awaitingHistory = true, version = state.version + 1, notice = null))
@@ -250,7 +254,7 @@ internal class CompanionRelationshipService(
                 require(state.enabled)
                 val model = requireNotNull(db.aiModelDao().getById(state.modelId.orEmpty())?.takeIf {
                     it.enabled && it.purpose in setOf("chat", "compression")
-                }) { "所选评估模型已不可用，请重新选择" }
+                }) { ServiceContainer.getString(R.string.single_role_error_assessment_model_unavailable) }
                 val all = rows(id)
                 val events = dao.currentEvents(id)
                 val turns = CompanionRelationshipPolicy.turns(all)
@@ -260,7 +264,7 @@ internal class CompanionRelationshipService(
                     dao.save(state.copy(awaitingHistory = false, notice = null)); return
                 }
                 val batch = pending
-                val target = correctionKey?.let { key -> requireNotNull(events.firstOrNull { it.eventKey == key }) { "需要纠正的记录已不存在" } }
+                val target = correctionKey?.let { key -> requireNotNull(events.firstOrNull { it.eventKey == key }) { ServiceContainer.getString(R.string.single_role_error_correction_gone) } }
                 val evidence = if (target != null) {
                     val sourceIds = refs(target.sourcesJson).map { it.id }.toSet()
                     (all.filter { it.id in sourceIds } + available.takeLast(10).flatMap { it.rows }).distinctBy { it.id }
@@ -273,7 +277,7 @@ internal class CompanionRelationshipService(
             }
             val byId = input.all.associateBy { it.id }
             val previous = CompanionRelationshipNarrative.read(input.state.narrativeJson)
-            require(input.state.narrativeJson == null || previous != null) { "已有关系暂不可读取，请先保留备份并核对，旧数据不会覆盖" }
+            require(input.state.narrativeJson == null || previous != null) { ServiceContainer.getString(R.string.single_role_error_relationship_unreadable) }
             val legacy = CompanionRelationshipNarrative.legacy(input.state.legacySnapshotJson)
             val character = db.characterDao().getById(input.state.characterId)
             val background = listOfNotNull(character?.basicInfo, character?.description, character?.personality).joinToString("\n").take(4000)
@@ -297,7 +301,7 @@ internal class CompanionRelationshipService(
                 prefs.reasoningEffortFor(db.dbName, s.id, s.companionMode, s.sessionMode)) {
                 prefs.customReasoningFor(db.dbName, s.id, s.companionMode, s.sessionMode)
             }
-            require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
+            require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { ServiceContainer.getString(R.string.single_role_error_assessment_context) }
             requestTag = "relationship-${UUID.randomUUID()}"
             tags[id] = requestTag!!
             val requestStarted = System.nanoTime()
@@ -312,11 +316,11 @@ internal class CompanionRelationshipService(
             onUsage(id, input.model, result.copy(usage = result.usage + mapOf("prompt" to usage.inputTokens,
                 "completion" to usage.outputTokens, "estimated" to if (usage.estimated) 1 else 0)))
             CompanionRelationshipRequest.requireComplete(result)
-            require(result.error == null && result.content.isNotBlank()) { "评估模型没有返回有效结果" }
+            require(result.error == null && result.content.isNotBlank()) { ServiceContainer.getString(R.string.single_role_error_assessment_empty) }
             val json = CompanionRelationshipResponse.json(result.content)
             val now = System.currentTimeMillis()
             val corrected = if (input.target != null) {
-                require(json["verdict"]?.asString in setOf("corrected", "unchanged")) { "纠错结论无效" }
+                require(json["verdict"]?.asString in setOf("corrected", "unchanged")) { ServiceContainer.getString(R.string.single_role_error_correction_verdict) }
                 json["verdict"].asString == "corrected"
             } else false
             val allowedKeys = input.target?.let { if (corrected) CompanionRelationshipNarrative.affected(it) else emptySet() }
@@ -336,16 +340,16 @@ internal class CompanionRelationshipService(
             lock.withLock {
                 db.withTransaction {
                     val current = dao.state(id)
-                    require(current?.enabled == true && current.version == input.state.version && session(id).characterId == input.state.characterId) { "评估期间设置已变化，旧结果不再写入" }
-                    require(db.aiModelDao().getById(input.model.id) == input.model) { "评估模型配置已改变，旧结果不再写入" }
+                    require(current?.enabled == true && current.version == input.state.version && session(id).characterId == input.state.characterId) { ServiceContainer.getString(R.string.single_role_error_settings_changed) }
+                    require(db.aiModelDao().getById(input.model.id) == input.model) { ServiceContainer.getString(R.string.single_role_error_assessment_config_changed) }
                     val latest = rows(id).associateBy { it.id }
-                    require(input.evidence.all { old -> latest[old.id]?.let { CompanionRelationshipPolicy.hash(it) == CompanionRelationshipPolicy.hash(old) } == true }) { "评估期间原话已变化，旧结果不再写入" }
-                    require(dao.currentEvents(id) == input.events) { "关系记录已更新，旧结果不再写入" }
+                    require(input.evidence.all { old -> latest[old.id]?.let { CompanionRelationshipPolicy.hash(it) == CompanionRelationshipPolicy.hash(old) } == true }) { ServiceContainer.getString(R.string.single_role_error_quotes_changed) }
+                    require(dao.currentEvents(id) == input.events) { ServiceContainer.getString(R.string.single_role_error_relationship_updated) }
                     // 生成期间先前关系的依据也可能被改动；不得只核对新消息。
                     require(CompanionRelationshipNarrative.allSources(narrative).all { ref ->
                         latest[ref.id]?.let { CompanionRelationshipPolicy.hash(it) == ref.hash } == true ||
                             byId[ref.id]?.let { CompanionRelationshipPolicy.hash(it) == ref.hash } != true
-                    }) { "评估期间已有关系的依据发生变化，旧状态保留" }
+                    }) { ServiceContainer.getString(R.string.single_role_error_relationship_sources_changed) }
                     // 旧版当前文字也留一份原样历史，兼容没有历史快照的旧导入资料。
                     current.narrativeJson?.takeIf { previous?.format == CompanionRelationshipNarrative.FORMAT }?.let { oldJson ->
                         if (dao.assessments(id).none { it.revision == current.version || it.narrativeJson == oldJson }) {
@@ -360,7 +364,7 @@ internal class CompanionRelationshipService(
                         cursorId = if (correctionKey == null) input.batch.last().endId else current.cursorId,
                         narrativeJson = narrativeJson, updatedAt = now, notice = null,
                         correctionResult = if (correctionKey == null) current.correctionResult else if (effects.isEmpty())
-                            "本次核对保留原判断。" else "已修正这件事的判断，其他关系保留。"))
+                            ServiceContainer.getString(R.string.single_role_correction_unchanged) else ServiceContainer.getString(R.string.single_role_correction_applied)))
                 }
             }
             LocalLogger.i("Relationship", "评估保存完成：tag=$requestTag，六维已保存，纠错事件=${effects.size}，总耗时毫秒=${(System.nanoTime() - evaluationStarted) / 1_000_000}")
@@ -377,7 +381,7 @@ internal class CompanionRelationshipService(
                 throw e
             }
             val safe = if (e is IllegalArgumentException || e is IllegalStateException) e.message?.takeIf { it.length <= 150 && !it.contains("http", true) } else null
-            saveError(id, expected, safe ?: "状态评估失败，旧状态保留。请检查评估模型后手动重试。")
+            saveError(id, expected, safe ?: ServiceContainer.getString(R.string.single_role_error_assessment_failed))
         } finally {
             requestTag?.let { client.cancelRequests(it); tags.remove(id, it) }
         }

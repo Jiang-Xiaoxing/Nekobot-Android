@@ -1,14 +1,16 @@
 package com.nekobot.app.data.local
 
+import com.nekobot.app.R
+
 /** Stable identifiers only: a background is never derived from the global theme colour. */
-enum class RelationshipBackground(val id: String, val title: String) {
-    SAKURA("sakura", "樱花来信"),
-    STARLIGHT("starlight", "星夜山丘"),
-    COAST("coast", "晴空海岸"),
-    WATER_GARDEN("watergarden", "雨后水庭"),
-    WOODLAND("woodland", "林间书屋"),
-    SUNSET("sunset", "落日原野"),
-    LANTERN("lantern", "冬日灯巷");
+enum class RelationshipBackground(val id: String, @androidx.annotation.StringRes val titleRes: Int) {
+    SAKURA("sakura", R.string.single_role_skin_sakura),
+    STARLIGHT("starlight", R.string.single_role_skin_starlight),
+    COAST("coast", R.string.single_role_skin_coast),
+    WATER_GARDEN("watergarden", R.string.single_role_skin_watergarden),
+    WOODLAND("woodland", R.string.single_role_skin_woodland),
+    SUNSET("sunset", R.string.single_role_skin_sunset),
+    LANTERN("lantern", R.string.single_role_skin_lantern);
 
     companion object {
         fun fromId(id: String?): RelationshipBackground = entries.firstOrNull { it.id == id } ?: COAST

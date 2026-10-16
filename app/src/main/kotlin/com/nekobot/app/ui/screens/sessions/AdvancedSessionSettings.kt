@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -68,12 +70,13 @@ internal fun AdvancedSettingsCard(modifier: Modifier = Modifier, content: @Compo
     }
 }
 
+@Composable
 private fun promptSectionLabel(section: PromptSection) = when (section) {
-    PromptSection.CHARACTER -> "角色设定"
-    PromptSection.CORE_MEMORY -> "核心记忆"
-    PromptSection.RELATIONSHIP -> "关系状态"
-    PromptSection.PLAYER -> "玩家背景"
-    PromptSection.OTHER -> "其他提示词"
+    PromptSection.CHARACTER -> stringResource(R.string.single_role_character_settings)
+    PromptSection.CORE_MEMORY -> stringResource(R.string.single_role_core_memories)
+    PromptSection.RELATIONSHIP -> stringResource(R.string.portability_detail_local_relationship_states)
+    PromptSection.PLAYER -> stringResource(R.string.single_role_player_background)
+    PromptSection.OTHER -> stringResource(R.string.single_role_other_prompts)
 }
 
 private fun promptSectionColor(section: PromptSection) = when (section) {
@@ -86,12 +89,13 @@ private fun promptSectionColor(section: PromptSection) = when (section) {
 
 @Composable
 internal fun AdvancedPromptUsageCard(counts: Map<PromptSection, Int>?) {
+    val textResources = LocalResources.current
     val percentages = remember(counts) { promptSectionPercentages(counts.orEmpty()) }
     val total = counts.orEmpty().values.sumOf { it.coerceAtLeast(0).toLong() }
     fun number(value: Long) = String.format(Locale.getDefault(), "%,d", value)
     AdvancedSettingsCard(Modifier.testTag("advanced-prompt-usage")) {
-        Text("提示词各段占比", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text("按上次请求的提示词与辅助资料估算 Token", style = MaterialTheme.typography.bodySmall,
+        Text(textResources.getString(R.string.single_role_prompt_section_proportions), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(textResources.getString(R.string.single_role_token_estimates_for_prompts_and_supporting_material_in_the_last_r), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(14.dp).clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.surfaceVariant)) {
@@ -111,11 +115,11 @@ internal fun AdvancedPromptUsageCard(counts: Map<PromptSection, Int>?) {
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("合计", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Text(if (counts == null) "未记录" else "${number(total)} Token", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(textResources.getString(R.string.tokens_total), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(if (counts == null) textResources.getString(R.string.single_role_not_recorded) else "${number(total)} Token", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
         }
-        Text(if (counts == null) "暂无分段记录，完成一次聊天请求后再查看"
-            else "占比随请求变化；不含聊天原话和工具定义", style = MaterialTheme.typography.bodySmall,
+        Text(if (counts == null) textResources.getString(R.string.single_role_no_section_records_yet_check_again_after_a_chat_request_completes)
+            else textResources.getString(R.string.single_role_proportions_vary_by_request_excludes_original_messages_and_tool_d), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.sessions
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
@@ -45,6 +49,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) {
+    val textResources = LocalResources.current
     val repository = remember { ServiceContainer.localRepository }
     val service = remember { repository.companionRelationship }
     val worker = rememberCoroutineScope()
@@ -93,22 +98,22 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
         if (working) return
         worker.launch {
             working = true; error = null
-            try { block(); reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "操作未完成，请重试" }
+            try { block(); reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: textResources.getString(R.string.single_role_action_incomplete_please_try_again) }
             finally { working = false }
         }
     }
     LaunchedEffect(sessionId, stored, running, refresh) {
-        try { reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "读取状态失败" }
+        try { reload() } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: textResources.getString(R.string.single_role_could_not_load_relationship_state) }
     }
     LaunchedEffect(sessionId) {
         ServiceContainer.sessionChanged.collect { if (it == sessionId) refresh++ }
     }
     RelationshipSkinTheme(background) {
     RelationshipJournalBackdrop(background) {
-    Scaffold(containerColor = Color.Transparent, topBar = { TopAppBar(title = { Text("关系状态", color = Color.White) }, navigationIcon = {
+    Scaffold(containerColor = Color.Transparent, topBar = { TopAppBar(title = { Text(textResources.getString(R.string.portability_detail_local_relationship_states), color = Color.White) }, navigationIcon = {
         Surface(shape = RoundedCornerShape(16.dp), color = journalPaperColor(), shadowElevation = 2.dp,
             modifier = Modifier.padding(start = 10.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back)) }
         }
     }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
@@ -134,94 +139,94 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                 }
                 if (state.enabled && state.awaitingHistory) {
                     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (state.historyReviewRequired) "历史范围待确认：${v.pending} 轮" else "有 ${v.pending} 轮尚未评估", style = MaterialTheme.typography.titleMedium)
-                        Text(if (state.historyReviewRequired) "旧版可能把迁入时的初始关系当成了评估进度。无法确认旧历史是否评估或曾被跳过，请选择是否从头补评；现有聊天不变。补评会一次调用所选模型评估这些对话并产生费用。" else "是否补评由你决定。一次调用评估模型处理本批全部待评估对话，完成后统一保存进度。")
-                        Button(onClick = { action { service.start(sessionId) } }, enabled = !working && !v.busy) { Text("补评这些对话") }
-                        TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !working && !v.busy) { Text("不补评，从现在继续") }
+                        Text(if (state.historyReviewRequired) textResources.getString(R.string.single_role_history_range_awaiting_confirmation_1_s_rounds, v.pending) else textResources.getString(R.string.single_role_1_s_rounds_have_not_been_assessed, v.pending), style = MaterialTheme.typography.titleMedium)
+                        Text(if (state.historyReviewRequired) textResources.getString(R.string.single_role_an_older_version_may_have_treated_initial_imported_relationship_v) else textResources.getString(R.string.single_role_you_decide_whether_to_assess_earlier_chats_one_model_call_handles))
+                        Button(onClick = { action { service.start(sessionId) } }, enabled = !working && !v.busy) { Text(textResources.getString(R.string.single_role_assess_these_conversations)) }
+                        TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !working && !v.busy) { Text(textResources.getString(R.string.single_role_skip_earlier_chats_continue_from_now)) }
                     } }
                 }
                 if (v.busy && !state.awaitingHistory) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (v.busy && state.awaitingHistory) RelationshipPaper {
-                    Text("正在评估本批全部对话，完成后统一保存进度。")
+                    Text(textResources.getString(R.string.single_role_assessing_this_entire_batch_progress_will_be_saved_together_when))
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 if (!v.busy) state.notice?.takeUnless(CompanionRelationshipRecovery::obsoleteInitializationNotice)?.let {
-                    RelationshipPaper { Text(it, color = MaterialTheme.colorScheme.error) }
+                    RelationshipPaper { Text(relationshipNoticeText(it, textResources::getString), color = MaterialTheme.colorScheme.error) }
                 }
                 state.correctionResult?.let { RelationshipPaper { Text(it, style = MaterialTheme.typography.bodySmall) } }
                 v.sourceWarning?.let { warning ->
                     RelationshipPaper {
                         Text(warning, color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !v.busy && !working) { Text("保留已有积累，从现在继续") }
+                        TextButton(onClick = { action { service.skipPending(sessionId) } }, enabled = !v.busy && !working) { Text(textResources.getString(R.string.single_role_keep_existing_progress_and_continue_from_now)) }
                     }
                 }
                 if (state.updatedAt > 0) Surface(shape = RoundedCornerShape(8.dp), color = journalPaperColor()) {
-                    Text("最近评估：${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(state.updatedAt))}",
+                    Text(textResources.getString(R.string.single_role_last_assessment_1_s, SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(state.updatedAt))),
                         Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
                 }
-                JournalAction("评估设置", "模型与更新频率", Icons.Filled.Tune, onClick = { settingsExpanded = !settingsExpanded })
-                if (settingsExpanded) RelationshipSection("评估设置") {
+                JournalAction(textResources.getString(R.string.single_role_assessment_settings), textResources.getString(R.string.single_role_model_and_update_frequency), Icons.Filled.Tune, onClick = { settingsExpanded = !settingsExpanded })
+                if (settingsExpanded) RelationshipSection(textResources.getString(R.string.single_role_assessment_settings)) {
                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
                         Column(Modifier.padding(horizontal = 12.dp)) {
                             Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("启用关系状态", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text(textResources.getString(R.string.single_role_enable_relationship_state), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 Switch(state.enabled, enabled = !working && (state.enabled || state.modelId != null), onCheckedChange = { enabled ->
                                     action { service.configure(sessionId, enabled, state.automatic, state.modelId, state.interval) }
                                 })
                             }
                             AppearanceDivider()
-                            AppearanceSettingRow("评估模型", onClick = { if (!working) modelPicker = true }) {
+                            AppearanceSettingRow(textResources.getString(R.string.single_role_assessment_model), onClick = { if (!working) modelPicker = true }) {
                                 val model = models.firstOrNull { it.id == state.modelId }
-                                Text(model?.name ?: if (state.modelId == null) "请选择" else "不可用", modifier = Modifier.widthIn(max = 140.dp),
+                                Text(model?.name ?: if (state.modelId == null) textResources.getString(R.string.dbprofile_please_select) else textResources.getString(R.string.single_role_unavailable), modifier = Modifier.widthIn(max = 140.dp),
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
                             }
                             AppearanceDivider()
                             Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("按轮次自动更新", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text(textResources.getString(R.string.single_role_update_automatically_by_turns), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 Switch(state.automatic, enabled = state.enabled && !working, onCheckedChange = { automatic ->
                                     action { service.configure(sessionId, state.enabled, automatic, state.modelId, state.interval) }
                                 })
                             }
                             AppearanceDivider()
-                            AppearanceSettingRow("更新间隔", onClick = { if (!working) { intervalText = state.interval.toString(); intervalEditor = true } }) {
-                                Text("每 ${state.interval} 轮", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            AppearanceSettingRow(textResources.getString(R.string.single_role_update_interval), onClick = { if (!working) { intervalText = state.interval.toString(); intervalEditor = true } }) {
+                                Text(textResources.getString(R.string.single_role_every_1_s_turns, state.interval), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
                             }
                         }
                     }
-                    Text("单独调用所选模型，会产生对应费用。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(textResources.getString(R.string.single_role_calls_the_selected_model_separately_and_incurs_its_fees), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
-                    JournalAction("变化依据", icon = Icons.Filled.History, onClick = { evidenceExpanded = !evidenceExpanded }, modifier = Modifier.weight(1f).fillMaxHeight())
-                    JournalAction("历史记录", icon = Icons.Filled.Archive, onClick = { oldRecordsOpen = true }, modifier = Modifier.weight(1f).fillMaxHeight())
+                    JournalAction(textResources.getString(R.string.single_role_evidence_for_changes), icon = Icons.Filled.History, onClick = { evidenceExpanded = !evidenceExpanded }, modifier = Modifier.weight(1f).fillMaxHeight())
+                    JournalAction(textResources.getString(R.string.single_role_past_records), icon = Icons.Filled.Archive, onClick = { oldRecordsOpen = true }, modifier = Modifier.weight(1f).fillMaxHeight())
                 }
                 if (evidenceExpanded) {
-                RelationshipPaper { JournalHeading("变化依据") }
+                RelationshipPaper { JournalHeading(textResources.getString(R.string.single_role_evidence_for_changes)) }
                 if (v.events.isEmpty()) Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
-                    Text("暂无新的评估记录", Modifier.fillMaxWidth().padding(20.dp), style = MaterialTheme.typography.bodyMedium,
+                    Text(textResources.getString(R.string.single_role_no_new_assessment_records), Modifier.fillMaxWidth().padding(20.dp), style = MaterialTheme.typography.bodyMedium,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 v.events.take(showCount).forEach { event ->
                     OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(event.summary, style = MaterialTheme.typography.titleSmall)
                         Text(event.reason)
-                        Text(if (event.corrected) "这件事的判断已修正" else "有原话依据的事件", style = MaterialTheme.typography.labelSmall)
+                        Text(if (event.corrected) textResources.getString(R.string.single_role_this_event_s_assessment_was_corrected) else textResources.getString(R.string.single_role_event_supported_by_original_messages), style = MaterialTheme.typography.labelSmall)
                         Row {
-                            TextButton(onClick = { action { quotes = service.sourceQuotes(sessionId, event.sourcesJson) } }) { Text("原话") }
-                            TextButton(onClick = { correction = event; claim = "" }, enabled = state.enabled && !working && !v.busy) { Text("指出错误") }
-                            TextButton(onClick = { action { history = service.eventHistory(sessionId, event.eventKey) } }) { Text("修改记录") }
+                            TextButton(onClick = { action { quotes = service.sourceQuotes(sessionId, event.sourcesJson) } }) { Text(textResources.getString(R.string.single_role_original_messages)) }
+                            TextButton(onClick = { correction = event; claim = "" }, enabled = state.enabled && !working && !v.busy) { Text(textResources.getString(R.string.single_role_report_an_error)) }
+                            TextButton(onClick = { action { history = service.eventHistory(sessionId, event.eventKey) } }) { Text(textResources.getString(R.string.single_role_revision_history)) }
                         }
                     } }
                 }
-                if (v.events.size > showCount) TextButton(onClick = { showCount += 12 }) { Text("查看更多依据") }
+                if (v.events.size > showCount) TextButton(onClick = { showCount += 12 }) { Text(textResources.getString(R.string.single_role_view_more_evidence)) }
                 }
             }
             error?.let { RelationshipPaper {
                 Text(it, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = { refresh++ }) { Text("重新读取") }
+                TextButton(onClick = { refresh++ }) { Text(textResources.getString(R.string.single_role_reload)) }
             } }
             Spacer(Modifier.height(24.dp))
         }
@@ -229,80 +234,81 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
     }
     detail?.let { item -> AlertDialog(onDismissRequest = { detail = null }, title = { Text(item.first) }, text = {
         Text(item.second, modifier = Modifier.verticalScroll(rememberScrollState()))
-    }, confirmButton = { TextButton(onClick = { detail = null }) { Text("关闭") } }, dismissButton = {
+    }, confirmButton = { TextButton(onClick = { detail = null }) { Text(textResources.getString(R.string.common_close)) } }, dismissButton = {
         if (item.third != null) TextButton(onClick = {
             detail = null
             action { quotes = service.sourceQuotes(sessionId, item.third!!) }
-        }) { Text("查看原话") }
+        }) { Text(textResources.getString(R.string.single_role_view_original_messages)) }
     }) }
-    if (oldRecordsOpen) AlertDialog(onDismissRequest = { oldRecordsOpen = false }, title = { Text("历史记录") }, text = {
+    if (oldRecordsOpen) AlertDialog(onDismissRequest = { oldRecordsOpen = false }, title = { Text(textResources.getString(R.string.single_role_past_records)) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val old = view?.legacy
-            if (old == null) Text("暂无历史记录。") else {
-                Text("这里保留此前的关系与感受，更新当前关系不会删除这些内容。历史数值仅供回顾。", style = MaterialTheme.typography.bodySmall)
-                old.observedAt?.let { Text("原话时间 ${relationshipTime(it)}") }
-                Text("心情：${old.mood}\n精力：${old.energy}\n原情绪强度：${old.intensity?.let { "${(it * 100).roundToInt()}%" } ?: "未记录"}")
+            if (old == null) Text(textResources.getString(R.string.single_role_no_past_records_yet)) else {
+                Text(textResources.getString(R.string.single_role_earlier_relationships_and_feelings_are_kept_here_updating_the_cur), style = MaterialTheme.typography.bodySmall)
+                old.observedAt?.let { Text(textResources.getString(R.string.single_role_original_message_time_1_s, relationshipTime(it, textResources.getString(R.string.common_unknown)))) }
+                Text(textResources.getString(R.string.single_role_mood_1_s_energy_2_s_previous_intensity_3_s, old.mood, old.energy, old.intensity?.let { "${(it * 100).roundToInt()}%" } ?: textResources.getString(R.string.single_role_not_recorded)))
                 if (old.reason.isNotBlank()) Text(old.reason)
-                CompanionRelationshipPolicy.dimensions.forEach { (key, label) ->
-                    Text("$label：${old.descriptions[key] ?: "暂无文字描述"}\n原数值：${old.totals[key] ?: "未记录"}")
+                CompanionRelationshipPolicy.dimensions.keys.forEach { key ->
+                    val label = relationshipDimensionLabel(key)
+                    Text(textResources.getString(R.string.single_role_1_s_2_s_previous_value_3_s, label, old.descriptions[key] ?: textResources.getString(R.string.single_role_no_written_description_yet), old.totals[key] ?: textResources.getString(R.string.single_role_not_recorded)))
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { oldRecordsOpen = false }) { Text("关闭") } }, dismissButton = {
-        TextButton(onClick = { oldRecordsOpen = false; action { assessments = service.assessmentHistory(sessionId) } }) { Text("历次文字评估") }
+    }, confirmButton = { TextButton(onClick = { oldRecordsOpen = false }) { Text(textResources.getString(R.string.common_close)) } }, dismissButton = {
+        TextButton(onClick = { oldRecordsOpen = false; action { assessments = service.assessmentHistory(sessionId) } }) { Text(textResources.getString(R.string.single_role_written_assessment_history)) }
     })
-    assessments?.let { items -> AlertDialog(onDismissRequest = { assessments = null }, title = { Text("历次文字评估") }, text = {
+    assessments?.let { items -> AlertDialog(onDismissRequest = { assessments = null }, title = { Text(textResources.getString(R.string.single_role_written_assessment_history)) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (items.isEmpty()) Text("还没有新版文字评估记录。")
+            if (items.isEmpty()) Text(textResources.getString(R.string.single_role_no_new_format_written_assessments_yet))
             items.forEach { saved ->
                 val snapshot = CompanionRelationshipNarrative.read(saved.narrativeJson)
                 Text(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(saved.createdAt)), style = MaterialTheme.typography.titleSmall)
-                if (snapshot == null) Text("这份记录暂不可读取。") else {
-                    snapshot.feelings?.let { feeling -> Text("当时感受（${relationshipTime(feeling.observedAt)}）：\n心情：${feeling.mood ?: "未知"}\n情绪强度：${feeling.intensity ?: "未知"}\n精力：${feeling.energy ?: "未知"}\n${feeling.reason}") }
+                if (snapshot == null) Text(textResources.getString(R.string.single_role_this_record_cannot_be_read_right_now)) else {
+                    snapshot.feelings?.let { feeling -> Text(textResources.getString(R.string.single_role_feelings_then_1_s_mood_2_s_intensity_3_s_energy_4_s_5_s, relationshipTime(feeling.observedAt, textResources.getString(R.string.common_unknown)), feeling.mood ?: textResources.getString(R.string.common_unknown), feeling.intensity ?: textResources.getString(R.string.common_unknown), feeling.energy ?: textResources.getString(R.string.common_unknown), feeling.reason)) }
                     snapshot.relationships.forEach { (key, field) -> field?.let { Text("${CompanionRelationshipPolicy.dimensions[key]}：${it.description}\n${it.reason}") } }
                 }
             }
-            if (items.size >= 50) Text("这里显示最近50份文字评估；更早记录仍保留在导出资料中。", style = MaterialTheme.typography.bodySmall)
+            if (items.size >= 50) Text(textResources.getString(R.string.single_role_showing_the_latest_50_written_assessments_older_records_remain_in), style = MaterialTheme.typography.bodySmall)
         }
-    }, confirmButton = { TextButton(onClick = { assessments = null }) { Text("关闭") } }) }
-    if (modelPicker) AlertDialog(onDismissRequest = { modelPicker = false }, title = { Text("选择状态评估模型") },
+    }, confirmButton = { TextButton(onClick = { assessments = null }) { Text(textResources.getString(R.string.common_close)) } }) }
+    if (modelPicker) AlertDialog(onDismissRequest = { modelPicker = false }, title = { Text(textResources.getString(R.string.single_role_choose_a_state_assessment_model)) },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-            Text("关闭关系状态后不再更新，也不提供给聊天；已有记录保留。评估失败保留旧状态，不自动切换聊天模型。", style = MaterialTheme.typography.bodySmall)
-            if (models.isEmpty()) Text("请先在 API 设置添加聊天或辅助模型。")
+            Text(textResources.getString(R.string.single_role_turning_relationship_state_off_stops_updates_and_excludes_it_from), style = MaterialTheme.typography.bodySmall)
+            if (models.isEmpty()) Text(textResources.getString(R.string.single_role_add_a_chat_or_auxiliary_model_in_api_settings_first))
             models.forEach { model -> TextButton(onClick = {
                 modelPicker = false
                 view?.state?.let { state -> action { service.configure(sessionId, state.enabled, state.automatic, model.id, state.interval) } }
             }, modifier = Modifier.fillMaxWidth()) { Text("${model.name}\n${model.provider} · ${model.model}") } }
-        } }, confirmButton = { TextButton(onClick = { modelPicker = false }) { Text("关闭") } })
-    if (intervalEditor) AlertDialog(onDismissRequest = { intervalEditor = false }, title = { Text("自动更新间隔") }, text = {
+        } }, confirmButton = { TextButton(onClick = { modelPicker = false }) { Text(textResources.getString(R.string.common_close)) } })
+    if (intervalEditor) AlertDialog(onDismissRequest = { intervalEditor = false }, title = { Text(textResources.getString(R.string.single_role_automatic_update_interval)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("一轮为你发言后收到一次回复。一次评估会同时判断心情、情绪强度、精力和六项关系，聊天不会等待评估完成。", style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(intervalText, { intervalText = it }, label = { Text("1—100 轮") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            Text(textResources.getString(R.string.single_role_a_turn_is_your_message_followed_by_one_reply_each_assessment_eval), style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(intervalText, { intervalText = it }, label = { Text(textResources.getString(R.string.single_role_1_100_turns)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
     }, confirmButton = { TextButton(enabled = intervalText.toIntOrNull() in 1..100, onClick = {
         intervalEditor = false
         view?.state?.let { state -> action { service.configure(sessionId, state.enabled, state.automatic, state.modelId, intervalText.toInt()) } }
-    }) { Text("保存") } }, dismissButton = { TextButton(onClick = { intervalEditor = false }) { Text("取消") } })
-    correction?.let { event -> AlertDialog(onDismissRequest = { correction = null }, title = { Text("核对这件事") }, text = {
+    }) { Text(textResources.getString(R.string.common_save)) } }, dismissButton = { TextButton(onClick = { intervalEditor = false }) { Text(textResources.getString(R.string.common_cancel)) } })
+    correction?.let { event -> AlertDialog(onDismissRequest = { correction = null }, title = { Text(textResources.getString(R.string.single_role_check_this_event)) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Text(event.summary)
-            Text("指出哪段事实或判断有误。评估模型会核对原话，只修正这件事的影响；不会按要求直接改变感情。", style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(claim, { claim = it.take(2000) }, label = { Text("例如：那次是提前商量取消，并非失约") }, modifier = Modifier.fillMaxWidth())
+            Text(textResources.getString(R.string.single_role_describe_the_incorrect_fact_or_judgment_the_assessment_model_chec), style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(claim, { claim = it.take(2000) }, label = { Text(textResources.getString(R.string.single_role_for_example_we_agreed_to_cancel_in_advance_it_was_not_a_broken_pr)) }, modifier = Modifier.fillMaxWidth())
         }
     }, confirmButton = { TextButton(enabled = claim.isNotBlank(), onClick = {
         val reason = claim; correction = null
         action { service.start(sessionId, correctionKey = event.eventKey, claim = reason) }
-    }) { Text("请求核对") } }, dismissButton = { TextButton(onClick = { correction = null }) { Text("取消") } }) }
-    quotes?.let { rows -> AlertDialog(onDismissRequest = { quotes = null }, title = { Text("原话依据") }, text = {
+    }) { Text(textResources.getString(R.string.single_role_request_verification)) } }, dismissButton = { TextButton(onClick = { correction = null }) { Text(textResources.getString(R.string.common_cancel)) } }) }
+    quotes?.let { rows -> AlertDialog(onDismissRequest = { quotes = null }, title = { Text(textResources.getString(R.string.single_role_original_message_evidence)) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (rows.isEmpty()) Text("原话已不可读取，不能用记忆正文代替来源。")
-            rows.forEach { Text("${if (it.role == "user") "你" else "角色"} · ${it.createdAt.take(19)}\n${it.content}") }
+            if (rows.isEmpty()) Text(textResources.getString(R.string.single_role_original_messages_are_no_longer_readable_memory_text_cannot_repla))
+            rows.forEach { Text("${if (it.role == "user") textResources.getString(R.string.live_you) else textResources.getString(R.string.nav_characters)} · ${it.createdAt.take(19)}\n${it.content}") }
         }
-    }, confirmButton = { TextButton(onClick = { quotes = null }) { Text("关闭") } }) }
-    history?.let { items -> AlertDialog(onDismissRequest = { history = null }, title = { Text("这件事的修改记录") }, text = {
+    }, confirmButton = { TextButton(onClick = { quotes = null }) { Text(textResources.getString(R.string.common_close)) } }) }
+    history?.let { items -> AlertDialog(onDismissRequest = { history = null }, title = { Text(textResources.getString(R.string.single_role_revision_history_for_this_event)) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             items.forEach { Text("${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it.createdAt))}\n${it.summary}\n${it.reason}") }
         }
-    }, confirmButton = { TextButton(onClick = { history = null }) { Text("关闭") } }) }
+    }, confirmButton = { TextButton(onClick = { history = null }) { Text(textResources.getString(R.string.common_close)) } }) }
     }
 }

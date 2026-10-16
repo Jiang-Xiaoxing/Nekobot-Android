@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,6 +35,7 @@ import kotlin.math.sin
 /** 角色正在翻记忆：柔和胶囊＋缓慢翻页的书＋三个渐隐小点，颜色跟随主题。 */
 @Composable
 internal fun CompanionRecallingPill(modifier: Modifier = Modifier) {
+    val textResources = LocalResources.current
     val scheme = MaterialTheme.colorScheme
     val tint = scheme.primary
     val motion = rememberInfiniteTransition(label = "recalling")
@@ -38,12 +43,12 @@ internal fun CompanionRecallingPill(modifier: Modifier = Modifier) {
         keyframes { durationMillis = 2400; 0f at 0; 1f at 1700 using FastOutSlowInEasing; 1f at 2400 }), label = "page")
     val dots by motion.animateFloat(0f, 3f, infiniteRepeatable(tween(1500, easing = LinearEasing)), label = "dots")
     Row(modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp, bottom = 4.dp)
-        .semantics { contentDescription = "回忆一下" }.testTag("companion-recalling")) {
+        .semantics { contentDescription = textResources.getString(R.string.single_role_recalling) }.testTag("companion-recalling")) {
         Surface(shape = RoundedCornerShape(50), color = lerp(scheme.surface, tint, 0.13f)) {
             Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlippingBook(flip, tint, Modifier.size(20.dp))
-                Text("回忆一下", style = MaterialTheme.typography.bodyMedium, color = tint)
+                Text(textResources.getString(R.string.single_role_recalling), style = MaterialTheme.typography.bodyMedium, color = tint)
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                     repeat(3) { i ->
                         val phase = ((dots - i) % 3f + 3f) % 3f

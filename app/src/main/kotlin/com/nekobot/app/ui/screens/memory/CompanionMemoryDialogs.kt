@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +44,7 @@ private fun MemoryPanel(
     actions: @Composable RowScope.() -> Unit,
     content: @Composable (Modifier) -> Unit
 ) {
+    val textResources = LocalResources.current
     Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(
         dismissOnBackPress = !busy, dismissOnClickOutside = !busy,
         usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -55,7 +60,7 @@ private fun MemoryPanel(
                             Text(subtitle, style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = onDismiss, enabled = !busy) { Icon(Icons.Filled.Close, "关闭") }
+                        IconButton(onClick = onDismiss, enabled = !busy) { Icon(Icons.Filled.Close, textResources.getString(R.string.common_close)) }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     content(Modifier.weight(1f, fill = false))
@@ -75,49 +80,50 @@ internal fun CompanionMemoryEditor(
     memory: CompanionMemoryEntity?, busy: Boolean, error: String?, onDismiss: () -> Unit,
     onSave: (String, String, List<String>, Boolean, Boolean) -> Unit
 ) {
+    val textResources = LocalResources.current
     var content by rememberSaveable(memory?.id) { mutableStateOf(memory?.content.orEmpty()) }
     var tags by rememberSaveable(memory?.id) { mutableStateOf(memory?.let { MemoryTags.fromJson(it.tagsJson).joinToString("，") }.orEmpty()) }
     var category by rememberSaveable(memory?.id) { mutableStateOf(memory?.category ?: "user_profile") }
     var pinned by rememberSaveable(memory?.id) { mutableStateOf(memory?.let { CompanionCoreMemory.contains(it) } ?: false) }
     var locked by rememberSaveable(memory?.id) { mutableStateOf(memory?.locked ?: false) }
-    MemoryPanel(if (memory == null) "添加一条记忆" else "编辑这条记忆", "写下你希望角色记住的事", busy, onDismiss,
+    MemoryPanel(if (memory == null) textResources.getString(R.string.single_role_add_a_memory) else textResources.getString(R.string.single_role_edit_this_memory), textResources.getString(R.string.single_role_write_something_you_want_the_character_to_remember), busy, onDismiss,
         actions = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("取消") }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text(textResources.getString(R.string.common_cancel)) }
             Button(onClick = { onSave(content, category, tags.split(',', '，').map(String::trim).filter(String::isNotEmpty), pinned, locked) },
                 enabled = !busy && content.isNotBlank() && content.length <= 1500) {
-                Text(if (busy) "正在保存…" else "保存记忆")
+                Text(if (busy) textResources.getString(R.string.single_role_saving) else textResources.getString(R.string.single_role_save_memory))
             }
         }) { body ->
         Column(body.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            error?.let { CompanionMemoryNotice("这条记忆还没有保存", it) }
+            error?.let { CompanionMemoryNotice(textResources.getString(R.string.single_role_this_memory_has_not_been_saved_yet), it) }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(content, { content = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy,
-                    label = { Text("记忆正文") },
-                    placeholder = { Text("例如：我现在更喜欢喝无糖茉莉花茶。") }, minLines = 4, maxLines = 9,
+                    label = { Text(textResources.getString(R.string.single_role_memory_content)) },
+                    placeholder = { Text(textResources.getString(R.string.single_role_for_example_i_now_prefer_unsweetened_jasmine_tea)) }, minLines = 4, maxLines = 9,
                     shape = RoundedCornerShape(16.dp), isError = content.length > 1500,
-                    supportingText = { Text("${content.length} / 1500 字符") })
+                    supportingText = { Text(textResources.getString(R.string.single_role_1_s_1500_characters, content.length)) })
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("放在哪一类", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(textResources.getString(R.string.single_role_category), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 MemoryCategorySelector(category, { category = it }, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 Text(when (category) {
-                    "user_profile" -> "你的喜好、习惯和个人资料。"
-                    "character_profile" -> "角色在相处中表现出的特点。"
-                    "relationship" -> "你们的关系，以及关系发生的变化。"
-                    "episode" -> "实际发生过的事，包括独自经历和共同经历。"
-                    "promise" -> "答应要做的事，以及完成或取消的情况。"
-                    else -> "还没有结果、需要后续关注的事情。"
+                    "user_profile" -> textResources.getString(R.string.single_role_your_preferences_habits_and_personal_information)
+                    "character_profile" -> textResources.getString(R.string.single_role_traits_the_character_has_shown_while_spending_time_together)
+                    "relationship" -> textResources.getString(R.string.single_role_your_relationship_and_how_it_has_changed)
+                    "episode" -> textResources.getString(R.string.single_role_events_that_actually_happened_alone_or_together)
+                    "promise" -> textResources.getString(R.string.single_role_promises_including_whether_they_were_fulfilled_or_canceled)
+                    else -> textResources.getString(R.string.single_role_unresolved_matters_that_need_follow_up)
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), enabled = !busy,
-                label = { Text("标签（可选）") }, placeholder = { Text("饮料，喜好") },
-                supportingText = { Text("用逗号分开，方便以后查找。") }, shape = RoundedCornerShape(16.dp))
+                label = { Text(textResources.getString(R.string.single_role_tags_optional)) }, placeholder = { Text(textResources.getString(R.string.single_role_drinks_preferences)) },
+                supportingText = { Text(textResources.getString(R.string.single_role_separate_with_commas_to_make_searching_easier)) }, shape = RoundedCornerShape(16.dp))
             Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
                 Column {
-                    MemoryOption("设为核心记忆", "每次聊天都会带上。手动移入或移出核心后，模型不会改回；移出不删除正文。",
+                    MemoryOption(textResources.getString(R.string.single_role_set_as_core_memory), textResources.getString(R.string.single_role_included_in_every_chat_once_you_move_it_into_or_out_of_core_memor),
                         pinned, !busy) { pinned = it }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    MemoryOption("只允许我修改", "AI 不会自动改写；你仍然可以编辑或删除。", locked, !busy) { locked = it }
+                    MemoryOption(textResources.getString(R.string.single_role_only_i_can_edit), textResources.getString(R.string.single_role_ai_will_not_rewrite_this_automatically_you_can_still_edit_or_dele), locked, !busy) { locked = it }
                 }
             }
         }
@@ -138,24 +144,25 @@ private fun MemoryOption(title: String, description: String, checked: Boolean, e
 
 @Composable
 internal fun CompanionMemoryChanges(rows: List<CompanionMemoryEntity>, onDismiss: () -> Unit) {
-    MemoryPanel("修改记录", "查看这条记忆以前写过什么。打开此页不会调用模型。", onDismiss = onDismiss,
-        actions = { TextButton(onClick = onDismiss) { Text("知道了") } }) { body ->
+    val textResources = LocalResources.current
+    MemoryPanel(textResources.getString(R.string.single_role_revision_history), textResources.getString(R.string.single_role_view_earlier_versions_of_this_memory_opening_this_page_does_not_c), onDismiss = onDismiss,
+        actions = { TextButton(onClick = onDismiss) { Text(textResources.getString(R.string.character_got_it)) } }) { body ->
         LazyColumn(body.fillMaxWidth(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (rows.isEmpty()) item { Text("还没有可查看的修改记录。") }
+            if (rows.isEmpty()) item { Text(textResources.getString(R.string.single_role_no_revision_history_available_yet)) }
             items(rows, key = { it.id }) { row ->
                 Surface(shape = RoundedCornerShape(18.dp), color = if (row.current)
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(when {
-                            row.current -> "当前内容"
-                            row.status == "conflict" -> "待核对的内容"
-                            row.status == "locked_conflict" -> "等待你修改的内容"
-                            else -> "以前的内容"
+                            row.current -> textResources.getString(R.string.single_role_current_content)
+                            row.status == "conflict" -> textResources.getString(R.string.single_role_content_awaiting_verification)
+                            row.status == "locked_conflict" -> textResources.getString(R.string.single_role_content_awaiting_your_edits)
+                            else -> textResources.getString(R.string.single_role_earlier_content)
                         }, fontWeight = FontWeight.SemiBold,
                             style = MaterialTheme.typography.labelLarge, color = memoryAccent())
-                        SelectionContainer { Text(row.content.ifBlank { "这条内容已删除" }, style = MaterialTheme.typography.bodyLarge) }
-                        Text("${memorySavedTime(row.updatedAt)} · ${if (row.manual) "手动保存" else "自动整理"}",
+                        SelectionContainer { Text(row.content.ifBlank { textResources.getString(R.string.single_role_this_content_was_deleted) }, style = MaterialTheme.typography.bodyLarge) }
+                        Text("${memorySavedTime(row.updatedAt, textResources.getString(R.string.single_role_save_time_not_recorded))} · ${if (row.manual) textResources.getString(R.string.single_role_saved_manually) else textResources.getString(R.string.single_role_organized_automatically)}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -164,29 +171,30 @@ internal fun CompanionMemoryChanges(rows: List<CompanionMemoryEntity>, onDismiss
     }
 }
 
-private fun memorySavedTime(value: String): String = runCatching {
+private fun memorySavedTime(value: String, unrecorded: String): String = runCatching {
     Instant.parse(value).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-}.getOrDefault(value.ifBlank { "保存时间未记录" })
+}.getOrDefault(value.ifBlank { unrecorded })
 
 @Composable
 internal fun CompanionMemorySources(
     rows: List<CompanionSourceEntity>, memory: CompanionMemoryEntity?, ownerName: String,
     onDismiss: () -> Unit, onLocate: (String) -> Unit
 ) {
-    MemoryPanel("这条记忆的原话", if (rows.isEmpty()) "暂无可定位的原话。"
-        else "这条记忆参考了 ${rows.size} 条原话，可分别定位查看前后聊天。", onDismiss = onDismiss,
-        actions = { TextButton(onClick = onDismiss) { Text("关闭") } }) { body ->
+    val textResources = LocalResources.current
+    MemoryPanel(textResources.getString(R.string.single_role_original_messages_for_this_memory), if (rows.isEmpty()) textResources.getString(R.string.single_role_no_original_messages_to_locate)
+        else textResources.getString(R.string.single_role_this_memory_refers_to_1_s_original_messages_open_each_to_view_the, rows.size), onDismiss = onDismiss,
+        actions = { TextButton(onClick = onDismiss) { Text(textResources.getString(R.string.common_close)) } }) { body ->
         LazyColumn(body.fillMaxWidth(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             memory?.let { item("memory") {
-                Text("记忆内容", style = MaterialTheme.typography.labelLarge, color = memoryAccent())
+                Text(textResources.getString(R.string.global_memory_editor_title), style = MaterialTheme.typography.labelLarge, color = memoryAccent())
                 Text(it.content, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
             if (rows.isEmpty()) item("empty") {
-                CompanionMemoryIntro("还没有对应的原话", when {
-                    memory?.manual == true -> "这条记忆由你手动填写，没有附带聊天来源。"
-                    memory?.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED -> "这条记忆来自旧资料，原话来源还没有核验。"
-                    else -> "没有找到可核对的聊天来源，请先检查记忆是否准确。"
+                CompanionMemoryIntro(textResources.getString(R.string.single_role_no_original_messages_linked_yet), when {
+                    memory?.manual == true -> textResources.getString(R.string.single_role_you_entered_this_memory_manually_it_has_no_linked_chat_sources)
+                    memory?.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED -> textResources.getString(R.string.single_role_this_memory_came_from_older_data_its_original_sources_have_not_be)
+                    else -> textResources.getString(R.string.single_role_no_verifiable_chat_source_found_check_that_the_memory_is_accurate)
                 })
             }
             items(rows, key = { it.messageId }) { source ->
@@ -195,15 +203,15 @@ internal fun CompanionMemorySources(
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(if (isUser) "你" else ownerName.ifBlank { "角色" },
+                        Text(if (isUser) textResources.getString(R.string.live_you) else ownerName.ifBlank { textResources.getString(R.string.nav_characters) },
                             style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = memoryAccent())
                         SelectionContainer { Text(source.quote, style = MaterialTheme.typography.bodyLarge) }
-                        source.spokenDate?.takeIf(String::isNotBlank)?.let { Text("发言日期：$it",
+                        source.spokenDate?.takeIf(String::isNotBlank)?.let { Text(textResources.getString(R.string.single_role_message_date_1_s, it),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         TextButton(onClick = { onLocate(source.messageId) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("定位到这条消息")
+                            Text(textResources.getString(R.string.single_role_go_to_this_message))
                         }
                     }
                 }
@@ -214,22 +222,23 @@ internal fun CompanionMemorySources(
 
 @Composable
 internal fun CompanionMemoryDelete(memory: CompanionMemoryEntity, busy: Boolean, error: String?, onDismiss: () -> Unit, onDelete: () -> Unit) {
-    MemoryPanel("删除这条记忆？", "聊天原话仍然保留。", busy, onDismiss,
+    val textResources = LocalResources.current
+    MemoryPanel(textResources.getString(R.string.single_role_delete_this_memory), textResources.getString(R.string.single_role_original_chat_messages_will_be_kept), busy, onDismiss,
         actions = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("保留记忆") }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text(textResources.getString(R.string.single_role_keep_memory)) }
             Button(onClick = onDelete, enabled = !busy, colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)) {
                 Icon(Icons.Filled.DeleteOutline, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (busy) "正在删除…" else "删除记忆")
+                Text(if (busy) textResources.getString(R.string.single_role_deleting) else textResources.getString(R.string.memory_delete_memory_title))
             }
         }) { body ->
         Column(body.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            error?.let { CompanionMemoryNotice("还没有删除成功", it) }
+            error?.let { CompanionMemoryNotice(textResources.getString(R.string.single_role_not_deleted_yet), it) }
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                 Text(memory.content, Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.bodyMedium)
             }
-            Text("这条记忆及其修改记录会被清除。已整理进度不变；以后新的明确表达仍可能形成新的记忆。",
+            Text(textResources.getString(R.string.single_role_this_memory_and_its_revisions_will_be_removed_organization_progre),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

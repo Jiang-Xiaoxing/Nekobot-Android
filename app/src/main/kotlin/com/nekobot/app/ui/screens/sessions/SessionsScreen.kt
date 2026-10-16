@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.animation.animateColorAsState
@@ -1656,6 +1658,7 @@ internal fun SessionItem(
     onToggleArchived: () -> Unit = {},
     onOpenStoryGraph: () -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     var menuExpanded by remember(row.key) { mutableStateOf(false) }
     // 提取本地化字符串
     val pinnedBadge = stringResource(R.string.sessions_pinned_badge)
@@ -1723,7 +1726,7 @@ internal fun SessionItem(
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
                         } else if (row.modeLabel == SessionModeLabel.COMPANION) {
                             val name = row.listTitle
-                            Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
+                            Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: textResources.getString(R.string.single_role_c),
                                 style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = row.modeLabel.color())
                         } else {
                             val fallbackPainter = if (row.isAgentSession && !row.inheritCharacter) painterResource(R.drawable.ic_agent_neko)

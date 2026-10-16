@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.characters
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import android.content.ContentValues
@@ -113,7 +115,7 @@ class CharacterViewModelView(characterId: String) : com.nekobot.app.ui.BaseViewM
         if (!modeResolved.value) { onError(); return }
         if (companionSessionId.value != null) {
             launchResult(
-                block = { Resource.Success(requireNotNull(ServiceContainer.localRepository.companionSessionForCharacter(requireNotNull(c.id))) { "角色归属已变化，请重新打开" }) },
+                block = { Resource.Success(requireNotNull(ServiceContainer.localRepository.companionSessionForCharacter(requireNotNull(c.id))) { string(R.string.single_role_character_ownership_changed_reopen_this_page) }) },
                 onSuccess = onSuccess,
                 onError = { showError(it); onError() }
             )
@@ -203,6 +205,7 @@ fun CharacterViewScreen(
     onEdit: (String) -> Unit,
     onOpenChat: (String) -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     val vm: CharacterViewModelView = viewModel(
         key = "char_view_$characterId",
         factory = viewModelFactory { initializer { CharacterViewModelView(characterId) } }
@@ -326,7 +329,7 @@ fun CharacterViewScreen(
                     HeaderCard(c, companionSessionId != null)
                     if (appMode == AppMode.LOCAL) {
                         OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("聊天模型")
+                            Text(textResources.getString(R.string.single_role_chat_models))
                         }
                     }
                     // 用此角色新建会话
@@ -349,14 +352,14 @@ fun CharacterViewScreen(
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                         }
-                        Text(if (companionSessionId != null) "继续聊天" else stringResource(R.string.character_new_session_button))
+                        Text(if (companionSessionId != null) textResources.getString(R.string.single_role_continue_chatting) else stringResource(R.string.character_new_session_button))
                     }
                     if (companionSessionId != null) Surface(onClick = { relationshipOpen = true }, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("关系状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text("查看这段对话的关系与上次感受", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(textResources.getString(R.string.portability_detail_local_relationship_states), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(textResources.getString(R.string.single_role_view_this_conversation_s_relationship_and_last_recorded_feelings), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                         }
@@ -442,6 +445,7 @@ fun CharacterViewScreen(
 /** 顶部头像/立绘 + 名称 + 标签卡片 */
 @Composable
 private fun HeaderCard(c: CharacterPreset, companion: Boolean = false) {
+    val textResources = LocalResources.current
     var fullscreenUrl by remember { mutableStateOf<String?>(null) }
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -475,10 +479,10 @@ private fun HeaderCard(c: CharacterPreset, companion: Boolean = false) {
                 if (companion) {
                     Spacer(Modifier.height(6.dp))
                     Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)) {
-                        Text("单会话角色", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                        Text(textResources.getString(R.string.sessions_filter_agent_characters), Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("一个角色固定一个聊天窗口。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(textResources.getString(R.string.single_role_one_chat_window_for_each_character), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (!c.description.isNullOrBlank()) {
                     Spacer(Modifier.height(4.dp))

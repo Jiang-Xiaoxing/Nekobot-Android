@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,13 +22,14 @@ import com.nekobot.app.ui.components.resolveAvatarUrl
 
 @Composable
 internal fun MemoryOwnerAvatar(name: String, avatar: String?, size: Dp = 52.dp) {
+    val textResources = LocalResources.current
     val color = memoryCategoryColor(if (name.hashCode() and 1 == 0) "episode" else "promise")
     val imageUrl = resolveAvatarUrl(avatar)
     Surface(shape = RoundedCornerShape(14.dp), color = color.copy(alpha = 0.12f)) {
         Box(Modifier.size(size), contentAlignment = Alignment.Center) {
             if (imageUrl != null) AsyncImage(imageUrl, null,
                 Modifier.size(size).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
-            else Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: "角",
+            else Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: textResources.getString(R.string.single_role_c),
                 style = MaterialTheme.typography.titleLarge, color = color)
         }
     }

@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,15 +27,16 @@ internal fun CustomReasoningFields(
     onChange: (CustomReasoningParam) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val textResources = LocalResources.current
     var path by remember(initial) { mutableStateOf(initial.path) }
     var value by remember(initial) { mutableStateOf(initial.value) }
     val error = CustomReasoningParam(path, value).validationError()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedTextField(path, { path = it; onChange(CustomReasoningParam(it, value)) }, Modifier.fillMaxWidth(),
-            enabled = enabled, singleLine = true, label = { Text("参数名") }, placeholder = { Text("reasoning_effort") })
+            enabled = enabled, singleLine = true, label = { Text(textResources.getString(R.string.single_role_parameter_name)) }, placeholder = { Text("reasoning_effort") })
         OutlinedTextField(value, { value = it; onChange(CustomReasoningParam(path, it)) }, Modifier.fillMaxWidth(),
-            enabled = enabled, singleLine = true, label = { Text("参数值") }, placeholder = { Text("high") })
-        Text("发送时用这组替换自动换算的思考参数", style = MaterialTheme.typography.bodySmall,
+            enabled = enabled, singleLine = true, label = { Text(textResources.getString(R.string.single_role_parameter_value)) }, placeholder = { Text("high") })
+        Text(textResources.getString(R.string.single_role_replace_automatically_derived_thinking_parameters_with_these_valu), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }

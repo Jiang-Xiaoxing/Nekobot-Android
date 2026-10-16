@@ -37,7 +37,7 @@ class CompanionFeedbackUiTest {
         assertEquals(1,wrote); assertEquals(1,copied)
         compose.onNodeWithContentDescription("关闭反馈").performScrollTo().performClick()
         compose.onNodeWithText(contact).assertDoesNotExist()
-        val draft = companionFeedbackIntent("feedback@example.invalid")
+        val draft = companionFeedbackIntent("feedback@example.invalid", androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.resources)
         assertEquals(Intent.ACTION_SENDTO,draft.action)
         assertEquals("mailto",draft.data?.scheme)
         assertTrue(draft.dataString.orEmpty().startsWith("mailto:feedback@example.invalid?"))

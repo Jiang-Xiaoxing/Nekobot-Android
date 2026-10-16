@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -26,9 +28,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.nekobot.app.R
 
-internal fun companionFeedbackIntent(email: String): Intent = Intent(Intent.ACTION_SENDTO,
-    Uri.parse("mailto:" + Uri.encode(email, "@") + "?subject=" + Uri.encode("单会话角色测试反馈") +
-        "&body=" + Uri.encode("问题或建议：\n\n操作步骤：\n\n预期与实际情况：\n\n应用版本、手机型号：\n\n")))
+internal fun companionFeedbackIntent(email: String, textResources: android.content.res.Resources): Intent = Intent(Intent.ACTION_SENDTO,
+    Uri.parse("mailto:" + Uri.encode(email, "@") + "?subject=" + Uri.encode(textResources.getString(R.string.single_role_single_session_character_test_feedback)) +
+        "&body=" + Uri.encode(textResources.getString(R.string.single_role_issue_or_suggestion_steps_expected_and_actual_behavior_app_versio))))
 
 /** 邮箱和头像由本地构建提供；入口不弹窗打扰，点击写邮件只交给用户的邮件应用。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +38,7 @@ internal fun companionFeedbackIntent(email: String): Intent = Intent(Intent.ACTI
     email: String = stringResource(R.string.companion_feedback_email),
     avatar: Any? = null, onWrite: (() -> Unit)? = null, onCopy: (() -> Unit)? = null
 ) {
+    val textResources = LocalResources.current
     if (email.isBlank()) return
     val context = LocalContext.current
     var open by rememberSaveable { mutableStateOf(false) }
@@ -43,7 +46,7 @@ internal fun companionFeedbackIntent(email: String): Intent = Intent(Intent.ACTI
         TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp),
             colors = ButtonDefaults.textButtonColors(contentColor = lerp(MaterialTheme.colorScheme.onSurfaceVariant,
                 MaterialTheme.colorScheme.primary, 0.25f))) {
-            Text("测试反馈与建议", style = MaterialTheme.typography.bodySmall)
+            Text(textResources.getString(R.string.single_role_test_feedback_and_suggestions), style = MaterialTheme.typography.bodySmall)
         }
     }
     if (open) ModalBottomSheet(onDismissRequest = { open = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -51,32 +54,32 @@ internal fun companionFeedbackIntent(email: String): Intent = Intent(Intent.ACTI
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
             .padding(horizontal = 20.dp).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("单会话角色 · 测试反馈", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                IconButton(onClick = { open = false }) { Icon(Icons.Outlined.Close, "关闭反馈") }
+                Text(textResources.getString(R.string.single_role_single_session_character_test_feedback_62), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                IconButton(onClick = { open = false }) { Icon(Icons.Outlined.Close, textResources.getString(R.string.single_role_close_feedback)) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AsyncImage(avatar ?: R.drawable.companion_feedback_portrait, "维护者头像",
+                AsyncImage(avatar ?: R.drawable.companion_feedback_portrait, textResources.getString(R.string.single_role_maintainer_s_portrait),
                     Modifier.size(48.dp).clip(CircleShape), contentScale = ContentScale.Crop)
                 Text(email, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             }
-            Text("这部分功能还在测试中，开发时间比较紧，有些细节可能还不够完善。如果遇到 Bug 或使用不顺的地方，先向你说声抱歉。",
+            Text(textResources.getString(R.string.single_role_these_features_are_still_being_tested_development_time_is_limited),
                 style = MaterialTheme.typography.bodyMedium)
-            Text("欢迎反馈问题、建议或想法。看到邮件后，我会尽量及时回复和跟进。", style = MaterialTheme.typography.bodyMedium)
-            Text("这部分代码主要由我开发，直接联系我更方便定位问题，也能减少原作者重新了解代码的负担。感谢你的理解与帮助！",
+            Text(textResources.getString(R.string.single_role_feedback_suggestions_and_ideas_are_welcome_i_ll_try_to_reply_and), style = MaterialTheme.typography.bodyMedium)
+            Text(textResources.getString(R.string.single_role_i_developed_most_of_this_feature_contacting_me_directly_helps_loc),
                 style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { if (onWrite != null) onWrite() else try {
-                    context.startActivity(companionFeedbackIntent(email))
+                    context.startActivity(companionFeedbackIntent(email, textResources))
                 } catch (_: android.content.ActivityNotFoundException) {
-                    Toast.makeText(context, "未找到邮件应用，可以复制邮箱后手动发送。", Toast.LENGTH_LONG).show()
-                } }, Modifier.weight(1f).heightIn(min = 48.dp)) { Text("写邮件") }
+                    Toast.makeText(context, textResources.getString(R.string.single_role_no_email_app_found_copy_the_address_and_send_it_manually), Toast.LENGTH_LONG).show()
+                } }, Modifier.weight(1f).heightIn(min = 48.dp)) { Text(textResources.getString(R.string.single_role_write_email)) }
                 FilledTonalButton(onClick = { if (onCopy != null) onCopy() else {
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText("反馈邮箱", email))
-                    Toast.makeText(context, "邮箱已复制", Toast.LENGTH_SHORT).show()
+                        .setPrimaryClip(ClipData.newPlainText(textResources.getString(R.string.single_role_feedback_email), email))
+                    Toast.makeText(context, textResources.getString(R.string.single_role_email_address_copied), Toast.LENGTH_SHORT).show()
                 } }, Modifier.weight(1f).heightIn(min = 48.dp), colors = ButtonDefaults.filledTonalButtonColors(
                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    contentColor = MaterialTheme.colorScheme.primary)) { Text("复制邮箱") }
+                    contentColor = MaterialTheme.colorScheme.primary)) { Text(textResources.getString(R.string.single_role_copy_email_address)) }
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +89,7 @@ fun ContextAnalysisScreen(
     sessionId: String,
     onBack: () -> Unit
 ) {
+    val textResources = LocalResources.current
     var state by remember(sessionId) { mutableStateOf(ContextAnalysisUiState()) }
     var refreshKey by remember(sessionId) { mutableStateOf(0) }
     var showSummaryDialog by remember(sessionId) { mutableStateOf(false) }
@@ -159,7 +162,7 @@ fun ContextAnalysisScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             if (companionUi) Column(Modifier.statusBarsPadding()) {
-                CompanionReadingHeader("聊天用量", onBack) {
+                CompanionReadingHeader(textResources.getString(R.string.single_role_chat_usage), onBack) {
                 IconButton(onClick = { refreshKey += 1 }) { Icon(Icons.Filled.Refresh, stringResource(R.string.common_retry), tint = MaterialTheme.colorScheme.primary) }
                 }
             } else {
@@ -233,11 +236,11 @@ fun ContextAnalysisScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         item { ContextCapacityCard(data.usedTokens, data.maxTokens,
-                            if (data.companion) "上次实际发送 · 分类估算" else null) }
+                            if (data.companion) textResources.getString(R.string.single_role_last_actual_request_category_estimates) else null) }
                         if (data.companion) item {
-                            Text(if (data.sentAt == null) "还没有新版请求记录。完成一次聊天后，这里会显示实际发送内容的分类估算。"
-                                else "请求时间：${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(data.sentAt))}\n" +
-                                    (data.reportedInput?.let { "服务商返回输入用量：$it Token" } ?: "服务商未返回本次输入用量"),
+                            Text(if (data.sentAt == null) textResources.getString(R.string.single_role_no_new_format_request_records_yet_after_a_chat_completes_this_sho)
+                                else textResources.getString(R.string.single_role_request_time_1_s_146, java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(data.sentAt))) +
+                                    (data.reportedInput?.let { textResources.getString(R.string.single_role_provider_reported_input_1_s_tokens, it) } ?: textResources.getString(R.string.single_role_provider_did_not_report_input_usage_for_this_request)),
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         item { ContextCacheHitRateCard(data.cacheStats) }
@@ -250,7 +253,7 @@ fun ContextAnalysisScreen(
                                 )
                                 Spacer(Modifier.height(3.dp))
                                 Text(
-                                    if (data.companion) "按上次完成的模型请求分类估算；包含该请求实际带入的资料。图片与服务商分词可能产生额外差异，不代表下一次请求。"
+                                    if (data.companion) textResources.getString(R.string.single_role_estimated_by_category_for_the_last_completed_model_request_includ)
                                     else stringResource(R.string.chat_context_analysis_basis),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

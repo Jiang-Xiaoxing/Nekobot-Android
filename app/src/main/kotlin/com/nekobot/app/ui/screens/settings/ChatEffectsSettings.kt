@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.settings
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -20,6 +22,7 @@ import com.nekobot.app.ui.components.GlassCard
 
 @Composable
 internal fun ChatEffectsSettings() {
+    val textResources = LocalResources.current
     val prefs = ServiceContainer.prefs
     var thinking by remember { mutableStateOf(prefs.dynamicThinking) }
     var messages by remember { mutableStateOf(prefs.dynamicMessages) }
@@ -27,7 +30,7 @@ internal fun ChatEffectsSettings() {
     GlassCard(Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.style_chat_effects), style = MaterialTheme.typography.titleMedium)
         AppearanceSettingRow(title = stringResource(R.string.style_reasoning_style),
-            subtitle = if (thinking) "生成时展开，结束后收起" else "保留原来的思考展示",
+            subtitle = if (thinking) textResources.getString(R.string.single_role_expand_during_generation_collapse_when_done) else textResources.getString(R.string.single_role_keep_the_original_thinking_display),
             onClick = { choosing = true }) {
             Text(stringResource(if (thinking) R.string.style_dynamic_thinking else R.string.style_original_thinking),
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -39,13 +42,13 @@ internal fun ChatEffectsSettings() {
             .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.style_dynamic_messages), style = MaterialTheme.typography.bodyLarge)
-                Text("新气泡轻轻弹出", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(textResources.getString(R.string.single_role_new_bubbles_pop_in_gently), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))
             Switch(checked = messages, onCheckedChange = null)
         }
     }
-    if (choosing) AlertDialog(onDismissRequest = { choosing = false }, title = { Text("思考样式") }, text = {
+    if (choosing) AlertDialog(onDismissRequest = { choosing = false }, title = { Text(textResources.getString(R.string.style_reasoning_style)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(false to R.string.style_original_thinking, true to R.string.style_dynamic_thinking).forEach { (dynamic, label) ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
@@ -64,7 +67,7 @@ internal fun ChatEffectsSettings() {
             Text(stringResource(R.string.style_effects_scope_hint), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-    }, confirmButton = { TextButton(onClick = { choosing = false }) { Text("关闭") } })
+    }, confirmButton = { TextButton(onClick = { choosing = false }) { Text(textResources.getString(R.string.common_close)) } })
 }
 
 @Composable

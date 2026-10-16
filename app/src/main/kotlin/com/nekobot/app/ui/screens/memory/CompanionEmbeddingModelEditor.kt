@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import android.widget.Toast
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -14,6 +18,7 @@ import kotlinx.coroutines.launch
 
 /** 复用作者模型编辑器，只固定用途；保存本身不调用向量、不改变全局激活模型。 */
 @Composable internal fun CompanionEmbeddingModelEditor(repo: LocalRepository, onDismiss: () -> Unit, onAdded: (String) -> Unit) {
+    val textResources = LocalResources.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var keys by remember { mutableStateOf(emptyList<ApiKey>()) }
@@ -27,10 +32,10 @@ import kotlinx.coroutines.launch
         busy = true
         scope.launch {
             try {
-                check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开" }
+                check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_this_page) }
                 block()
             } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { Toast.makeText(context, "操作未完成，请检查模型配置后重试。", Toast.LENGTH_LONG).show() }
+            catch (_: Exception) { Toast.makeText(context, textResources.getString(R.string.single_role_action_incomplete_check_model_settings_and_try_again), Toast.LENGTH_LONG).show() }
             finally { busy = false }
         }
     }

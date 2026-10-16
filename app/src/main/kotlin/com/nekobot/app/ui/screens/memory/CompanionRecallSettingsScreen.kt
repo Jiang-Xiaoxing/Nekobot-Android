@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +38,7 @@ internal fun CompanionRecallSettingsScreen(
     embedding: CompanionEmbeddingSettings, onAddModel: () -> Unit, addedModelId: String? = null,
     initialConsolidation: CompanionConsolidationSettings = CompanionConsolidationSettings()
 ) {
+    val textResources = LocalResources.current
     var rounds by rememberSaveable(sessionId) { mutableIntStateOf(initial.rounds) }
     var tokens by rememberSaveable(sessionId) { mutableIntStateOf(initial.tokens) }
     var perCall by rememberSaveable(sessionId) { mutableIntStateOf(initial.effectivePerCall) }
@@ -53,73 +58,73 @@ internal fun CompanionRecallSettingsScreen(
     val summaryVectorState = summaryVectorSwitchState(summaryVector, summaryVectorReady)
     LaunchedEffect(addedModelId) { if (addedModelId != null) { embeddingId = addedModelId; chooseFirst = false } }
     BackHandler { if (!busy) onBack() }
-    Scaffold(topBar = { TopAppBar(title = { Text("记忆设置") }, navigationIcon = {
-        IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+    Scaffold(topBar = { TopAppBar(title = { Text(textResources.getString(R.string.single_role_memory_settings)) }, navigationIcon = {
+        IconButton(onClick = onBack, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back)) }
     }) }, bottomBar = {
         Surface {
             Button(onClick = { onSave(rounds, tokens, perCall.coerceAtMost(tokens), vectorEnabled, embeddingId,
                 summaryVectorState.settings(recentLimit, triggerLimit, existingLimit)) },
                 enabled = !busy && (!vectorEnabled || chosen != null), shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(20.dp).heightIn(min = 52.dp)) {
-                Text(if (busy) "正在保存…" else "保存设置")
+                Text(if (busy) textResources.getString(R.string.single_role_saving) else textResources.getString(R.string.system_save_settings))
             }
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("检索设置 · 所有单会话角色通用", style = MaterialTheme.typography.titleSmall)
+            Text(textResources.getString(R.string.single_role_retrieval_settings_all_single_session_characters), style = MaterialTheme.typography.titleSmall)
             RetrievalCard {
-                RetrievalHeading(Icons.AutoMirrored.Outlined.MenuBook, "关键词检索", "按文字和词语在本地查找") {
-                    Text("始终可用", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                RetrievalHeading(Icons.AutoMirrored.Outlined.MenuBook, textResources.getString(R.string.single_role_keyword_search), textResources.getString(R.string.single_role_search_locally_by_words_and_text)) {
+                    Text(textResources.getString(R.string.single_role_always_available), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
             }
             RetrievalCard {
-                RetrievalHeading(Icons.Outlined.Search, "向量检索", "按相近意思找记忆，换种说法也能查") {
+                RetrievalHeading(Icons.Outlined.Search, textResources.getString(R.string.single_role_vector_search), textResources.getString(R.string.single_role_find_memories_by_meaning_even_with_different_wording)) {
                     Switch(vectorEnabled, onCheckedChange = { requested ->
                         if (requested && chosen == null) { chooseFirst = true; choosingModel = true }
                         else { vectorEnabled = requested; chooseFirst = false }
                     }, enabled = !busy, modifier = Modifier.testTag("companion-vector-switch"))
                 }
-                Text(if (vectorEnabled) "当前使用关键词＋向量" else "当前仅使用关键词",
+                Text(if (vectorEnabled) textResources.getString(R.string.single_role_using_keywords_vectors) else textResources.getString(R.string.single_role_using_keywords_only),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                if (chooseFirst) Text("请先选择模型，再主动开启向量检索。", style = MaterialTheme.typography.bodySmall)
+                if (chooseFirst) Text(textResources.getString(R.string.single_role_choose_a_model_first_then_enable_vector_search_yourself), style = MaterialTheme.typography.bodySmall)
             }
             RetrievalCard {
-                RetrievalHeading(Icons.Outlined.Hub, "向量模型", when {
+                RetrievalHeading(Icons.Outlined.Hub, textResources.getString(R.string.single_role_embedding_model), when {
                     chosen != null -> embeddingModelSubtitle(chosen.name, chosen.model)
-                    !embeddingId.isNullOrBlank() -> "原来选择的模型已不可用"
-                    else -> "尚未选择"
+                    !embeddingId.isNullOrBlank() -> textResources.getString(R.string.single_role_previously_selected_model_is_unavailable)
+                    else -> textResources.getString(R.string.single_role_not_selected)
                 }) {}
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { choosingModel = true }, enabled = !busy, modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp), shape = RoundedCornerShape(12.dp)) { Text("选择已有模型") }
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp), shape = RoundedCornerShape(12.dp)) { Text(textResources.getString(R.string.single_role_choose_an_existing_model)) }
                     OutlinedButton(onClick = onAddModel, enabled = !busy, modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp), shape = RoundedCornerShape(12.dp)) { Text("添加向量模型") }
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp), shape = RoundedCornerShape(12.dp)) { Text(textResources.getString(R.string.single_role_add_embedding_model)) }
                 }
-                Text("向量调用按所选服务商计费。", style = MaterialTheme.typography.bodySmall,
+                Text(textResources.getString(R.string.single_role_embedding_calls_are_billed_by_the_selected_provider), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (vectorEnabled || !embeddingId.isNullOrBlank() && chosen == null) Text("模型不可用或索引未就绪时，暂用关键词。",
+                if (vectorEnabled || !embeddingId.isNullOrBlank() && chosen == null) Text(textResources.getString(R.string.single_role_uses_keywords_while_the_model_is_unavailable_or_the_index_is_not),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("共用模型，记忆仍按角色分开。", style = MaterialTheme.typography.bodySmall,
+                Text(textResources.getString(R.string.single_role_the_model_is_shared_memories_remain_separate_for_each_character), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("回查额度 · ${ownerName.ifBlank { "当前角色" }}", style = MaterialTheme.typography.titleSmall)
+                Text(textResources.getString(R.string.single_role_recall_quota_1_s, ownerName.ifBlank { textResources.getString(R.string.single_role_current_character) }), style = MaterialTheme.typography.titleSmall)
                 Box {
                     IconButton(onClick = { quotaInfo = true }, modifier = Modifier.size(32.dp).testTag("recall-quota-info")) {
-                        Icon(Icons.Outlined.Info, "回查额度说明", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Outlined.Info, textResources.getString(R.string.single_role_about_recall_quotas), Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (quotaInfo) Popup(onDismissRequest = { quotaInfo = false }, offset = IntOffset(0, 96),
                         properties = PopupProperties(focusable = true)) {
                         Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 3.dp, shadowElevation = 6.dp,
                             color = MaterialTheme.colorScheme.surface, modifier = Modifier.widthIn(max = 280.dp).testTag("recall-quota-popover")) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                recallQuotaExplanation(rounds, tokens, perCall).forEach {
+                                recallQuotaExplanation(rounds, tokens, perCall, textResources::getString).forEach {
                                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
@@ -129,61 +134,61 @@ internal fun CompanionRecallSettingsScreen(
             }
             Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
                 Column {
-                    LimitRow("最多回查", "$rounds 轮", !busy) { draftLimit = rounds.toString(); editingLimit = "rounds" }
+                    LimitRow(textResources.getString(R.string.single_role_maximum_recall_rounds), textResources.getString(R.string.single_role_1_s_rounds, rounds), !busy) { draftLimit = rounds.toString(); editingLimit = "rounds" }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    LimitRow("资料上限", "$tokens Token", !busy) { draftLimit = tokens.toString(); editingLimit = "tokens" }
+                    LimitRow(textResources.getString(R.string.single_role_total_material_limit), "$tokens Token", !busy) { draftLimit = tokens.toString(); editingLimit = "tokens" }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    LimitRow("单次上限", "${perCall.coerceAtMost(tokens)} Token", !busy) { draftLimit = perCall.coerceAtMost(tokens).toString(); editingLimit = "perCall" }
+                    LimitRow(textResources.getString(R.string.single_role_per_read_limit), "${perCall.coerceAtMost(tokens)} Token", !busy) { draftLimit = perCall.coerceAtMost(tokens).toString(); editingLimit = "perCall" }
                 }
             }
-            Text("额度仅对当前角色生效。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(textResources.getString(R.string.single_role_quotas_only_apply_to_this_character), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             // 显示和保存用户偏好；向量是否就绪只影响可操作性，运行时仍可回退关键词。
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("记忆整理", style = MaterialTheme.typography.titleSmall)
-                InfoPopoverButton("记忆整理说明", "consolidation-info", listOf(
-                    "整理：把较早的聊天归纳成记忆", "近期原话只给模型参考，不会被整理", "整理在后台进行，不影响聊天"))
+                Text(textResources.getString(R.string.single_role_memory_organization), style = MaterialTheme.typography.titleSmall)
+                InfoPopoverButton(textResources.getString(R.string.single_role_about_memory_organization), "consolidation-info", listOf(
+                    textResources.getString(R.string.single_role_organization_summarize_older_chats_into_memories), textResources.getString(R.string.single_role_recent_messages_are_reference_only_and_are_not_organized_yet), textResources.getString(R.string.single_role_organization_runs_in_the_background_without_interrupting_chat)))
             }
             Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
                 Column {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("语义对照", style = MaterialTheme.typography.bodyMedium)
-                        InfoPopoverButton("向量用于总结说明", "summary-vector-info", listOf(
-                            "默认已经用关键词找；打开后再按意思找，换种说法也能认出是同一件事。"))
+                        Text(textResources.getString(R.string.single_role_semantic_matching), style = MaterialTheme.typography.bodyMedium)
+                        InfoPopoverButton(textResources.getString(R.string.single_role_about_vectors_in_summarization), "summary-vector-info", listOf(
+                            textResources.getString(R.string.single_role_keywords_are_already_used_by_default_enable_this_to_also_match_by)))
                         Spacer(Modifier.weight(1f))
                         Switch(summaryVectorState.checked, onCheckedChange = { summaryVector = it },
                             enabled = !busy && summaryVectorState.enabled, modifier = Modifier.testTag("summary-vector-switch"))
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    LimitRow("保留近期原话", "$recentLimit Token", !busy) { draftLimit = recentLimit.toString(); editingLimit = "recent" }
+                    LimitRow(textResources.getString(R.string.single_role_keep_recent_original_messages), "$recentLimit Token", !busy) { draftLimit = recentLimit.toString(); editingLimit = "recent" }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    LimitRow("攒够多少开始整理", "$triggerLimit Token", !busy) { draftLimit = triggerLimit.toString(); editingLimit = "trigger" }
+                    LimitRow(textResources.getString(R.string.single_role_organization_threshold), "$triggerLimit Token", !busy) { draftLimit = triggerLimit.toString(); editingLimit = "trigger" }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    LimitRow("参考旧记忆上限", "$existingLimit Token", !busy) { draftLimit = existingLimit.toString(); editingLimit = "existing" }
+                    LimitRow(textResources.getString(R.string.single_role_previous_memory_reference_limit), "$existingLimit Token", !busy) { draftLimit = existingLimit.toString(); editingLimit = "existing" }
                 }
             }
-            Text("整理在后台进行，不影响聊天。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            error?.let { CompanionMemoryNotice("设置尚未保存", it) }
+            Text(textResources.getString(R.string.single_role_organization_runs_in_the_background_without_interrupting_chat_324), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            error?.let { CompanionMemoryNotice(textResources.getString(R.string.single_role_settings_not_saved_yet), it) }
         }
     }
     if (choosingModel) ModalBottomSheet(onDismissRequest = { choosingModel = false }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState())
             .navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("选择已有向量模型", style = MaterialTheme.typography.titleLarge)
-            Text("选择不会自动开启检索；点“保存设置”后生效。", style = MaterialTheme.typography.bodySmall)
+            Text(textResources.getString(R.string.single_role_choose_an_existing_embedding_model), style = MaterialTheme.typography.titleLarge)
+            Text(textResources.getString(R.string.single_role_selecting_does_not_enable_retrieval_automatically_changes_apply_a), style = MaterialTheme.typography.bodySmall)
             embedding.options.forEach { option ->
                 OutlinedButton(onClick = { embeddingId = option.id; choosingModel = false; chooseFirst = false },
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                     Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
                         Text(option.name, style = MaterialTheme.typography.titleSmall)
-                        Text("${option.provider.ifBlank { "自定义服务商" }} · ${option.model}", style = MaterialTheme.typography.bodySmall)
+                        Text("${option.provider.ifBlank { textResources.getString(R.string.single_role_custom_provider) }} · ${option.model}", style = MaterialTheme.typography.bodySmall)
                     }
-                    if (option.id == embeddingId) Text("已选")
+                    if (option.id == embeddingId) Text(textResources.getString(R.string.story_selected))
                 }
             }
-            if (embedding.options.isEmpty()) Text("还没有可用的向量模型。", Modifier.padding(vertical = 16.dp))
-            TextButton(onClick = { choosingModel = false; onAddModel() }) { Text("添加向量模型") }
+            if (embedding.options.isEmpty()) Text(textResources.getString(R.string.single_role_no_embedding_models_available_yet), Modifier.padding(vertical = 16.dp))
+            TextButton(onClick = { choosingModel = false; onAddModel() }) { Text(textResources.getString(R.string.single_role_add_embedding_model)) }
         }
     }
     editingLimit?.let { kind ->
@@ -195,10 +200,10 @@ internal fun CompanionRecallSettingsScreen(
             else -> 256..64000
         }
         val number = draftLimit.toIntOrNull()
-        AlertDialog(onDismissRequest = { editingLimit = null }, title = { Text(when (kind) { "rounds" -> "最多回查"; "perCall" -> "单次上限"; "recent" -> "保留近期原话"; "trigger" -> "攒够多少开始整理"; "existing" -> "参考旧记忆上限"; else -> "资料上限" }) },
+        AlertDialog(onDismissRequest = { editingLimit = null }, title = { Text(when (kind) { "rounds" -> textResources.getString(R.string.single_role_maximum_recall_rounds); "perCall" -> textResources.getString(R.string.single_role_per_read_limit); "recent" -> textResources.getString(R.string.single_role_keep_recent_original_messages); "trigger" -> textResources.getString(R.string.single_role_organization_threshold); "existing" -> textResources.getString(R.string.single_role_previous_memory_reference_limit); else -> textResources.getString(R.string.single_role_total_material_limit) }) },
             text = { OutlinedTextField(draftLimit, { if (it.length <= 5 && it.all { c -> c in '0'..'9' }) draftLimit = it },
                 singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                isError = number == null || number !in range, supportingText = { Text("请输入 ${range.first} 至 ${range.last} 的整数") }) },
+                isError = number == null || number !in range, supportingText = { Text(textResources.getString(R.string.single_role_enter_an_integer_from_1_s_to_2_s, range.first, range.last)) }) },
             confirmButton = { TextButton(onClick = {
                 when (kind) {
                     "rounds" -> rounds = requireNotNull(number)
@@ -209,8 +214,8 @@ internal fun CompanionRecallSettingsScreen(
                     else -> { tokens = requireNotNull(number); perCall = perCall.coerceAtMost(tokens) }
                 }
                 editingLimit = null
-            }, enabled = number != null && number in range) { Text("确定") } },
-            dismissButton = { TextButton(onClick = { editingLimit = null }) { Text("取消") } })
+            }, enabled = number != null && number in range) { Text(textResources.getString(R.string.single_role_confirm)) } },
+            dismissButton = { TextButton(onClick = { editingLimit = null }) { Text(textResources.getString(R.string.common_cancel)) } })
     }
 }
 
@@ -274,16 +279,19 @@ internal fun summaryVectorSwitchState(requested: Boolean, vectorReady: Boolean) 
 /** 回查额度说明，数字跟随当前设置。 */
 internal fun recallQuotaExplanation(
     rounds: Int, tokens: Int,
-    perCallSetting: Int = com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS
+    perCallSetting: Int = com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS,
+    text: (Int) -> String
 ): List<String> {
+    fun getString(id: Int, vararg args: Any): String =
+        if (args.isEmpty()) text(id) else String.format(java.util.Locale.getDefault(), text(id), *args)
     val perCall = minOf(tokens, perCallSetting)
-    val items = if (perCall == 1500) "七八条" else "约 ${(perCall / 200).coerceAtLeast(1)} 条"
-    val essay = if (tokens in 2500..6000) "，约一篇短文" else ""
+    val items = if (perCall == 1500) getString(R.string.single_role_7_8) else getString(R.string.single_role_about_1_s, (perCall / 200).coerceAtLeast(1))
+    val essay = if (tokens in 2500..6000) getString(R.string.single_role_about_a_short_essay) else ""
     return listOf(
-        "回查次数 $rounds：角色每句最多翻几次记忆",
-        "总份额 $tokens ≈ ${tokens * 3 / 4}～$tokens 个汉字$essay",
-        "单次 $perCall ≈ ${items}普通记忆",
-        "只算查回来的资料，不算角色回复"
+        getString(R.string.single_role_recall_rounds_1_s_how_many_times_the_character_can_look_up_memori, rounds),
+        getString(R.string.single_role_total_budget_1_s_2_s_3_s_chinese_characters_4_s, tokens, tokens * 3 / 4, tokens, essay),
+        getString(R.string.single_role_per_read_1_s_2_s_ordinary_memories, perCall, items),
+        getString(R.string.single_role_only_retrieved_material_counts_not_the_character_s_reply)
     )
 }
 

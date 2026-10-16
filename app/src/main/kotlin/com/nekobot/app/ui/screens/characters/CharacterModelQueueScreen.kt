@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.characters
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,6 +31,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
+    val textResources = LocalResources.current
     val repository = remember(characterId) { ServiceContainer.localRepository }
     val scope = rememberCoroutineScope()
     var settings by remember(characterId) { mutableStateOf<CharacterQueueSettings?>(null) }
@@ -50,7 +55,7 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
                 initialized = true
             }
         } catch (e: CancellationException) { throw e }
-        catch (e: Exception) { error = e.message ?: "模型配置读取失败" }
+        catch (e: Exception) { error = e.message ?: textResources.getString(R.string.single_role_could_not_load_model_settings) }
     }
     val selected = if (custom) order else null
     val dirty = settings?.let { selected != it.selected } == true
@@ -58,9 +63,9 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
     BackHandler { if (!saving) leave() }
 
     Scaffold(topBar = {
-        TopAppBar(title = { Text("聊天模型") }, navigationIcon = {
+        TopAppBar(title = { Text(textResources.getString(R.string.single_role_chat_models)) }, navigationIcon = {
             IconButton(onClick = { leave() }, enabled = !saving) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back))
             }
         }, actions = {
             TextButton(enabled = settings != null && !saving && (!custom || order.isNotEmpty()), onClick = {
@@ -69,16 +74,16 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
                 scope.launch {
                     try {
                         check(repository === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) {
-                            "资料库已切换，请重新打开角色设置"
+                            textResources.getString(R.string.single_role_the_data_profile_changed_reopen_character_settings)
                         }
                         repository.saveCharacterQueue(characterId, selected)
                         onBack()
                     }
                     catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { error = e.message ?: "保存失败，请重试" }
+                    catch (e: Exception) { error = e.message ?: textResources.getString(R.string.single_role_could_not_save_please_try_again) }
                     finally { saving = false }
                 }
-            }) { Text(if (saving) "保存中…" else "保存") }
+            }) { Text(if (saving) textResources.getString(R.string.failover_saving) else textResources.getString(R.string.common_save)) }
         })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
@@ -86,27 +91,27 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
-                if (settings == null) TextButton(onClick = { loadVersion++ }) { Text("重新读取") }
+                if (settings == null) TextButton(onClick = { loadVersion++ }) { Text(textResources.getString(R.string.single_role_reload)) }
             }
             val state = settings
             if (state == null && error == null) CircularProgressIndicator()
             if (state != null) {
                 Text(state.name, style = MaterialTheme.typography.headlineSmall)
-                Text("先用排在前面的模型，失败或不可用再试下一个。",
+                Text(textResources.getString(R.string.single_role_try_models_in_order_moving_to_the_next_if_one_fails_or_is_unavail),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 OutlinedCard {
-                    QueueChoice("沿用默认队列", "使用 API 设置中的默认队列和选择规则。", !custom, !saving) { custom = false }
+                    QueueChoice(textResources.getString(R.string.single_role_use_default_queue), textResources.getString(R.string.single_role_use_the_default_queue_and_selection_rules_from_api_settings), !custom, !saving) { custom = false }
                     HorizontalDivider()
-                    QueueChoice("单独设置", "只按下方顺序尝试，全部不可用时提示错误。", custom, !saving) {
+                    QueueChoice(textResources.getString(R.string.single_role_set_separately), textResources.getString(R.string.single_role_try_only_the_order_below_report_an_error_if_no_model_is_available), custom, !saving) {
                         if (!custom && order.isEmpty()) order = state.defaults
                         custom = true
                     }
                 }
                 val visibleIds = if (custom) order else state.defaults
-                Text(if (custom) "这个角色的队列" else "默认队列", style = MaterialTheme.typography.titleMedium)
+                Text(if (custom) textResources.getString(R.string.single_role_this_character_s_queue) else textResources.getString(R.string.playground_auto_model), style = MaterialTheme.typography.titleMedium)
                 if (visibleIds.isEmpty()) {
-                    Text(if (custom) "还没有选择模型，点击下方添加。" else "暂无可用聊天模型，请先到 API 设置添加。",
+                    Text(if (custom) textResources.getString(R.string.single_role_no_models_selected_add_one_below) else textResources.getString(R.string.single_role_no_chat_models_available_add_one_in_api_settings_first),
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 visibleIds.forEachIndexed { index, id ->
@@ -114,7 +119,7 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
                         val model = state.models.firstOrNull { it.id == id }
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
-                                Text("${index + 1} · ${if (index == 0) "主用" else "备用"}",
+                                Text("${index + 1} · ${if (index == 0) textResources.getString(R.string.single_role_primary) else textResources.getString(R.string.single_role_backup)}",
                                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.height(8.dp))
                                 QueueModelDescription(model)
@@ -122,12 +127,12 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                         IconButton(enabled = !saving && index > 0, onClick = {
                                             order = order.toMutableList().apply { add(index - 1, removeAt(index)) }
-                                        }) { Icon(Icons.Filled.ArrowUpward, "上移第 ${index + 1} 个模型") }
+                                        }) { Icon(Icons.Filled.ArrowUpward, textResources.getString(R.string.single_role_move_model_1_s_up, index + 1)) }
                                         IconButton(enabled = !saving && index < order.lastIndex, onClick = {
                                             order = order.toMutableList().apply { add(index + 1, removeAt(index)) }
-                                        }) { Icon(Icons.Filled.ArrowDownward, "下移第 ${index + 1} 个模型") }
+                                        }) { Icon(Icons.Filled.ArrowDownward, textResources.getString(R.string.single_role_move_model_1_s_down, index + 1)) }
                                         IconButton(enabled = !saving, onClick = { order = order - id }) {
-                                            Icon(Icons.Filled.Close, "从队列移除 ${model?.name ?: "已删除的模型"}")
+                                            Icon(Icons.Filled.Close, textResources.getString(R.string.single_role_remove_1_s_from_queue, model?.name ?: textResources.getString(R.string.single_role_deleted_model)))
                                         }
                                     }
                                 }
@@ -137,20 +142,20 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
                 }
                 if (custom) OutlinedButton(onClick = { adding = true }, enabled = !saving && order.size < 100,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Icon(Icons.Filled.Add, null); Spacer(Modifier.width(8.dp)); Text("添加已有模型")
+                    Icon(Icons.Filled.Add, null); Spacer(Modifier.width(8.dp)); Text(textResources.getString(R.string.single_role_add_existing_model))
                 }
-                Text("同一角色的会话共用这份选择。其他角色的顺序不变。",
+                Text(textResources.getString(R.string.single_role_all_sessions_for_this_character_share_this_selection_other_charac),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("服务地址、密钥和模型参数仍在 API 设置维护；情绪评估和向量模型使用各自的设置。",
+                Text(textResources.getString(R.string.single_role_manage_endpoints_keys_and_model_parameters_in_api_settings_relati),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
     if (adding) {
         val candidates = settings?.models.orEmpty().filter { it.enabled && it.chat && it.id !in order }
-        AlertDialog(onDismissRequest = { adding = false }, title = { Text("添加聊天模型") }, text = {
+        AlertDialog(onDismissRequest = { adding = false }, title = { Text(textResources.getString(R.string.single_role_add_chat_model)) }, text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                if (candidates.isEmpty()) Text("没有可添加的模型。请先在 API 设置添加或启用聊天模型。")
+                if (candidates.isEmpty()) Text(textResources.getString(R.string.single_role_no_models_to_add_add_or_enable_a_chat_model_in_api_settings_first))
                 candidates.forEach { model ->
                     Column(Modifier.fillMaxWidth().clickable {
                         order = order + model.id; adding = false
@@ -158,12 +163,12 @@ fun CharacterModelQueueScreen(characterId: String, onBack: () -> Unit) {
                     HorizontalDivider()
                 }
             }
-        }, confirmButton = { TextButton(onClick = { adding = false }) { Text("关闭") } })
+        }, confirmButton = { TextButton(onClick = { adding = false }) { Text(textResources.getString(R.string.common_close)) } })
     }
     if (confirmDiscard) AlertDialog(onDismissRequest = { confirmDiscard = false },
-        title = { Text("放弃未保存的调整？") }, text = { Text("已保存的模型顺序不会改变。") },
-        confirmButton = { TextButton(onClick = onBack) { Text("放弃调整") } },
-        dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") } })
+        title = { Text(textResources.getString(R.string.single_role_discard_unsaved_changes)) }, text = { Text(textResources.getString(R.string.single_role_the_saved_model_order_will_stay_the_same)) },
+        confirmButton = { TextButton(onClick = onBack) { Text(textResources.getString(R.string.single_role_discard_changes)) } },
+        dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(textResources.getString(R.string.chat_sandbox_files_keep_editing)) } })
 }
 
 @Composable
@@ -180,13 +185,14 @@ private fun QueueChoice(title: String, detail: String, selected: Boolean, enable
 
 @Composable
 private fun QueueModelDescription(model: CharacterQueueModel?) {
-    Text(model?.name ?: "已删除的模型", style = MaterialTheme.typography.titleSmall)
+    val textResources = LocalResources.current
+    Text(model?.name ?: textResources.getString(R.string.single_role_deleted_model), style = MaterialTheme.typography.titleSmall)
     if (model != null) Text("${model.provider} · ${model.model}", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     val issue = when {
-        model == null -> "不可用，将跳过；可从队列移除"
-        !model.enabled -> "已停用，将跳过"
-        !model.chat -> "已改为其他用途，将跳过"
+        model == null -> textResources.getString(R.string.single_role_unavailable_will_be_skipped_you_can_remove_it_from_the_queue)
+        !model.enabled -> textResources.getString(R.string.single_role_disabled_will_be_skipped)
+        !model.chat -> textResources.getString(R.string.single_role_purpose_changed_will_be_skipped)
         else -> null
     }
     issue?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }

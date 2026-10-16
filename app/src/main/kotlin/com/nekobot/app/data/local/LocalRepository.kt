@@ -593,7 +593,7 @@ class LocalRepository(
     }
 
     internal suspend fun characterQueueSettings(id: String): CharacterQueueSettings = withContext(Dispatchers.IO) {
-        val character = requireNotNull(characterDao.getById(id)) { "角色已不存在" }
+        val character = requireNotNull(characterDao.getById(id)) { ServiceContainer.getString(R.string.single_role_error_character_gone) }
         val ids = runCatching { CharacterChatQueue.ids(character.chatModelQueue) }
         CharacterQueueSettings(character.name, ids.getOrElse { emptyList() },
             aiModelDao.listAll().map { CharacterQueueModel(it.id, it.name, CharacterChatQueue.providerLabel(it), it.model, it.enabled, it.purpose == "chat") },
@@ -602,11 +602,11 @@ class LocalRepository(
 
     internal suspend fun saveCharacterQueue(id: String, ids: List<String>?) = withContext(Dispatchers.IO) {
         db.withTransaction {
-            val character = requireNotNull(characterDao.getById(id)) { "角色已不存在" }
+            val character = requireNotNull(characterDao.getById(id)) { ServiceContainer.getString(R.string.single_role_error_character_gone) }
             val oldIds = runCatching { CharacterChatQueue.ids(character.chatModelQueue) }.getOrNull().orEmpty()
             val available = aiModelDao.listAll().filter { it.enabled && it.purpose == "chat" }.map { it.id }.toSet()
-            require(ids == null || ids.all { it in available || it in oldIds }) { "模型配置已变化，请重新选择可用的聊天模型" }
-            check(characterDao.updateChatModelQueue(id, CharacterChatQueue.encode(ids)) == 1) { "角色队列未保存，请重试" }
+            require(ids == null || ids.all { it in available || it in oldIds }) { ServiceContainer.getString(R.string.single_role_error_models_changed) }
+            check(characterDao.updateChatModelQueue(id, CharacterChatQueue.encode(ids)) == 1) { ServiceContainer.getString(R.string.single_role_error_queue_not_saved) }
         }
     }
 
@@ -1705,7 +1705,7 @@ class LocalRepository(
         val notice = com.nekobot.app.data.local.ai.CompanionRelationshipRecovery.noticeToShow(state, busy,
             prefs.companionRelationshipNoticeToken(db.dbName, state.sessionId)) ?: return null
         prefs.setCompanionRelationshipNoticeToken(db.dbName, state.sessionId, notice.first)
-        return notice.second
+        return com.nekobot.app.data.local.ai.relationshipNoticeText(requireNotNull(state.notice), ServiceContainer::getString)
     }
 
     internal fun companionCustomReasoning(sessionId: String) = ServiceContainer.prefs.companionCustomReasoning(db.dbName, sessionId)

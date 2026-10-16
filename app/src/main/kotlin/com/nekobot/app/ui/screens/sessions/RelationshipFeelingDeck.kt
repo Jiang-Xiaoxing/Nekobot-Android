@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.sessions
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import android.animation.ValueAnimator
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -35,6 +39,7 @@ internal data class JournalFeeling(val label: String, val text: String, val onDe
 
 @Composable
 internal fun RelationshipFeelingDeck(identity: String, values: List<JournalFeeling>) {
+    val textResources = LocalResources.current
     var selected by rememberSaveable(identity) { mutableIntStateOf(0) }
     val current = selected.coerceIn(values.indices)
     val shift = remember { Animatable(0f) }
@@ -78,7 +83,7 @@ internal fun RelationshipFeelingDeck(identity: String, values: List<JournalFeeli
                     }
                     Text(values[current].text, style = MaterialTheme.typography.titleLarge)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("评估当时的感受", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                        Text(textResources.getString(R.string.single_role_feelings_at_the_time_of_assessment), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         JournalEmblem(6, Modifier.size(36.dp).rotate(-9f))
                     }

@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
@@ -311,6 +313,7 @@ fun ChatScreen(
     // 平板双栏嵌入会话页时，底部悬浮导航栏盖住覆盖层输入区，需要整体抬升避让
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
+    val textResources = LocalResources.current
     val viewModel: ChatViewModel = viewModel()
     val messageMotion = remember(sessionId) { MessageMotionRegistry(System.currentTimeMillis()) }
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -1687,8 +1690,8 @@ fun ChatScreen(
 
     messageDetailsTarget?.let { target ->
         MessageDetailsSheet(
-            details = formatMessageDetails(target, java.time.ZoneId.systemDefault()),
-            subtitle = if (target.isUser) "你的消息" else (target.sender ?: target.name)?.takeIf { it.isNotBlank() }?.let { "${it}的回复" } ?: "角色的回复",
+            details = formatMessageDetails(target, java.time.ZoneId.systemDefault(), textResources::getString),
+            subtitle = if (target.isUser) textResources.getString(R.string.single_role_your_message) else (target.sender ?: target.name)?.takeIf { it.isNotBlank() }?.let { textResources.getString(R.string.single_role_1_s_s_reply, it) } ?: textResources.getString(R.string.single_role_character_s_reply),
             onDismiss = { messageDetailsTarget = null }
         )
     }

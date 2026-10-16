@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import android.provider.OpenableColumns
@@ -212,6 +214,7 @@ fun ModernChatScreen(
      */
     embeddedBottomBarClearance: Dp = 0.dp
 ) {
+    val textResources = LocalResources.current
     val viewModel: ChatViewModel = viewModel()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
@@ -264,7 +267,7 @@ fun ModernChatScreen(
         if (companionName != null) ServiceContainer.localRepository.companionReasoningEffort(sessionId) else ReasoningEffort.NONE
     }
     val savedContext = LocalContext.current
-    val savedNotice = remember(savedContext) { Toast.makeText(savedContext, "已保存", Toast.LENGTH_SHORT) }
+    val savedNotice = remember(savedContext) { Toast.makeText(savedContext, textResources.getString(R.string.localai_saved), Toast.LENGTH_SHORT) }
     var showInnerMonologue by remember(sessionId) {
         mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
     }
@@ -2581,7 +2584,7 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max)
-        ReasoningEffort.CUSTOM -> "自定义"
+        ReasoningEffort.CUSTOM -> stringResource(R.string.aimodel_editor_provider_custom)
     }
 
     @Composable
@@ -2592,7 +2595,7 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.MEDIUM -> stringResource(R.string.reasoning_effort_medium_desc)
         ReasoningEffort.HIGH -> stringResource(R.string.reasoning_effort_high_desc)
         ReasoningEffort.MAX -> stringResource(R.string.reasoning_effort_max_desc)
-        ReasoningEffort.CUSTOM -> "发送时用这组替换自动换算的思考参数"
+        ReasoningEffort.CUSTOM -> stringResource(R.string.single_role_replace_automatically_derived_thinking_parameters_with_these_valu)
     }
 
     Surface(
@@ -3572,6 +3575,7 @@ private fun ModernSearchDialog(
     onDismiss: () -> Unit,
     onResultClick: (Message) -> Unit
 ) {
+    val textResources = LocalResources.current
     var onlyMine by remember { mutableStateOf(false) }
     val results = remember(query, messages, onlyMine) {
         val normalized = query.trim().lowercase()
@@ -3593,7 +3597,7 @@ private fun ModernSearchDialog(
             placeholder = { Text(stringResource(R.string.chat_search_placeholder)) },
             singleLine = true
         )
-        if (allowRoleFilter) FilterChip(selected = onlyMine, onClick = { onlyMine = !onlyMine }, label = { Text("只看我发送的") })
+        if (allowRoleFilter) FilterChip(selected = onlyMine, onClick = { onlyMine = !onlyMine }, label = { Text(textResources.getString(R.string.single_role_only_my_messages)) })
         Spacer(Modifier.height(12.dp))
         when {
             query.isBlank() && !onlyMine -> Text(

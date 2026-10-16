@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -130,25 +134,26 @@ internal fun CompanionSettingsScreen(
     onCustomReasoningChange: (CustomReasoningParam) -> Unit = {},
     onSaved: () -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     BackHandler(onBack = onDismiss)
     Surface(Modifier.fillMaxSize().testTag("companion-settings-screen"), color = companionSettingsBackground(),
         contentColor = MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-            CompanionReadingHeader("聊天设置", onDismiss)
+            CompanionReadingHeader(textResources.getString(R.string.companion_chat_settings), onDismiss)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 CompanionSettingsIdentity(characterName, portraitUrl, onDetails)
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                    CompanionPreferenceGroup("聊天内容") {
+                    CompanionPreferenceGroup(textResources.getString(R.string.single_role_chat_content)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            CompanionSettingsAction("查找记录", Icons.Outlined.Search, onSearch, Modifier.weight(1f))
-                            CompanionSettingsAction("收藏消息", Icons.Outlined.StarBorder, onFavorites, Modifier.weight(1f))
-                            if (onArchive != null) CompanionSettingsAction("查看归档", Icons.Outlined.FolderOpen, onArchive, Modifier.weight(1f))
+                            CompanionSettingsAction(textResources.getString(R.string.single_role_find_messages), Icons.Outlined.Search, onSearch, Modifier.weight(1f))
+                            CompanionSettingsAction(textResources.getString(R.string.single_role_save_messages), Icons.Outlined.StarBorder, onFavorites, Modifier.weight(1f))
+                            if (onArchive != null) CompanionSettingsAction(textResources.getString(R.string.chat_view_archive), Icons.Outlined.FolderOpen, onArchive, Modifier.weight(1f))
                         }
                     }
-                    CompanionPreferenceGroup("思考") {
-                        CompanionPreferenceRow("显示思考", Icons.Outlined.Description, "控制这段想法是否显示",
+                    CompanionPreferenceGroup(textResources.getString(R.string.single_role_thinking)) {
+                        CompanionPreferenceRow(textResources.getString(R.string.companion_chat_show_reasoning), Icons.Outlined.Description, textResources.getString(R.string.single_role_control_whether_these_thoughts_are_shown),
                             checked = checked, onCheckedChange = { onCheckedChange(it); onSaved() })
                         CompanionPreferenceDivider()
                         CompanionReasoningEffortSetting(reasoningEffort, onReasoningEffortChange, onSaved)
@@ -162,16 +167,16 @@ internal fun CompanionSettingsScreen(
                             Modifier.padding(horizontal = 16.dp, vertical = 6.dp), compact = true, onSaved = onSaved)
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CompanionPreferenceGroup("显示与用量") {
+                        CompanionPreferenceGroup(textResources.getString(R.string.single_role_display_and_usage)) {
                             if (onShowInnerMonologueChange != null) {
-                                CompanionPreferenceRow("显示内心独白", Icons.Outlined.ChatBubbleOutline, "只影响当前会话",
+                                CompanionPreferenceRow(textResources.getString(R.string.single_role_show_inner_monologue), Icons.Outlined.ChatBubbleOutline, textResources.getString(R.string.single_role_only_affects_this_conversation),
                                     modifier = Modifier.testTag("companion-show-inner-monologue"),
                                     checked = showInnerMonologue, onCheckedChange = { onShowInnerMonologueChange(it); onSaved() })
                                 CompanionPreferenceDivider()
                             }
-                            CompanionPreferenceRow("聊天用量", Icons.Outlined.BarChart, "查看上次请求带入的内容", onClick = onUsage)
+                            CompanionPreferenceRow(textResources.getString(R.string.single_role_chat_usage), Icons.Outlined.BarChart, textResources.getString(R.string.single_role_view_content_included_in_the_last_request), onClick = onUsage)
                         }
-                        Text("同时开启显示思考和角色视角思考后，可在消息中展开内心想法 Beta（测试版）。正文内心独白由独立开关控制。", Modifier.padding(horizontal = 4.dp),
+                        Text(textResources.getString(R.string.single_role_enable_both_thinking_display_and_character_perspective_thinking_t), Modifier.padding(horizontal = 4.dp),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     CompanionFeedbackEntry()
@@ -187,8 +192,9 @@ private fun CompanionReasoningEffortSetting(
     onSelect: (ReasoningEffort) -> Unit,
     onSaved: () -> Unit
 ) {
+    val textResources = LocalResources.current
     var menuOpen by remember { mutableStateOf(false) }
-    CompanionPreferenceRow("思考强度", Icons.Outlined.Psychology, "只影响当前会话",
+    CompanionPreferenceRow(textResources.getString(R.string.reasoning_effort_title), Icons.Outlined.Psychology, textResources.getString(R.string.single_role_only_affects_this_conversation),
         trailing = {
             Box {
                 OutlinedButton(onClick = { menuOpen = true }, shape = RoundedCornerShape(12.dp),
@@ -212,9 +218,10 @@ private fun CompanionReasoningEffortSetting(
 
 @Composable
 private fun CompanionSettingsIdentity(characterName: String?, portraitUrl: String?, onDetails: () -> Unit) {
+    val textResources = LocalResources.current
     val primary = MaterialTheme.colorScheme.primary
     val base = companionSettingsBackground()
-    val name = characterName?.takeIf(String::isNotBlank) ?: "单会话角色"
+    val name = characterName?.takeIf(String::isNotBlank) ?: textResources.getString(R.string.sessions_filter_agent_characters)
     Column(Modifier.fillMaxWidth().clipToBounds().drawBehind {
         drawRect(Brush.verticalGradient(listOf(lerp(base, primary, 0.13f), base)))
         drawOval(primary.copy(alpha = 0.055f), topLeft = Offset(size.width * 0.58f, -size.height * 0.72f),
@@ -230,7 +237,7 @@ private fun CompanionSettingsIdentity(characterName: String?, portraitUrl: Strin
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("单会话角色", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(textResources.getString(R.string.sessions_filter_agent_characters), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Surface(onClick = onDetails, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
@@ -238,7 +245,7 @@ private fun CompanionSettingsIdentity(characterName: String?, portraitUrl: Strin
             Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Icon(Icons.Outlined.Contacts, null, tint = primary, modifier = Modifier.size(26.dp))
-                Text("角色与记忆", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text(textResources.getString(R.string.companion_chat_details), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -286,9 +293,10 @@ internal fun CompanionReadingHeader(
     title: String, onBack: () -> Unit, subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = MaterialTheme.colorScheme.primary) }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back), tint = MaterialTheme.colorScheme.primary) }
             Column(Modifier.weight(1f).padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

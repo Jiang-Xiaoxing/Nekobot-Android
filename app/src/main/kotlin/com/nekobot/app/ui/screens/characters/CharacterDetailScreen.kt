@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.characters
 
+import androidx.compose.ui.platform.LocalResources
+
 import com.nekobot.app.ui.components.GlassAlertDialog as AlertDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -154,7 +156,7 @@ class CharacterViewModel(characterId: String) : com.nekobot.app.ui.BaseViewModel
      *  - state 包含六维初始关系值 + 初始心情
      */
     fun save(onSuccess: () -> Unit) {
-        if (companionRole.value == null) { showError("角色归属尚未读取完成，请重新打开后再保存。"); return }
+        if (companionRole.value == null) { showError(string(R.string.single_role_character_ownership_is_still_loading_reopen_this_page_before_savi)); return }
         val nameVal = name.value.trim()
         if (nameVal.isBlank()) {
             showToast(string(R.string.character_name_required))
@@ -381,6 +383,7 @@ fun CharacterDetailScreen(
     characterId: String,
     onBack: () -> Unit
 ) {
+    val textResources = LocalResources.current
     // 用工厂传入 characterId，key 区分不同角色实例
     val vm: CharacterViewModel = viewModel(
         key = "char_$characterId",
@@ -532,7 +535,7 @@ fun CharacterDetailScreen(
                 // 角色名（必填）
                 if (!isNew && isLocalMode) {
                     OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("聊天模型")
+                        Text(textResources.getString(R.string.single_role_chat_models))
                     }
                 }
                 LabeledField(label = stringResource(R.string.character_name_label), value = name, onValueChange = { vm.name.value = it }, singleLine = true)

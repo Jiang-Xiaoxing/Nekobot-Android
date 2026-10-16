@@ -2,6 +2,7 @@ package com.nekobot.app.data.local.ai
 
 import com.nekobot.app.ui.screens.memory.recallQuotaExplanation
 import kotlinx.coroutines.runBlocking
+import com.nekobot.app.testString
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -33,7 +34,7 @@ class CompanionRecallPerCallTest {
     }
 
     @Test fun popoverFollowsPerCallSetting() {
-        assertEquals("单次 600 ≈ 约 3 条普通记忆", recallQuotaExplanation(3, 4000, 600)[2])
-        assertEquals("单次 1500 ≈ 七八条普通记忆", recallQuotaExplanation(3, 4000)[2])
+        assertEquals("单次 600 ≈ 约 3 条普通记忆", recallQuotaExplanation(3, 4000, 600, text = ::testString)[2])
+        assertEquals("单次 1500 ≈ 七八条普通记忆", recallQuotaExplanation(3, 4000, text = ::testString)[2])
     }
 }

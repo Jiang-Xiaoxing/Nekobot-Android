@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,34 +38,35 @@ internal fun CompanionMessageSearch(
     messages: List<Message>, query: String, onQueryChange: (String) -> Unit,
     characterName: String?, onDismiss: () -> Unit, onResultClick: (Message) -> Unit
 ) {
+    val textResources = LocalResources.current
     var onlyMine by remember { mutableStateOf(false) }
     val results = remember(messages, query, onlyMine) { companionSearchResults(messages, query, onlyMine) }
-    CompanionReadingDialog("查找聊天记录", onDismiss) {
+    CompanionReadingDialog(textResources.getString(R.string.companion_chat_search), onDismiss) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(query, onQueryChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                placeholder = { Text("搜索当前会话") },
+                placeholder = { Text(textResources.getString(R.string.single_role_search_this_conversation)) },
                 leadingIcon = { Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.primary) },
-                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Outlined.Cancel, "清空搜索") } },
+                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Outlined.Cancel, textResources.getString(R.string.single_role_clear_search)) } },
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FilterChip(!onlyMine, { onlyMine = false }, label = { Text("全部") }, colors = companionChoiceColors(), modifier = Modifier.weight(1f).heightIn(min = 44.dp))
-                FilterChip(onlyMine, { onlyMine = true }, label = { Text("只看我发送的") }, colors = companionChoiceColors(), modifier = Modifier.weight(1f).heightIn(min = 44.dp))
+                FilterChip(!onlyMine, { onlyMine = false }, label = { Text(textResources.getString(R.string.achievements_filter_all)) }, colors = companionChoiceColors(), modifier = Modifier.weight(1f).heightIn(min = 44.dp))
+                FilterChip(onlyMine, { onlyMine = true }, label = { Text(textResources.getString(R.string.single_role_only_my_messages)) }, colors = companionChoiceColors(), modifier = Modifier.weight(1f).heightIn(min = 44.dp))
             }
-            Text("当前会话 · ${results.size} 条结果", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(textResources.getString(R.string.single_role_this_conversation_1_s_results, results.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
             when {
-                query.isBlank() && !onlyMine -> item { CompanionReadingHint("输入关键词，查找这个会话里的原话。") }
-                results.isEmpty() -> item { CompanionReadingHint("没有找到匹配的消息。试试其他关键词。") }
+                query.isBlank() && !onlyMine -> item { CompanionReadingHint(textResources.getString(R.string.single_role_enter_a_keyword_to_find_original_messages_in_this_conversation)) }
+                results.isEmpty() -> item { CompanionReadingHint(textResources.getString(R.string.single_role_no_matching_messages_try_another_keyword)) }
                 else -> {
                     itemsIndexed(results, key = { index, message -> chatMessageItemKey(index, message) }) { _, message ->
-                        CompanionMessageExcerpt(if (message.isUser) "我" else characterName?.takeIf(String::isNotBlank) ?: "AI",
+                        CompanionMessageExcerpt(if (message.isUser) textResources.getString(R.string.chat_me) else characterName?.takeIf(String::isNotBlank) ?: "AI",
                             message.timestamp, searchPreview(message.displayContent, query), query, onClick = {
                                 onResultClick(message)
                                 onDismiss()
                             })
                     }
-                    item { CompanionReadingHint("点开结果，回到对应的原话。") }
+                    item { CompanionReadingHint(textResources.getString(R.string.single_role_open_a_result_to_return_to_the_original_message)) }
                 }
             }
         }
@@ -139,32 +144,33 @@ internal fun CompanionFavoritesReading(
     favorites: List<JsonObject>, loading: Boolean, selected: JsonObject?, characterName: String?,
     onBack: () -> Unit, onSelect: (JsonObject) -> Unit, onDelete: (JsonObject) -> Unit
 ) {
+    val textResources = LocalResources.current
     val messages = selected?.getAsJsonArray("messages")?.mapNotNull { it.takeIf { it.isJsonObject }?.asJsonObject }.orEmpty()
-    CompanionReadingDialog(selected?.favoriteText("title") ?: selected?.favoriteText("name") ?: "收藏的消息",
-        onBack = onBack, subtitle = if (selected != null) "${messages.size} 条收藏消息" else null) {
+    CompanionReadingDialog(selected?.favoriteText("title") ?: selected?.favoriteText("name") ?: textResources.getString(R.string.companion_chat_favorites),
+        onBack = onBack, subtitle = if (selected != null) textResources.getString(R.string.single_role_1_s_saved_messages, messages.size) else null) {
         if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
             if (selected == null) {
-                item { CompanionReadingHint("当前会话的收藏夹") }
-                if (favorites.isEmpty()) item { CompanionReadingHint("还没有收藏的消息。长按聊天消息可添加收藏。") }
+                item { CompanionReadingHint(textResources.getString(R.string.single_role_saved_items_in_this_conversation)) }
+                if (favorites.isEmpty()) item { CompanionReadingHint(textResources.getString(R.string.single_role_no_saved_messages_yet_long_press_a_chat_message_to_save_it)) }
                 itemsIndexed(favorites, key = { index, item -> item.favoriteText("id")?.takeIf(String::isNotBlank)
                     ?: item.favoriteText("collection_id")?.takeIf(String::isNotBlank) ?: "favorite:$index" }) { _, collection ->
                     CompanionFavoriteFolder(collection, { onSelect(collection) }, { onDelete(collection) })
                 }
-                if (favorites.isNotEmpty()) item { CompanionReadingHint("点开收藏夹，查看完整消息。") }
+                if (favorites.isNotEmpty()) item { CompanionReadingHint(textResources.getString(R.string.single_role_open_a_collection_to_view_the_full_messages)) }
             } else {
-                if (messages.isEmpty()) item { CompanionReadingHint("这个收藏夹暂时没有消息内容。") }
+                if (messages.isEmpty()) item { CompanionReadingHint(textResources.getString(R.string.single_role_this_collection_has_no_message_content_yet)) }
                 itemsIndexed(messages, key = { index, item -> "${item.favoriteText("message_id") ?: item.favoriteText("id")}:$index" }) { _, msg ->
                     val role = msg.favoriteText("role").orEmpty().lowercase()
                     val sender = when (role) {
-                        "user", "human" -> "我"
+                        "user", "human" -> textResources.getString(R.string.chat_me)
                         "assistant", "ai" -> characterName?.takeIf(String::isNotBlank) ?: "AI"
-                        "system" -> "系统"
-                        else -> msg.favoriteText("sender") ?: role.ifBlank { "消息" }
+                        "system" -> textResources.getString(R.string.more_group_system)
+                        else -> msg.favoriteText("sender") ?: role.ifBlank { textResources.getString(R.string.extensions_group_messaging) }
                     }
                     CompanionMessageExcerpt(sender, msg.favoriteText("timestamp"), msg.favoriteText("content").orEmpty())
                 }
-                if (messages.isNotEmpty()) item { CompanionReadingHint("长按文字可选择复制。") }
+                if (messages.isNotEmpty()) item { CompanionReadingHint(textResources.getString(R.string.single_role_long_press_text_to_select_and_copy)) }
             }
         }
     }
@@ -172,8 +178,9 @@ internal fun CompanionFavoritesReading(
 
 @Composable
 private fun CompanionFavoriteFolder(collection: JsonObject, onClick: () -> Unit, onDelete: () -> Unit) {
+    val textResources = LocalResources.current
     var menu by remember { mutableStateOf(false) }
-    val title = collection.favoriteText("title") ?: collection.favoriteText("name") ?: "未命名收藏"
+    val title = collection.favoriteText("title") ?: collection.favoriteText("name") ?: textResources.getString(R.string.chat_unnamed_favorite)
     val messages = collection.getAsJsonArray("messages")?.mapNotNull { it.takeIf { it.isJsonObject }?.asJsonObject }.orEmpty()
     val count = if (messages.isNotEmpty()) messages.size else collection.getAsJsonArray("message_ids")?.size() ?: 0
     Surface(color = MaterialTheme.colorScheme.surface) {
@@ -192,13 +199,13 @@ private fun CompanionFavoriteFolder(collection: JsonObject, onClick: () -> Unit,
                         Text(messages.firstOrNull()?.favoriteText("content").orEmpty(), modifier = Modifier.weight(1f),
                             maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("$count 条消息", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(textResources.getString(R.string.single_role_1_s_messages, count), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "$title 的更多操作") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, textResources.getString(R.string.single_role_more_actions_for_1_s, title)) }
                     DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem(text = { Text("删除收藏", color = MaterialTheme.colorScheme.error) },
+                        DropdownMenuItem(text = { Text(textResources.getString(R.string.chat_delete_favorite_title), color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
                             onClick = { menu = false; onDelete() })
                     }

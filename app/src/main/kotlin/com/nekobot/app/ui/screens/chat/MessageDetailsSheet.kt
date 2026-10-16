@@ -1,5 +1,9 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
+import com.nekobot.app.R
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -30,6 +34,7 @@ private val DetailsDivider = Color.White.copy(alpha = 0.12f)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MessageDetailsSheet(details: MessageDetails, subtitle: String, onDismiss: () -> Unit) {
+    val textResources = LocalResources.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -43,45 +48,45 @@ internal fun MessageDetailsSheet(details: MessageDetails, subtitle: String, onDi
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("消息详情", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(textResources.getString(R.string.single_role_message_details), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(subtitle, color = DetailsMuted, style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 4.dp))
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.background(Color.White.copy(alpha = 0.07f), CircleShape)) {
-                    Icon(Icons.Filled.Close, "关闭消息详情", tint = DetailsAccent)
+                    Icon(Icons.Filled.Close, textResources.getString(R.string.single_role_close_message_details), tint = DetailsAccent)
                 }
             }
             HorizontalDivider(Modifier.padding(top = 16.dp), color = DetailsDivider)
-            DetailRow("发送时间", details.sentAt, "按手机本地时间显示")
+            DetailRow(textResources.getString(R.string.single_role_sent_at), details.sentAt, textResources.getString(R.string.single_role_shown_in_your_phone_s_local_time))
             HorizontalDivider(color = DetailsDivider)
-            DetailRow("模型", details.model, "本条消息记录的模型")
+            DetailRow(textResources.getString(R.string.aimodel_editor_field_model), details.model, textResources.getString(R.string.single_role_model_recorded_for_this_message))
             Surface(color = Color.White.copy(alpha = 0.035f), shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(1.dp, DetailsDivider), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("用了多少 Token", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                        Text(textResources.getString(R.string.single_role_token_usage), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f))
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("合计", color = DetailsMuted, style = MaterialTheme.typography.labelMedium)
+                            Text(textResources.getString(R.string.tokens_total), color = DetailsMuted, style = MaterialTheme.typography.labelMedium)
                             DetailValue(details.totalTokens, accent = true)
                         }
                     }
                     Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        TokenColumn("输入 Token", details.inputTokens, "发给模型的内容", Modifier.weight(1f))
-                        TokenColumn("输出 Token", details.outputTokens, "模型生成的内容", Modifier.weight(1f))
+                        TokenColumn(textResources.getString(R.string.stats_token_ratio_input), details.inputTokens, textResources.getString(R.string.single_role_content_sent_to_the_model), Modifier.weight(1f))
+                        TokenColumn(textResources.getString(R.string.stats_token_ratio_output), details.outputTokens, textResources.getString(R.string.single_role_content_generated_by_the_model), Modifier.weight(1f))
                     }
                     HorizontalDivider(color = DetailsDivider)
-                    Text("Token 是模型计算文字用量的单位", color = DetailsMuted, style = MaterialTheme.typography.bodySmall,
+                    Text(textResources.getString(R.string.single_role_tokens_are_units_used_to_measure_text_usage_by_models), color = DetailsMuted, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 10.dp))
                 }
             }
-            DetailRow("生成速度", details.speed, "平均每秒生成的 Token 数")
+            DetailRow(textResources.getString(R.string.single_role_generation_speed), details.speed, textResources.getString(R.string.single_role_average_tokens_generated_per_second))
             HorizontalDivider(color = DetailsDivider)
-            DetailRow("生成耗时", details.duration, "仅统计模型生成，不含工具执行")
+            DetailRow(textResources.getString(R.string.single_role_generation_time), details.duration, textResources.getString(R.string.single_role_model_generation_only_excludes_tool_execution))
             Button(onClick = onDismiss, shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF444448), contentColor = DetailsAccent),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("message-details-close")) {
-                Text("关闭", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                Text(textResources.getString(R.string.common_close), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
             }
             Spacer(Modifier.height(16.dp))
         }

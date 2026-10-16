@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.aiconfig
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import android.widget.Toast
@@ -347,6 +349,7 @@ class LocalAiModelsViewModel : BaseViewModel() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocalAiModelsScreen(onBack: () -> Unit) {
+    val textResources = LocalResources.current
     val vm: LocalAiModelsViewModel = viewModel()
     val models by vm.models.collectAsStateWithLifecycle()
     val activeModel by vm.activeModel.collectAsStateWithLifecycle()
@@ -442,7 +445,7 @@ fun LocalAiModelsScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            Text("在这里管理服务商和模型。角色可在「聊天模型」中选择并排序；未单独设置的角色使用默认队列。",
+            Text(textResources.getString(R.string.single_role_manage_providers_and_models_here_characters_can_select_and_reorde),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             if (models.isEmpty()) {
@@ -812,6 +815,7 @@ private fun ModelCard(
     onTest: () -> Unit,
     onProbe: () -> Unit
 ) {
+    val textResources = LocalResources.current
     var menuExpanded by remember { mutableStateOf(false) }
     val purposeLabel = localModelPurposeLabel(model.purpose)
     val isEnabled = model.enabled
@@ -877,7 +881,7 @@ private fun ModelCard(
             if (isActive) {
                 Icon(
                     imageVector = Icons.Filled.Check,
-                    contentDescription = if (model.purpose == "chat") "默认队列主用" else stringResource(R.string.localai_current_model),
+                    contentDescription = if (model.purpose == "chat") textResources.getString(R.string.single_role_primary_model_in_default_queue) else stringResource(R.string.localai_current_model),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )

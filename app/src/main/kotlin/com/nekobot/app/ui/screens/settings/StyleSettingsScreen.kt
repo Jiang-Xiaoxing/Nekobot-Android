@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.settings
 
+import androidx.compose.ui.platform.LocalResources
+
 import android.app.Activity
 import android.content.Context
 import android.net.Uri
@@ -84,6 +86,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StyleSettingsScreen(onBack: () -> Unit) {
+    val textResources = LocalResources.current
     val prefs = ServiceContainer.prefs
 
     var themeColorOverride by remember { mutableStateOf(prefs.themeColorOverride) }
@@ -243,8 +246,8 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
                 onMessageColor = { messageColorOverride = it; prefs.messageColorOverride = it })
             ChatEffectsSettings()
             GlassCard(Modifier.fillMaxWidth()) {
-                AppearanceSettingRow("字体与文字", "字体、字号与文字颜色", onClick = { fontsExpanded = !fontsExpanded }) {
-                    Text(if (fontsExpanded) "收起 ⌃" else "展开 ⌄", style = MaterialTheme.typography.labelLarge)
+                AppearanceSettingRow(textResources.getString(R.string.single_role_fonts_and_text), textResources.getString(R.string.single_role_font_text_size_and_text_color), onClick = { fontsExpanded = !fontsExpanded }) {
+                    Text(if (fontsExpanded) textResources.getString(R.string.single_role_collapse) else textResources.getString(R.string.single_role_expand), style = MaterialTheme.typography.labelLarge)
                 }
             }
             if (fontsExpanded) {

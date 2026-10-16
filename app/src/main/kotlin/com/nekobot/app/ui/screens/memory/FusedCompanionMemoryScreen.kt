@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +42,7 @@ internal fun FusedCompanionMemoryScreen(sessionId: String, onBack: () -> Unit, o
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocate: (String) -> Unit) {
+    val textResources = LocalResources.current
     val repo = remember { ServiceContainer.localRepository }
     val dataSourceRevision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
@@ -89,13 +92,13 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         ready = false
         error = null
         try {
-            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_the_memory_page) }
             val session = repo.getSession(sessionId)
-            check(session?.companionMode == true) { "此入口仅管理当前单会话角色的独立记忆" }
+            check(session?.companionMode == true) { textResources.getString(R.string.single_role_this_page_only_manages_independent_memories_for_the_current_singl) }
             val loadedRecords = repo.listCompanionMemories(sessionId)
             val loadedOverview = repo.companionMemoryOverview(sessionId)
             val loadedEmbedding = repo.companionEmbeddingSettings(sessionId)
-            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开记忆页" }
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_the_memory_page) }
             records = loadedRecords
             overview = loadedOverview
             embeddingSettings = loadedEmbedding
@@ -106,7 +109,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             records = emptyList(); overview = null; ownerName = ""
-            error = failure.message ?: "记忆暂时无法读取，请重试"
+            error = failure.message ?: textResources.getString(R.string.single_role_memories_cannot_be_loaded_right_now_please_try_again)
         }
     }
     LaunchedEffect(sessionId) {
@@ -118,9 +121,9 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         actionError = null
         scope.launch {
         try {
-            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开" }
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_this_page) }
             block()
-            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { "资料库已切换，请重新打开" }
+            check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_this_page) }
             refresh++
         }
         catch (cancelled: CancellationException) { throw cancelled }
@@ -129,7 +132,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                 records = emptyList(); overview = null; ownerName = ""
                 versions = null; sources = null; editor = false; deletion = null; ready = false
             }
-            actionError = failure.message ?: "这次操作未完成，请重试"
+            actionError = failure.message ?: textResources.getString(R.string.single_role_this_action_did_not_complete_please_try_again)
         }
         finally { busy = false }
     } }
@@ -158,15 +161,15 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         return
     }
     BackHandler(enabled = coreOnly && !editor && versions == null && sources == null && deletion == null) { coreOnly = false }
-    Scaffold(topBar = { TopAppBar(title = { Text(if (coreOnly) "核心记忆" else stringResource(R.string.agent_character_memory_title),
+    Scaffold(topBar = { TopAppBar(title = { Text(if (coreOnly) textResources.getString(R.string.single_role_core_memories) else stringResource(R.string.agent_character_memory_title),
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }, navigationIcon = {
-        IconButton(onClick = { if (coreOnly) coreOnly = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        IconButton(onClick = { if (coreOnly) coreOnly = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back)) }
     }, actions = {
         IconButton(enabled = editable && embeddingSettings != null, onClick = { recallSettings = repo.companionRecallSettings(sessionId); actionError = null; recallSettingsOpen = true }) {
-            Icon(Icons.Filled.Tune, "记忆设置")
+            Icon(Icons.Filled.Tune, textResources.getString(R.string.single_role_memory_settings))
         }
         IconButton(enabled = editable,
-        onClick = { selected = null; actionError = null; editor = true }) { Icon(Icons.Filled.Add, "新增记忆") } }) }) { padding ->
+        onClick = { selected = null; actionError = null; editor = true }) { Icon(Icons.Filled.Add, textResources.getString(R.string.memory_add_title)) } }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("fused-memory-list"),
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (!coreOnly) item("overview") {
@@ -181,24 +184,24 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                     } else Modifier).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             CoreMemoryIcon(Modifier.size(36.dp))
-                            Text(if (coreOnly) "${coreRecords.size} 条核心记忆" else "核心记忆", Modifier.weight(1f),
+                            Text(if (coreOnly) textResources.getString(R.string.single_role_1_s_core_memories, coreRecords.size) else textResources.getString(R.string.single_role_core_memories), Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            if (!coreOnly) { Text("${coreRecords.size} 条"); Icon(Icons.Filled.ChevronRight, "查看核心记忆") }
+                            if (!coreOnly) { Text(textResources.getString(R.string.single_role_1_s_items, coreRecords.size)); Icon(Icons.Filled.ChevronRight, textResources.getString(R.string.single_role_view_core_memories)) }
                         }
-                        Text(if (coreOnly) "这里的内容，每次聊天都会提供给模型。点记忆右上角可移出核心，正文仍然保留。模型在整理旧聊天时挑选和更新，你的手动选择优先。"
-                            else "重要的称呼、关系与相处习惯，随时查看和调整。", style = MaterialTheme.typography.bodySmall)
-                        if (coreOnly) Text("约 $coreTokens Token · 不扣主动回查额度", style = MaterialTheme.typography.labelMedium)
+                        Text(if (coreOnly) textResources.getString(R.string.single_role_these_memories_are_included_in_every_chat_use_the_top_right_menu)
+                            else textResources.getString(R.string.single_role_review_and_adjust_important_names_relationships_and_habits_at_any), style = MaterialTheme.typography.bodySmall)
+                        if (coreOnly) Text(textResources.getString(R.string.single_role_about_1_s_tokens_does_not_use_recall_quota, coreTokens), style = MaterialTheme.typography.labelMedium)
                         if (coreTokens > CompanionCoreMemory.maintenanceTokens) Text(
-                            "现有核心超过精简目标，仍会完整提供。建议缩短正文或移出部分条目；新增核心前需要腾出空间。",
+                            textResources.getString(R.string.single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i),
                             color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
             error?.let { message -> item("error") {
-                CompanionMemoryNotice("记忆暂时无法读取", message) { refresh++ }
+                CompanionMemoryNotice(textResources.getString(R.string.single_role_memories_temporarily_unavailable), message) { refresh++ }
             } }
             if (!editor && deletion == null) actionError?.let { message -> item("action-error") {
-                CompanionMemoryNotice("这次操作没有完成", message) { actionError = null; refresh++ }
+                CompanionMemoryNotice(textResources.getString(R.string.single_role_this_action_did_not_complete), message) { actionError = null; refresh++ }
             } }
             if (busy && !editor && deletion == null) item("action-loading") {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -208,7 +211,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                     filteredRecords.groupingBy { it.category }.eachCount(), filteredRecords.size, shown.size)
             }
             if (shown.isEmpty() && ready && error == null) item("empty") {
-                if (coreOnly && coreRecords.isEmpty()) Text("还没有核心记忆。返回全部记忆，点条目右上角的“设为核心记忆”；也可以在后续聊天整理中由模型挑选。",
+                if (coreOnly && coreRecords.isEmpty()) Text(textResources.getString(R.string.single_role_no_core_memories_yet_return_to_all_memories_and_choose_set_as_cor),
                     Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else CompanionMemoryEmpty(query.isNotBlank() || category.isNotBlank())
             }

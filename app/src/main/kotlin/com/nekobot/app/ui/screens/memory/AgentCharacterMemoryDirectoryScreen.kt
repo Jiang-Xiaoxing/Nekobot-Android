@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.memory
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +41,7 @@ internal fun AgentCharacterMemoryDirectoryScreen(onBack: () -> Unit, onOpen: (St
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Unit) {
+    val textResources = LocalResources.current
     val revision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val repo = remember(revision) { ServiceContainer.localRepository }
@@ -58,52 +61,52 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
             repo.observeSessions().collect { sessions ->
                 val characters = repo.listCharacters()
                 val labels = characters.mapNotNull { c -> c.id?.let { it to c.name.orEmpty() } }.toMap()
-                check(repo === ServiceContainer.localRepository) { "资料库已切换，请重新打开" }
+                check(repo === ServiceContainer.localRepository) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_this_page) }
                 names = labels
                 portraits = characters.mapNotNull { c -> c.id?.let { id -> c.avatarUrl?.let { id to it } } }.toMap()
                 owners = sessions.filter { it.usesFusedCompanionMemory() }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { owners = emptyList(); error = failure.message ?: "暂时无法读取角色，请重试" }
+        catch (failure: Exception) { owners = emptyList(); error = failure.message ?: textResources.getString(R.string.single_role_could_not_load_characters_please_try_again) }
     }
     fun ownerName(session: LocalSessionEntity) = com.nekobot.app.data.model.sessionTitle(session.listTitleOverride,
         names[session.characterId]?.takeIf(String::isNotBlank)
-            ?: session.characterName?.takeIf(String::isNotBlank) ?: session.name.ifBlank { "未命名角色" })
+            ?: session.characterName?.takeIf(String::isNotBlank) ?: session.name.ifBlank { textResources.getString(R.string.agent_character_memory_unnamed) })
     val filtered = owners.orEmpty().filter { query.isBlank() ||
         "${ownerName(it)} ${it.name}".contains(query.trim(), ignoreCase = true) }
     Scaffold(topBar = { TopAppBar(title = {
         Text(stringResource(R.string.agent_character_memory_title), style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
     }, navigationIcon = {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back)) }
     }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("agent-character-memory-owners"),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item("intro") { CompanionMemoryIntro("相处中的点滴", "每个角色的记忆分别保存。选择一本，看看留下了什么。") }
+            item("intro") { CompanionMemoryIntro(textResources.getString(R.string.single_role_moments_together), textResources.getString(R.string.single_role_each_character_s_memories_are_stored_separately_choose_a_journal)) }
             if (appMode != AppMode.LOCAL) item("local-only") {
-                DirectoryEmpty("请在本地模式查看", stringResource(R.string.agent_character_memory_local_only))
+                DirectoryEmpty(textResources.getString(R.string.single_role_view_in_local_mode), stringResource(R.string.agent_character_memory_local_only))
             } else when {
-                error != null -> item("error") { CompanionMemoryNotice("暂时没有读到角色", error.orEmpty()) { refresh++ } }
+                error != null -> item("error") { CompanionMemoryNotice(textResources.getString(R.string.single_role_no_characters_loaded_yet), error.orEmpty()) { refresh++ } }
                 owners == null -> item("loading") {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text("正在打开记忆册…", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium)
+                    Text(textResources.getString(R.string.single_role_opening_memory_journal), Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium)
                 }
                 owners!!.isEmpty() -> item("empty") {
-                    DirectoryEmpty("这里还没有记忆册", "创建或迁入一个单会话角色后，就能在这里查看它记住的喜好、经历与约定。")
+                    DirectoryEmpty(textResources.getString(R.string.single_role_no_memory_journals_yet), textResources.getString(R.string.single_role_create_or_import_a_single_session_character_to_view_their_remembe))
                 }
                 else -> {
                     item("search") {
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                            shape = RoundedCornerShape(16.dp), placeholder = { Text("查找角色或会话") },
+                            shape = RoundedCornerShape(16.dp), placeholder = { Text(textResources.getString(R.string.single_role_find_a_character_or_conversation)) },
                             leadingIcon = { Icon(Icons.Filled.Search, null) },
                             trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Filled.Close, "清空搜索")
+                                Icon(Icons.Filled.Close, textResources.getString(R.string.single_role_clear_search))
                             } })
                     }
-                    item("count") { Text("${filtered.size} 本记忆册", style = MaterialTheme.typography.labelLarge,
+                    item("count") { Text(textResources.getString(R.string.single_role_1_s_memory_journals, filtered.size), style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (filtered.isEmpty()) item("no-matches") {
-                        DirectoryEmpty("没有找到这个角色", "试试角色名中的其他字，或清空搜索。")
+                        DirectoryEmpty(textResources.getString(R.string.single_role_character_not_found), textResources.getString(R.string.single_role_try_another_part_of_the_name_or_clear_the_search))
                     }
                     items(filtered, key = { it.id }) { session ->
                         val name = ownerName(session)
@@ -117,7 +120,7 @@ private fun CompanionMemoryDirectory(onBack: () -> Unit, onOpen: (String) -> Uni
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                     Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(session.name.takeIf { it.isNotBlank() && it != name } ?: "查看记忆与相处经历",
+                                    Text(session.name.takeIf { it.isNotBlank() && it != name } ?: textResources.getString(R.string.single_role_view_memories_and_shared_experiences),
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }

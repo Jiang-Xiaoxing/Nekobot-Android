@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.sessions
 
+import androidx.compose.ui.platform.LocalResources
+
 import com.nekobot.app.ServiceContainer
 
 import com.nekobot.app.ui.components.GlassAlertDialog as AlertDialog
@@ -582,7 +584,7 @@ class SessionDetailViewModel : BaseViewModel() {
                 )
             },
             onSuccess = {
-                showToast(if (savedNotice) "已保存"
+                showToast(if (savedNotice) string(R.string.localai_saved)
                     else if (disabled) string(R.string.sessions_detail_injection_disabled, key)
                     else string(R.string.sessions_detail_injection_enabled, key))
             },
@@ -810,6 +812,7 @@ fun SessionDetailScreen(
     onOpenExperienceArchive: (String) -> Unit = {},
     onCreateAgentCharacter: () -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     val vm: SessionDetailViewModel = viewModel(key = "session_detail_$sessionId")
     val session by vm.session.collectAsStateWithLifecycle()
     val name by vm.name.collectAsStateWithLifecycle()
@@ -1054,7 +1057,7 @@ fun SessionDetailScreen(
         containerColor = if (singleSessionRole) companionSettingsBackground() else MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(if (advancedPage) "高级设置" else if (singleSessionRole) "角色与记忆" else detailTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
+                title = { Text(if (advancedPage) textResources.getString(R.string.sessions_detail_advanced) else if (singleSessionRole) textResources.getString(R.string.companion_chat_details) else detailTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
@@ -1068,7 +1071,7 @@ fun SessionDetailScreen(
                     if (singleSessionRole) {
                         if (!advancedPage) TextButton(onClick = { vm.save(onBack) }) { Text(saveDesc, fontWeight = FontWeight.SemiBold) }
                         Box {
-                            IconButton(onClick = { managementMenu = true }) { Icon(Icons.Filled.MoreVert, "更多操作") }
+                            IconButton(onClick = { managementMenu = true }) { Icon(Icons.Filled.MoreVert, textResources.getString(R.string.chat_expand_actions)) }
                             CompanionRoleMenu({ showExportDialog = true }, { showDeleteDialog = true }, { managementMenu = false }, managementMenu)
                         }
                     } else {
@@ -1110,19 +1113,19 @@ fun SessionDetailScreen(
                     session?.let { s ->
                         if (advancedPage) {
                             Text(s.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("按需查看调试信息",
+                            Text(textResources.getString(R.string.single_role_view_debug_information_when_needed),
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("调试信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text("默认收起，点击展开", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(textResources.getString(R.string.single_role_debug_information), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(textResources.getString(R.string.single_role_collapsed_by_default_tap_to_expand), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             AdvancedDebugCard(sessionId, runtimeSystemPromptTitle,
-                                "查看实际发送给模型的系统提示词", Icons.Outlined.Description) {
-                                Text("这里只显示系统提示词部分；独立记忆与动态辅助资料在请求的其他部分。",
+                                textResources.getString(R.string.single_role_view_the_system_prompt_actually_sent_to_the_model), Icons.Outlined.Description) {
+                                Text(textResources.getString(R.string.single_role_only_the_system_prompt_is_shown_here_independent_memories_and_dyn),
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (composedSystemPrompt.isBlank()) {
-                                    Text("暂无运行时记录，完成一次聊天后可查看", style = MaterialTheme.typography.bodyMedium)
+                                    Text(textResources.getString(R.string.single_role_no_runtime_records_yet_complete_a_chat_to_view_them), style = MaterialTheme.typography.bodyMedium)
                                 } else {
                                     TextButton(onClick = { clipboard.setText(AnnotatedString(composedSystemPrompt)) }) {
                                         Icon(Icons.Filled.ContentCopy, copyDesc, Modifier.size(18.dp))
@@ -1137,10 +1140,10 @@ fun SessionDetailScreen(
                                 }
                             }
                             AdvancedDebugCard(sessionId, promptStackTitle,
-                                "思考段随设置更新，其余为上次请求记录", Icons.Outlined.Layers) {
+                                textResources.getString(R.string.single_role_thinking_section_reflects_current_settings_the_rest_is_from_the_l), Icons.Outlined.Layers) {
                                 Text(promptStackDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (promptStackDebug.isEmpty()) {
-                                    Text("暂无注入记录，完成一次聊天后可查看", style = MaterialTheme.typography.bodyMedium)
+                                    Text(textResources.getString(R.string.single_role_no_injection_records_yet_complete_a_chat_to_view_them), style = MaterialTheme.typography.bodyMedium)
                                 } else {
                                     Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1154,7 +1157,7 @@ fun SessionDetailScreen(
                                 }
                             }
                             AdvancedPromptUsageCard(promptSectionUsage)
-                            AdvancedDebugCard(sessionId, "会话元信息", "编号、创建时间等只读记录", Icons.Outlined.Info) {
+                            AdvancedDebugCard(sessionId, textResources.getString(R.string.single_role_conversation_metadata), textResources.getString(R.string.single_role_read_only_id_creation_time_and_other_records), Icons.Outlined.Info) {
                                 DetailLine(label = sessionIdLabel, value = s.id.orEmpty())
                                 DetailLine(label = userIdLabel, value = s.userId ?: "—")
                                 DetailLine(label = createdAtLabel, value = s.createdAt?.take(19) ?: "—")
@@ -1246,7 +1249,7 @@ fun SessionDetailScreen(
                                         Spacer(Modifier.height(4.dp))
                                         // 类型 / 模式 badge
                                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            if (singleSessionRole) BadgeChip("单会话角色", MaterialTheme.colorScheme.primary)
+                                            if (singleSessionRole) BadgeChip(textResources.getString(R.string.sessions_filter_agent_characters), MaterialTheme.colorScheme.primary)
                                             else {
                                                 s.type?.let { BadgeChip(it) }
                                                 s.sessionMode?.let { BadgeChip(it) }
@@ -1268,7 +1271,7 @@ fun SessionDetailScreen(
                             }
 
                             if (singleSessionRole) {
-                                Text("固定与这个角色在同一个会话里聊天，记忆只用于这个会话。",
+                                Text(textResources.getString(R.string.single_role_chat_with_this_character_in_one_fixed_conversation_memories_apply),
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 AgentModeDetailsCard(companion = true, legacy = false,
                                     onOpenMemories = { onOpenExperienceArchive(sessionId) }, onCreateAgentCharacter = onCreateAgentCharacter)
@@ -1312,21 +1315,21 @@ fun SessionDetailScreen(
 
                             if (ServiceContainer.prefs.isLocalMode && queueCharacterId != null) {
                                 OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                                    Text("聊天模型", modifier = Modifier.weight(1f))
+                                    Text(textResources.getString(R.string.single_role_chat_models), modifier = Modifier.weight(1f))
                                     Icon(Icons.Filled.ChevronRight, null)
                                 }
                             }
                             if (singleSessionRole) {
                                 OutlinedButton(onClick = { relationshipOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                                    Text("关系状态", modifier = Modifier.weight(1f))
+                                    Text(textResources.getString(R.string.portability_detail_local_relationship_states), modifier = Modifier.weight(1f))
                                     Icon(Icons.Filled.ChevronRight, null)
                                 }
                                 OutlinedButton(onClick = { advancedOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                     Icon(Icons.Filled.Tune, null)
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text("高级设置", style = MaterialTheme.typography.titleSmall)
-                                        Text("模型与调试信息", style = MaterialTheme.typography.bodySmall,
+                                        Text(textResources.getString(R.string.sessions_detail_advanced), style = MaterialTheme.typography.titleSmall)
+                                        Text(textResources.getString(R.string.single_role_models_and_debug_information), style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Icon(Icons.Filled.ChevronRight, null)

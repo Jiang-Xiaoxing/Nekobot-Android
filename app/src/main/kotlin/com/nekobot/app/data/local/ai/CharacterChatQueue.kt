@@ -1,5 +1,9 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.ServiceContainer
+
+import com.nekobot.app.R
+
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.nekobot.app.data.local.db.LocalAiModelEntity
@@ -14,7 +18,7 @@ internal object CharacterChatQueue {
             require(ids.size in 1..100 && ids.all { it.isNotBlank() } && ids.distinct().size == ids.size)
             ids
         } catch (e: Exception) {
-            throw IllegalStateException("角色的模型队列配置无效，请在角色设置中重新保存队列。")
+            throw IllegalStateException(ServiceContainer.getString(R.string.single_role_error_invalid_queue))
         }
     }
 
@@ -28,7 +32,7 @@ internal object CharacterChatQueue {
         val chosen = ids(raw) ?: return null
         val byId = available.associateBy { it.id }
         return chosen.mapNotNull { id -> byId[id]?.takeIf { it.enabled && it.purpose == "chat" } }
-            .also { require(it.isNotEmpty()) { "这个角色的模型队列全部不可用，请检查模型是否已删除、停用或更改用途。" } }
+            .also { require(it.isNotEmpty()) { ServiceContainer.getString(R.string.single_role_error_queue_unavailable) } }
     }
 
     fun extraFor(model: LocalAiModelEntity, shared: Map<String, Any?>): Map<String, Any?> = buildMap {
@@ -40,7 +44,7 @@ internal object CharacterChatQueue {
 
     fun providerLabel(model: LocalAiModelEntity): String = model.provider?.takeIf(String::isNotBlank)
         ?: runCatching { java.net.URI(model.baseUrl).host }.getOrNull()?.takeIf(String::isNotBlank)
-        ?: "自定义服务商"
+        ?: ServiceContainer.getString(R.string.single_role_custom_provider)
 }
 
 internal data class CharacterQueueModel(val id: String, val name: String, val provider: String,

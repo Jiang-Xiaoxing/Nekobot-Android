@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.more
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.foundation.background
@@ -70,6 +72,7 @@ fun MoreScreen(
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit
 ) {
+    val textResources = LocalResources.current
     // 订阅全局 appMode Flow，模式切换时自动重组
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     Scaffold(
@@ -107,8 +110,8 @@ fun MoreScreen(
                 MoreRow(
                     icon = Icons.Filled.Landscape,
                     tint = MaterialTheme.colorScheme.primary,
-                    title = "关系页皮肤",
-                    desc = "七套背景、按钮与图标，不随主题色改变",
+                    title = textResources.getString(R.string.single_role_relationship_page_skins),
+                    desc = textResources.getString(R.string.single_role_seven_sets_of_backgrounds_buttons_and_icons_independent_of_theme),
                     onClick = { onNavigate(Routes.RELATIONSHIP_BACKGROUND) }
                 )
             }
