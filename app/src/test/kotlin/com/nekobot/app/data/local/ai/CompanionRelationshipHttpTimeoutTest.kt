@@ -1,5 +1,6 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.data.model.ReasoningEffort
 import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.local.db.LocalAiModelEntity
 import kotlinx.coroutines.*
@@ -23,7 +24,7 @@ class CompanionRelationshipHttpTimeoutTest {
     private val messages = listOf(mapOf<String, Any>("role" to "user", "content" to "private-chat-sentinel"))
     private fun model(server: MockWebServer) = LocalAiModelEntity(id = "eval", name = "评估", protocol = OpenAIChatProtocol.name,
         model = "test-model", apiKey = "private-key-sentinel", baseUrl = server.url("/v1").toString(), createdAt = "2026-10-16")
-    private fun extra(model: LocalAiModelEntity, timeout: Long) = CompanionRelationshipRequest.extra(model) +
+    private fun extra(model: LocalAiModelEntity, timeout: Long) = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH) +
         (CompanionRelationshipRequest.CALL_TIMEOUT_EXTRA to timeout)
 
     private fun checkTimeout(reply: MockResponse, outerCancellation: Boolean = false, expectsHeaders: Boolean = true) = runBlocking {

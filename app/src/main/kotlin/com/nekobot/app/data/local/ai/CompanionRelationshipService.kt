@@ -288,6 +288,12 @@ internal class CompanionRelationshipService(
                 "玩家提出的待核对说法" to claim?.take(2000)))
             val messages = listOf(mapOf("role" to "system", "content" to RULES), mapOf("role" to "user", "content" to payload))
             val outputBudget = CompanionRelationshipRequest.outputBudget(input.model)
+            val s = session(id)
+            val prefs = com.nekobot.app.ServiceContainer.prefs
+            val requestExtra = CompanionRelationshipRequest.extra(input.model,
+                prefs.reasoningEffortFor(db.dbName, s.id, s.companionMode, s.sessionMode)) {
+                prefs.customReasoningFor(db.dbName, s.id, s.companionMode, s.sessionMode)
+            }
             require(estimateLocalTextTokens(RULES + payload) + outputBudget < (input.model.maxContextLength ?: 32000)) { "评估材料超过模型上下文预算，请选择上下文更大的模型" }
             requestTag = "relationship-${UUID.randomUUID()}"
             tags[id] = requestTag!!
@@ -295,7 +301,7 @@ internal class CompanionRelationshipService(
             LocalLogger.i("Relationship", "开始整批评估：tag=$requestTag，轮数=${input.batch.size}，原话条数=${input.evidence.size}，原话字符=${input.evidence.sumOf { it.content.length }}，背景字符=${background.length}，材料字符=${payload.length}，材料字节=${payload.toByteArray(Charsets.UTF_8).size}，估算输入Token=${estimateLocalTextTokens(RULES + payload)}，输出上限=$outputBudget，旧事件输入=${if (input.target == null) 0 else 1}")
             // 关系评估独立等待 300 秒，不修改模型的全局设置。
             val result = runRelationshipEvaluation {
-                client.chatOnce(input.model, messages, extra = CompanionRelationshipRequest.extra(input.model), requestTag = requestTag)
+                client.chatOnce(input.model, messages, extra = requestExtra, requestTag = requestTag)
             }
             val finish = result.finishReason.takeIf { it in setOf("stop", "length", "max_tokens", "max_output_tokens", "content_filter", "tool_calls") } ?: "other"
             LocalLogger.i("Relationship", "评估请求完成：耗时毫秒=${(System.nanoTime() - requestStarted) / 1_000_000}，结束原因=$finish，思考字符数=${result.thinkingContent.length}，输入Token=${result.usage["prompt"] ?: 0}，输出Token=${result.usage["completion"] ?: 0}")

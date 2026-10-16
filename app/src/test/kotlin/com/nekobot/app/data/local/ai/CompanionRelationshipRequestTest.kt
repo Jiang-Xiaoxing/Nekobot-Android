@@ -1,5 +1,7 @@
 package com.nekobot.app.data.local.ai
 
+import com.nekobot.app.data.model.ReasoningEffort
+import com.nekobot.app.data.model.CustomReasoningParam
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.nekobot.app.data.local.db.LocalAiModelEntity
@@ -37,7 +39,7 @@ class CompanionRelationshipRequestTest {
     @Test fun evaluationOutputLimitReachesRealHttpBodyInOneRequestWithoutChangingMessages() = runBlocking {
         val http = Http()
         val model = model()
-        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
+        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
         val body = http.bodies.single()
         assertEquals(8192, body["max_tokens"].asInt)
         assertFalse(body.has(NO_COMPATIBILITY_RETRY_EXTRA))
@@ -49,7 +51,7 @@ class CompanionRelationshipRequestTest {
     @Test fun rejectedEvaluationParametersDoNotTriggerAnExtraHttpRequest() = runBlocking {
         val http = Http(400)
         try {
-            http.client.chatOnce(model(), messages, extra = CompanionRelationshipRequest.extra(model()))
+            http.client.chatOnce(model(), messages, extra = CompanionRelationshipRequest.extra(model(), ReasoningEffort.HIGH))
             fail("HTTP 400 should fail this evaluation")
         } catch (_: FailoverHttpException) {
             assertEquals(1, http.bodies.size)
@@ -73,14 +75,15 @@ class CompanionRelationshipRequestTest {
         CompanionRelationshipRequest.requireComplete(LocalAiResult("{}", finishReason = "stop"))
     }
 
-    @Test fun xiaomiUsesCompletionLimitAndDisablesThinkingOnlyForEvaluation() = runBlocking {
+    @Test fun xiaomiUsesCompletionLimitAndInheritsReasoningEffort() = runBlocking {
         val http = Http()
         val model = model(5000, "mimo-v2.5").copy(provider = "xiaomi")
-        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
+        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
         val evaluation = http.bodies.single()
         assertEquals(5000, evaluation["max_completion_tokens"].asInt)
         assertFalse(evaluation.has("max_tokens"))
-        assertEquals("disabled", evaluation["thinking"].asJsonObject["type"].asString)
+        assertFalse(evaluation.has("thinking"))
+        assertEquals("high", evaluation["reasoning_effort"].asString)
         assertTrue(evaluation.keySet().none { it.startsWith("_") })
         http.client.chatOnce(model, messages, extra = mapOf("max_tokens" to 5000))
         val chat = http.bodies.last()
@@ -90,11 +93,11 @@ class CompanionRelationshipRequestTest {
     @Test fun customXiaomiEndpointIsRecognizedByExactHostWithoutChangingUnknownProviders() = runBlocking {
         val http = Http()
         val xiaomi = model(5000, "mimo-v2.6-flash").copy(baseUrl = "https://api.xiaomimimo.com/v1")
-        http.client.chatOnce(xiaomi, messages, extra = CompanionRelationshipRequest.extra(xiaomi))
+        http.client.chatOnce(xiaomi, messages, extra = CompanionRelationshipRequest.extra(xiaomi, ReasoningEffort.HIGH))
         assertEquals(5000, http.bodies.single()["max_completion_tokens"].asInt)
         assertFalse(CompanionRelationshipRequest.isXiaomi(xiaomi.copy(baseUrl = "https://api.xiaomimimo.com.evil.invalid/v1")))
         val other = model(5000, "custom-model").copy(provider = "custom")
-        http.client.chatOnce(other, messages, extra = CompanionRelationshipRequest.extra(other))
+        http.client.chatOnce(other, messages, extra = CompanionRelationshipRequest.extra(other, ReasoningEffort.HIGH))
         assertEquals(5000, http.bodies.last()["max_tokens"].asInt)
         assertFalse(http.bodies.last().has("thinking"))
     }
@@ -103,45 +106,47 @@ class CompanionRelationshipRequestTest {
         val http = Http()
         for (name in listOf("o3", "gpt-5.1")) {
             val model = model(4500, name)
-            http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
+            http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
             assertEquals(4500, http.bodies.last()["max_completion_tokens"].asInt)
             assertFalse(http.bodies.last().has("max_tokens"))
         }
     }
 
-    @Test fun deepseekDisablesThinkingInActualPayload() = runBlocking {
+    @Test fun deepseekUsesExistingEnabledThinkingMapping() = runBlocking {
         val http = Http()
         val model = model(5000, "deepseek-chat").copy(provider = "deepseek")
-        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
-        assertEquals("disabled", http.bodies.single()["thinking"].asJsonObject["type"].asString)
-        assertFalse(http.bodies.single().has("reasoning_effort"))
+        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
+        assertEquals("enabled", http.bodies.single()["thinking"].asJsonObject["type"].asString)
+        assertEquals("high", http.bodies.single()["reasoning_effort"].asString)
     }
 
-    @Test fun glmHybridCanDisableThinkingButForcedThinkingModelIsLeftSupported() = runBlocking {
+    @Test fun glmModelsInheritEffortWithoutAnEvaluationOnlySwitch() = runBlocking {
         val http = Http()
         val hybrid = model(5000, "glm-5.1").copy(provider = "zhipu")
-        http.client.chatOnce(hybrid, messages, extra = CompanionRelationshipRequest.extra(hybrid))
-        assertEquals("disabled", http.bodies.last()["thinking"].asJsonObject["type"].asString)
-        val forced = hybrid.copy(model = "glm-5.3")
-        http.client.chatOnce(forced, messages, extra = CompanionRelationshipRequest.extra(forced))
+        http.client.chatOnce(hybrid, messages, extra = CompanionRelationshipRequest.extra(hybrid, ReasoningEffort.HIGH))
         assertFalse(http.bodies.last().has("thinking"))
-        assertFalse(http.bodies.last().has("reasoning_effort"))
+        assertEquals("high", http.bodies.last()["reasoning_effort"].asString)
+        val forced = hybrid.copy(model = "glm-5.3")
+        http.client.chatOnce(forced, messages, extra = CompanionRelationshipRequest.extra(forced, ReasoningEffort.HIGH))
+        assertFalse(http.bodies.last().has("thinking"))
+        assertEquals("high", http.bodies.last()["reasoning_effort"].asString)
     }
 
-    @Test fun dashscopeQwenHybridUsesItsOwnBooleanSwitch() = runBlocking {
+    @Test fun dashscopeQwenDoesNotReceiveAnAutomaticDisableSwitch() = runBlocking {
         val http = Http()
         val model = model(5000, "qwen3.6-plus").copy(provider = "dashscope")
-        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
-        assertFalse(http.bodies.single()["enable_thinking"].asBoolean)
+        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
+        assertFalse(http.bodies.single().has("enable_thinking"))
+        assertEquals("high", http.bodies.single()["reasoning_effort"].asString)
         assertFalse(http.bodies.single().has("thinking"))
     }
 
-    @Test fun anthropicEvaluationKeepsNativeOutputBudgetAndDisablesThinking() = runBlocking {
+    @Test fun anthropicEvaluationKeepsNativeOutputBudgetAndEnabledThinking() = runBlocking {
         val http = Http()
         val model = model(5000, "claude-sonnet-4-6").copy(protocol = AnthropicMessagesProtocol.name)
-        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
+        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
         assertEquals(5000, http.bodies.single()["max_tokens"].asInt)
-        assertEquals("disabled", http.bodies.single()["thinking"].asJsonObject["type"].asString)
+        assertEquals("adaptive", http.bodies.single()["thinking"].asJsonObject["type"].asString)
     }
 
     @Test fun legacyGlmAndNonHybridQwenDoNotReceiveUnsupportedThinkingSwitches() = runBlocking {
@@ -149,9 +154,40 @@ class CompanionRelationshipRequestTest {
         for ((provider, name) in listOf("zhipu" to "glm-4-plus", "zhipu" to "glm-5.3-flash",
             "dashscope" to "qwen3-coder-plus", "dashscope" to "qwen3-235b-a22b-thinking-2507")) {
             val model = model(5000, name).copy(provider = provider)
-            http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model))
+            http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.HIGH))
             assertFalse(http.bodies.last().has("thinking"))
             assertFalse(http.bodies.last().has("enable_thinking"))
         }
+    }
+
+    @Test fun allInheritedEffortsUseTheSameWireMappingAsChat() = runBlocking {
+        val http = Http()
+        for (model in listOf(model(name = "mimo-v2.5").copy(provider = "xiaomi"),
+            model(name = "deepseek-chat").copy(provider = "deepseek"),
+            model().copy(protocol = AnthropicMessagesProtocol.name), model(name = "gpt-5.1"))) {
+            for (effort in ReasoningEffort.entries - ReasoningEffort.CUSTOM) {
+                val chatExtra = mutableMapOf<String, Any?>()
+                putReasoningParams(chatExtra, effort) { CustomReasoningParam() }
+                http.client.chatOnce(model, messages, extra = chatExtra)
+                val chat = http.bodies.last()
+                http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, effort))
+                val evaluation = http.bodies.last()
+                for (key in listOf("thinking", "reasoning_effort", "output_config", "enable_thinking")) {
+                    assertEquals("${model.provider} $effort $key", chat[key], evaluation[key])
+                }
+            }
+        }
+    }
+
+    @Test fun inheritedCustomThinkingParameterReachesHttpBodyVerbatim() = runBlocking {
+        val http = Http()
+        val model = model(name = "mimo-v2.5").copy(provider = "xiaomi")
+        val custom = CustomReasoningParam("thinking.type", "enabled")
+        http.client.chatOnce(model, messages, extra = CompanionRelationshipRequest.extra(model, ReasoningEffort.CUSTOM) { custom })
+        val body = http.bodies.single()
+        assertEquals("enabled", body["thinking"].asJsonObject["type"].asString)
+        assertFalse(body.has("reasoning_effort"))
+        assertFalse(body.has("enable_thinking"))
+        assertEquals(8192, body["max_completion_tokens"].asInt)
     }
 }

@@ -71,9 +71,7 @@ object OpenAIChatProtocol : LocalProtocol {
             ?.take(4)
             ?.takeIf { it.isNotEmpty() }
             ?.let { payload["stop"] = it }
-        if (extra["_disable_thinking"] == true) {
-            payload["thinking"] = mapOf("type" to "disabled")
-        } else if (extra["deepseek_thinking"] == true) {
+        if (extra["deepseek_thinking"] == true) {
             val effort = extra["reasoning_effort"]
             payload["thinking"] = mapOf(
                 "type" to if (effort == "none") "disabled" else "enabled"
