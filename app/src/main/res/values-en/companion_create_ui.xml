@@ -41,4 +41,6 @@
   <string name="companion_completed">Completed</string>
   <string name="companion_resume">Continue</string>
   <string name="companion_search_character">Search character names</string>
+    <string name="companion_no_available_characters">No eligible characters. Create a character card, or resolve existing conversations and character ownership first.</string>
+    <string name="companion_no_matching_characters">No eligible characters match. Try another name.</string>
 </resources>

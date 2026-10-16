@@ -41,4 +41,6 @@
   <string name="companion_completed">完了</string>
   <string name="companion_resume">続ける</string>
   <string name="companion_search_character">キャラクター名を検索</string>
+    <string name="companion_no_available_characters">利用できるキャラクターがいません。キャラクターカードを新規作成するか、既存の会話とキャラクターの所属を確認してください。</string>
+    <string name="companion_no_matching_characters">条件に一致する利用可能なキャラクターがいません。別の名前で検索してください。</string>
 </resources>

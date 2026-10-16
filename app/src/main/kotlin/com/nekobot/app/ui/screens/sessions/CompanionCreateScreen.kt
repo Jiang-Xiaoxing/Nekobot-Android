@@ -72,9 +72,11 @@ internal class CompanionCreateViewModel : ViewModel() {
         }
     }
     fun reload() = launch(clearError = false) {
-        val characters = repo.listCharacters()
+        val choices = loadCompanionCharacterChoices(repo.listCharacters(), repo::companionCreationEligibility)
+        val selected = choices.firstOrNull { it.character.id == state.selectedId }
         reloadRecords()
-        state = state.copy(characters = characters,
+        state = state.copy(characters = choices.map { it.character },
+            selectedId = selected?.character?.id, eligibility = selected?.eligibility,
             models = repo.companionConversionModels(), conversionModelId = repo.selectedCompanionConversionModel())
     }
     private suspend fun reloadRecords() {
@@ -82,8 +84,12 @@ internal class CompanionCreateViewModel : ViewModel() {
         state = state.copy(records = records, recordInfo = repo.companionTransferRecordInfo(records))
     }
     fun select(id: String) = launch {
-        state = state.copy(selectedId = id, eligibility = null, preview = null, completed = null)
-        state = state.copy(eligibility = repo.companionCreationEligibility(id))
+        // 列表打开后资格也可能变化；重新检查，避免使用过期选项。
+        val choice = loadCompanionCharacterChoices(state.characters.filter { it.id == id },
+            repo::companionCreationEligibility).singleOrNull()
+        state = state.copy(
+            characters = if (choice == null) state.characters.filterNot { it.id == id } else state.characters,
+            selectedId = choice?.character?.id, eligibility = choice?.eligibility, preview = null, completed = null)
     }
     fun preview(sourceId: String) = launch {
         val preview = repo.previewCompanionTransfer(sourceId)
@@ -346,9 +352,19 @@ internal fun CompanionCreateContent(
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).padding(horizontal = 20.dp)) {
             Text(stringResource(R.string.companion_choose_character), style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(vertical = 12.dp), singleLine = true, label = { Text(stringResource(R.string.companion_search_character)) })
-            LazyColumn { items(state.characters.filter { it.displayName.contains(search, true) }, key = { it.id.orEmpty() }) { character ->
+            val matches = state.characters.filter { it.displayName.contains(search.trim(), true) }
+            if (state.busy && state.characters.isEmpty()) {
+                CircularProgressIndicator(Modifier.padding(16.dp))
+            } else if (matches.isEmpty()) {
+                Text(stringResource(if (state.characters.isEmpty()) R.string.companion_no_available_characters
+                    else R.string.companion_no_matching_characters), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.characters.isEmpty()) TextButton(onClick = { picker = false; onNewCharacter() }) {
+                    Text(stringResource(R.string.companion_new_character))
+                }
+            }
+            LazyColumn { items(matches, key = { it.id.orEmpty() }) { character ->
                 ListItem(headlineContent = { Text(character.displayName) }, supportingContent = { character.description?.take(90)?.let { Text(it, maxLines = 2) } },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable { character.id?.let(onSelect); picker = false })
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(enabled = !state.busy) { character.id?.let(onSelect); picker = false })
             } }
         }
     }

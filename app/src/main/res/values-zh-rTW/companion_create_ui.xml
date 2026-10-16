@@ -41,4 +41,6 @@
   <string name="companion_completed">已完成</string>
   <string name="companion_resume">繼續處理</string>
   <string name="companion_search_character">搜尋角色名稱</string>
+    <string name="companion_no_available_characters">暫無可用角色。請新增角色卡，或先處理原有對話和角色歸屬。</string>
+    <string name="companion_no_matching_characters">找不到符合的可用角色，請換個名稱搜尋。</string>
 </resources>
