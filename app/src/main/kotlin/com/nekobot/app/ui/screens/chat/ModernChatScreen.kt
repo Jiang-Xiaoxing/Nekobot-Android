@@ -183,6 +183,7 @@ fun ModernChatScreen(
     onOpenSessionDetail: (String) -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
     onOpenStoryGraph: (String) -> Unit = {},
+    onOpenEnvironmentVariables: (String) -> Unit = {},
     onOpenWenku8Login: () -> Unit = {},
     /** 打开表情包管理页（聊天输入区表情面板的「管理」入口）。 */
     onOpenStickers: () -> Unit = {},
@@ -249,6 +250,7 @@ fun ModernChatScreen(
     onOpenSessionDetail = onOpenSessionDetail,
     onOpenWorkspace = onOpenWorkspace,
     onOpenStoryGraph = onOpenStoryGraph,
+    onOpenEnvironmentVariables = onOpenEnvironmentVariables,
     onOpenBrowserSettings = onOpenBrowserSettings,
     externalListState = listState,
     embeddedBottomBarClearance = embeddedBottomBarClearance,

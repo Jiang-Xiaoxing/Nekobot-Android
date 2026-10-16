@@ -8,6 +8,8 @@ import com.nekobot.app.data.local.ai.LocalLinuxRuntime
 import com.nekobot.app.data.local.ai.SANDBOX_WORKSPACE_MOUNT
 import com.nekobot.app.data.local.ai.buildLocalProotPrefix
 import com.nekobot.app.data.local.ai.localPosixTimezone
+import com.nekobot.app.data.local.ai.SandboxEnvironment
+import com.nekobot.app.data.local.ai.SandboxEnvironmentStore
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -183,19 +185,21 @@ internal class LocalTerminalSession(
             }
             workspace.mkdirs()
 
+            val customEnvironment = SandboxEnvironmentStore.get(appContext).resolved(sessionId)
             val argv = buildLocalProotPrefix(
                 proot = runtime.proot,
                 rootfs = runtime.rootfs,
                 workspace = workspace,
                 sharedWorkspace = sharedWorkspace,
                 guestCwd = initialCwd,
-            ) + listOf(SHELL, "-l", "-i")
+            ) + listOf(SHELL, "-l", "-c",
+                SandboxEnvironment.shellUpdates(emptyMap(), customEnvironment) + "exec /bin/sh -i")
 
             val outPid = IntArray(1)
             val fd = PtyBridge.forkExec(
                 command = argv.first(),
                 argv = argv.toTypedArray(),
-                envp = buildEnvironment(runtime, sharedWorkspace),
+                envp = buildEnvironment(runtime, sharedWorkspace, customEnvironment),
                 cwd = appContext.filesDir.absolutePath,
                 cols = cols,
                 rows = rows,
@@ -248,6 +252,7 @@ internal class LocalTerminalSession(
     private fun buildEnvironment(
         runtime: LocalLinuxRuntime,
         sharedWorkspace: File?,
+        customEnvironment: Map<String, String>,
     ): Array<String> {
         val environment = linkedMapOf(
             "PROOT_TMP_DIR" to runtime.prootTempDir.absolutePath,
@@ -265,6 +270,7 @@ internal class LocalTerminalSession(
         if (sharedWorkspace != null) {
             environment["NEKOBOT_SHARED_DIR"] = "/shared"
         }
+        environment.putAll(customEnvironment)
         return environment.map { (key, value) -> "$key=$value" }.toTypedArray()
     }
 

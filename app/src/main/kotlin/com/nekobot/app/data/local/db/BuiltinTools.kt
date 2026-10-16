@@ -314,6 +314,32 @@ object BuiltinTools {
             """.trimIndent()
         ),
         BuiltinToolSpec(
+            id = "request_environment_variables",
+            category = "task",
+            name = "填写环境变量",
+            description = "请求用户填写沙箱环境变量并等待提交。指定变量名和简短用途，用户可修改名称、值和保存范围。默认仅当前会话，也可保存为全局。结果只返回最终变量名和范围；值自动注入后续沙箱命令，请直接引用变量，不要读取、打印或向用户索要明文密钥。用户跳过时 cancelled=true。",
+            parametersJson = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "variables": {
+                      "type": "array", "minItems": 1, "maxItems": 16,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {"type": "string", "description": "建议的环境变量名，如 API_TOKEN"},
+                          "description": {"type": "string", "description": "变量用途"}
+                        },
+                        "required": ["name"]
+                      }
+                    },
+                    "scope": {"type": "string", "enum": ["session", "global"], "description": "默认 session，用户可修改"}
+                  },
+                  "required": ["variables"]
+                }
+            """.trimIndent()
+        ),
+        BuiltinToolSpec(
             id = "ask_user_question",
             category = "task",
             name = "向用户提问",

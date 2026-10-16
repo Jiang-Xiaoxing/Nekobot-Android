@@ -83,6 +83,7 @@ import com.nekobot.app.ui.screens.settings.LogViewerScreen
 import com.nekobot.app.ui.screens.stickers.StickerStoreScreen
 import com.nekobot.app.ui.screens.settings.AbTestSettingsScreen
 import com.nekobot.app.ui.screens.settings.AgentSettingsScreen
+import com.nekobot.app.ui.screens.settings.SandboxEnvironmentScreen
 import com.nekobot.app.ui.screens.settings.BrowserSettingsScreen
 import com.nekobot.app.ui.screens.settings.RagSettingsScreen
 import com.nekobot.app.ui.screens.settings.SandboxManagementScreen
@@ -530,6 +531,7 @@ fun NekobotNavGraph() {
                     onOpenSessionDetail = { id -> navController.navigate(Routes.sessionDetail(id)) },
                     onOpenWorkspace = { id -> navController.navigate(Routes.workspace(id)) },
                     onOpenStoryGraph = { id -> navController.navigate(Routes.storyGraph(id)) },
+                    onOpenEnvironmentVariables = { id -> navController.navigate(Routes.sandboxEnvironment(id)) },
                     onOpenWenku8Login = { navController.navigate(Routes.WENKU_LOGIN) },
                     onOpenStickers = { navController.navigate(Routes.STICKERS) },
                     onOpenBrowserSettings = { navController.navigate(Routes.BROWSER_SETTINGS) },
@@ -776,6 +778,15 @@ fun NekobotNavGraph() {
             }
             composable(Routes.SANDBOX_MANAGEMENT) {
                 SandboxManagementScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                Routes.SANDBOX_ENVIRONMENT,
+                arguments = listOf(navArgument("sessionId") { type = NavType.StringType; nullable = true; defaultValue = null }),
+            ) { entry ->
+                SandboxEnvironmentScreen(
+                    sessionId = entry.arguments?.getString("sessionId"),
+                    onBack = { navController.popBackStack() },
+                )
             }
             composable(Routes.DATA_MAINTENANCE) {
                 DataMaintenanceScreen(

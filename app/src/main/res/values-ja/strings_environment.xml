@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="env_title">環境変数</string>
+    <string name="env_global_title">グローバル環境変数</string>
+    <string name="env_global_scope">グローバル</string>
+    <string name="env_session_scope">このセッション</string>
+    <string name="env_global_desc">サンドボックスの共通変数を編集</string>
+    <string name="env_precedence_hint">同名の場合、セッション変数が優先されます。</string>
+    <string name="env_apply_hint">以降のコマンドに適用。起動中の端末や MCP サービスは再起動が必要です。</string>
+    <string name="env_empty">環境変数はありません。右上の＋で追加できます。</string>
+    <string name="env_variable_name">変数名</string>
+    <string name="env_variable_value">値</string>
+    <string name="env_invalid_name">英数字とアンダースコアを使用してください。数字で始まる名前と予約名は使えません。</string>
+    <string name="env_duplicate_name">変数名が重複しています</string>
+    <string name="env_show_value">値を表示</string>
+    <string name="env_hide_value">値を隠す</string>
+    <string name="env_saved">環境変数を保存しました</string>
+    <string name="env_request_title">環境変数を入力</string>
+    <string name="env_request_hint">変数名は変更できます。値は端末に保存され、ツールには名前のみ返されます。</string>
+    <string name="tool_name_request_environment_variables">環境変数の入力を依頼</string>
+    <string name="tool_desc_request_environment_variables">名前と保存範囲を変更できるサンドボックス変数の入力を依頼します。</string>
+</resources>

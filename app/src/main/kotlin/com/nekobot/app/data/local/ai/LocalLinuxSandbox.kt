@@ -164,7 +164,10 @@ internal object LocalLinuxSandboxCoordinator {
         val process = ProcessBuilder(argv)
             .directory(context.filesDir)
             .redirectErrorStream(true)
-            .apply { applyLocalSandboxEnvironment(runtime, sessionId) }
+            .apply {
+                applyLocalSandboxEnvironment(runtime, sessionId)
+                environment().putAll(SandboxEnvironmentStore.get(context).resolved(sessionId))
+            }
             .start()
         onProcessStarted(process)
 
@@ -612,6 +615,9 @@ internal class LocalPersistentLinuxShell(
     private val sharedWorkspace: File?,
     private val runtime: LocalLinuxRuntime,
 ) {
+    private var appliedEnvironment: Map<String, String> = emptyMap()
+    private var defaultEnvironment: Map<String, String> = emptyMap()
+
     @Volatile
     private var process: Process? = null
 
@@ -644,6 +650,9 @@ internal class LocalPersistentLinuxShell(
             .directory(context.filesDir)
             .redirectErrorStream(true)
         builder.applyLocalSandboxEnvironment(runtime, sessionId)
+        defaultEnvironment = builder.environment().toMap()
+        appliedEnvironment = SandboxEnvironmentStore.get(context).resolved(sessionId)
+        builder.environment().putAll(appliedEnvironment)
 
         val started = builder.start()
         process = started
@@ -668,6 +677,9 @@ internal class LocalPersistentLinuxShell(
         pending = callback
 
         try {
+            val currentEnvironment = SandboxEnvironmentStore.get(context).resolved(sessionId)
+            activeWriter.write(SandboxEnvironment.shellUpdates(appliedEnvironment, currentEnvironment, defaultEnvironment))
+            appliedEnvironment = currentEnvironment
             activeWriter.write(command)
             activeWriter.write("\n__nekobot_exit=\$?\n")
             activeWriter.write("printf '${callback.markerPrefix}%s__\\n' \"\$__nekobot_exit\"\n")

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="env_title">環境變數</string>
+    <string name="env_global_title">全域環境變數</string>
+    <string name="env_global_scope">全域</string>
+    <string name="env_session_scope">本工作階段</string>
+    <string name="env_global_desc">編輯沙箱的全域變數</string>
+    <string name="env_precedence_hint">本工作階段的同名變數優先於全域變數。</string>
+    <string name="env_apply_hint">後續命令生效；已開啟的終端或 MCP 服務需重新啟動。</string>
+    <string name="env_empty">尚無環境變數，點擊右上角新增。</string>
+    <string name="env_variable_name">變數名稱</string>
+    <string name="env_variable_value">變數值</string>
+    <string name="env_invalid_name">名稱須為字母、數字、底線，不能以數字開頭或使用保留名稱。</string>
+    <string name="env_duplicate_name">變數名稱已存在</string>
+    <string name="env_show_value">顯示值</string>
+    <string name="env_hide_value">隱藏值</string>
+    <string name="env_saved">環境變數已儲存</string>
+    <string name="env_request_title">填寫環境變數</string>
+    <string name="env_request_hint">可修改變數名稱。值儲存在本機，工具結果僅回傳變數名稱。</string>
+    <string name="tool_name_request_environment_variables">填寫環境變數</string>
+    <string name="tool_desc_request_environment_variables">請求使用者填寫沙箱環境變數，可修改名稱與儲存範圍。</string>
+</resources>

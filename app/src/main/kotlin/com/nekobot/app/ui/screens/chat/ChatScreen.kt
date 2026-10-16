@@ -289,6 +289,7 @@ fun ChatScreen(
     onOpenSessionDetail: (String) -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
     onOpenStoryGraph: (String) -> Unit = {},
+    onOpenEnvironmentVariables: (String) -> Unit = {},
     /** 内置浏览器「更多 → 浏览器设置」入口。 */
     onOpenBrowserSettings: () -> Unit = {},
     externalListState: androidx.compose.foundation.lazy.LazyListState? = null,
@@ -971,10 +972,16 @@ fun ChatScreen(
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.chat_story_graph)) },
+                                        text = { Text(stringResource(
+                                            if (session?.sessionMode.equals("agent", ignoreCase = true)) R.string.env_title
+                                            else R.string.chat_story_graph
+                                        )) },
                                         onClick = {
                                             menuExpanded = false
-                                            session?.id?.let { onOpenStoryGraph(it) }
+                                            session?.id?.let {
+                                                if (session?.sessionMode.equals("agent", ignoreCase = true)) onOpenEnvironmentVariables(it)
+                                                else onOpenStoryGraph(it)
+                                            }
                                         }
                                     )
                                     if (
@@ -1854,11 +1861,19 @@ fun ChatScreen(
 
     // ask_user_question：AI 向用户发起结构化提问，回答作为工具结果回传
     askUserQuestion?.let { questionRequest ->
-        AskUserQuestionDialog(
-            request = questionRequest,
-            onAnswer = { answers -> viewModel.respondToAskUserQuestion(answers) },
-            onSkip = { viewModel.skipAskUserQuestion() }
-        )
+        if (questionRequest.environmentVariables.isNotEmpty()) {
+            EnvironmentVariableRequestDialog(
+                request = questionRequest,
+                onAnswer = viewModel::respondToAskUserQuestion,
+                onSkip = viewModel::skipAskUserQuestion,
+            )
+        } else {
+            AskUserQuestionDialog(
+                request = questionRequest,
+                onAnswer = { answers -> viewModel.respondToAskUserQuestion(answers) },
+                onSkip = { viewModel.skipAskUserQuestion() }
+            )
+        }
     }
 
     // 第三方插件安装确认：Agent 安装会话工作区内的插件 ZIP 时必须由用户

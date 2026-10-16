@@ -66,6 +66,7 @@ internal object LocalMcpSandbox {
             this["LC_ALL"] = "C.UTF-8"
             this["TERM"] = "dumb"
             this["TZ"] = localPosixTimezone()
+            putAll(SandboxEnvironmentStore.get(appContext).resolved())
             putAll(sandboxEnvOverrides(env))
         }
         return builder.start()

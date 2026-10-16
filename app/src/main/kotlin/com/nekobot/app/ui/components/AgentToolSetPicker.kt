@@ -320,6 +320,7 @@ internal fun toolNameResId(id: String): Int = when (id) {
     "agent_history_read" -> R.string.tool_name_agent_history_read
     "todo_write" -> R.string.tool_name_todo_write
     "ask_user_question" -> R.string.tool_name_ask_user_question
+    "request_environment_variables" -> R.string.tool_name_request_environment_variables
     "get_session_thinking_history" -> R.string.tool_name_get_session_thinking_history
     "send_message" -> R.string.tool_name_send_message
     "plugin_use" -> R.string.tool_name_plugin_use
@@ -453,6 +454,7 @@ internal fun toolDescResId(id: String): Int = when (id) {
     "todo_write" -> R.string.tool_desc_todo_write
     "todo_read" -> R.string.tool_desc_todo_read
     "ask_user_question" -> R.string.tool_desc_ask_user_question
+    "request_environment_variables" -> R.string.tool_desc_request_environment_variables
     "plugin_use" -> R.string.tool_desc_plugin_use
     "android_help" -> R.string.tool_desc_android_help
     "android_device_info" -> R.string.tool_desc_android_device_info

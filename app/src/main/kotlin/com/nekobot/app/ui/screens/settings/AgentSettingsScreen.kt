@@ -519,6 +519,13 @@ fun AgentSettingsScreen(
                         desc = stringResource(R.string.agent_settings_sandbox_desc),
                         onClick = { onNavigate(Routes.SANDBOX_MANAGEMENT) }
                     )
+                    AgentNavigateRow(
+                        icon = Icons.Filled.Tune,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        title = stringResource(R.string.env_global_title),
+                        desc = stringResource(R.string.env_global_desc),
+                        onClick = { onNavigate(Routes.sandboxEnvironment()) }
+                    )
                 }
             }
 

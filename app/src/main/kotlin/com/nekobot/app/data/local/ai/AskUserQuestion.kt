@@ -41,15 +41,43 @@ data class AskUserQuestionAnswer(
     /** 用户勾选的选项标签（多选时多于一个）。 */
     val selected: List<String>,
     /** 用户自由输入的补充文本（可空）。 */
-    val text: String
+    val text: String,
+    /** 环境变量表单的保存范围；普通提问忽略。 */
+    val environmentScope: String = "session"
 )
 
 /** 推送到会话界面的提问请求。 */
 data class AskUserQuestionRequest(
     val requestId: String,
     val sessionId: String,
-    val questions: List<AskUserQuestionItem>
+    val questions: List<AskUserQuestionItem>,
+    val environmentVariables: List<EnvironmentVariableField> = emptyList(),
+    val environmentScope: String = "session"
 )
+
+data class EnvironmentVariableField(val name: String, val description: String = "")
+
+internal object EnvironmentVariableRequestCodec {
+    fun parse(args: Map<String, Any?>): Result<List<EnvironmentVariableField>> = runCatching {
+        val raw = args["variables"] as? List<*> ?: error("缺少 variables 数组")
+        require(raw.size in 1..16) { "每次请请求 1-16 个环境变量" }
+        val fields = raw.map { item ->
+            val field = item as? Map<*, *> ?: error("变量必须是对象")
+            val name = field["name"]?.toString()?.trim().orEmpty()
+            require(SandboxEnvironment.isValidName(name)) { "环境变量名无效或为沙箱保留名称" }
+            EnvironmentVariableField(name, field["description"]?.toString().orEmpty().take(300))
+        }
+        require(fields.map { it.name }.distinct().size == fields.size) { "环境变量名不能重复" }
+        fields
+    }
+
+    fun validAnswers(answers: List<AskUserQuestionAnswer>, count: Int): Boolean =
+        answers.size == count && answers.all {
+            SandboxEnvironment.isValidName(it.id) && SandboxEnvironment.isValidValue(it.text) &&
+                it.environmentScope in setOf("session", "global")
+        } && answers.map { it.id }.distinct().size == answers.size &&
+            answers.map { it.environmentScope }.distinct().size == 1
+}
 
 /**
  * ask_user_question 参数解析器。
@@ -155,7 +183,8 @@ class LocalAskUserQuestionManager(
 ) {
     private data class Pending(
         val sessionId: String,
-        val decision: CompletableDeferred<Pair<Boolean, List<AskUserQuestionAnswer>>>
+        val decision: CompletableDeferred<Pair<Boolean, List<AskUserQuestionAnswer>>>,
+        val environmentVariableCount: Int = 0,
     )
 
     private val pending = ConcurrentHashMap<String, Pending>()
@@ -167,13 +196,16 @@ class LocalAskUserQuestionManager(
     suspend fun requestAnswer(
         sessionId: String,
         questions: List<AskUserQuestionItem>,
-        onRequest: (AskUserQuestionRequest) -> Unit
+        onRequest: (AskUserQuestionRequest) -> Unit,
+        environmentVariables: List<EnvironmentVariableField> = emptyList(),
+        environmentScope: String = "session",
+        saveEnvironment: ((List<AskUserQuestionAnswer>) -> Unit)? = null,
     ): Map<String, Any> {
         val requestId = UUID.randomUUID().toString()
         val decision = CompletableDeferred<Pair<Boolean, List<AskUserQuestionAnswer>>>()
-        pending[requestId] = Pending(sessionId, decision)
-        onRequest(AskUserQuestionRequest(requestId = requestId, sessionId = sessionId, questions = questions))
+        pending[requestId] = Pending(sessionId, decision, environmentVariables.size)
         val outcome = try {
+            onRequest(AskUserQuestionRequest(requestId, sessionId, questions, environmentVariables, environmentScope))
             withTimeoutOrNull(timeoutMs) { decision.await() }
         } finally {
             pending.remove(requestId)
@@ -190,6 +222,19 @@ class LocalAskUserQuestionManager(
                 "cancelled" to true,
                 "error" to "用户跳过了这些问题。请基于已有信息继续任务，不要因跳过而反复重新提问。"
             )
+            environmentVariables.isNotEmpty() -> {
+                checkNotNull(saveEnvironment)(outcome.second)
+                mapOf(
+                    "success" to true,
+                    "cancelled" to false,
+                    "scope" to outcome.second.first().environmentScope,
+                    "variable_names" to outcome.second.map { it.id },
+                    "variables" to environmentVariables.zip(outcome.second).map { (field, answer) ->
+                        mapOf("requested_name" to field.name, "name" to answer.id)
+                    },
+                    "note" to "用户已保存环境变量，后续沙箱命令可通过变量名使用。不要输出或读取变量值。"
+                )
+            }
             else -> mapOf(
                 "success" to true,
                 "cancelled" to false,
@@ -215,6 +260,9 @@ class LocalAskUserQuestionManager(
     fun resolve(requestId: String, sessionId: String, answers: List<AskUserQuestionAnswer>): Boolean {
         val request = pending[requestId] ?: return false
         if (request.sessionId != sessionId) return false
+        if (request.environmentVariableCount > 0 &&
+            !EnvironmentVariableRequestCodec.validAnswers(answers, request.environmentVariableCount)
+        ) return false
         return request.decision.complete(true to answers)
     }
 
