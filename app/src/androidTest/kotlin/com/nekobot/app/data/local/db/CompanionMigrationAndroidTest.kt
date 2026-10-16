@@ -13,11 +13,11 @@ import org.junit.Test
 class CompanionMigrationAndroidTest {
     @get:Rule val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), NekobotDatabase::class.java)
 
-    @Test fun migration50To51PreservesOldModeAndMemoryAndCreatesNoNewOwnership() {
+    @Test fun migration53ToLatestPreservesOldModeAndMemoryAndCreatesNoNewOwnership() {
         val name="companion-fused-migration-test"
-        val old=helper.createDatabase(name,50)
+        val old=helper.createDatabase(name,53)
         val fields=InstrumentationRegistry.getInstrumentation().context.assets
-            .open("com.nekobot.app.data.local.db.NekobotDatabase/50.json").bufferedReader().use {
+            .open("com.nekobot.app.data.local.db.NekobotDatabase/53.json").bufferedReader().use {
                 JsonParser.parseReader(it).asJsonObject["database"].asJsonObject["entities"].asJsonArray
                     .single { e -> e.asJsonObject["tableName"].asString=="local_sessions" }.asJsonObject["fields"].asJsonArray
             }
@@ -33,9 +33,9 @@ class CompanionMigrationAndroidTest {
         }
         old.insert("local_sessions",SQLiteDatabase.CONFLICT_ABORT,values)
         old.execSQL("INSERT INTO companion_scopes VALUES ('scope','p','old','c',0,0,NULL,1,2,NULL,'old-day')")
-        old.execSQL("INSERT INTO companion_memories VALUES ('fact','scope','diet',1,'fact','用户','怕辣','active',NULL,NULL,'[]',1,1,1,'old-day','old-day')")
+        old.execSQL("INSERT INTO companion_memories(id,scopeId,factKey,version,kind,subject,content,status,tagsJson,current,valid,locked,createdAt,updatedAt) VALUES ('fact','scope','diet',1,'fact','用户','怕辣','active','[]',1,1,1,'old-day','old-day')")
         old.close()
-        val current=helper.runMigrationsAndValidate(name,51,true,NekobotDatabase.MIGRATION_50_51)
+        val current=helper.runMigrationsAndValidate(name,60,true,*NekobotDatabase.ALL_MIGRATIONS)
         current.query("SELECT companion_mode,long_conversation_enabled FROM local_sessions WHERE id='old'").use {
             assertTrue(it.moveToFirst()); assertEquals(0,it.getInt(0)); assertEquals(1,it.getInt(1))
         }
@@ -46,16 +46,16 @@ class CompanionMigrationAndroidTest {
         current.close()
     }
 
-    @Test fun full49To50KeepsIndependentFactsSourcesLocksAndQueue() {
+    @Test fun full53ToLatestKeepsIndependentFactsSourcesLocksAndQueue() {
         val name="companion-search-migration-test"
-        val old=helper.createDatabase(name,49)
+        val old=helper.createDatabase(name,53)
         old.execSQL("INSERT INTO companion_scopes VALUES ('scope','original-profile','session','character',12,14,'anchor',1,3,NULL,'original-day')")
-        old.execSQL("INSERT INTO companion_memories VALUES ('fact','scope','diet',1,'fact','用户','怕辣','active',NULL,NULL,'[]',1,1,1,'created-day','updated-day')")
+        old.execSQL("INSERT INTO companion_memories(id,scopeId,factKey,version,kind,subject,content,status,tagsJson,current,valid,locked,createdAt,updatedAt) VALUES ('fact','scope','diet',1,'fact','用户','怕辣','active','[]',1,1,1,'created-day','updated-day')")
         old.execSQL("INSERT INTO companion_sources VALUES ('fact','source','digest','我怕辣','2026-10-01','user')")
         old.execSQL("INSERT INTO companion_receipts VALUES ('scope','source','digest')")
         old.execSQL("INSERT INTO companion_pending VALUES ('scope','next-source')")
         old.close()
-        val migrated=helper.runMigrationsAndValidate(name,50,true,NekobotDatabase.MIGRATION_49_50)
+        val migrated=helper.runMigrationsAndValidate(name,60,true,*NekobotDatabase.ALL_MIGRATIONS)
         migrated.query("SELECT content,locked,createdAt FROM companion_memories WHERE id='fact'").use {
             assertTrue(it.moveToFirst()); assertEquals("怕辣",it.getString(0)); assertEquals(1,it.getInt(1)); assertEquals("created-day",it.getString(2))
         }
@@ -68,7 +68,7 @@ class CompanionMigrationAndroidTest {
         migrated.close()
     }
 
-    @Test fun full48To50MigrationKeepsAllOldDataAndValidatesLatestRoomSchema() {
+    @Test fun full48ToLatestMigrationKeepsAllOldDataAndValidatesLatestRoomSchema() {
         val name="companion-full-migration-test"
         val old=helper.createDatabase(name,48)
         val schema=InstrumentationRegistry.getInstrumentation().context.assets
@@ -98,7 +98,7 @@ class CompanionMigrationAndroidTest {
             sourceFingerprint="old",summaryEdited=true,tagsEdited=true,createdAt="2026-01-02",updatedAt="2026-10-05"))
         insert("local_experience_sources",LocalExperienceSourceEntity("episode","source"))
         old.close()
-        val migrated=helper.runMigrationsAndValidate(name,50,true,*NekobotDatabase.ALL_MIGRATIONS)
+        val migrated=helper.runMigrationsAndValidate(name,60,true,*NekobotDatabase.ALL_MIGRATIONS)
         migrated.query("SELECT content FROM local_messages WHERE id='source'").use { assertTrue(it.moveToFirst()); assertEquals("OLD ORIGINAL",it.getString(0)) }
         migrated.query("SELECT content FROM local_character_memories WHERE id='shared'").use { assertTrue(it.moveToFirst()); assertEquals("AUTHOR MEMORY",it.getString(0)) }
         migrated.query("SELECT summary,tags_json,summary_edited,tags_edited,character_id FROM local_experience_archives WHERE id='episode'").use {

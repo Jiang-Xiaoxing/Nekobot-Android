@@ -28,7 +28,7 @@ internal object CompanionSchema {
     }
 
     fun installTriggers(db: SupportSQLiteDatabase) {
-        // Version 49 migration is run before the search tables exist.
+        // The core tables are created before the search tables.
         val hasSearch = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='companion_vectors'").use { it.moveToFirst() }
         if (hasSearch) {
             db.execSQL("""CREATE TRIGGER IF NOT EXISTS companion_fact_search_invalidated

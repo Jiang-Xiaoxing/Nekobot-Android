@@ -2,7 +2,7 @@ package com.nekobot.app.data.local.db
 
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-/** v51: additive, no rewriting of old sessions or their memories. */
+/** Added in v52 → v53: additive, no rewriting of old sessions or their memories. */
 internal object FusedCompanionSchema {
     fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE local_sessions ADD COLUMN companion_mode INTEGER NOT NULL DEFAULT 0")
@@ -16,7 +16,7 @@ internal object FusedCompanionSchema {
     }
 
     fun installTriggers(db: SupportSQLiteDatabase) {
-        // Tests and earlier migrations may install the legacy triggers before v51 exists.
+        // Tests and earlier migrations may install the legacy triggers before the companion columns exist.
         if (!db.query("PRAGMA table_info(local_sessions)").use { c ->
             var found = false
             while (c.moveToNext()) if (c.getString(1) == "companion_mode") found = true

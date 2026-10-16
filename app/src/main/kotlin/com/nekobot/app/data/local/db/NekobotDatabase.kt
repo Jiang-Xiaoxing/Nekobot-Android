@@ -1072,6 +1072,129 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+        /** v48 → v49：为本地子代理任务与待办增加档案级持久存储。 */
+        val MIGRATION_48_49 = object : Migration(48, 49) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_subagent_tasks (
+                        task_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        root_run_id TEXT NOT NULL,
+                        parent_task_id TEXT,
+                        parent_message_id TEXT,
+                        parent_tool_call_id TEXT,
+                        request_key TEXT,
+                        description TEXT NOT NULL,
+                        prompt TEXT NOT NULL,
+                        run_in_background INTEGER NOT NULL,
+                        depth INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        stage TEXT NOT NULL,
+                        execution_generation INTEGER NOT NULL,
+                        completed_tool_calls INTEGER NOT NULL,
+                        checkpoint_sequence INTEGER NOT NULL,
+                        todos_json TEXT NOT NULL,
+                        result_text TEXT NOT NULL,
+                        error_text TEXT,
+                        model_used TEXT NOT NULL,
+                        tool_calls INTEGER NOT NULL,
+                        steps_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        started_at INTEGER,
+                        finished_at INTEGER,
+                        updated_at INTEGER NOT NULL,
+                        source_device_id TEXT,
+                        PRIMARY KEY(task_id),
+                        FOREIGN KEY(session_id) REFERENCES local_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_subagent_tasks_session_id ON local_subagent_tasks(session_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_subagent_tasks_parent_task_id ON local_subagent_tasks(parent_task_id)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_local_subagent_tasks_request_key ON local_subagent_tasks(request_key)")
+            }
+        }
+
+        /** v49 → v50：保留子代理协议上下文，并逐条记录工具调用状态以支持安全恢复。 */
+        val MIGRATION_49_50 = object : Migration(49, 50) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE local_subagent_tasks ADD COLUMN tool_call_states_json TEXT NOT NULL DEFAULT '{}'"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_subagent_messages (
+                        task_id TEXT NOT NULL,
+                        sequence INTEGER NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        PRIMARY KEY(task_id, sequence),
+                        FOREIGN KEY(task_id) REFERENCES local_subagent_tasks(task_id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_subagent_messages_task_id ON local_subagent_messages(task_id)"
+                )
+            }
+        }
+
+        /** v50 → v51：独立持久化子代理工具调用检查点和完成通知 outbox。 */
+        val MIGRATION_50_51 = object : Migration(50, 51) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_subagent_tool_calls (
+                        task_id TEXT NOT NULL,
+                        execution_generation INTEGER NOT NULL,
+                        call_id TEXT NOT NULL,
+                        assistant_sequence INTEGER NOT NULL,
+                        result_sequence INTEGER,
+                        tool_name TEXT NOT NULL,
+                        arguments_summary TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        started_at INTEGER,
+                        finished_at INTEGER,
+                        recovery_decision TEXT,
+                        PRIMARY KEY(task_id, execution_generation, call_id),
+                        FOREIGN KEY(task_id) REFERENCES local_subagent_tasks(task_id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_subagent_tool_calls_task_id ON local_subagent_tool_calls(task_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_subagent_tool_calls_task_id_execution_generation_status ON local_subagent_tool_calls(task_id, execution_generation, status)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_agent_notices (
+                        notice_id TEXT NOT NULL PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        parent_task_id TEXT,
+                        execution_generation INTEGER NOT NULL,
+                        payload TEXT NOT NULL,
+                        delivery_state TEXT NOT NULL DEFAULT 'pending',
+                        created_at INTEGER NOT NULL,
+                        delivered_at INTEGER,
+                        consumed_by_run_id TEXT,
+                        FOREIGN KEY(task_id) REFERENCES local_subagent_tasks(task_id) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(parent_task_id) REFERENCES local_subagent_tasks(task_id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_agent_notices_task_id ON local_agent_notices(task_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_agent_notices_session_id_delivery_state_created_at ON local_agent_notices(session_id, delivery_state, created_at)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_agent_notices_parent_task_id_delivery_state ON local_agent_notices(parent_task_id, delivery_state)")
+            }
+        }
+
+        /** v51 → v52：记录失败/终止任务重试所来源的子代理任务。 */
+        val MIGRATION_51_52 = object : Migration(51, 52) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_subagent_tasks ADD COLUMN source_task_id TEXT")
+            }
+        }
+
         /** Room 不声明触发器；数据库打开时也安装一次，覆盖全新安装。 */
         private fun installExperienceInvalidationTriggers(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -1107,29 +1230,15 @@ abstract class NekobotDatabase : RoomDatabase() {
             )
         }
 
-        /**
-         * 完整迁移链同时供生产数据库构建和迁移回归测试使用。
-         * 新版本必须把迁移追加到这里；缺少迁移时直接失败，绝不静默清空用户数据。
-         */
-        val MIGRATION_48_49 = object : Migration(48, 49) {
-            override fun migrate(db: SupportSQLiteDatabase) = CompanionSchema.create(db)
-        }
-
-        val MIGRATION_49_50 = object : Migration(49, 50) {
-            override fun migrate(db: SupportSQLiteDatabase) = CompanionSchema.createSearch(db)
-        }
-
-        val MIGRATION_50_51 = object : Migration(50, 51) {
-            override fun migrate(db: SupportSQLiteDatabase) = FusedCompanionSchema.migrate(db)
-        }
-
-        /** Personal v51 → v52: add upstream v0.8.3 subagent persistence without changing existing memory. */
-        val MIGRATION_51_52 = object : Migration(51, 52) {
-            override fun migrate(db: SupportSQLiteDatabase) = SubagentSchema.create(db)
-        }
-
         val MIGRATION_52_53 = object : Migration(52, 53) {
-            override fun migrate(db: SupportSQLiteDatabase) = CompanionTransferSchema.migrate(db)
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // main v52 has no companion tables. Keep all released migrations intact,
+                // and introduce the PR's memory/session structures only after that version.
+                CompanionSchema.create(db)
+                CompanionSchema.createSearch(db)
+                FusedCompanionSchema.migrate(db)
+                CompanionTransferSchema.migrate(db)
+            }
         }
 
         val MIGRATION_53_54 = object : Migration(53, 54) {
@@ -1185,6 +1294,10 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 完整迁移链同时供生产数据库构建和迁移回归测试使用。
+         * 新版本必须把迁移追加到这里；缺少迁移时直接失败，绝不静默清空用户数据。
+         */
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
