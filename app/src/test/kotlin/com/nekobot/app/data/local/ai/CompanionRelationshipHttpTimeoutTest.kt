@@ -14,6 +14,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicBoolean
@@ -78,18 +79,31 @@ class CompanionRelationshipHttpTimeoutTest {
     @Test fun errorResponseBodyAlsoHasHardCallDeadline() = checkTimeout(MockResponse().setResponseCode(400).setBody(response).setBodyDelay(4, TimeUnit.SECONDS))
     @Test fun missingResponseIsCancelledAndDoesNotRetry() = checkTimeout(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE), expectsHeaders = false)
 
-    @Test fun successfulEvaluationReleasesCallsAndDoesNotChangeGlobalTimeoutOrLogPrivateMaterial() = runBlocking {
+    // 让结果在 OkHttp 回调内立即恢复，稳定覆盖调用方先于 Dispatcher 收尾的时序。
+    @Test fun successfulEvaluationReleasesCallsAndDoesNotChangeGlobalTimeoutOrLogPrivateMaterial() = runBlocking(Dispatchers.Unconfined) {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(response))
-            val transport = OkHttpClient.Builder().build()
+            val dispatcherIdle = CompletableDeferred<Unit>()
+            val transport = OkHttpClient.Builder().build().apply {
+                dispatcher.idleCallback = Runnable { dispatcherIdle.complete(Unit) }
+            }
             val client = LocalAiClient(transport)
             val model = model(server)
-            val result = client.chatOnce(model, messages, extra(model, 5000), "success-test")
+            val requestTag = "success-test-${UUID.randomUUID()}"
+            val result = client.chatOnce(model, messages, extra(model, 5000), requestTag)
             assertEquals("{}", result.content)
             assertEquals(1, server.requestCount)
             assertEquals(0, transport.callTimeoutMillis)
+            // chatOnce 返回时 onResponse 可能尚未返回；等待真实空闲事件，不猜线程调度速度。
+            withTimeout(5000) { dispatcherIdle.await() }
             assertEquals(0, transport.dispatcher.runningCallsCount())
-            val log = LocalLogger.listLogs().filter { it.tag == "RelationshipHttp" }.joinToString { it.message }
+            for (name in listOf("activeHttpCalls", "taggedCalls")) {
+                val field = LocalAiClient::class.java.getDeclaredField(name).apply { isAccessible = true }.get(client)
+                assertEquals("must release $name", 0, when (field) { is Map<*, *> -> field.size; is Set<*> -> field.size; else -> -1 })
+            }
+            val diagnostics = LocalLogger.listLogs().filter { it.tag == "RelationshipHttp" }
+            assertTrue("must inspect diagnostics from this evaluation", diagnostics.any { it.message.startsWith("tag=$requestTag，") })
+            val log = diagnostics.joinToString { it.message }
             assertFalse(log.contains("private-chat-sentinel"))
             assertFalse(log.contains("private-key-sentinel"))
             assertFalse(log.contains(server.hostName))
