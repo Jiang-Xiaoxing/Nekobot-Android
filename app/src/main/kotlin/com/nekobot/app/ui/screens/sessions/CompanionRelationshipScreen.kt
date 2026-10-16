@@ -146,7 +146,9 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-                if (!v.busy) state.notice?.let { RelationshipPaper { Text(it, color = MaterialTheme.colorScheme.error) } }
+                if (!v.busy) state.notice?.takeUnless(CompanionRelationshipRecovery::obsoleteInitializationNotice)?.let {
+                    RelationshipPaper { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
                 state.correctionResult?.let { RelationshipPaper { Text(it, style = MaterialTheme.typography.bodySmall) } }
                 v.sourceWarning?.let { warning ->
                     RelationshipPaper {
@@ -194,7 +196,7 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
                     JournalAction("变化依据", icon = Icons.Filled.History, onClick = { evidenceExpanded = !evidenceExpanded }, modifier = Modifier.weight(1f).fillMaxHeight())
-                    JournalAction("旧版记录", icon = Icons.Filled.Archive, onClick = { oldRecordsOpen = true }, modifier = Modifier.weight(1f).fillMaxHeight())
+                    JournalAction("历史记录", icon = Icons.Filled.Archive, onClick = { oldRecordsOpen = true }, modifier = Modifier.weight(1f).fillMaxHeight())
                 }
                 if (evidenceExpanded) {
                 RelationshipPaper { JournalHeading("变化依据") }
@@ -233,18 +235,17 @@ internal fun CompanionRelationshipScreen(sessionId: String, onBack: () -> Unit) 
             action { quotes = service.sourceQuotes(sessionId, item.third!!) }
         }) { Text("查看原话") }
     }) }
-    if (oldRecordsOpen) AlertDialog(onDismissRequest = { oldRecordsOpen = false }, title = { Text("旧版记录") }, text = {
+    if (oldRecordsOpen) AlertDialog(onDismissRequest = { oldRecordsOpen = false }, title = { Text("历史记录") }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val old = view?.legacy
-            if (old == null) Text("没有可读取的旧版记录。") else {
-                Text("${old.origin}，不会因新版文字评估而删除。旧数值不是当前模型的新判断。", style = MaterialTheme.typography.bodySmall)
+            if (old == null) Text("暂无历史记录。") else {
+                Text("这里保留此前的关系与感受，更新当前关系不会删除这些内容。历史数值仅供回顾。", style = MaterialTheme.typography.bodySmall)
                 old.observedAt?.let { Text("原话时间 ${relationshipTime(it)}") }
                 Text("心情：${old.mood}\n精力：${old.energy}\n原情绪强度：${old.intensity?.let { "${(it * 100).roundToInt()}%" } ?: "未记录"}")
                 if (old.reason.isNotBlank()) Text(old.reason)
                 CompanionRelationshipPolicy.dimensions.forEach { (key, label) ->
                     Text("$label：${old.descriptions[key] ?: "暂无文字描述"}\n原数值：${old.totals[key] ?: "未记录"}")
                 }
-                Text("旧记录未提供原话依据的部分，不补造来源。", style = MaterialTheme.typography.bodySmall)
             }
         }
     }, confirmButton = { TextButton(onClick = { oldRecordsOpen = false }) { Text("关闭") } }, dismissButton = {

@@ -277,9 +277,12 @@ internal class CompanionRelationshipService(
             val legacy = CompanionRelationshipNarrative.legacy(input.state.legacySnapshotJson)
             val character = db.characterDao().getById(input.state.characterId)
             val background = listOfNotNull(character?.basicInfo, character?.description, character?.personality).joinToString("\n").take(4000)
+            val initialScores = initialValues(input.state.characterId, id)
             val payload = gson.toJson(mapOf(
                 "角色" to character?.name, "角色背景参考" to background,
                 "上一版六维" to CompanionRelationshipScores.previous(previous, legacy),
+                "本次必须初始化的维度" to if (input.target == null) CompanionRelationshipScores.initializationKeys(previous) else emptySet(),
+                "角色卡初始关系参考" to initialScores,
                 "上次感受_只是历史观察" to previous?.feelings?.let {
                     mapOf("mood" to it.mood, "intensity" to it.intensity, "energy" to it.energy, "observed_at" to it.observedAt)
                 },
@@ -317,8 +320,11 @@ internal class CompanionRelationshipService(
                 json["verdict"].asString == "corrected"
             } else false
             val allowedKeys = input.target?.let { if (corrected) CompanionRelationshipNarrative.affected(it) else emptySet() }
+            val missingScores = linkedSetOf<String>()
             val narrative = CompanionRelationshipScores.parse(json, previous, legacy,
-                input.batch.lastOrNull()?.rows.orEmpty(), now, allowedKeys)
+                input.batch.lastOrNull()?.rows.orEmpty(), now, allowedKeys, initialScores, missingScores::add)
+            if (missingScores.isNotEmpty()) LocalLogger.w("Relationship",
+                "评估漏分已逐项处理：项目=${missingScores.joinToString()}，已有分数保留，缺分按角色卡起点初始化")
             // 不再要求模型编写事件和引用；旧事件仅在明确纠错时追加版本，原记录不覆盖。
             val effects = input.target?.takeIf { corrected }?.let { target ->
                 listOf(target.copy(id = UUID.randomUUID().toString(), revision = input.state.version + 1,

@@ -12,7 +12,7 @@ internal data class RelationshipDescription(
     val reason: String,
     val sources: List<RelationshipSource>,
     val eventRevisions: Map<String, Long> = emptyMap(),
-    /** 旧版文字没有分数，由下一次模型评估初始化，不能套用旧词表/默认分。 */
+    /** 旧版文字没有分数，由下一次评估初始化；模型漏分时按角色卡起点兜底。 */
     val score: Int? = null
 )
 

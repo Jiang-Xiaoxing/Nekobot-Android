@@ -67,11 +67,14 @@ class CompanionRelationshipScoresTest {
         assertEquals(old.relationships, result.relationships)
         assertEquals(old.feelings, result.feelings)
     }
-    @Test fun missingInitialDimensionCannotAdvanceAnIncompleteResult() {
-        assertThrows(IllegalArgumentException::class.java) { parse("{}", null) }
+    @Test fun missingInitialDimensionsUseConservativeCharacterDefaults() {
+        val result = parse("{}", null)
+        assertEquals(CompanionRelationshipPolicy.initial, result.relationships.mapValues { it.value?.score })
+        assertTrue(result.relationships.values.all { it!!.description.startsWith("我") })
+        assertNotNull(CompanionRelationshipNarrative.read(gson.toJson(result)))
     }
     @Test fun scoreMustBeNumberAndIntegral() {
-        for (score in listOf("50.1", "\"50\"", "null", "true", "1e50")) {
+        for (score in listOf("50.1", "\"50\"", "true", "1e50")) {
             assertThrows(IllegalArgumentException::class.java) { parse("""{"trust":{"score":$score,"description":"我还在犹豫。"}}""") }
         }
     }

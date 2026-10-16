@@ -205,4 +205,13 @@ class CompanionRelationshipRecoveryTest {
         assertTrue(requireNotNull(notice).second.contains("回复太慢"))
         assertNull(CompanionRelationshipRecovery.noticeToShow(state().copy(enabled = false), false, null))
     }
+
+    @Test fun savedInitializationValidationDoesNotAppearAsFailureOrBlockFutureUpdates() {
+        val old = state("没有分数的关系项目需要按人设初始化").copy(automatic = true, interval = 1)
+        assertTrue(CompanionRelationshipRecovery.obsoleteInitializationNotice(old.notice))
+        assertNull(CompanionRelationshipRecovery.noticeToShow(old, false, null))
+        assertTrue(CompanionRelationshipRecovery.automaticReady(old, 1))
+        assertFalse(CompanionRelationshipRecovery.obsoleteInitializationNotice(CompanionRelationshipRecovery.TIMEOUT))
+        assertNotNull(CompanionRelationshipRecovery.noticeToShow(old.copy(notice = CompanionRelationshipRecovery.TIMEOUT), false, null))
+    }
 }
