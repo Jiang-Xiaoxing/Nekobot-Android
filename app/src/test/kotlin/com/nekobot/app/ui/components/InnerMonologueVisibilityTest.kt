@@ -7,6 +7,30 @@ import org.junit.Test
 
 class InnerMonologueVisibilityTest {
 
+    @Test fun companionGroupingUsesExistingBlocksWithoutChangingGeneralParser() {
+        val original = "正文（内心：想见你）"
+        assertEquals(parseBlocks(original, true), companionBubbleMarkdownBlocks(original, true, false))
+        assertEquals(listOf(MdBlock.InnerMonologue("想见你")), companionMonologueBlocks("（内心：想见你）", false))
+        assertEquals(null, companionMonologueBlocks(original, false))
+        assertEquals(null, companionMonologueBlocks("`（内心：想见你）`", false))
+    }
+
+    @Test fun companionPendingSuppressionDoesNotChangeOrdinaryMarkdown() {
+        val pending = "（内心：还没说完"
+        assertTrue(companionBubbleMarkdownBlocks(pending, true, true).isEmpty())
+        assertEquals(listOf(MdBlock.Paragraph(pending)), visibleMarkdownBlocks(pending, true, true, true))
+        assertEquals(listOf(MdBlock.Paragraph(pending)), companionBubbleMarkdownBlocks(pending, true, false))
+    }
+
+    @Test fun companionAttachedPartsKeepMarkdownBoundariesAndThoughtOrder() {
+        val body = "```text\n（内心：代码）\n```"
+        val thoughts = "（内心：先想）\n\n(心里:后想)"
+        assertEquals(listOf(MdBlock.CodeBlock("text", "（内心：代码）")), companionBubbleMarkdownBlocks(body, true, false))
+        assertEquals(listOf(MdBlock.InnerMonologue("先想"), MdBlock.InnerMonologue("后想")),
+            companionBubbleMarkdownBlocks(thoughts, true, false))
+        assertTrue(companionBubbleMarkdownBlocks(thoughts, false, false).isEmpty())
+    }
+
     private val text = "早上好呀（内心：今天也想见你）\n要一起吃早饭吗？"
 
     @Test

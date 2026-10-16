@@ -17,6 +17,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.key
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -2755,6 +2756,14 @@ private fun MessageBubble(
             segments.map { parseContentSegments(it, stickerLookup::get) }
         }
     }
+    // LocalCompanionChatName 仅由 session.companionMode == true 的会话提供。
+    val companionMonologueFooter = usesCompanionMonologueFooter(companionChat, isUser, useSafePlainText)
+    val showInnerMonologue = com.nekobot.app.ui.components.LocalShowInnerMonologue.current
+    val displayGroups = remember(segments, parsedSegments, companionChat, isUser, useSafePlainText,
+        showInnerMonologue, isStreamingPlaceholder) {
+        groupCompanionMonologueSegments(segments, parsedSegments, companionChat, isUser, useSafePlainText,
+            showInnerMonologue, isStreamingPlaceholder)
+    }
     val hasUserImage = isUser && parsedSegments.any { content ->
         content.any { it.isImageContent() }
     }
@@ -2998,8 +3007,10 @@ private fun MessageBubble(
             val commandStyle = commandCapsule?.takeIf { segments.size == 1 }
             // swipes 需要让整块气泡整体位移，抽成 lambda 才能复用同一套分段渲染
             val renderSegments: @Composable () -> Unit = {
-                segments.forEachIndexed { idx, segment ->
-                    val isLast = idx == segments.lastIndex
+                displayGroups.forEachIndexed { displayIndex, group ->
+                    val idx = group.sourceIndex
+                    val segment = segments[idx]
+                    val isLast = displayIndex == displayGroups.lastIndex
                     // 解析多媒体内容段
                     val contentSegments = parsedSegments[idx]
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
@@ -3011,7 +3022,9 @@ private fun MessageBubble(
                         "${message.timestamp}:${message.isUser}:${message.content.hashCode()}",
                         idx
                     )
-                    val segBounds = remember { arrayOfNulls<androidx.compose.ui.unit.IntRect>(1) }
+                    val segBounds = if (companionMonologueFooter) {
+                        remember(message.id, message.variantIndex, idx) { arrayOfNulls<androidx.compose.ui.unit.IntRect>(1) }
+                    } else remember { arrayOfNulls<androidx.compose.ui.unit.IntRect>(1) }
                     Box(
                         modifier = Modifier
                             .then(messageEntranceModifier(motionRegistry, motionKey, idx, message.timestamp,
@@ -3162,6 +3175,24 @@ private fun MessageBubble(
                                     color = textColor,
                                     modifier = Modifier.widthIn(max = maxBubbleWidth)
                                 )
+                            } else if (companionMonologueFooter) {
+                                key(message.id, message.variantIndex, idx) {
+                                    com.nekobot.app.ui.components.CompanionBubbleMarkdownText(
+                                        parts = group.sourceIndices.map {
+                                            com.nekobot.app.ui.components.CompanionMarkdownPart(it, segments[it])
+                                        },
+                                        color = textColor,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        isStreaming = isStreamingPlaceholder,
+                                        selectionMode = selectionMode,
+                                        onToggleSelection = onToggleSelection,
+                                        onLongClick = {
+                                            onLongPressAnchor(segmentKey, segBounds[0])
+                                            onLongClick()
+                                        },
+                                        modifier = Modifier.widthIn(max = maxBubbleWidth)
+                                    )
+                                }
                             } else {
                                 MarkdownText(
                                     text = segment,
@@ -3178,7 +3209,8 @@ private fun MessageBubble(
                     if (!isLast) {
                         // 文件卡片之间留出比普通气泡链更大的间隔，避免多文件挤成一团
                         val fileAdjacent = contentSegments.any { it.type == SegmentType.FILE } ||
-                            parsedSegments.getOrNull(idx + 1).orEmpty().any { it.type == SegmentType.FILE }
+                            parsedSegments.getOrNull(displayGroups[displayIndex + 1].sourceIndex).orEmpty()
+                                .any { it.type == SegmentType.FILE }
                         Spacer(Modifier.height(if (fileAdjacent) 8.dp else 10.dp))
                     }
                 }

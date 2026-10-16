@@ -12,6 +12,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import com.nekobot.app.ui.components.withoutBorder as border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.horizontalScroll
@@ -115,6 +117,103 @@ fun MarkdownText(
 
 internal fun chatMarkdownWrapsWidth(blocks: List<MdBlock>): Boolean = blocks.none {
     it is MdBlock.CodeBlock || it is MdBlock.Table || it is MdBlock.Image
+}
+
+/** null 表示普通正文；空列表表示已识别、尚未闭合的流式纯独白。 */
+internal fun companionMonologueBlocks(text: String, isStreaming: Boolean): List<MdBlock.InnerMonologue>? {
+    // token 可能停在「（内」「（内心」处；先暂存可能的独白前缀，避免新泡闪一下再并回正文。
+    val prefix = text.trim()
+    if (isStreaming && prefix.isNotEmpty() && INNER_LABELS.any { label ->
+        listOf("（$label：", "（$label:", "($label：", "($label:").any { it.startsWith(prefix) }
+    }) return emptyList()
+    val blocks = parseBlocks(text, chatMode = true)
+    if (blocks.isNotEmpty() && blocks.all { it is MdBlock.InnerMonologue }) {
+        return blocks.filterIsInstance<MdBlock.InnerMonologue>()
+    }
+    if (isStreaming && text.isNotBlank() && visibleMarkdownBlocks(text, true, false, true).isEmpty()) {
+        return emptyList()
+    }
+    return null
+}
+
+internal data class CompanionMarkdownPart(val sourceIndex: Int, val text: String)
+
+internal fun companionBubbleMarkdownBlocks(text: String, showInnerMonologue: Boolean, isStreaming: Boolean): List<MdBlock> =
+    if (companionMonologueBlocks(text, isStreaming)?.isEmpty() == true) emptyList()
+    else visibleMarkdownBlocks(text, true, showInnerMonologue, isStreaming)
+
+/** 仅供单会话角色的文字气泡调用；各源段分别解析，避免拼接改变 Markdown 结构。 */
+@Composable
+internal fun CompanionBubbleMarkdownText(
+    parts: List<CompanionMarkdownPart>,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    isStreaming: Boolean,
+    selectionMode: Boolean,
+    onToggleSelection: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val showInner = LocalShowInnerMonologue.current
+    val parsed = remember(parts, showInner, isStreaming) {
+        parts.map { it.sourceIndex to companionBubbleMarkdownBlocks(it.text, showInner, isStreaming) }
+    }
+    val allBlocks = parsed.flatMap { it.second }
+    Column(modifier.then(if (chatMarkdownWrapsWidth(allBlocks)) Modifier.width(IntrinsicSize.Max) else Modifier)) {
+        parsed.forEach { (sourceIndex, blocks) ->
+            key(sourceIndex) {
+                blocks.forEachIndexed { index, block ->
+                    if (block is MdBlock.InnerMonologue) {
+                        CompanionMonologueFooter(block, color, style, selectionMode, onToggleSelection, onLongClick)
+                    } else {
+                        RenderBlock(block, color, style, styleParentheses = true,
+                            modifier = blockSpacing(block, isFirst = index == 0, isLast = index == blocks.lastIndex))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CompanionMonologueFooter(
+    block: MdBlock.InnerMonologue,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    selectionMode: Boolean,
+    onToggleSelection: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val ink = color.copy(alpha = 0.76f)
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(color.copy(alpha = 0.14f)))
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                .combinedClickable(
+                    onClick = { if (selectionMode) onToggleSelection() else expanded = !expanded },
+                    onLongClick = onLongClick
+                ),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(stringResource(R.string.markdown_inner_monologue), color = ink,
+                style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.width(4.dp))
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = stringResource(if (expanded) R.string.markdown_collapse else R.string.markdown_expand),
+                tint = ink, modifier = Modifier.size(16.dp))
+        }
+        AnimatedVisibility(expanded, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            MarkdownInlineText(
+                text = parseRenderedInline(block.content, ink, style, styleParentheses = true),
+                style = style.copy(lineHeight = markdownBodyLineHeight(style)),
+                color = ink,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+    }
 }
 
 /**
