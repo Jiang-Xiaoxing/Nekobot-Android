@@ -177,7 +177,9 @@ class CharacterRuntime(
             state = if (fusedCompanion) null else state,
             relationship = if (fusedCompanion) null else relationship,
             memories = memories,
-            plan = if (fusedCompanion) null else plan
+            plan = if (fusedCompanion) null else plan,
+            // META_FUSED_COMPANION 来自 session.companionMode，与单会话独白显示使用同一模式字段。
+            companionMode = fusedCompanion
         )
         // 世界书注入。按 score 排序后的条目总量可能远超上下文预算：
         // 单条截断 + 总量封顶，避免几本设定集把对话历史挤出去。

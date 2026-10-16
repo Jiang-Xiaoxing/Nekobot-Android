@@ -24,7 +24,8 @@ fun buildCharacterInjections(
     state: CharacterState? = null,
     relationship: RelationshipState? = null,
     memories: List<CharacterMemory>? = null,
-    plan: ReactionPlan? = null
+    plan: ReactionPlan? = null,
+    companionMode: Boolean = false
 ) {
     // 气泡分隔提示词
     stack.add(
@@ -41,15 +42,26 @@ fun buildCharacterInjections(
     )
 
     // 内心独白格式约定
+    val monologueIntroduction = if (companionMode) {
+        "内心独白格式：当心里的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。" +
+            "你知道玩家能看到你写出的内心独白，不要把它当成对方看不到的秘密。"
+    } else {
+        "内心独白格式：当角色隐藏的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。"
+    }
+    val monologueDisclosure = if (companionMode) {
+        "写出没有直接说出口的真实念头；可以有意让对方看见，也可以半有意半无意地流露，与表面表现形成反差。"
+    } else {
+        "揭示角色真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。"
+    }
     stack.add(
         "output.inner_monologue",
         """
-        内心独白格式：当角色隐藏的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。
+        $monologueIntroduction
         把它放在气泡末尾，接在可见内容之后。
         规则：
         - 克制使用：只有隐藏情绪形成有意义的反差或张力时才写，不要每次回复都加内心独白。
         - 保持简短（1—2句），表达一闪而过的念头，不要写成长段。
-        - 揭示角色真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
+        - $monologueDisclosure
         - 不要借内心独白解释规则或脱离角色。
         - 示例：'嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
         前端会把（内心：...）渲染为颜色较淡、斜体且可折叠的区域。
@@ -84,7 +96,7 @@ fun buildCharacterInjections(
 
     // 反应计划
     if (plan != null) {
-        val planText = formatReactionPlan(plan)
+        val planText = formatReactionPlan(plan, companionMode)
         if (planText.isNotBlank()) {
             stack.add("character.reaction_plan", planText.take(MAX_PLAN_CHARS), priority = PromptStack.Priority.REACTION_PLAN)
         }
@@ -156,7 +168,7 @@ private fun formatMemories(memories: List<CharacterMemory>): String {
     return lines.joinToString("\n")
 }
 
-private fun formatReactionPlan(plan: ReactionPlan): String {
+private fun formatReactionPlan(plan: ReactionPlan, companionMode: Boolean): String {
     val lines = mutableListOf(
         "本轮反应约定：",
         "将以下要求作为本轮的高优先级指引。",
@@ -167,7 +179,10 @@ private fun formatReactionPlan(plan: ReactionPlan): String {
         lines.add("表露的情绪：${plan.visibleEmotion}。回复中必须清楚表现出这种表层情绪。")
     }
     if (plan.hiddenEmotion.isNotEmpty()) {
-        lines.add("隐藏动机：${plan.hiddenEmotion}。当它与表露的情绪形成有意义的反差时，可以考虑用（内心：...）格式在正文中表达内心独白；不要每轮硬加，只在反差能增加层次时使用。")
+        val awareness = if (companionMode) {
+            "你知道玩家能看到写出的独白，可以有意让对方看见，也可以半有意半无意地流露，不要当作对方看不到的秘密。"
+        } else ""
+        lines.add("隐藏动机：${plan.hiddenEmotion}。当它与表露的情绪形成有意义的反差时，可以考虑用（内心：...）格式在正文中表达内心独白；不要每轮硬加，只在反差能增加层次时使用。$awareness")
     }
     if (plan.tone.isNotEmpty()) lines.add("语气：${plan.tone}。")
 
