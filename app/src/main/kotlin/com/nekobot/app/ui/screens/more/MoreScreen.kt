@@ -2,7 +2,6 @@ package com.nekobot.app.ui.screens.more
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +32,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -136,17 +135,11 @@ fun MoreScreen(
                 if (appMode == AppMode.LOCAL) {
                     Spacer(Modifier.height(4.dp))
                     MoreRow(
+                        icon = Icons.Outlined.Book,
+                        tint = accentTertiary(),
                         title = stringResource(R.string.agent_character_memory_title),
                         desc = stringResource(R.string.agent_character_memory_desc),
-                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) },
-                        leadingIcon = {
-                            // 保留矢量内的渐变原色；行标题提供无障碍名称。
-                            Image(
-                                painter = painterResource(R.drawable.ic_agent_character_memory),
-                                contentDescription = null,
-                                modifier = Modifier.size(40.dp)
-                            )
-                        }
+                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) }
                     )
                 }
                 Spacer(Modifier.height(4.dp))

@@ -25,16 +25,13 @@ import com.nekobot.app.R
 
 @Composable
 internal fun SessionHeaderAction(icon: ImageVector, description: String, prominent: Boolean = false, onClick: () -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    Surface(shape = RoundedCornerShape(if (prominent) 12.dp else 50.dp),
-        color = if (prominent) accent else MaterialTheme.colorScheme.surface,
-        contentColor = if (prominent) readableOn(accent) else MaterialTheme.colorScheme.onSurfaceVariant,
-        border = BorderStroke(1.dp, accent.copy(alpha = if (prominent) .28f else .09f)), shadowElevation = 2.dp,
-        modifier = Modifier.padding(horizontal = 3.dp)) {
-        IconButton(onClick = onClick, modifier = Modifier.size(44.dp).background(
-            Brush.verticalGradient(listOf(Color.White.copy(alpha = .20f), Color.Transparent)))) {
-            Icon(icon, description, Modifier.size(22.dp))
-        }
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            modifier = Modifier.size(24.dp),
+            tint = if (prominent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
