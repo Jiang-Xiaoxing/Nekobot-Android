@@ -448,4 +448,13 @@
     <string name="sandbox_settings_reset_confirm_message">將清除 apk / pip / npm 安裝的軟體與 /root 資料，無法恢復；會話工作區檔案不受影響。</string>
     <string name="sandbox_settings_reset_confirm_action">重設</string>
     <string name="sandbox_settings_reset_done">沙箱已重設為初始狀態</string>
+    <string name="style_chat_effects">聊天效果</string>
+    <string name="style_dynamic_messages">動態訊息</string>
+    <string name="style_dynamic_messages_hint">雙方的新氣泡輕輕推出一次，後續文字平滑填入。關閉後沿用原有顯示方式。</string>
+    <string name="style_reasoning_style">思考樣式</string>
+    <string name="style_dynamic_thinking">動態思考</string>
+    <string name="style_dynamic_thinking_hint">思考中文字緩慢明暗變化；自動展開，完成後收起。內容跟隨更新，向上捲動閱讀時暫停跟隨。</string>
+    <string name="style_original_thinking">原有思考</string>
+    <string name="style_original_thinking_hint">保留原有思考顯示與展開方式。</string>
+    <string name="style_effects_scope_hint">只改變外觀，不開啟模型思考。Agent 角色仍由聊天設定中的「顯示思考」控制是否顯示。</string>
 </resources>

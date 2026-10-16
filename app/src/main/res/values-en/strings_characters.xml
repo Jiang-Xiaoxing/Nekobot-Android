@@ -97,4 +97,6 @@
     <string name="character_translate_language_ko">Korean</string>
     <string name="character_translate_start">Translate</string>
     <string name="character_translate_success">Translation complete. Tap save to keep it.</string>
+    <string name="characters_no_linked_sessions">No linked conversations</string>
+    <string name="characters_session_modes_unavailable">Conversation types are currently unavailable</string>
 </resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_mode_group_label">Group conversation</string>
+    <string name="session_mode_character_hint">Chat in character</string>
+    <string name="session_mode_agent_hint">Use tools to handle tasks</string>
+    <string name="session_mode_companion_hint">One dedicated conversation that keeps memories of your time together</string>
+    <string name="single_session_headline">Stay in one conversation,\nand keep chatting.</string>
+    <string name="single_session_about">About this mode</string>
+    <string name="single_session_about_body">One character, one chat window\nOnce created, this character stays in the same conversation without opening a second window.\n\nRemember what matters in your time together\nAgent character memories organize preferences, experiences and promises. You can view and edit them, or check them against the original messages. They are stored separately from regular character memories and global Agent memories.\n\nBring over an existing conversation\nOn the creation page, select an existing character and then the conversation to transfer. Configure a model and convert the conversation to create a new copy. The original character and conversation are preserved.\n\nUse tools when needed\nConfigured and available Agent tools can still be used while chatting. Models and tools may incur provider charges.</string>
+</resources>

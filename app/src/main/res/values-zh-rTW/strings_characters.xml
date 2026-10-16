@@ -97,4 +97,6 @@
     <string name="character_translate_language_ko">한국어</string>
     <string name="character_translate_start">開始翻譯</string>
     <string name="character_translate_success">翻譯完成，請點擊儲存</string>
+    <string name="characters_no_linked_sessions">未關聯對話</string>
+    <string name="characters_session_modes_unavailable">對話類型暫不可用</string>
 </resources>
