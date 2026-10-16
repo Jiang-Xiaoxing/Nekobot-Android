@@ -1926,7 +1926,8 @@ private fun PromptStackDetailDialog(
         onDismiss = onDismiss,
         title = injectionDetailTitle,
         confirmText = doneText,
-        onConfirm = onDismiss
+        onConfirm = onDismiss,
+        contentScrollable = true
     ) {
         Text(item.key, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
@@ -1956,6 +1957,7 @@ private fun PromptStackDetailDialog(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 64.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .clickable { onDisabledChange(!disabled) }
                 .padding(vertical = 8.dp),
