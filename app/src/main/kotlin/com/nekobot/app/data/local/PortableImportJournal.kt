@@ -17,6 +17,12 @@ internal data class PortableJournalRecord(val id: String, val database: String, 
 /** Durable undo log. A SQLite receipt written in the same transaction decides recovery after death. */
 internal class PortableImportJournal(private val root: File, private val allowedRoots: List<File>) {
     private val gson = Gson()
+    // Android may expose the same private directory as /data/user/0 and /data/data.
+    // Records use canonical targets; both forms of each explicitly trusted root must
+    // remain valid on install and recovery, without trusting links below that root.
+    private val trustedRootPaths = allowedRoots.flatMap {
+        listOf(it.absoluteFile.toPath().normalize(), it.canonicalFile.toPath())
+    }.distinct()
     fun prepare(database: String, profile: String, writes: List<PortableFileWrite>, state: JsonObject): PortableJournalRecord {
         require(File(database).name == database && database.endsWith(".db"))
         root.mkdirs()
@@ -110,16 +116,17 @@ internal class PortableImportJournal(private val root: File, private val allowed
         })
     }
     fun checked(file: File): File {
-        val absolute = file.absoluteFile
-        val base = allowedRoots.firstOrNull { absolute.toPath().normalize().startsWith(it.absoluteFile.toPath().normalize()) }
+        val absolute = file.absoluteFile.toPath().normalize()
+        val base = trustedRootPaths.firstOrNull { absolute != it && absolute.startsWith(it) }
             ?: error("附件路径超出允许目录")
-        var item: File? = absolute
-        while (item != null && item.toPath().startsWith(base.absoluteFile.toPath())) {
-            require(!Files.isSymbolicLink(item.toPath())) { "附件路径不能使用符号链接" }
-            item = item.parentFile
+        var item: java.nio.file.Path? = absolute
+        while (item != null && item != base && item.startsWith(base)) {
+            require(!Files.isSymbolicLink(item)) { "附件路径不能使用符号链接" }
+            item = item.parent
         }
-        val target = absolute.canonicalFile
-        require(target.path.startsWith(base.canonicalPath + File.separator)) { "附件路径越界" }
+        val target = absolute.toFile().canonicalFile
+        val canonicalBase = base.toFile().canonicalFile.toPath()
+        require(target.toPath() != canonicalBase && target.toPath().startsWith(canonicalBase)) { "附件路径越界" }
         return target
     }
     private fun replace(source: File, target: File) {

@@ -21,7 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
-/** Run on the isolated cloud emulator only; the guard skips physical devices before touching a profile. */
+/** Run on an isolated emulator only; the guard skips physical devices before touching a profile. */
 @RunWith(AndroidJUnit4::class)
 class PortableSafeImportAndroidTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
@@ -89,6 +89,15 @@ class PortableSafeImportAndroidTest {
     @Test fun failureAfterActualAttachmentInstallRollsBackDatabaseAndBytes() = runBlocking {
         val target = File(context.filesDir, "portraits/portable-fixture-${UUID.randomUUID()}.txt").apply { parentFile?.mkdirs(); writeText("archive bytes") }
         files += target
+        val journal = PortableImportJournal(File(context.filesDir, "portable_import_transactions"), listOf(context.filesDir, context.cacheDir))
+        assertEquals(target.canonicalFile, journal.checked(target))
+        assertEquals(target.canonicalFile, journal.checked(target.canonicalFile))
+        val linkedDirectory = File(context.filesDir, "portable-link-${UUID.randomUUID()}")
+        java.nio.file.Files.createSymbolicLink(linkedDirectory.toPath(), context.cacheDir.toPath())
+        try {
+            try { journal.checked(File(linkedDirectory, "must-not-write")); fail("Child links must remain blocked") }
+            catch (_: IllegalArgumentException) { }
+        } finally { linkedDirectory.delete() }
         val unrelated = File(context.filesDir, "portraits/portable-unrelated-${UUID.randomUUID()}.txt").apply { writeText("unrelated") }
         files += unrelated
         val (id, bytes) = characterArchive(media = true)
@@ -123,7 +132,9 @@ class PortableSafeImportAndroidTest {
         val out = ByteArrayOutputStream()
         PortableDataArchiveManager(context).export(setOf(PortableDataCategory.CONVERSATIONS), "", out, "synthetic")
         db().openHelper.writableDatabase.execSQL("UPDATE companion_memories SET category='character_profile' WHERE scopeId=?", arrayOf(scope.id))
-        db().sessionDao().upsert(session.copy(name = "Later local name"))
+        // An INSERT OR REPLACE fixture deletes dependent scopes through FK cascades.
+        // Simulate the intended local field edit without replacing the session row.
+        db().openHelper.writableDatabase.execSQL("UPDATE local_sessions SET name=? WHERE id=?", arrayOf("Later local name", sessionId))
         db().messageDao().upsert(source.copy(id = UUID.randomUUID().toString(), content = "后来新增的合成聊天"))
         val beforeScope = requireNotNull(db().companionMemoryDao().scope(scope.id))
         val selection = mapOf(PortableDataCategory.CONVERSATIONS to setOf("table:companion_memories"))
