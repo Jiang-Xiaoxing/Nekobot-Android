@@ -362,7 +362,7 @@ class AIPipeline {
         // 作为高优先级行为约束，让 AI 按此身份理解玩家（包括玩家姓名、偏好、处境等）
         // 注意：senderName 是 AI 扮演的角色名，不是玩家名；玩家身份由 userPersona 字段承载
         val userPersona = ctx.metadata["user_persona"] as? String ?: ""
-        if (userPersona.isNotBlank()) {
+        if (ctx.metadata[META_FUSED_COMPANION] != true && userPersona.isNotBlank()) {
             ctx.promptStack.add(
                 "user.persona",
                 "玩家人设／背景（据此理解玩家的身份、姓名、偏好与处境；称呼或提及玩家时，使用这份描述中给出的名字，不要使用“用户”等泛称）：\n$userPersona",

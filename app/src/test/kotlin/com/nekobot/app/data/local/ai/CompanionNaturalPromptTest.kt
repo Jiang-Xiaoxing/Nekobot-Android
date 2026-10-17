@@ -136,7 +136,7 @@ class CompanionNaturalPromptTest {
         assertNotEquals("fused-visible-core-v4", FusedCompanionPolicy.contextFormat)
     }
 
-    @Test fun pipelineHidesAllGeneratedKeysAndReceivesPersonaThroughExistingInjection() = runBlocking {
+    @Test fun pipelineHidesGeneratedKeysAndIgnoresCompanionSessionPersona() = runBlocking {
         val ctx = PipelineContext(ChatRequest.forLocal("s", "哈哈")).apply {
             metadata[META_FUSED_COMPANION] = true
             metadata["session_mode"] = "agent"
@@ -152,10 +152,10 @@ class CompanionNaturalPromptTest {
         }
         AIPipeline().prepareContext(ctx, callbacks)
         val system = ctx.messages.first()["content"].toString()
-        assertTrue(system.contains("叫我小舟，我是设计师。"))
+        assertFalse(system.contains("叫我小舟，我是设计师。"))
         assertFalse(system.contains("## ")); assertFalse(system.contains("user.persona")); assertFalse(system.contains("output.thinking_style"))
         assertTrue(system.contains("小满自己的心里话"))
-        assertTrue(promptSectionCounts(ctx.messages).getValue(PromptSection.PLAYER) > 0)
+        assertEquals(0, promptSectionCounts(ctx.messages)[PromptSection.PLAYER] ?: 0)
         assertFalse(CompanionRequestUsage.clean(ctx.messages.first()).containsKey(CompanionRequestUsage.SYSTEM_SECTIONS))
     }
 

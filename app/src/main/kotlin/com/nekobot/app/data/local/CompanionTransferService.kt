@@ -326,7 +326,7 @@ internal class CompanionTransferService(
             characterId = job.targetCharacterId, characterName = job.targetName,
             characterAvatar = character.text("avatar"), portrait = character.text("portrait"),
             senderAvatar = sessionMedia.text("sender_avatar"),
-            firstMessage = null, archiveSessionId = null, sessionMode = "agent", companionMode = true,
+            firstMessage = null, archiveSessionId = null, sessionMode = "agent", companionMode = true, userPersona = null,
             inheritCharacter = true, inheritCharacterGreeting = false, longConversationEnabled = true,
             longConversationTailUntilId = null, groupId = null, characterIds = null, groupConfig = null,
             groupActiveSpeaker = null, groupTurnCount = 0,
@@ -368,6 +368,10 @@ internal class CompanionTransferService(
         copyState(directory, target, snapshot, ::id)
         progress(CompanionTransferProgress("正在复制独立记忆"))
         CompanionTransferMemory(db, sourceDb).copy(directory, snapshot, target, ::id, ::rewrite)
+        val targetScope = CompanionMemoryStore(db).ensureScope(target)
+        CompanionUserProfile.converted(original.userPersona, targetScope.id, target.createdAt)?.let {
+            db.companionMemoryDao().saveMemory(it)
+        }
         sql.query("SELECT COUNT(*) FROM local_messages WHERE session_id=?", arrayOf(target.id)).use {
             require(it.moveToFirst() && it.getLong(0) == snapshot.counts.getValue("local_messages")) { "原话数量校验失败" }
         }
