@@ -2794,6 +2794,17 @@ private fun MessageBubble(
     val maxBubbleWidth = if (companionChat) {
         companionBubbleMaxWidthDp(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp, isUser).dp
     } else if (hasMultimedia || hasAudioUrl || ttsState != null) 360.dp else 280.dp
+    val fillAiContentWidth = shouldFillAvailableMessageBodyWidth(
+        fillAiWidth = fillAiWidth,
+        isUser = isUser,
+        standaloneSticker = standaloneSticker
+    )
+    val textContentModifier = if (fillAiContentWidth) Modifier.fillMaxWidth()
+        else Modifier.widthIn(max = maxBubbleWidth)
+    val multimediaContentModifier = if (fillAiContentWidth) Modifier.fillMaxWidth()
+        else Modifier.widthIn(max = 360.dp)
+    val audioContentModifier = if (fillAiContentWidth) Modifier.fillMaxWidth()
+        else Modifier.widthIn(max = 280.dp)
 
     // swipes：有多份候选时，左右滑动气泡即可快速切换（左滑下一版、右滑上一版）。
     // 拖动与手指 1:1 连续跟手，松手后旧气泡完整滑出、新气泡从对侧完整滑入。
@@ -3153,7 +3164,7 @@ private fun MessageBubble(
                             RenderContentSegments(
                                 segments = contentSegments,
                                 textColor = textColor,
-                                modifier = Modifier.widthIn(max = 360.dp),
+                                modifier = multimediaContentModifier,
                                 sessionId = sessionId,
                                 chatMode = true,
                                 processParens = !isUser,
@@ -3191,12 +3202,12 @@ private fun MessageBubble(
                             }
                         } else {
                             // 文本内容：用 Markdown 渲染
-                            // 角色和用户文字都按内容定宽；无角色 Agent 的整宽模式由外层保留。
+                            // 角色与用户文字维持既有宽度；无角色 Agent 正文填满外层可用宽度。
                             if (useSafePlainText) {
                                 SafePlainMessageText(
                                     text = segment,
                                     color = textColor,
-                                    modifier = Modifier.widthIn(max = maxBubbleWidth)
+                                    modifier = textContentModifier
                                 )
                             } else if (companionMonologueFooter) {
                                 key(message.id, message.variantIndex, idx) {
@@ -3224,7 +3235,7 @@ private fun MessageBubble(
                                     chatMode = true,
                                     processParens = !isUser,
                                     isStreaming = isStreamingPlaceholder,
-                                    modifier = Modifier.widthIn(max = maxBubbleWidth)
+                                    modifier = textContentModifier
                                 )
                             }
                         }
@@ -3288,7 +3299,7 @@ private fun MessageBubble(
                 TtsGenerationBar(
                     state = ttsState,
                     onRetry = onRegenerateTts,
-                    modifier = Modifier.widthIn(max = 280.dp)
+                    modifier = audioContentModifier
                 )
             }
 
@@ -3299,7 +3310,7 @@ private fun MessageBubble(
                 AudioRenderer(
                     url = resolvedAudioUrl,
                     onRegenerate = onRegenerateTts,
-                    modifier = Modifier.widthIn(max = 280.dp)
+                    modifier = audioContentModifier
                 )
             }
 
