@@ -162,7 +162,7 @@ class CompanionNaturalPromptTest {
     @Test fun conversionNameAndDiaryRulesMatchEverydayConsolidation() {
         assertEquals("林小满", companionTransferName("林小满"))
         assertEquals("原名（Agent）", companionTransferName("原名（Agent）"))
-        assertEquals("2026-10-17.1", CompanionConversionRules.version)
+        assertEquals("2026-10-17.2", CompanionConversionRules.version)
         assertTrue(CompanionConversionRules.prompt.contains(CompanionPromptLanguage.diaryRule))
         assertTrue(FusedCompanionPolicy.extractionPrompt.contains(CompanionPromptLanguage.diaryRule))
         assertTrue(CompanionConversionRules.prompt.contains(CompanionPromptLanguage.recallRules))

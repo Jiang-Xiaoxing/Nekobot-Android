@@ -2,7 +2,7 @@ package com.nekobot.app.data.local.ai
 
 /** 查看页和实际请求共用这份规则，避免只展示一份没有实际执行的说明。 */
 internal object CompanionConversionRules {
-    const val version = "2026-10-17.1"
+    const val version = "2026-10-17.2"
     const val referenceProvenance = "conversion_reference"
     val explanation = """
         你正在把旧聊天整理成 Agent 角色自己的记忆，请按以下规则处理。
@@ -24,6 +24,7 @@ internal object CompanionConversionRules {
         4. 保留变化，不把旧说法当成现在
         注意后来的纠正、否定、取消和完成。同一件事合并整理，不重复记；经历未结束就写进行中，不编结局。
         更晚的参考原话如果已经否定本批的旧说法，不要把旧说法存成现在仍然有效的事实。
+        确认替代时程序直接删除 target_key 指向的旧条目，只留下新条目；其他主题的记忆不动。
 
         5. 时间不靠猜
         消息发出的日期和事情发生的日期可能不同。事件日期没有依据就留空，不用转换当天的日期代替。

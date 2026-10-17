@@ -20,7 +20,7 @@ data class CompanionScopeEntity(
     val embeddingModelId: String? = null
 )
 
-/** Immutable versions. Invalidated/forgotten versions are never returned to a model. */
+/** 单会话已确认替换的条目直接删除；未确认矛盾和人工保护单独保留。 */
 @Entity(tableName = "companion_memories", indices = [Index("scopeId"), Index(value = ["scopeId", "factKey", "version"], unique = true)])
 data class CompanionMemoryEntity(
     @PrimaryKey val id: String,
@@ -123,6 +123,10 @@ interface CompanionMemoryDao {
     suspend fun closeClarification(scopeId: String, key: String)
     @Query("DELETE FROM companion_sources WHERE memoryId = :id")
     suspend fun eraseMemorySources(id: String)
+    @Query("DELETE FROM companion_memories WHERE scopeId = :scopeId AND id = :id AND locked = 0")
+    suspend fun eraseReplacedMemory(scopeId: String, id: String)
+    @Query("DELETE FROM companion_vectors WHERE scopeId = :scopeId AND itemType IN ('memory','fact') AND itemId = :id")
+    suspend fun eraseMemoryVectors(scopeId: String, id: String)
     @Query("DELETE FROM companion_memories WHERE id = :id AND current = 0 AND status = 'conflict'")
     suspend fun eraseConflict(id: String)
     @Query("SELECT * FROM companion_scopes WHERE id = :id")

@@ -505,6 +505,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         requireCoreRoom(existing, old, edited)
         dao.saveMemory(edited)
         old?.let { previous -> dao.saveSources(dao.sources(previous.id).map { it.copy(memoryId = newId) }) }
+        // 人工编辑保留修改记录；物理替换仅由后台已确认的记忆变化执行。
         dao.saveScope(scope.copy(revision = scope.revision + 1))
     }
 
@@ -594,14 +595,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 dao.sources(it.id).any { sourceRecord -> sourceRecord.messageId == source.id } }) return 0
         if (fused && draft.operation == "retract") {
             if (old == null || old.locked) return 0
-            dao.retire(scope.id, target)
             clearClarification(scope, target)
-            val id = java.util.UUID.randomUUID().toString()
-            dao.saveMemory(old.copy(id = id, version = (dao.versions(scope.id, target).maxOfOrNull { it.version } ?: 0) + 1,
-                content = draft.content.ifBlank { "此前记忆已被后续原话否定" }, status = "retracted", current = false,
-                manual = false, updatedAt = Instant.now().toString()))
-            dao.saveSources(listOf(CompanionSourceEntity(id, source.id, CompanionMemoryPolicy.fingerprint(source),
-                draft.quote, agentUtteranceDay(source)?.toString(), source.role)))
+            eraseReplaced(scope.id, target)
             return 1
         }
         if (draft.operation == "forget") {
@@ -720,6 +715,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             listOf(CompanionSourceEntity(memory.id,source.id,CompanionMemoryPolicy.fingerprint(source),draft.quote,agentUtteranceDay(source)?.toString(),source.role)) +
             questionSource?.let { listOf(CompanionSourceEntity(memory.id,it.id,CompanionMemoryPolicy.fingerprint(it),it.content,agentUtteranceDay(it)?.toString(),it.role)) }.orEmpty()
         dao.saveSources(sources.associateBy { it.messageId }.values.toList())
+        if (fused && !isConflict) eraseReplaced(scope.id, target, memory.id)
         if (isConflict) {
             val sameCandidate = previousConflict?.content == content
             val question = draft.question.take(160).replace("\n", " ").takeIf { it.contains('?') || it.contains('？') }
@@ -728,6 +724,14 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 pending?.questionMessageId.takeIf { fused || sameCandidate },pending?.createdAt ?: now,now))
         }
         return 1
+    }
+
+    private suspend fun eraseReplaced(scopeId: String, key: String, keepId: String? = null) {
+        for (id in CompanionMemoryReplacement.replacedIds(dao.versions(scopeId, key), scopeId, key, keepId)) {
+            dao.eraseMemorySources(id)
+            dao.eraseMemoryVectors(scopeId, id)
+            dao.eraseReplacedMemory(scopeId, id)
+        }
     }
 
     /** Track a question only after the actual visible assistant message is persisted. */

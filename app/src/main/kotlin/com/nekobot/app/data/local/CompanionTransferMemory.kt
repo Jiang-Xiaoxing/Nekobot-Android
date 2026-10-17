@@ -1,6 +1,5 @@
 package com.nekobot.app.data.local
 
-import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.nekobot.app.data.local.ai.*
 import com.nekobot.app.data.local.db.*
@@ -8,6 +7,17 @@ import java.io.File
 import java.time.Instant
 
 internal data class TransferMemorySelection(val accepted: Int, val skipped: Map<String, Int>)
+
+/** SQLite 归档的布尔字段是 0/1，不能按 Gson 的 Boolean 字段直接反序列化。 */
+internal fun retainedCompanionMemoryIds(rows: Collection<JsonObject>): Set<String> =
+    CompanionMemoryReplacement.imported(rows.map { row ->
+        CompanionMemoryEntity(id = requireNotNull(row.text("id")), scopeId = requireNotNull(row.text("scopeId")),
+            factKey = requireNotNull(row.text("factKey")), version = row.text("version")?.toIntOrNull() ?: 1,
+            kind = row.text("kind").orEmpty(), subject = row.text("subject").orEmpty(), content = row.text("content").orEmpty(),
+            status = row.text("status").orEmpty(), current = row.flag("current"), locked = row.flag("locked"),
+            valid = row.text("valid") == null || row.flag("valid"),
+            createdAt = row.text("createdAt").orEmpty(), updatedAt = row.text("updatedAt").orEmpty())
+    }).map { it.id }.toSet()
 
 /** 只写新范围的独立正文；旧路径和旧 ID 留在备份，不参与运行时召回。 */
 internal class CompanionTransferMemory(private val db: NekobotDatabase, private val sourceDb: NekobotDatabase = db) {
@@ -37,8 +47,8 @@ internal class CompanionTransferMemory(private val db: NekobotDatabase, private 
         val sql = db.openHelper.writableDatabase
         val memoryRows = transferRows(directory, "companion_memories").associateBy { requireNotNull(it.text("id")) }
         val sourceRows = transferRows(directory, "companion_sources").groupBy { requireNotNull(it.text("memoryId")) }
-        val gson = Gson()
-        for ((oldId, original) in memoryRows) {
+        val retainedIds = retainedCompanionMemoryIds(memoryRows.values)
+        for ((oldId, original) in memoryRows.filterKeys { it in retainedIds }) {
             val row = rewrite(original, snapshot.sourceId)
             val copiedId = id("memory", oldId)
             val oldScopeId = requireNotNull(row.text("scopeId"))
@@ -87,6 +97,7 @@ internal class CompanionTransferMemory(private val db: NekobotDatabase, private 
             if (db.messageDao().getById(messageId) != null) dao.saveForgotten(listOf(CompanionForgottenSourceEntity(scope.id, messageId)))
         }
         for (row in transferRows(directory, "companion_clarifications")) {
+            if (row.text("memoryId") !in retainedIds) continue
             val oldMemory = memoryRows[row.text("memoryId")] ?: continue
             row.addProperty("scopeId", scope.id)
             row.addProperty("factKey", "${id("scope", requireNotNull(oldMemory.text("scopeId")))}:${oldMemory.text("factKey")}")

@@ -185,7 +185,7 @@ internal object FusedCompanionPolicy {
         ${CompanionCoreMemory.selectionRules.trimIndent()}
         经历记录已发生的原因、经过、结果和进行状态；尚未结束就写进行中，不编结局。
         同一场景跨批延续，用 existing 的稳定 key 更新同一事件；同一事实重复用 merge 合并来源。
-        用户明确改变/纠正用 update；旧错误被否定用 retract，保留历史版本但不再作为有效事实。
+        用户明确改变/纠正用 update；旧错误被否定用 retract，程序直接删除被替代的旧条目，只保留新的有效说法。
         用户资料必须引用用户原话；角色真实说过的话或双方实际发生的互动可引用助手原话，但不能将助手猜测视为用户事实。
         更新已有条目必须带 target_key；不能换个名称绕过旧事实或人工保护。
         明确取消 cancel、完成 complete。含糊矛盾用 clarify，question 写一次自然询问，不逼用户解释原因。

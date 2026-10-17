@@ -283,11 +283,11 @@ class FusedCompanionAndroidTest {
             tool("end","散步回来后一起吃了晚饭","update","散步后一起吃了晚饭")
             var scope=store.ensureScope(s)
             assertEquals(1,store.validatedMemories(scope).count { it.current })
-            assertEquals(2,db.companionMemoryDao().versions(scope.id,"walk").size)
+            assertEquals(1,db.companionMemoryDao().versions(scope.id,"walk").size)
             tool("denial","你记错了，我们并没有一起吃晚饭","retract","撤销一起吃晚饭的错误记录")
             scope=store.ensureScope(s)
             assertFalse(store.validatedMemories(scope).any { it.current })
-            assertEquals("retracted",db.companionMemoryDao().versions(scope.id,"walk").first().status)
+            assertTrue(db.companionMemoryDao().versions(scope.id,"walk").isEmpty())
             tool("tea","我喝茶不加糖","add","喝茶不加糖","tea")
             tool("different","今天茶里加了糖","clarify","茶里加糖","tea",mapOf("question" to "现在喝茶要加糖了吗？"))
             val question=store.questionForReply(s)!!

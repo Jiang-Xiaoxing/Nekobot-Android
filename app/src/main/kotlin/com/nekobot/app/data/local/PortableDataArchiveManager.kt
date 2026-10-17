@@ -654,6 +654,7 @@ class PortableDataArchiveManager(private val context: Context) {
             ).use { statement ->
                 statement.bindString(1, database.dbName)
                 companionScopes.forEach { scopeId ->
+                    com.nekobot.app.data.local.db.CompanionMemoryReplacementSql.prune(writable, scopeId)
                     statement.bindString(2, scopeId)
                     statement.executeUpdateDelete()
                 }
