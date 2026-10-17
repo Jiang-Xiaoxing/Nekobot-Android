@@ -44,7 +44,11 @@ class PreparedPortableImport internal constructor(
     override fun close() { if (!closed) { closed = true; archive.cleanup(); staging.deleteRecursively() } }
 }
 
-data class PortableImportFileDifference(val key: String, val label: String)
+data class PortableImportFileDifference(val key: String, val label: String,
+    val fileName: String = label.substringAfterLast('/'), val root: String = label.substringBefore('/'),
+    val owner: PortableImportOwner = PortableImportOwner(),
+    val currentBytes: Long = -1, val incomingBytes: Long = -1,
+    val currentHash: String = "", val incomingHash: String = "")
 data class PortableImportDependencyOption(val category: PortableDataCategory, val detail: PortableCategoryDetail)
 data class PortableImportPreview internal constructor(
     val rows: PortableImportRowPlan,
@@ -170,8 +174,24 @@ suspend fun PortableDataArchiveManager.previewImport(prepared: PreparedPortableI
     require(selected.all { (category, keys) -> keys.all { it in available[category].orEmpty() } }) { "选择已变化，请重新分析文件" }
     val db = activeDatabase()
     val job = currentCoroutineContext()
+    val sql = AndroidPortableImportSql(db.openHelper.writableDatabase)
+    val labelRows = linkedMapOf<String, Map<String, JsonObject>>()
+    listOf("local_sessions", "local_characters", "companion_scopes").forEach { table ->
+        val category = PortableDataCategory.entries.firstOrNull { table in it.tables }
+        val raw = category?.let { prepared.entries["data/${it.id}.json"] }
+        if (raw != null) {
+            val names = linkedMapOf<String, JsonObject>()
+            forEachPortableRow(raw, table) { row ->
+                row["id"]?.takeUnless { it.isJsonNull }?.asString?.let { id -> names[id] = JsonObject().apply {
+                    listOf("id", "name", "title", "character_id", "sessionId", "characterId").forEach { column -> row[column]?.let { add(column, it) } }
+                } }
+            }
+            labelRows[table] = names
+        }
+    }
+    val labels = PortableImportLabels(sql, labelRows)
     val rowPlan = db.withTransaction {
-        PortableImportPlanner(AndroidPortableImportSql(db.openHelper.writableDatabase), db.dbName)
+        PortableImportPlanner(sql, db.dbName, labels)
             .preview(portableRows(prepared, selected), choices, detailLimit) { job.ensureActive() }
     }
     val before = linkedMapOf<String, String?>()
@@ -193,7 +213,9 @@ suspend fun PortableDataArchiveManager.previewImport(prepared: PreparedPortableI
         after[file.key] = PortableImportJournal.hash(file.source)
         if (old == null) added++ else if (old == after[file.key]) same++ else {
             different++; if (file.key in choices.files) updated++
-            if (differences.size < detailLimit) differences += PortableImportFileDifference(file.key, "${file.root}/${file.relative}")
+            if (differences.size < detailLimit) differences += PortableImportFileDifference(file.key, "${file.root}/${file.relative}",
+                owner = labels.workspace(file.root, file.relative), currentBytes = target.length(), incomingBytes = file.source.length(),
+                currentHash = old, incomingHash = after.getValue(file.key))
         }
     }
     val suppliedFiles = prepared.stagedFiles.filter { "root:${it.root}" in selected[it.category].orEmpty() }

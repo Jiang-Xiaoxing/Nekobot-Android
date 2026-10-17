@@ -26,7 +26,8 @@ data class PortableImportChoices(
 data class PortableImportFieldDifference(val column: String, val current: String, val incoming: String)
 data class PortableImportRowDifference(
     val key: String, val table: String, val label: String,
-    val fields: List<PortableImportFieldDifference>
+    val fields: List<PortableImportFieldDifference>,
+    val owner: PortableImportOwner = PortableImportOwner()
 )
 data class PortableImportCounts(
     val added: Int = 0, val same: Int = 0, val different: Int = 0, val updated: Int = 0
@@ -46,7 +47,8 @@ data class PortableImportRowPlan(
 )
 
 /** No deletion/REPLACE, no matching by display name, no network or activation side effects. */
-internal class PortableImportPlanner(private val sql: PortableImportSql, private val profile: String) {
+internal class PortableImportPlanner(private val sql: PortableImportSql, private val profile: String,
+    private val labels: PortableImportLabels = PortableImportLabels(sql)) {
     private data class Column(val name: String, val type: String, val required: Boolean, val default: String?, val pk: Int)
     private val schemas = mutableMapOf<String, List<Column>>()
     private val uniqueCache = mutableMapOf<String, List<List<String>>>()
@@ -54,6 +56,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
 
     fun preview(rows: PortableRowVisitor, choices: PortableImportChoices, detailLimit: Int = 50,
                 checkpoint: () -> Unit = {}): PortableImportRowPlan {
+        labels.reset()
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(choices.fields.toSortedMap().entries.joinToString { "${it.key}:${it.value.sorted()}" }.toByteArray())
         digest.update(choices.allowSameName.toString().toByteArray())
@@ -108,7 +111,10 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
                     different++
                     if (changes.any { it in choices.fields[token].orEmpty() }) updated++
                     if (details.size < detailLimit) details += PortableImportRowDifference(token, table,
-                        label(values, key), changes.map { PortableImportFieldDifference(it, display(it, existing[it]), display(it, values[it])) })
+                        labels.title(existing, labels.title(values, label(values, key))), changes.map {
+                            val (current, incoming) = displayDifference(it, existing[it], values[it])
+                            PortableImportFieldDifference(it, current, incoming)
+                        }, labels.owner(table, existing))
                 }
             }
             // Validate only fields that would actually be written; keeping local must not manufacture dependencies.
@@ -373,6 +379,18 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             value == null || value.isJsonNull -> "未设置"
             value.isJsonObject -> "二进制内容"
             else -> value.asString.take(180)
+        }
+        private fun displayDifference(column: String, current: JsonElement?, incoming: JsonElement?): Pair<String, String> {
+            val first = display(column, current)
+            val second = display(column, incoming)
+            // A long common prefix must not make two different values look identical.
+            if (first != second || current == incoming || column.contains("url", true) || column.contains("endpoint", true)) return first to second
+            if (current?.isJsonPrimitive != true || incoming?.isJsonPrimitive != true) return first to second
+            val a = current.asString; val b = incoming.asString
+            var at = 0
+            while (at < minOf(a.length, b.length) && a[at] == b[at]) at++
+            fun excerpt(text: String): String { val start = (at - 60).coerceAtLeast(0).coerceAtMost(text.length); return "…" + text.substring(start, minOf(text.length, at + 120)) + if (text.length > at + 120) "…" else "" }
+            return excerpt(a) to excerpt(b)
         }
     }
 }
