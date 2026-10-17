@@ -61,10 +61,10 @@ class SafePortableImportPanelTest {
             PortableDataArchiveManager.ResolvedArchive(source, zip, listOf(zip)), emptyMap(), emptyList(), staging, "")
         val dark = mutableStateOf(false)
         try {
-            vm.state.value = SafeImportUiState(prepared = prepared,
+            vm.state.value = SafeImportUiState(prepared = prepared, step = SafeImportStep.CONTENTS,
                 selected = mapOf(PortableDataCategory.CONVERSATIONS to details.mapTo(linkedSetOf()) { it.key }))
             compose.setContent { NekobotTheme(darkTheme = dark.value) {
-                Surface { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Surface { Column(Modifier.fillMaxSize().padding(16.dp)) {
                     SafePortableImportPanel(vm = vm)
                 } }
             } }
@@ -75,7 +75,7 @@ class SafePortableImportPanelTest {
             compose.runOnIdle {
                 assertEquals(setOf("table:companion_memories"), vm.state.value.selected[PortableDataCategory.CONVERSATIONS])
             }
-            compose.onNodeWithTag("safe-import-execute").performScrollTo()
+            compose.onNodeWithTag("safe-import-execute").assertIsDisplayed()
             normalButton("safe-import-execute")
             compose.onNodeWithTag("safe-import-characters-data").assertDoesNotExist()
             compose.onNodeWithTag("safe-import-extensions-data").assertDoesNotExist()
