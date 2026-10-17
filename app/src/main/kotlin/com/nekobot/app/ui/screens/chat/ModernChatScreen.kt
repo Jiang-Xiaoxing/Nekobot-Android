@@ -991,7 +991,7 @@ private fun ModernChatComposer(
     yoloEnabled: Boolean,
     yoloAvailable: Boolean,
     skillsEnabled: Boolean,
-    /** 已导入的表情包（点选后把 `[名称]` 插入输入框）。 */
+    /** 已导入的表情包（点选后独立发送 `[名称]`，保留输入框草稿）。 */
     stickers: List<LocalStickerEntity> = emptyList(),
     onOpenStickers: () -> Unit = {},
     onToggleYolo: () -> Unit,
@@ -2121,12 +2121,9 @@ private fun ModernChatComposer(
         StickerPickerSheet(
             stickers = stickers,
             onPick = { sticker ->
-                // 插入 `[名称]` 到输入框：命中已导入表情时气泡渲染原图，用户仍可补充文字。
-                val insertion = "[${sticker.name}]"
-                val text = input
-                val separator = if (text.isNotEmpty() && !text.last().isWhitespace()) " " else ""
-                updateInput(text + separator + insertion)
                 stickerPickerOpen = false
+                // 复用正常发送流程；草稿、剧情选项和待发送附件留在输入区。
+                onSend("[${sticker.name}]", null, emptyList(), readReasoningEffort())
             },
             onManage = {
                 stickerPickerOpen = false

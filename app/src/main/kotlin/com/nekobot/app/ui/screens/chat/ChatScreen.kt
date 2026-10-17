@@ -2759,6 +2759,9 @@ private fun MessageBubble(
             segments.map { parseContentSegments(it, stickerLookup::get) }
         }
     }
+    val standaloneSticker = remember(message.displayContent, useSafePlainText, stickerLookup) {
+        !useSafePlainText && isStandaloneStickerMessage(message.displayContent, stickerLookup::get)
+    }
     // LocalCompanionChatName 仅由 session.companionMode == true 的会话提供。
     val companionMonologueFooter = usesCompanionMonologueFooter(companionChat, isUser, useSafePlainText)
     val showInnerMonologue = com.nekobot.app.ui.components.LocalShowInnerMonologue.current
@@ -2883,6 +2886,7 @@ private fun MessageBubble(
 
         Column(
             modifier = when {
+                standaloneSticker -> Modifier.widthIn(max = maxBubbleWidth)
                 companionChat -> Modifier.weight(1f, fill = false).widthIn(max = maxBubbleWidth)
                 !isUser && fillAiWidth -> Modifier.weight(1f)
                 hasUserImage -> Modifier.widthIn(min = 300.dp, max = maxBubbleWidth)
@@ -3017,7 +3021,7 @@ private fun MessageBubble(
                     // 解析多媒体内容段
                     val contentSegments = parsedSegments[idx]
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
-                    val segHasUserImage = isUser && contentSegments.any { it.isImageContent() }
+                    val segHasUserImage = isUser && !standaloneSticker && contentSegments.any { it.isImageContent() }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
                     val segShape = if (companionChat) RoundedCornerShape(16.dp) else chatBubbleShape(isUser, isLast)
                     val segmentKey = messageMenuAnchorKey(
@@ -3032,12 +3036,13 @@ private fun MessageBubble(
                         modifier = Modifier
                             .then(messageEntranceModifier(motionRegistry, motionKey, idx, message.timestamp,
                                 ServiceContainer.prefs.dynamicMessages, isUser))
-                            .then(if (!isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
+                            .then(if (!standaloneSticker && !isUser && fillAiWidth) Modifier.fillMaxWidth() else Modifier)
                             // 用户气泡带轻微投影，浮于背景之上
-                            .then(if (!companionChat && isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
+                            .then(if (!standaloneSticker && !companionChat && isUser && !segHasUserImage) Modifier.shadow(2.dp, segShape, clip = false) else Modifier)
                             .then(variantSwipeModifier)
                             .then(
                                 when {
+                                    standaloneSticker -> Modifier
                                     companionChat && !isUser -> Modifier.background(
                                         color = companionAssistantStyle.background,
                                         shape = segShape
@@ -3055,7 +3060,7 @@ private fun MessageBubble(
                             .then(
                                 when {
                                     isSelected -> Modifier.border(2.dp, MaterialTheme.colorScheme.primary, segShape)
-                                    !isUser -> Modifier.border(1.dp, aiBorder, segShape)
+                                    !standaloneSticker && !isUser -> Modifier.border(1.dp, aiBorder, segShape)
                                     else -> Modifier
                                 }
                             )
@@ -3075,7 +3080,7 @@ private fun MessageBubble(
                                 }
                             )
                             .then(
-                                if (segHasUserImage) Modifier
+                                if (standaloneSticker || segHasUserImage) Modifier
                                 else Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
                             )
                     ) {
