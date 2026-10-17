@@ -2071,7 +2071,7 @@ class LocalRepository(
         now: String
     ): LocalSessionEntity {
         require(sessionObj.boolVal("companion_mode", "companionMode") != true) {
-            "长久陪伴须通过数据导出中心恢复完整备份（包括记忆、来源和整理进度），不能作为普通聊天 JSON 导入"
+            "长久陪伴须通过数据导入与导出恢复完整备份（包括记忆、来源和整理进度），不能作为普通聊天 JSON 导入"
         }
         // system_prompt：优先 session 字段，否则从 messages 里找 role==system 的消息
         var systemPrompt = sessionObj.str("system_prompt", "systemPrompt")

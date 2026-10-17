@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,6 +44,10 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,6 +72,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -93,7 +102,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+internal class PortableExportUi {
+    var selection by mutableStateOf(setOf(PortableDataCategory.CONVERSATIONS.id, PortableDataCategory.CHARACTERS.id,
+        PortableDataCategory.WORLD_BOOKS.id, PortableDataCategory.MEMORIES.id, PortableDataCategory.AI_CONFIG.id,
+        PortableDataCategory.APP_SETTINGS.id, PortableDataCategory.STICKERS.id, PortableDataCategory.GLOBAL_MEMORY.id))
+    var password by mutableStateOf("")
+    var details by mutableStateOf<Map<String, Set<String>>>(emptyMap())
+    var pending by mutableStateOf<Set<PortableDataCategory>>(emptySet())
+    var pendingPassword by mutableStateOf("")
+    var pendingDetails by mutableStateOf<Map<PortableDataCategory, Set<String>>>(emptyMap())
+    var advanced by mutableStateOf(false)
+}
+
 class DataPortabilityViewModel : BaseViewModel() {
+    internal val exportUi = PortableExportUi()
     private val _current = MutableStateFlow<List<PortableCategorySummary>>(emptyList())
     val current: StateFlow<List<PortableCategorySummary>> = _current.asStateFlow()
 
@@ -147,33 +169,19 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
     val error by vm.error.collectAsStateWithLifecycle()
     val toast by vm.toast.collectAsStateWithLifecycle()
 
-    var exportSelection by rememberSaveable {
-        mutableStateOf(
-            setOf(
-                PortableDataCategory.CONVERSATIONS.id,
-                PortableDataCategory.CHARACTERS.id,
-                PortableDataCategory.WORLD_BOOKS.id,
-                PortableDataCategory.MEMORIES.id,
-                PortableDataCategory.AI_CONFIG.id,
-                PortableDataCategory.APP_SETTINGS.id,
-                PortableDataCategory.STICKERS.id,
-                PortableDataCategory.GLOBAL_MEMORY.id
-            )
-        )
-    }
-    var exportPassword by remember { mutableStateOf("") }
-    var pendingExport by remember { mutableStateOf<Set<PortableDataCategory>>(emptySet()) }
-    var pendingExportPassword by remember { mutableStateOf("") }
-    var exportDetails by remember { mutableStateOf<Map<String, Set<String>>>(emptyMap()) }
+    val exportUi = vm.exportUi
     var detailCategory by remember { mutableStateOf<PortableDataCategory?>(null) }
-    var safeImportBusy by remember { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
     val safeImportVm: SafePortableImportViewModel = viewModel()
-    androidx.activity.compose.BackHandler(enabled = safeImportBusy) { safeImportVm.cancel() }
+    val importState by safeImportVm.state.collectAsStateWithLifecycle()
+    val handleBack = { if (selectedTab != 0 || !safeImportVm.back()) onBack() }
+    androidx.activity.compose.BackHandler(enabled = selectedTab == 0 &&
+        (importState.busy || importState.step in setOf(SafeImportStep.CONTENTS, SafeImportStep.CONFIRM))) { safeImportVm.back() }
 
     LaunchedEffect(Unit) { vm.loadCurrent(context) }
     LaunchedEffect(current) {
         if (current.isNotEmpty()) {
-            exportDetails = exportDetails.toMutableMap().apply {
+            exportUi.details = exportUi.details.toMutableMap().apply {
                 current.forEach { summary ->
                     if (summary.category.id !in this) {
                         this[summary.category.id] = summary.details.mapTo(linkedSetOf()) { it.key }
@@ -192,135 +200,104 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
     val createArchive = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        if (uri != null && pendingExport.isNotEmpty()) {
+        if (uri != null && exportUi.pending.isNotEmpty()) {
             vm.export(
                 context = context,
                 uri = uri,
-                categories = pendingExport,
-                password = pendingExportPassword,
-                selectedDetails = exportDetails.mapNotNull { (id, details) ->
-                    PortableDataCategory.fromId(id)?.let { it to details }
-                }.toMap()
+                categories = exportUi.pending,
+                password = exportUi.pendingPassword,
+                selectedDetails = exportUi.pendingDetails
             )
         }
-        pendingExport = emptySet()
-        pendingExportPassword = ""
+        exportUi.pending = emptySet()
+        exportUi.pendingPassword = ""
+        exportUi.pendingDetails = emptyMap()
     }
 
+    val uiEnabled = !loading && !importState.busy && !importState.picking && exportUi.pending.isEmpty()
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.portability_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { if (safeImportBusy) safeImportVm.cancel() else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
+            Column {
+                TopAppBar(title = { Text(stringResource(R.string.portability_title), style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = {
+                        IconButton(onClick = handleBack, modifier = Modifier.testTag("portability-back")) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(if (importState.busy) R.string.common_cancel else R.string.common_back))
+                        }
+                    }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background))
+                PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = MaterialTheme.colorScheme.background) {
+                    Tab(selected = selectedTab == 0, onClick = { if (uiEnabled) selectedTab = 0 }, enabled = uiEnabled,
+                        text = { Text(stringResource(R.string.portability_ui_import_tab)) }, modifier = Modifier.testTag("portability-tab-import"))
+                    Tab(selected = selectedTab == 1, onClick = { if (uiEnabled) selectedTab = 1 }, enabled = uiEnabled,
+                        text = { Text(stringResource(R.string.portability_ui_export_tab)) }, modifier = Modifier.testTag("portability-tab-export"))
+                }
+            }
+        }, containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                Text(
-                    text = stringResource(R.string.portability_intro),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            error?.let { message ->
-                item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(6.dp))
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            if (selectedTab == 0) {
+                SafePortableImportPanel(vm = safeImportVm, onNavigate = onNavigate, externalBusy = loading,
+                    onCompleted = { vm.loadCurrent(context) }, onFinish = onBack)
+            } else {
+                LazyColumn(Modifier.weight(1f).testTag("portability-export-scroll"), contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Text(stringResource(R.string.portability_ui_export_heading), style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.portability_export_subtitle), style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SelectionActions(onAll = { exportUi.selection = PortableDataCategory.entries.mapTo(linkedSetOf()) { it.id } },
+                            onClear = { exportUi.selection = emptySet() }, enabled = uiEnabled)
+                    }
+                    error?.let { message -> item {
+                        Text(message, color = MaterialTheme.colorScheme.error)
                         TextButton(onClick = vm::clearError) { Text(stringResource(R.string.common_close)) }
+                    } }
+                    items(current, key = { it.category.id }) { summary ->
+                        CategorySelectionRow(summary = summary, selected = summary.category.id in exportUi.selection,
+                            onToggle = { exportUi.selection = exportUi.selection.toggle(summary.category.id, it) },
+                            onClick = { detailCategory = summary.category }, enabled = uiEnabled)
+                    }
+                    item {
+                        HorizontalDivider()
+                        TextButton(onClick = { exportUi.advanced = !exportUi.advanced }, enabled = uiEnabled) {
+                            Text(stringResource(R.string.portability_ui_encryption))
+                        }
+                        val needsPassword = PortableDataCategory.CREDENTIALS.id in exportUi.selection
+                        if (needsPassword || exportUi.advanced) {
+                            OutlinedTextField(value = exportUi.password, onValueChange = { exportUi.password = it }, enabled = uiEnabled,
+                                modifier = Modifier.fillMaxWidth().testTag("portability-export-password"), label = { Text(stringResource(R.string.portability_password_optional)) },
+                                supportingText = { Text(stringResource(if (needsPassword) R.string.portability_password_required else R.string.portability_password_hint)) },
+                                visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                        } else if (exportUi.password.isNotEmpty()) {
+                            Text(stringResource(R.string.portability_ui_encrypted_export), style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (exportUi.selection.isEmpty()) Text(stringResource(R.string.portability_select_one), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-            }
-
-            item {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SafePortableImportPanel(onNavigate = onNavigate, externalBusy = loading,
-                        onBusyChanged = { safeImportBusy = it }, onCompleted = { vm.loadCurrent(context) })
-                }
-            }
-            item {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(
-                        title = stringResource(R.string.portability_export_title),
-                        subtitle = stringResource(R.string.portability_export_subtitle)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    SelectionActions(
-                        onAll = { exportSelection = PortableDataCategory.entries.mapTo(linkedSetOf()) { it.id } },
-                        onClear = { exportSelection = emptySet() }
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    current.forEach { summary ->
-                            CategorySelectionRow(
-                                summary = summary,
-                                selected = summary.category.id in exportSelection,
-                                onToggle = { selected ->
-                                    exportSelection = exportSelection.toggle(summary.category.id, selected)
-                                },
-                                onClick = { detailCategory = summary.category }
-                            )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = exportPassword,
-                        onValueChange = { exportPassword = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.portability_password_optional)) },
-                        supportingText = {
-                            Text(
-                                if (PortableDataCategory.CREDENTIALS.id in exportSelection) {
-                                    stringResource(R.string.portability_password_required)
-                                } else {
-                                    stringResource(R.string.portability_password_hint)
-                                }
-                            )
-                        },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            val categories = exportSelection.mapNotNullTo(linkedSetOf(), PortableDataCategory::fromId)
-                                .filterTo(linkedSetOf()) { category ->
-                                    exportDetails[category.id].orEmpty().isNotEmpty()
-                                }
-                            if (categories.isEmpty()) {
-                                vm.showError(context.getString(R.string.portability_select_one))
-                            } else if (
-                                PortableDataCategory.CREDENTIALS in categories && exportPassword.trim().length < 8
-                            ) {
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) {
+                    Button(onClick = {
+                        if (!loading && !importState.busy && exportUi.pending.isEmpty()) {
+                            val categories = exportUi.selection.mapNotNullTo(linkedSetOf(), PortableDataCategory::fromId)
+                                .filterTo(linkedSetOf()) { exportUi.details[it.id].orEmpty().isNotEmpty() }
+                            if (categories.isEmpty()) vm.showError(context.getString(R.string.portability_select_one))
+                            else if (PortableDataCategory.CREDENTIALS in categories && exportUi.password.trim().length < 8)
                                 vm.showError(context.getString(R.string.portability_password_required))
-                            } else {
-                                pendingExport = categories
-                                pendingExportPassword = exportPassword
+                            else {
+                                exportUi.pending = categories
+                                exportUi.pendingPassword = exportUi.password
+                                exportUi.pendingDetails = exportUi.details.mapNotNull { (id, details) ->
+                                    PortableDataCategory.fromId(id)?.let { it to details.toSet() }
+                                }.toMap()
                                 createArchive.launch(suggestedArchiveName())
                             }
-                        },
-                        enabled = !loading && !safeImportBusy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.CloudUpload, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.portability_export_action, exportSelection.size))
+                        }
+                    }, enabled = uiEnabled && exportUi.selection.isNotEmpty(), modifier = Modifier.testTag("portability-export-action")
+                        .widthIn(min = 160.dp, max = 200.dp).heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.portability_export_action, exportUi.selection.count { exportUi.details[it].orEmpty().isNotEmpty() }), textAlign = TextAlign.Center)
                     }
                 }
             }
-
         }
         LoadingOverlay(visible = loading)
     }
@@ -328,11 +305,11 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
     detailCategory?.let { category ->
         val summary = current.firstOrNull { it.category == category }
         if (summary != null) {
-            val selectedDetails = exportDetails[category.id].orEmpty()
+            val selectedDetails = exportUi.details[category.id].orEmpty()
             NekoDialog(
                 onDismiss = { detailCategory = null },
                 title = "${categoryLabel(category)}${stringResource(R.string.portability_detail_title)}",
-                message = stringResource(R.string.portability_detail_hint),
+                message = categoryDescription(category) + "\n" + stringResource(R.string.portability_detail_hint),
                 confirmText = stringResource(R.string.portability_detail_done),
                 onConfirm = { detailCategory = null },
                 cancelText = null,
@@ -345,9 +322,9 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
                     ) {
                         SelectionActions(
                             onAll = {
-                                exportDetails = exportDetails + (category.id to summary.details.mapTo(linkedSetOf()) { it.key })
+                                exportUi.details = exportUi.details + (category.id to summary.details.mapTo(linkedSetOf()) { it.key })
                             },
-                            onClear = { exportDetails = exportDetails + (category.id to emptySet()) }
+                            onClear = { exportUi.details = exportUi.details + (category.id to emptySet()) }
                         )
                         summary.details.forEach { detail ->
                             val selected = detail.key in selectedDetails
@@ -356,7 +333,7 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
                                     .fillMaxWidth()
                                     .clickable {
                                         val next = if (selected) selectedDetails - detail.key else selectedDetails + detail.key
-                                        exportDetails = exportDetails + (category.id to next)
+                                        exportUi.details = exportUi.details + (category.id to next)
                                     }
                                     .padding(vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -377,7 +354,7 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
                                     checked = selected,
                                     onCheckedChange = { checked ->
                                         val next = if (checked) selectedDetails + detail.key else selectedDetails - detail.key
-                                        exportDetails = exportDetails + (category.id to next)
+                                        exportUi.details = exportUi.details + (category.id to next)
                                     }
                                 )
                             }
@@ -390,57 +367,24 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
 }
 
 @Composable
-private fun SelectionActions(onAll: () -> Unit, onClear: () -> Unit) {
+private fun SelectionActions(onAll: () -> Unit, onClear: () -> Unit, enabled: Boolean = true) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = onAll) { Text(stringResource(R.string.portability_select_all)) }
-        TextButton(onClick = onClear) { Text(stringResource(R.string.portability_clear_selection)) }
+        TextButton(onClick = onAll, enabled = enabled) { Text(stringResource(R.string.portability_select_all)) }
+        TextButton(onClick = onClear, enabled = enabled) { Text(stringResource(R.string.portability_clear_selection)) }
     }
 }
 
 @Composable
-private fun CategorySelectionRow(
-    summary: PortableCategorySummary,
-    selected: Boolean,
-    onToggle: (Boolean) -> Unit,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            categoryIcon(summary.category),
-            contentDescription = null,
-            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp)
-        )
+private fun CategorySelectionRow(summary: PortableCategorySummary, selected: Boolean,
+    onToggle: (Boolean) -> Unit, onClick: () -> Unit, enabled: Boolean = true) {
+    Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(categoryIcon(summary.category), null, tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = categoryLabel(summary.category),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = categoryDescription(summary.category),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+        Column(Modifier.weight(1f)) {
+            Text(categoryLabel(summary.category), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(stringResource(R.string.portability_ui_export_details, summary.itemCount), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = stringResource(R.string.portability_item_count, summary.itemCount),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.SemiBold
-        )
-        Checkbox(checked = selected, onCheckedChange = onToggle)
+        Checkbox(selected, onCheckedChange = onToggle, enabled = enabled, modifier = Modifier.testTag("portability-export-${summary.category.id}"))
     }
 }
 
@@ -470,7 +414,7 @@ private fun ArchiveSummary(preview: PortableArchivePreview) {
 private fun Set<String>.toggle(id: String, selected: Boolean): Set<String> =
     if (selected) this + id else this - id
 
-private fun displayName(context: Context, uri: Uri): String =
+internal fun portableArchiveDisplayName(context: Context, uri: Uri): String =
     context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
         if (cursor.moveToFirst()) cursor.getString(0) else null
     } ?: uri.lastPathSegment.orEmpty()

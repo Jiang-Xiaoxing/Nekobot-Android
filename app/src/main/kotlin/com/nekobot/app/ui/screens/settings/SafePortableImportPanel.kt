@@ -6,8 +6,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,6 +45,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.zip.ZipFile
 
+internal enum class SafeImportStep { FILE, CONTENTS, CONFIRM, RESULT }
+
 internal data class SafeImportUiState(
     val prepared: PreparedPortableImport? = null,
     val selected: Map<PortableDataCategory, Set<String>> = emptyMap(),
@@ -49,7 +58,12 @@ internal data class SafeImportUiState(
     val error: String? = null,
     val result: PortableImportResult? = null,
     val route: String? = null,
-    val passwordNeeded: Boolean = false
+    val passwordNeeded: Boolean = false,
+    val step: SafeImportStep = SafeImportStep.FILE,
+    val sourceUri: Uri? = null,
+    val fileName: String = "",
+    val passwordInput: String = "",
+    val picking: Boolean = false
 )
 
 class SafePortableImportViewModel : ViewModel() {
@@ -57,20 +71,43 @@ class SafePortableImportViewModel : ViewModel() {
     private var work: Job? = null
     private var cleared = false
     private var limit = 50
+    internal fun beginPicking(): Boolean {
+        if (state.value.busy || state.value.picking) return false
+        state.value = state.value.copy(picking = true)
+        return true
+    }
+    internal fun pickerClosed() { state.value = state.value.copy(picking = false) }
+    internal fun password(value: String) { if (!state.value.busy) state.value = state.value.copy(passwordInput = value) }
+    internal fun continueContents() {
+        if (!state.value.busy && state.value.prepared != null) state.value = state.value.copy(step = SafeImportStep.CONTENTS)
+    }
+    internal fun backToContents() { if (!state.value.busy) state.value = state.value.copy(step = SafeImportStep.CONTENTS) }
+    internal fun back(): Boolean {
+        if (state.value.busy) { cancel(); return true }
+        val previous = when (state.value.step) {
+            SafeImportStep.CONTENTS -> SafeImportStep.FILE
+            SafeImportStep.CONFIRM -> SafeImportStep.CONTENTS
+            else -> return false
+        }
+        state.value = state.value.copy(step = previous)
+        return true
+    }
     fun inspect(context: Context, uri: Uri, password: String) {
         if (state.value.busy) return
         state.value.prepared?.close()
-        state.value = SafeImportUiState(busy = true)
+        state.value = SafeImportUiState(busy = true, sourceUri = uri, fileName = uri.lastPathSegment.orEmpty().substringAfterLast('/'), passwordInput = password)
         work = viewModelScope.launch {
             try {
                 val prepared = withContext(Dispatchers.IO) {
+                    val name = runCatching { portableArchiveDisplayName(context, uri) }.getOrNull()
+                    if (!name.isNullOrBlank()) state.value = state.value.copy(fileName = name)
                     context.contentResolver.openInputStream(uri)?.use { PortableDataArchiveManager(context).prepareImport(it, password) }
                         ?: error(context.getString(R.string.portability_open_input_failed))
                 }
                 val selected = prepared.preview.categories.associate { summary -> summary.category to
                     if (summary.category == PortableDataCategory.CREDENTIALS) emptySet() else summary.details
                         .filter { it.key != "plot_story" }.mapTo(linkedSetOf()) { it.key } }
-                state.value = state.value.copy(prepared = prepared, selected = selected)
+                state.value = state.value.copy(prepared = prepared, selected = selected, step = SafeImportStep.CONTENTS)
             } catch (error: CancellationException) { state.value = state.value.copy(error = context.getString(R.string.safe_import_cancelled)) }
             catch (error: Exception) {
                 val route = withContext(Dispatchers.IO) { recognizeDedicatedImport(context, uri) }
@@ -95,7 +132,7 @@ class SafePortableImportViewModel : ViewModel() {
             try {
                 val snapshot = state.value
                 val plan = PortableDataArchiveManager(context).previewImport(prepared, snapshot.selected, snapshot.choices, limit)
-                state.value = state.value.copy(plan = plan, planValid = true)
+                state.value = state.value.copy(plan = plan, planValid = true, step = SafeImportStep.CONFIRM)
             } catch (_: CancellationException) { state.value = state.value.copy(error = context.getString(R.string.safe_import_cancelled)) }
             catch (error: Exception) { state.value = state.value.copy(error = error.message ?: context.getString(R.string.safe_import_failed), planValid = false) }
             finally { state.value = state.value.copy(busy = false); if (cleared) prepared.close() }
@@ -110,11 +147,11 @@ class SafePortableImportViewModel : ViewModel() {
         work = viewModelScope.launch {
             try {
                 val result = PortableDataArchiveManager(context).commitImport(prepared, plan) { message -> state.value = state.value.copy(progress = message) }
-                state.value = state.value.copy(result = result, planValid = false)
+                state.value = state.value.copy(result = result, planValid = false, step = SafeImportStep.RESULT)
             } catch (_: CancellationException) {
-                state.value = state.value.copy(result = prepared.result, planValid = false,
+                state.value = state.value.copy(result = prepared.result, planValid = false, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
                     error = if (prepared.result == null) context.getString(R.string.safe_import_cancelled) else null)
-            } catch (error: Exception) { state.value = state.value.copy(result = prepared.result,
+            } catch (error: Exception) { state.value = state.value.copy(result = prepared.result, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
                 error = if (prepared.result != null) context.getString(R.string.safe_import_reload_failed) else error.message ?: context.getString(R.string.safe_import_failed), planValid = false) }
             finally { state.value = state.value.copy(busy = false); if (cleared) prepared.close() }
         }
@@ -127,120 +164,215 @@ private data class ImportGroup(val category: PortableDataCategory, val title: St
 
 @Composable
 internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, externalBusy: Boolean = false,
-    onBusyChanged: (Boolean) -> Unit = {}, onCompleted: () -> Unit = {},
+    onBusyChanged: (Boolean) -> Unit = {}, onCompleted: () -> Unit = {}, onFinish: () -> Unit = {},
     vm: SafePortableImportViewModel = viewModel()) {
     val context = LocalContext.current
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.busy) { onBusyChanged(state.busy) }
     LaunchedEffect(state.result) { if (state.result != null) onCompleted() }
-    var uri by remember { mutableStateOf<Uri?>(null) }
-    var password by remember { mutableStateOf("") }
     var group by remember { mutableStateOf<ImportGroup?>(null) }
     var showDifferences by remember { mutableStateOf(false) }
     var showIssues by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     var storyConfirm by remember { mutableStateOf(false) }
+    var formatDetails by remember { mutableStateOf(false) }
+    var archiveInfo by remember { mutableStateOf(false) }
+    val scroll = rememberLazyListState()
+    LaunchedEffect(state.step) { scroll.scrollToItem(0) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { selected ->
-        if (selected != null) { uri = selected; password = ""; vm.inspect(context, selected, "") }
+        vm.pickerClosed()
+        if (selected != null) vm.inspect(context, selected, "")
     }
-    SectionHeader(title = stringResource(R.string.portability_import_title))
-    Text(stringResource(R.string.safe_import_intro), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(12.dp))
-    OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.busy && !externalBusy,
-        modifier = Modifier.testTag("safe-import-choose").widthIn(min = 160.dp, max = 200.dp).heightIn(min = 48.dp)) {
-        Text(stringResource(R.string.portability_choose_archive), style = MaterialTheme.typography.labelLarge)
-    }
-    if (state.passwordNeeded && state.prepared == null) {
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.portability_import_password)) },
-            singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        TextButton(onClick = { uri?.let { vm.inspect(context, it, password) } }, enabled = !state.busy) { Text(stringResource(R.string.portability_analyze_archive)) }
-    }
-    state.route?.let { route ->
-        val label = when (route) {
-            Routes.CHARACTERS -> categoryLabel(PortableDataCategory.CHARACTERS)
-            Routes.SESSIONS -> categoryLabel(PortableDataCategory.CONVERSATIONS)
-            Routes.KNOWLEDGE -> categoryLabel(PortableDataCategory.KNOWLEDGE)
-            Routes.SKILLS -> stringResource(R.string.skills_title)
-            Routes.PLUGINS -> stringResource(R.string.plugins_title)
-            Routes.DB_PROFILE -> stringResource(R.string.safe_import_database)
-            else -> stringResource(R.string.settings_config_transfer)
+    val chooseFile = { if (!externalBusy && vm.beginPicking()) picker.launch(arrayOf("*/*")) }
+    val groups = buildList {
+        state.prepared?.preview?.categories?.forEach { summary ->
+            if (summary.category == PortableDataCategory.CONVERSATIONS) {
+                val independent = summary.details.filter { it.key.removePrefix("table:") in INDEPENDENT_MEMORY_TABLES }
+                val other = summary.details - independent.toSet()
+                if (other.isNotEmpty()) add(ImportGroup(summary.category, categoryLabel(summary.category), other))
+                if (independent.isNotEmpty()) add(ImportGroup(summary.category, stringResource(R.string.safe_import_independent_memory), independent))
+            } else add(ImportGroup(summary.category, categoryLabel(summary.category), summary.details))
         }
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = { onNavigate(route) }) { Text(stringResource(R.string.safe_import_open_dedicated)) }
     }
-    if (state.busy) {
-        Spacer(Modifier.height(10.dp))
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        Text(state.progress.ifBlank { stringResource(R.string.safe_import_checking) }, style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = vm::cancel) { Text(stringResource(R.string.common_cancel)) }
-    }
-    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-    state.prepared?.let { prepared ->
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.safe_import_recognized, prepared.preview.sourceVersion.ifBlank { "—" }), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val groups = buildList {
-            prepared.preview.categories.forEach { summary ->
-                if (summary.category == PortableDataCategory.CONVERSATIONS) {
-                    val independent = summary.details.filter { it.key.removePrefix("table:") in INDEPENDENT_MEMORY_TABLES }
-                    val other = summary.details - independent.toSet()
-                    if (other.isNotEmpty()) add(ImportGroup(summary.category, categoryLabel(summary.category), other))
-                    if (independent.isNotEmpty()) add(ImportGroup(summary.category, stringResource(R.string.safe_import_independent_memory), independent))
-                } else add(ImportGroup(summary.category, categoryLabel(summary.category), summary.details))
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.weight(1f).testTag("safe-import-scroll"), state = scroll, contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item { ImportSteps(state.step) }
+            if (state.busy) item {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(state.progress.ifBlank { stringResource(R.string.safe_import_checking) }, style = MaterialTheme.typography.bodyMedium)
             }
-        }
-        if (groups.isEmpty()) Text(stringResource(R.string.safe_import_empty), style = MaterialTheme.typography.bodyMedium)
-        groups.forEach { item ->
-            val keys = item.details.mapTo(linkedSetOf()) { it.key }
-            val groupTag = "safe-import-${item.category.id}-${if (keys.any { it.removePrefix("table:") in INDEPENDENT_MEMORY_TABLES }) "memory" else "data"}"
-            val selected = state.selected[item.category].orEmpty()
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = keys.all(selected::contains), enabled = !state.busy,
-                    onCheckedChange = { vm.select(item.category, keys, it) }, modifier = Modifier.testTag(groupTag))
-                Column(Modifier.weight(1f).clickable(enabled = !state.busy) { group = item }.padding(vertical = 8.dp)) {
-                    Text(item.title, style = MaterialTheme.typography.bodyLarge)
-                    Text(stringResource(R.string.safe_import_selected_count, keys.count(selected::contains), keys.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) } }
+            when (state.step) {
+                SafeImportStep.FILE -> {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Outlined.Folder, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(16.dp))
+                            Text(stringResource(R.string.portability_ui_choose_file), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                            Spacer(Modifier.height(8.dp))
+                            Text(stringResource(R.string.safe_import_intro), style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                        }
+                    }
+                    if (state.sourceUri != null) item {
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .4f), shape = MaterialTheme.shapes.medium) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                Text(state.fileName.ifBlank { stringResource(R.string.portability_ui_selected_file) }, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                TextButton(onClick = chooseFile, enabled = !state.busy && !state.picking && !externalBusy) { Text(stringResource(R.string.portability_ui_change_file)) }
+                            }
+                        }
+                    }
+                    if (state.passwordNeeded && state.prepared == null) item {
+                        OutlinedTextField(value = state.passwordInput, onValueChange = vm::password,
+                            label = { Text(stringResource(R.string.portability_import_password)) }, enabled = !state.busy,
+                            singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    }
+                    state.route?.let { route -> item {
+                        val label = when (route) {
+                            Routes.CHARACTERS -> categoryLabel(PortableDataCategory.CHARACTERS)
+                            Routes.SESSIONS -> categoryLabel(PortableDataCategory.CONVERSATIONS)
+                            Routes.KNOWLEDGE -> categoryLabel(PortableDataCategory.KNOWLEDGE)
+                            Routes.SKILLS -> stringResource(R.string.skills_title)
+                            Routes.PLUGINS -> stringResource(R.string.plugins_title)
+                            Routes.DB_PROFILE -> stringResource(R.string.safe_import_database)
+                            else -> stringResource(R.string.settings_config_transfer)
+                        }
+                        Text(label, style = MaterialTheme.typography.titleMedium)
+                    } }
+                    item {
+                        TextButton(onClick = { formatDetails = !formatDetails }) { Text(stringResource(R.string.portability_ui_formats)) }
+                        if (formatDetails) Text(stringResource(R.string.portability_ui_formats_hint), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                IconButton(onClick = { group = item }, enabled = !state.busy) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.safe_import_contents)) }
+                SafeImportStep.CONTENTS -> {
+                    item {
+                        Text(stringResource(R.string.portability_ui_choose_contents), style = MaterialTheme.typography.titleLarge)
+                        Text(state.fileName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        TextButton(onClick = { archiveInfo = true }, enabled = !state.busy) { Text(stringResource(R.string.portability_archive_summary)) }
+                    }
+                    if (groups.isEmpty()) item { Text(stringResource(R.string.safe_import_empty)) }
+                    groups.forEach { entry -> item(key = entry.title) {
+                        val keys = entry.details.mapTo(linkedSetOf()) { it.key }
+                        val selected = state.selected[entry.category].orEmpty()
+                        val groupTag = "safe-import-${entry.category.id}-${if (keys.any { it.removePrefix("table:") in INDEPENDENT_MEMORY_TABLES }) "memory" else "data"}"
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            TriStateCheckbox(state = when {
+                                keys.all(selected::contains) -> ToggleableState.On
+                                keys.none(selected::contains) -> ToggleableState.Off
+                                else -> ToggleableState.Indeterminate
+                            }, enabled = !state.busy, onClick = { vm.select(entry.category, keys, keys.none(selected::contains)) }, modifier = Modifier.testTag(groupTag))
+                            Column(Modifier.weight(1f).clickable(enabled = !state.busy) { group = entry }.padding(vertical = 8.dp)) {
+                                Text(entry.title, style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(R.string.safe_import_selected_count, keys.count(selected::contains), keys.size), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = { group = entry }, enabled = !state.busy) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.safe_import_contents))
+                            }
+                        }
+                    } }
+                    if ("credentials_bundle" in state.selected[PortableDataCategory.CREDENTIALS].orEmpty()) item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(state.choices.restoreCredentials, enabled = !state.busy, onCheckedChange = { vm.choices(state.choices.copy(restoreCredentials = it)) })
+                            Text(stringResource(R.string.safe_import_credentials_consent), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    item { Text(stringResource(R.string.safe_import_defaults), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                SafeImportStep.CONFIRM -> state.plan?.let { plan ->
+                    item {
+                        Text(stringResource(R.string.portability_ui_confirm_import), style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.safe_import_confirm), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row {
+                                ImportStat(stringResource(R.string.portability_ui_new), plan.rows.counts.added + plan.fileCounts.added, Modifier.weight(1f))
+                                ImportStat(stringResource(R.string.portability_ui_update), plan.rows.counts.updated + plan.fileCounts.updated + plan.settingDifferences.count { it.column in state.choices.settings }, Modifier.weight(1f))
+                            }
+                            Row {
+                                ImportStat(stringResource(R.string.portability_ui_same), plan.rows.counts.same + plan.fileCounts.same, Modifier.weight(1f))
+                                ImportStat(stringResource(R.string.portability_ui_keep), plan.rows.counts.kept + plan.fileCounts.kept, Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    if (!state.planValid) item { Text(stringResource(R.string.portability_ui_recheck), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                    if (plan.rows.differences.isNotEmpty() || plan.fileDifferences.isNotEmpty() || plan.settingDifferences.isNotEmpty() || plan.storyDifferent) item {
+                        TextButton(onClick = { showDifferences = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_changes)) }
+                    }
+                    if (plan.issues.isNotEmpty()) item {
+                        TextButton(onClick = { showIssues = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_dependencies, plan.issues.size), color = MaterialTheme.colorScheme.error) }
+                    }
+                    if (plan.rows.sameNameCopies > 0 || plan.rows.newKeys.any { it.startsWith("local_characters:") }) item {
+                        Text(stringResource(R.string.portability_ui_character_preview, plan.rows.newKeys.count { it.startsWith("local_characters:") }, plan.rows.sameNameCopies), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (state.choices.restoreCredentials && "credentials_bundle" in state.selected[PortableDataCategory.CREDENTIALS].orEmpty()) item { Text(stringResource(R.string.safe_import_credentials_consent), style = MaterialTheme.typography.bodyMedium) }
+                    if (plan.useStory) item { Text(stringResource(R.string.safe_import_story_confirm_message), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                    if (plan.rows.sensitiveFieldsOmitted > 0) item { Text(stringResource(R.string.safe_import_secrets_skipped, plan.rows.sensitiveFieldsOmitted), style = MaterialTheme.typography.bodySmall) }
+                }
+                SafeImportStep.RESULT -> state.result?.let { result ->
+                    item {
+                        Icon(Icons.Outlined.CheckCircle, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(12.dp))
+                        Text(stringResource(R.string.safe_import_done), style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(12.dp))
+                        Text(stringResource(R.string.safe_import_result, result.newRows, result.updatedRows, result.importedFiles, result.sameItems, result.keptItems, result.coreMemories), style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.height(12.dp))
+                        Text(stringResource(R.string.safe_import_character_result, result.newCharacters, result.sameNameCopies), style = MaterialTheme.typography.bodyMedium)
+                        if (result.credentialsRestored > 0) Text(stringResource(R.string.safe_import_credentials_result, result.credentialsRestored))
+                        if (result.settingsUpdated > 0) Text(stringResource(R.string.safe_import_settings_result, result.settingsUpdated))
+                        if (result.storyUpdated) Text(stringResource(R.string.safe_import_story_result))
+                    }
+                }
             }
         }
-        if ("credentials_bundle" in state.selected[PortableDataCategory.CREDENTIALS].orEmpty()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = state.choices.restoreCredentials, onCheckedChange = { vm.choices(state.choices.copy(restoreCredentials = it)) }, enabled = !state.busy)
-                Text(stringResource(R.string.safe_import_credentials_consent), style = MaterialTheme.typography.bodySmall)
+        HorizontalDivider()
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center) {
+            val ready = !externalBusy && !state.picking && when (state.step) {
+                SafeImportStep.FILE -> !state.passwordNeeded || state.passwordInput.isNotBlank()
+                SafeImportStep.CONTENTS -> state.selected.values.any { it.isNotEmpty() }
+                SafeImportStep.CONFIRM -> state.plan != null
+                SafeImportStep.RESULT -> true
             }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.safe_import_defaults), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        state.plan?.let { plan ->
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.safe_import_summary, plan.rows.counts.added + plan.fileCounts.added,
-                plan.rows.counts.same + plan.fileCounts.same, plan.rows.counts.different + plan.fileCounts.different + plan.settingDifferences.size + if (plan.storyDifferent) 1 else 0),
-                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            TextButton(onClick = { showDifferences = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_changes)) }
-            if (plan.rows.sensitiveFieldsOmitted > 0) Text(stringResource(R.string.safe_import_secrets_skipped, plan.rows.sensitiveFieldsOmitted),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (plan.issues.isNotEmpty()) TextButton(onClick = { showIssues = true }, enabled = !state.busy) {
-                Text(stringResource(R.string.safe_import_dependencies, plan.issues.size), color = MaterialTheme.colorScheme.error)
+            Button(onClick = {
+                when {
+                    state.busy -> vm.cancel()
+                    state.step == SafeImportStep.RESULT -> onFinish()
+                    state.step == SafeImportStep.FILE && state.route != null -> onNavigate(requireNotNull(state.route))
+                    state.step == SafeImportStep.FILE && state.passwordNeeded -> state.sourceUri?.let { vm.inspect(context, it, state.passwordInput) }
+                    state.step == SafeImportStep.FILE && state.prepared != null -> vm.continueContents()
+                    state.step == SafeImportStep.FILE -> chooseFile()
+                    state.step == SafeImportStep.CONTENTS -> vm.preview(context)
+                    !state.planValid -> vm.preview(context)
+                    state.plan?.issues?.isNotEmpty() == true -> showIssues = true
+                    else -> confirm = true
+                }
+            }, enabled = state.busy || ready,
+                modifier = Modifier.widthIn(min = 160.dp, max = 200.dp).heightIn(min = 48.dp)
+                    .testTag(if (state.step == SafeImportStep.FILE) "safe-import-choose" else "safe-import-execute")) {
+                Text(stringResource(when {
+                    state.busy -> R.string.common_cancel
+                    state.step == SafeImportStep.RESULT -> R.string.portability_ui_done
+                    state.step == SafeImportStep.FILE && state.route != null -> R.string.safe_import_open_dedicated
+                    state.step == SafeImportStep.FILE && state.passwordNeeded -> R.string.portability_analyze_archive
+                    state.step == SafeImportStep.FILE && state.prepared != null -> R.string.portability_ui_next
+                    state.step == SafeImportStep.FILE -> R.string.portability_choose_archive
+                    state.step == SafeImportStep.CONTENTS -> R.string.portability_ui_next
+                    !state.planValid -> R.string.safe_import_refresh
+                    state.plan?.issues?.isNotEmpty() == true -> R.string.portability_ui_resolve
+                    else -> R.string.portability_ui_confirm_import
+                }), textAlign = TextAlign.Center)
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { if (state.planValid && state.plan?.issues?.isEmpty() == true) confirm = true else vm.preview(context) },
-                enabled = !state.busy && !externalBusy && state.selected.values.any { it.isNotEmpty() },
-                modifier = Modifier.testTag("safe-import-execute").widthIn(min = 160.dp, max = 200.dp).heightIn(min = 48.dp)) {
-                Text(stringResource(if (state.planValid && state.plan?.issues?.isEmpty() == true) R.string.safe_import_execute else R.string.safe_import_preview))
-            }
-            if (state.planValid) TextButton(onClick = { vm.preview(context) }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_refresh)) }
         }
     }
-    state.result?.let { result ->
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.safe_import_done), style = MaterialTheme.typography.titleMedium)
-        Text(stringResource(R.string.safe_import_result, result.newRows, result.updatedRows, result.importedFiles, result.sameItems, result.keptItems, result.coreMemories), style = MaterialTheme.typography.bodyMedium)
-        Text(stringResource(R.string.safe_import_character_result, result.newCharacters, result.sameNameCopies), style = MaterialTheme.typography.bodySmall)
-        if (result.credentialsRestored > 0) Text(stringResource(R.string.safe_import_credentials_result, result.credentialsRestored), style = MaterialTheme.typography.bodySmall)
-        if (result.settingsUpdated > 0) Text(stringResource(R.string.safe_import_settings_result, result.settingsUpdated), style = MaterialTheme.typography.bodySmall)
-        if (result.storyUpdated) Text(stringResource(R.string.safe_import_story_result), style = MaterialTheme.typography.bodySmall)
+    if (archiveInfo) state.prepared?.let { prepared ->
+        NekoDialog(onDismiss = { archiveInfo = false }, title = stringResource(R.string.portability_archive_summary),
+            confirmText = stringResource(R.string.common_close), onConfirm = { archiveInfo = false }, cancelText = null) {
+            Text(stringResource(R.string.portability_archive_meta, prepared.preview.sourceVersion.ifBlank { "—" }, prepared.preview.exportedAt.ifBlank { "—" },
+                stringResource(if (prepared.preview.encrypted) R.string.portability_encrypted else R.string.portability_not_encrypted)))
+        }
     }
     group?.let { item ->
         NekoDialog(onDismiss = { group = null }, title = item.title, confirmText = stringResource(R.string.common_confirm), onConfirm = { group = null }, cancelText = null, contentScrollable = true) {
@@ -299,7 +431,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
     }
     if (showIssues) state.plan?.let { plan ->
         NekoDialog(onDismiss = { showIssues = false }, title = stringResource(R.string.safe_import_dependencies_title),
-            confirmText = stringResource(R.string.safe_import_back_selection), onConfirm = { showIssues = false }, cancelText = null, contentScrollable = true) {
+            confirmText = stringResource(R.string.safe_import_back_selection), onConfirm = { showIssues = false; vm.backToContents() }, cancelText = null, contentScrollable = true) {
             plan.issues.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp)) }
             plan.dependencyOptions.forEach { option ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -321,6 +453,30 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
         message = stringResource(R.string.safe_import_story_confirm_message), confirmText = stringResource(R.string.common_confirm),
         onConfirm = { storyConfirm = false; vm.choices(state.choices.copy(files = state.choices.files + "plot_story")) },
         onCancel = { storyConfirm = false })
+}
+
+@Composable
+private fun ImportSteps(step: SafeImportStep) {
+    val labels = listOf(R.string.portability_ui_file_step, R.string.portability_ui_contents_step, R.string.portability_ui_confirm_step)
+    val current = step.ordinal.coerceAtMost(2)
+    Row(Modifier.fillMaxWidth().testTag("safe-import-step-${step.name.lowercase()}"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEachIndexed { index, label ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(shape = CircleShape, color = if (index == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant) {
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { Text("${index + 1}", style = MaterialTheme.typography.labelSmall,
+                        color = if (index == current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(label), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center,
+                    fontWeight = if (index == current) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (index == current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable private fun ImportStat(label: String, count: Int, modifier: Modifier) {
+    Column(modifier) { Text(count.toString(), style = MaterialTheme.typography.headlineMedium); Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 private val INDEPENDENT_MEMORY_TABLES = setOf("companion_scopes", "companion_memories", "companion_sources", "companion_receipts",

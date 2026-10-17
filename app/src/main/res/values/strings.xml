@@ -222,9 +222,9 @@
     <string name="settings_open_latest_session_on_launch_desc">启动应用后自动打开最近更新的会话</string>
     <string name="settings_message_image_prompt_optimize">生图提示词优化</string>
     <string name="settings_message_image_prompt_optimize_desc">生成图片前先用聊天模型把消息改写为纯画面描述，减少角色卡文字出现在图片中</string>
-    <string name="settings_data_portability">数据导出中心</string>
+    <string name="settings_data_portability">数据导入与导出</string>
     <string name="settings_data_portability_desc">按类别批量导出、预览并选择性导入</string>
-    <string name="portability_title">数据导出中心</string>
+    <string name="portability_title">数据导入与导出</string>
     <string name="portability_intro">将本地数据按类别打包为一个可携带归档。导入时会先预览归档内容，你可以只恢复需要的类别。</string>
     <string name="portability_export_title">批量导出</string>
     <string name="portability_export_subtitle">选择要随归档携带的数据</string>
