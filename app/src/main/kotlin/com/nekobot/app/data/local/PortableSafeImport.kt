@@ -220,6 +220,23 @@ suspend fun PortableDataArchiveManager.previewImport(prepared: PreparedPortableI
     val settingsBefore = captureAppSettingsRollback()
     val settingsIncoming = if ("app_settings" in selected[PortableDataCategory.APP_SETTINGS].orEmpty())
         prepared.entries["data/app_settings.json"]?.let { JsonParser.parseString(String(it, Charsets.UTF_8)).asJsonObject } else null
+    settingsIncoming?.let { incoming ->
+        PortableImportSettingsPolicy.validate(settingsBefore, incoming)
+        require(choices.settings.all(incoming::has)) { "设置选择已失效，请重新预览" }
+        PortableImportSettingsPolicy.fileDirectories.forEach { (key, directory) ->
+            if (key in choices.settings) PortableImportSettingsPolicy.fileName(incoming, key)?.let { name ->
+                val file = portableJournal(appContext).checked(File(appContext.filesDir, "$directory/$name"))
+                require(!file.exists() || file.isFile) { "设置附件不是普通文件" }
+                if (!file.isFile && file.canonicalPath !in suppliedFiles) {
+                    issues += "所选字体或背景设置缺少对应文件，请补选素材或取消此设置；不会将当前设置置空"
+                    prepared.stagedFiles.filter { it.target.canonicalPath == file.canonicalPath }.forEach { staged ->
+                        prepared.preview.categories.firstOrNull { it.category == staged.category }?.details?.firstOrNull { it.key == "root:${staged.root}" }
+                            ?.let { dependencyOptions += PortableImportDependencyOption(staged.category, it) }
+                    }
+                }
+            }
+        }
+    }
     val settings = settingsIncoming?.entrySet()?.filter { (name, value) ->
         require(settingsBefore.has(name)) { "应用设置包含当前版本不支持的字段" }
         value != settingsBefore[name]
@@ -360,9 +377,9 @@ suspend fun PortableDataArchiveManager.commitImport(prepared: PreparedPortableIm
                 journal.install(tx, checkpoint)
                 onProgress("正在提交设置")
                 if (preview.settingsIncoming != null && state.has("settings")) {
-                    val merged = preview.settingsBefore.deepCopy()
-                    preview.settingDifferences.filter { it.column in preview.choices.settings }.forEach { merged.add(it.column, preview.settingsIncoming[it.column]) }
-                    restoreAppSettings(merged.toString().toByteArray())
+                    PortableImportSettingsPolicy.apply(preview.settingsBefore, preview.settingsIncoming, preview.choices.settings,
+                        { restoreAppSettings(it.toString().toByteArray()) },
+                        { ServiceContainer.prefs.customFontPath = it }, { ServiceContainer.prefs.customChatBackgroundPath = it })
                     check(appContext.getSharedPreferences("nekobot_prefs", Context.MODE_PRIVATE).edit().commit()) { "无法保存应用设置" }
                 }
                 if (preview.useStory) {
@@ -481,7 +498,8 @@ private fun PortableDataArchiveManager.captureAppSettingsRollback(): JsonObject 
     }
 
 private fun safeSettingValue(key: String, value: JsonElement?): String =
-    if (key.contains("file") || key.contains("path")) "本机文件" else value?.takeUnless(JsonElement::isJsonNull)?.asString?.take(120) ?: "未设置"
+    if (key !in PortableImportSettingsPolicy.fileDirectories && (key.contains("file") || key.contains("path"))) "本机文件"
+    else value?.takeUnless(JsonElement::isJsonNull)?.asString?.take(120) ?: "未设置"
 
 private fun portableJournal(context: Context) = PortableImportJournal(File(context.filesDir, "portable_import_transactions"), listOf(context.filesDir, context.cacheDir))
 

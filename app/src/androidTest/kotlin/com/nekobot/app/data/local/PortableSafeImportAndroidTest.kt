@@ -172,4 +172,49 @@ class PortableSafeImportAndroidTest {
             assertFalse(restored.active)
         }
     }
+    @Test fun selectingOneSettingPreservesExactLocalFontAndBackgroundUris() = runBlocking {
+        val prefs = ServiceContainer.prefs
+        val oldFont = prefs.customFontPath; val oldBackground = prefs.customChatBackgroundPath
+        val oldRecent = prefs.recentSessionsIncludeArchived
+        try {
+            prefs.customFontPath = "content://synthetic.fixture/archive-font"
+            prefs.customChatBackgroundPath = "content://synthetic.fixture/archive-background"
+            prefs.recentSessionsIncludeArchived = !oldRecent
+            val out = ByteArrayOutputStream()
+            val manager = PortableDataArchiveManager(context)
+            manager.export(setOf(PortableDataCategory.APP_SETTINGS), "", out, "synthetic")
+            prefs.customFontPath = "content://synthetic.fixture/later-local-font"
+            prefs.customChatBackgroundPath = "content://synthetic.fixture/later-local-background"
+            prefs.recentSessionsIncludeArchived = oldRecent
+            prepared(out.toByteArray()).use { source ->
+                val selected = mapOf(PortableDataCategory.APP_SETTINGS to setOf("app_settings"))
+                val chosen = PortableImportChoices(settings = setOf("recent_sessions_include_archived"))
+                val result = manager.commitImport(source, manager.previewImport(source, selected, chosen))
+                assertEquals(1, result.settingsUpdated)
+            }
+            assertEquals(!oldRecent, prefs.recentSessionsIncludeArchived)
+            assertEquals("content://synthetic.fixture/later-local-font", prefs.customFontPath)
+            assertEquals("content://synthetic.fixture/later-local-background", prefs.customChatBackgroundPath)
+        } finally {
+            prefs.customFontPath = oldFont; prefs.customChatBackgroundPath = oldBackground
+            prefs.recentSessionsIncludeArchived = oldRecent
+        }
+    }
+    @Test fun selectingFontWithoutItsFileIsBlockedBeforeClearingTheLocalFont() = runBlocking {
+        val prefs = ServiceContainer.prefs
+        val oldFont = prefs.customFontPath
+        try {
+            prefs.customFontPath = "content://synthetic.fixture/missing-${UUID.randomUUID()}.ttf"
+            val out = ByteArrayOutputStream()
+            val manager = PortableDataArchiveManager(context)
+            manager.export(setOf(PortableDataCategory.APP_SETTINGS), "", out, "synthetic")
+            prefs.customFontPath = "content://synthetic.fixture/later-local-font"
+            prepared(out.toByteArray()).use { source ->
+                val plan = manager.previewImport(source, mapOf(PortableDataCategory.APP_SETTINGS to setOf("app_settings")),
+                    PortableImportChoices(settings = setOf("custom_font_file")))
+                assertTrue(plan.issues.any { it.contains("缺少对应文件") })
+            }
+            assertEquals("content://synthetic.fixture/later-local-font", prefs.customFontPath)
+        } finally { prefs.customFontPath = oldFont }
+    }
 }
