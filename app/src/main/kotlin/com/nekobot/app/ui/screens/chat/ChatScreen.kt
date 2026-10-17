@@ -1238,7 +1238,7 @@ fun ChatScreen(
                         (session?.sessionMode != "agent" || inheritsCharacter)
                     ) {
                         ChatAvatar(
-                            portraitUrl = session?.portraitUrl,
+                            portraitUrl = if (companionChat) companionPortrait else session?.portraitUrl,
                             size = 88.dp,
                             ring = true
                         )
@@ -1520,7 +1520,7 @@ fun ChatScreen(
                                             // 继承完整角色能力的 Agent 会话：卡片头部带角色头像，
                                             // 与角色会话的视觉身份保持一致。
                                             showCharacterBadge = inheritsCharacter,
-                                            portraitUrl = session?.portraitUrl,
+                                            portraitUrl = if (companionChat) companionPortrait else session?.portraitUrl,
                                             // 多张卡片相邻时在外观上合并成一张圆角矩形卡片
                                             shape = resolveProgressCardShape(cardIndex, thinkingCards.size),
                                             showBottomDivider = thinkingCards.size > 1 &&
@@ -2139,7 +2139,7 @@ fun ChatScreen(
         LiveConversationDialog(
             sessionId = sessionId,
             sessionName = session?.displayName ?: stringResource(R.string.chat_conversation),
-            portraitUrl = session?.portraitUrl,
+            portraitUrl = if (companionChat) companionPortrait else session?.portraitUrl,
             messages = messages,
             sending = sending,
             streamingSubtitle = liveStreamingSubtitle,
@@ -5711,7 +5711,10 @@ private fun ChatAvatar(
                 )
             }
         }
-        if (!resolved.isNullOrBlank()) {
+        if (companionName != null) {
+            com.nekobot.app.ui.components.CharacterAvatarPhoto(portraitUrl, LocalCompanionAvatarFallback.current,
+                fallbackName ?: companionName, Modifier.fillMaxSize())
+        } else if (!resolved.isNullOrBlank()) {
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(resolved)

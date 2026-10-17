@@ -9723,6 +9723,15 @@ class LocalRepository(
 
     // ==================== 角色卡 ====================
 
+    suspend fun saveCompanionAvatar(sessionId: String, characterId: String, png: ByteArray): String {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+            val path = CompanionAvatarStore(db, requireNotNull(appContext).filesDir).save(sessionId, characterId, png)
+            ServiceContainer.notifyCharacterChanged(characterId)
+            path
+        }
+    }
+
     suspend fun listCharacters(): List<CharacterPreset> = withContext(Dispatchers.IO) {
         characterDao.listAll().map { it.toCharacterPreset() }
     }

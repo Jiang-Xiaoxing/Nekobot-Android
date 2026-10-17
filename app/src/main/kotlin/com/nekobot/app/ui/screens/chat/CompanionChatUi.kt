@@ -34,6 +34,7 @@ import com.nekobot.app.ui.components.bubbleContentColor
 
 /** Only provided inside a single-session companion chat; shared Agent/role UI keeps its own style. */
 internal val LocalCompanionChatName = staticCompositionLocalOf<String?> { null }
+internal val LocalCompanionAvatarFallback = staticCompositionLocalOf<String?> { null }
 internal val LocalCompanionShowReasoning = staticCompositionLocalOf { false }
 /** 打开本会话「角色记忆」页；非单会话角色为 null。 */
 internal val LocalOpenCompanionMemory = staticCompositionLocalOf<(() -> Unit)?> { null }

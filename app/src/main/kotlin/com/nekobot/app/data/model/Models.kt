@@ -135,6 +135,9 @@ data class Session(
         ?: name?.takeIf { it.isNotBlank() } ?: "未命名会话"
     /** 角色立绘 URL：优先 portrait，回退 characterAvatar */
     val portraitUrl: String? get() = portrait ?: characterAvatar
+
+    /** Role identity image, distinct from portraitUrl used by large artwork. */
+    val avatarUrl: String? get() = characterAvatarPath(characterAvatar, portrait)
 }
 
 data class CreateSessionRequest(

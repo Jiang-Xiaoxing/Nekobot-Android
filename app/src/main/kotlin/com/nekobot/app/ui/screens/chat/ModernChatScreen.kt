@@ -292,6 +292,7 @@ fun ModernChatScreen(
     CompositionLocalProvider(
         LocalStickerLookup provides stickerLookup,
         LocalCompanionChatName provides companionName,
+        LocalCompanionAvatarFallback provides session?.portrait,
         LocalCompanionShowReasoning provides companionThoughtsEnabled(companionShowReasoning, characterThinkingSettings.enabled),
         com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue,
         com.nekobot.app.ui.components.LocalCompactInnerMonologue provides (companionName != null),
@@ -397,7 +398,7 @@ fun ModernChatScreen(
     if (companionName != null && companionSettingsOpen) {
         CompanionSettingsScreen(
             characterName = companionName,
-            portraitUrl = session?.portraitUrl,
+            portraitUrl = session?.avatarUrl,
             checked = companionShowReasoning,
             onCheckedChange = { show ->
                 ServiceContainer.localRepository.setCompanionShowReasoning(sessionId, show)

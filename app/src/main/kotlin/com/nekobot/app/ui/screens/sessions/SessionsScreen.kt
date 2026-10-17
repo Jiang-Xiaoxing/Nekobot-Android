@@ -1730,13 +1730,11 @@ internal fun SessionItem(
                 Surface(shape = SessionPortraitShape, color = row.modeLabel.color().copy(alpha = .08f),
                     border = BorderStroke(1.dp, row.modeLabel.color().copy(alpha = .08f)), modifier = Modifier.size(46.dp)) {
                     Box(contentAlignment = Alignment.Center) {
-                        if (portraitRequest != null) {
+                        if (row.modeLabel == SessionModeLabel.COMPANION) {
+                            com.nekobot.app.ui.components.CharacterAvatarPhoto(row.portraitUrl, row.avatarFallbackUrl, row.listTitle, Modifier.fillMaxSize())
+                        } else if (portraitRequest != null) {
                             AsyncImage(model = portraitRequest, contentDescription = null,
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                        } else if (row.modeLabel == SessionModeLabel.COMPANION) {
-                            val name = row.listTitle
-                            Text(name.takeIf(String::isNotBlank)?.let { it.substring(0, it.offsetByCodePoints(0, 1)) } ?: textResources.getString(R.string.single_role_c),
-                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = row.modeLabel.color())
                         } else {
                             val fallbackPainter = if (row.isAgentSession && !row.inheritCharacter) painterResource(R.drawable.ic_agent_neko)
                                 else rememberVectorPainter(if (row.isGroupSession) Icons.Outlined.Group else Icons.AutoMirrored.Outlined.Chat)
