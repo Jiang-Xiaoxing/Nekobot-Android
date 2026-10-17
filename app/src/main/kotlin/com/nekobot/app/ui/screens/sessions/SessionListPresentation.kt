@@ -169,7 +169,7 @@ fun buildSessionListRows(
         }
 
         val fallbackCharacter = session.characterId?.let(characterById::get)
-        val rawPortraitUrl = if (session.isAgentCharacterSession()) {
+        val rawPortraitUrl = if (session.companionMode == true) {
             com.nekobot.app.data.model.characterAvatarPath(
                 fallbackCharacter?.avatar ?: session.characterAvatar,
                 fallbackCharacter?.portrait ?: session.portrait
@@ -186,7 +186,7 @@ fun buildSessionListRows(
             displayName = session.displayName,
             listTitleOverride = session.listTitleOverride,
             portraitUrl = rawPortraitUrl?.let(portraitUrlResolver),
-            avatarFallbackUrl = if (session.isAgentCharacterSession())
+            avatarFallbackUrl = if (session.companionMode == true)
                 com.nekobot.app.data.model.characterAvatarPath(null, fallbackCharacter?.portrait ?: session.portrait)?.let(portraitUrlResolver) else null,
             characterLabel = characterLabel,
             updatedAt = formatSessionListDate(session.updatedAt),

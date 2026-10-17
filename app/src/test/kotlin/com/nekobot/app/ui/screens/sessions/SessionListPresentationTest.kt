@@ -19,6 +19,8 @@ class SessionListPresentationTest {
         assertEquals("/portrait.png", rows[1].portraitUrl)
         val fallback = buildSessionListRows(listOf(single.copy(characterAvatar = "fas fa-cat")), emptyList())
         assertEquals("/portrait.png", fallback.single().portraitUrl)
+        val legacy = buildSessionListRows(listOf(single.copy(sessionMode = null)), listOf(role))
+        assertEquals("/new-avatar.png", legacy.single().portraitUrl)
     }
 
     @Test
