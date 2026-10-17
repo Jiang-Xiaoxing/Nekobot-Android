@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -13,6 +15,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
 import com.nekobot.app.ui.theme.NekobotTheme
+import com.nekobot.app.ui.components.ChatBubbleAppearance
+import com.nekobot.app.ui.components.chatBubbleAppearance
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -21,6 +25,43 @@ import java.util.Locale
 
 class AgentModesScreenTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun bubbleDefaultsFollowThemeAndKeepUserPinkWithWhiteText() {
+        var dark by mutableStateOf(false)
+        var assistantOverride by mutableStateOf<String?>(null)
+        lateinit var appearance: ChatBubbleAppearance
+        compose.setContent {
+            androidx.compose.material3.MaterialTheme(colorScheme = if (dark)
+                androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
+                val current = chatBubbleAppearance(null, assistantOverride)
+                SideEffect { appearance = current }
+                Box(Modifier.size(1.dp))
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(Color(0xFFFF6B97), appearance.userColor)
+            assertEquals(Color.White, appearance.userText)
+            assertTrue(appearance.assistantColor.luminance() > 0.9f)
+            assertTrue(appearance.assistantText.luminance() < 0.1f)
+            assertEquals(Color(0xFF1B6D8F), appearance.assistantLink)
+            dark = true
+        }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(Color(0xFFFF8FB1), appearance.userColor)
+            assertEquals(Color.White, appearance.userText)
+            assertTrue(appearance.assistantColor.luminance() < 0.15f)
+            assertTrue(appearance.assistantText.luminance() > 0.5f)
+            assertEquals(Color(0xFF6EC1E4), appearance.assistantLink)
+            assistantOverride = "#FFFFFF"
+        }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(Color.White, appearance.assistantColor)
+            assertEquals(Color.Black, appearance.assistantText)
+            assertEquals(Color.White, appearance.userText)
+        }
+    }
     private fun context() = compose.activity.createConfigurationContext(Configuration(compose.activity.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
     private fun text(id: Int) = context().getString(id)
     @Composable private fun Theme(content: @Composable () -> Unit) {

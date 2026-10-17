@@ -12,6 +12,29 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CompanionCreationAndroidTest {
+    @Test fun ordinarySessionChoicesExcludeOwnedReservedAndLegacyCompanionCharacters() = runBlocking {
+        val db = database()
+        try {
+            FusedCompanionSchema.installTriggers(db.openHelper.writableDatabase)
+            val ids = listOf("fresh", "ordinary", "owned", "reserved", "legacy")
+            ids.forEach { id ->
+                db.characterDao().upsert(LocalCharacterEntity(id, "同名角色", createdAt = "now", updatedAt = "now"))
+            }
+            db.sessionDao().upsert(session("ordinary-chat").copy(characterId = "ordinary"))
+            for (id in listOf("owned", "reserved", "legacy")) {
+                db.sessionDao().upsert(session("$id-chat", "agent").copy(
+                    characterId = id, companionMode = true, inheritCharacter = true, longConversationEnabled = true
+                ))
+            }
+            db.sessionDao().deleteById("reserved-chat")
+            db.openHelper.writableDatabase.execSQL("DELETE FROM companion_owners WHERE characterId='legacy'")
+
+            val repo = LocalRepository(db, appContext = ApplicationProvider.getApplicationContext())
+            assertEquals(ids.toSet(), repo.listCharacters().map { it.id }.toSet())
+            assertEquals(setOf("fresh", "ordinary"), repo.listCharactersForSessionCreation().map { it.id }.toSet())
+        } finally { db.close() }
+    }
+
     @Test fun profileFindsItsOwnWindowAndNeverTreatsReservedOwnershipAsOrdinary() = runBlocking {
         val db = database()
         try {

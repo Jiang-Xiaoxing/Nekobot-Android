@@ -806,6 +806,9 @@ class UnifiedRepository(
     suspend fun listCharacters(): Resource<List<CharacterPreset>> =
         if (isLocal) Resource.Success(local.listCharacters()) else remote.listCharacters()
 
+    suspend fun listCharactersForSessionCreation(): Resource<List<CharacterPreset>> =
+        if (isLocal) Resource.Success(local.listCharactersForSessionCreation()) else remote.listCharacters()
+
     suspend fun countHighAffectionCharacters(threshold: Int = 90): Resource<Int> =
         if (isLocal) {
             Resource.Success(local.countHighAffectionCharacters(threshold))

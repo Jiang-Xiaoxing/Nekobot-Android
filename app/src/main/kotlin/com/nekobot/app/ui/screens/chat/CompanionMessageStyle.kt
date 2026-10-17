@@ -11,14 +11,15 @@ internal data class CompanionAssistantBubbleStyle(
     val markdown: MarkdownBubbleColors
 )
 
-/** 双方链接共用已按气泡亮度确定的字色，保留默认配色及自定义色的可读对比度。 */
-internal fun companionBubbleLinkColor(palette: CompanionChatPalette): Color = palette.outgoingInk
+/** 链接跟随各自气泡的字色，保持自定义背景上的对比度。 */
+internal fun companionBubbleLinkColor(palette: CompanionChatPalette, isUser: Boolean = false): Color =
+    if (isUser) palette.outgoingInk else palette.incomingInk
 
-/** 角色复用用户气泡的背景与字色，浅深模式及自定义覆盖保持同源。 */
+/** 角色回复使用独立的 AI 气泡背景与字色。 */
 internal fun companionAssistantBubbleStyle(palette: CompanionChatPalette): CompanionAssistantBubbleStyle {
     val dark = palette.background.luminance() < 0.5f
-    val background = palette.outgoing
-    val content = palette.outgoingInk
+    val background = palette.incoming
+    val content = palette.incomingInk
     return CompanionAssistantBubbleStyle(
         background, content,
         MarkdownBubbleColors(

@@ -1059,7 +1059,7 @@ class PrefsManager(context: Context) {
             prefs.edit().putString(KEY_THEME_COLOR, value).apply()
         }
 
-    /** 首次升级保留旧气泡配色，之后主题色和双方气泡颜色互不联动。 */
+    /** 首次升级保留旧用户气泡配色，之后主题色和气泡颜色互不联动。 */
     private fun migrateMessageColor() = synchronized(prefs) {
         if (!prefs.getBoolean(KEY_MESSAGE_COLOR_MIGRATED, false)) {
             prefs.edit().putString(KEY_MESSAGE_COLOR, prefs.getString(KEY_THEME_COLOR, null))
@@ -1072,6 +1072,11 @@ class PrefsManager(context: Context) {
         set(value) { synchronized(prefs) {
             prefs.edit().putString(KEY_MESSAGE_COLOR, value).putBoolean(KEY_MESSAGE_COLOR_MIGRATED, true).apply()
         } }
+
+    /** 普通会话 AI 回复独立配色；未设置时跟随官方深浅主题配色。 */
+    var assistantMessageColorOverride: String?
+        get() = prefs.getString(KEY_ASSISTANT_MESSAGE_COLOR, null)
+        set(value) { prefs.edit().putString(KEY_ASSISTANT_MESSAGE_COLOR, value).apply() }
 
     /** Optional appearance effects; upgrades retain the original presentation. */
     var dynamicThinking: Boolean
@@ -1597,6 +1602,7 @@ class PrefsManager(context: Context) {
         const val KEY_FONT_COLOR = "font_color"
         const val KEY_THEME_COLOR = "theme_color"
         const val KEY_MESSAGE_COLOR = "message_color"
+        const val KEY_ASSISTANT_MESSAGE_COLOR = "assistant_message_color"
         const val KEY_MESSAGE_COLOR_MIGRATED = "message_color_independent"
         const val KEY_DYNAMIC_THINKING = "dynamic_thinking"
         const val KEY_DYNAMIC_MESSAGES = "dynamic_messages"

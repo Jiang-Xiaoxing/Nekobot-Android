@@ -671,6 +671,18 @@ interface CharacterDao {
     @Query("SELECT * FROM local_characters ORDER BY updated_at DESC")
     suspend fun listAll(): List<LocalCharacterEntity>
 
+    @Query("""
+        SELECT * FROM local_characters
+        WHERE id NOT IN (
+            SELECT characterId FROM companion_owners
+            UNION
+            SELECT character_id FROM local_sessions
+            WHERE companion_mode = 1 AND character_id IS NOT NULL
+        )
+        ORDER BY updated_at DESC
+    """)
+    suspend fun listForSessionCreation(): List<LocalCharacterEntity>
+
     @Query("SELECT COUNT(*) FROM local_characters")
     suspend fun count(): Int
 

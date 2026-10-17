@@ -10,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
@@ -42,9 +41,9 @@ internal fun SessionModeFilters(overview: SessionOverview, selected: SessionFilt
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         modes.forEachIndexed { index, mode ->
             val active = selected == filters[index]
-            val accent = mode.color(onLightSurface = true)
+            val accent = mode.color()
             Surface(onClick = { onToggle(filters[index]) }, modifier = Modifier.weight(1f).fillMaxHeight().semantics { this.selected = active },
-                shape = RoundedCornerShape(12.dp), color = Color.White, contentColor = accent,
+                shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, contentColor = accent,
                 border = BorderStroke(1.dp, accent.copy(alpha = if (active) 0.58f else 0.24f)),
                 shadowElevation = 0.dp, tonalElevation = 0.dp) {
                 val contentModifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)

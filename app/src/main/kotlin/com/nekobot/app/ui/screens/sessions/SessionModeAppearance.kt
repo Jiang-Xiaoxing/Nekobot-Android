@@ -37,8 +37,8 @@ internal fun SessionModeLabel.title(): String = stringResource(when (this) {
 })
 
 @Composable
-internal fun SessionModeLabel.color(onLightSurface: Boolean = false): Color {
-    val dark = !onLightSurface && MaterialTheme.colorScheme.background.luminance() < 0.5f
+internal fun SessionModeLabel.color(): Color {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return when (this) {
         SessionModeLabel.CHARACTER -> if (dark) Color(0xFFE5A7BF) else Color(0xFFA05B77)
         SessionModeLabel.AGENT -> if (dark) Color(0xFFE1B778) else Color(0xFF916025)

@@ -9,6 +9,22 @@ import org.junit.Test
 import java.util.UUID
 
 class IndependentMessageColorTest {
+    @Test fun userAndAssistantColorsPersistIndependently() {
+        val context = context()
+        val prefs = PrefsManager(context)
+        assertNull(prefs.assistantMessageColorOverride)
+        prefs.messageColorOverride = "#FFE2EC"
+        assertNull(prefs.assistantMessageColorOverride)
+        prefs.assistantMessageColorOverride = "#102030"
+        prefs.themeColorOverride = "#8B6CFF"
+        val restored = PrefsManager(context)
+        assertEquals("#FFE2EC", restored.messageColorOverride)
+        assertEquals("#102030", restored.assistantMessageColorOverride)
+        restored.assistantMessageColorOverride = null
+        assertEquals("#FFE2EC", restored.messageColorOverride)
+        assertNull(restored.assistantMessageColorOverride)
+    }
+
     private fun context() = object : ContextWrapper(InstrumentationRegistry.getInstrumentation().targetContext) {
         private val prefix = "color-test-${UUID.randomUUID()}-"
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = super.getSharedPreferences(prefix + name, mode)

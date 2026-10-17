@@ -2734,18 +2734,18 @@ private fun MessageBubble(
         Brush.linearGradient(listOf(it.kind.startColor, it.kind.endColor))
     }
     val companionChat = LocalCompanionChatName.current != null
-    val companionPalette = companionChatPalette(ServiceContainer.prefs.messageColorOverride)
+    val companionPalette = companionChatPalette(ServiceContainer.prefs.messageColorOverride, ServiceContainer.prefs.assistantMessageColorOverride)
     val companionAssistantStyle = companionAssistantBubbleStyle(companionPalette)
-    val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride)
+    val bubbleAppearance = chatBubbleAppearance(ServiceContainer.prefs.messageColorOverride, ServiceContainer.prefs.assistantMessageColorOverride)
     val userBubble = bubbleAppearance.userColor
     val userBrush = bubbleAppearance.userBrush
-    val aiBorder = Color.Transparent
+    val aiBorder = if (companionChat) Color.Transparent else bubbleAppearance.assistantBorder
     val textColor = if (companionChat) {
         if (isUser) companionPalette.outgoingInk else companionAssistantStyle.content
     } else bubbleAppearance.textColor(isUser)
-    // 单会话双方的 Markdown 和独立链接共用同一颜色来源。
-    val linkColor = if (companionChat) companionBubbleLinkColor(companionPalette)
-        else linkColorOnBubble(userBubble)
+    // Markdown 和独立链接均按当前消息的气泡背景确定配色。
+    val linkColor = if (companionChat) companionBubbleLinkColor(companionPalette, isUser)
+        else if (isUser) linkColorOnBubble(userBubble) else bubbleAppearance.assistantLink
     val arrangement = if (isUser) Arrangement.End else Arrangement.Start
     val clipboard = LocalClipboardManager.current
 
@@ -3068,7 +3068,7 @@ private fun MessageBubble(
                                     isUser && !segHasUserImage ->
                                         Modifier.background(brush = userBrush, shape = segShape)
                                     !isUser ->
-                                        Modifier.background(brush = userBrush, shape = segShape)
+                                        Modifier.background(color = bubbleAppearance.assistantColor, shape = segShape)
                                     else -> Modifier
                                 }
                             )

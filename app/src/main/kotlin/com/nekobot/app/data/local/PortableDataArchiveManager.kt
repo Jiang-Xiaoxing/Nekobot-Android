@@ -1025,6 +1025,7 @@ class PortableDataArchiveManager(private val context: Context) {
             addProperty("font_color_override", prefs.fontColorOverride)
             addProperty("theme_color_override", prefs.themeColorOverride)
             addProperty("message_color_override", prefs.messageColorOverride)
+            addProperty("assistant_message_color_override", prefs.assistantMessageColorOverride)
             addProperty("message_color_independent", true)
             addProperty("dynamic_thinking", prefs.dynamicThinking)
             addProperty("dynamic_messages", prefs.dynamicMessages)
@@ -1065,6 +1066,7 @@ class PortableDataArchiveManager(private val context: Context) {
         prefs.themeColorOverride = root.string("theme_color_override")
         prefs.messageColorOverride = if (root.bool("message_color_independent") == true || root.has("message_color_override"))
             root.string("message_color_override") else prefs.themeColorOverride
+        prefs.assistantMessageColorOverride = root.string("assistant_message_color_override")
         root.bool("dynamic_thinking")?.let { prefs.dynamicThinking = it }
         root.bool("dynamic_messages")?.let { prefs.dynamicMessages = it }
         root.string("language")?.let { prefs.language = it }

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
 import com.nekobot.app.ui.theme.parseHexColor
+import com.nekobot.app.ui.components.bubbleContentColor
 
 /** Only provided inside a single-session companion chat; shared Agent/role UI keeps its own style. */
 internal val LocalCompanionChatName = staticCompositionLocalOf<String?> { null }
@@ -41,16 +42,18 @@ enum class CompanionChatUtility { TERMINAL, BROWSER, RESTORE_ARCHIVE, VIEW_ARCHI
 internal data class CompanionChatPalette(
     val background: Color, val surface: Color, val outgoing: Color,
     val ink: Color, val secondary: Color, val accent: Color,
-    val outgoingInk: Color = Color(0xFF172411)
+    val outgoingInk: Color = Color(0xFF172411),
+    val incoming: Color = Color.White,
+    val incomingInk: Color = Color.Black
 )
 
 @Composable
-internal fun companionChatPalette(messageColorOverride: String? = null): CompanionChatPalette =
+internal fun companionChatPalette(messageColorOverride: String? = null, assistantColorOverride: String? = null): CompanionChatPalette =
     companionChatPalette(MaterialTheme.colorScheme.background.luminance() < 0.5f,
-        parseHexColor(messageColorOverride))
+        parseHexColor(messageColorOverride), parseHexColor(assistantColorOverride))
 
-/** 双方共用用户气泡的颜色来源；未设置覆盖色时保留原来的浅深色调色板。 */
-internal fun companionChatPalette(dark: Boolean, messageColorOverride: Color? = null): CompanionChatPalette {
+/** 用户与 AI 气泡分别取色；未设置 AI 覆盖色时使用白色。 */
+internal fun companionChatPalette(dark: Boolean, messageColorOverride: Color? = null, assistantColorOverride: Color? = null): CompanionChatPalette {
     val palette = if (dark) {
         CompanionChatPalette(Color(0xFF191D1E), Color(0xFF2A3031), Color(0xFF355B45),
             Color(0xFFF0F4F2), Color(0xFFB4BEBA), Color(0xFF92C5A9), Color(0xFFF0F6F2))
@@ -58,10 +61,12 @@ internal fun companionChatPalette(dark: Boolean, messageColorOverride: Color? = 
         CompanionChatPalette(Color(0xFFF0F4F3), Color(0xFFFEFEFE), Color(0xFFD5EBD2),
             Color(0xFF202927), Color(0xFF75807C), Color(0xFF547E68), Color(0xFF172A20))
     }
-    return if (messageColorOverride == null) palette else palette.copy(
-        outgoing = messageColorOverride,
-        // 选择黑/白中对比度更高的一项，也覆盖中等亮度的自定义背景。
-        outgoingInk = if (messageColorOverride.luminance() > 0.179f) Color.Black else Color.White
+    val incoming = assistantColorOverride ?: Color.White
+    return palette.copy(
+        outgoing = messageColorOverride ?: palette.outgoing,
+        outgoingInk = messageColorOverride?.let { bubbleContentColor(it) } ?: palette.outgoingInk,
+        incoming = incoming,
+        incomingInk = bubbleContentColor(incoming)
     )
 }
 

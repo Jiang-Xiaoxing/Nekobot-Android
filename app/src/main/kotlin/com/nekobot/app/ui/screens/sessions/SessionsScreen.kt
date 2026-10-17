@@ -401,6 +401,7 @@ fun SessionsScreen(
     val sessionRows by viewModel.displayedSessionRows.collectAsStateWithLifecycle()
     val overview by viewModel.overview.collectAsStateWithLifecycle()
     val characters by viewModel.characters.collectAsStateWithLifecycle()
+    val sessionCreationCharacters by viewModel.sessionCreationCharacters.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val toast by viewModel.toast.collectAsStateWithLifecycle()
@@ -872,13 +873,13 @@ fun SessionsScreen(
     createConfigMode?.let { sessionMode ->
         CreateSessionDialog(
             initialSessionMode = sessionMode,
-            characters = characters,
+            characters = sessionCreationCharacters,
             isLocalMode = appMode == AppMode.LOCAL,
             onDismiss = { createConfigMode = null },
             onCreate = { req ->
                 viewModel.createSession(req) { createConfigMode = null }
             },
-            onLoadCharacters = { viewModel.loadCharacters() }
+            onLoadCharacters = { viewModel.loadSessionCreationCharacters() }
         )
     }
 
@@ -1295,7 +1296,12 @@ private fun CreateSessionDialog(
     var speechStrategyExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (characters.isEmpty()) onLoadCharacters()
+        onLoadCharacters()
+    }
+
+    LaunchedEffect(characters) {
+        val availableIds = characters.mapNotNull { it.id }.toSet()
+        selectedGroupCharacterIds = selectedGroupCharacterIds.filter { it in availableIds }
     }
 
     /** 切换到指定角色时同步首条消息（仅覆盖未被手动编辑过的字段）。会话名保持默认不覆盖。 */
@@ -1859,9 +1865,11 @@ class SessionsViewModel : BaseViewModel() {
     private val _dashboardLoading = MutableStateFlow(false)
     private var dataSourceVersion = 0L
     private val _characters = MutableStateFlow<List<CharacterPreset>>(emptyList())
+    private val _sessionCreationCharacters = MutableStateFlow<List<CharacterPreset>>(emptyList())
     private val _webDavStatus = MutableStateFlow<DashboardWebDavStatus?>(null)
     private val _localLogPreview = MutableStateFlow<List<DashboardLogEntry>>(emptyList())
     val characters: StateFlow<List<CharacterPreset>> = _characters.asStateFlow()
+    val sessionCreationCharacters: StateFlow<List<CharacterPreset>> = _sessionCreationCharacters.asStateFlow()
     val dashboardLoading: StateFlow<Boolean> = _dashboardLoading.asStateFlow()
 
     val dashboardData: StateFlow<SessionStatsDashboardData> = combine(
@@ -2046,6 +2054,7 @@ class SessionsViewModel : BaseViewModel() {
         val version = expectedDataSourceVersion ?: dataSourceVersion
         loadSessions(version)
         loadCharacters(version)
+        loadSessionCreationCharacters(version)
     }
 
     private var lastDataSourceKey: Pair<AppMode, Long>? = null
@@ -2072,6 +2081,7 @@ class SessionsViewModel : BaseViewModel() {
         listScrollState.requestScrollToItem(0)
         _sessions.value = emptyList()
         _characters.value = emptyList()
+        _sessionCreationCharacters.value = emptyList()
         _dashboardTokenStats.value = null
         _dashboardRankings.value = null
         _dashboardHighAffectionCharacterCount.value = 0
@@ -2249,7 +2259,7 @@ class SessionsViewModel : BaseViewModel() {
         }
     }
 
-    /** 加载角色列表（供新建会话下拉菜单使用）。 */
+    /** 加载完整角色列表，供筛选和统计使用。 */
     fun loadCharacters(expectedDataSourceVersion: Long? = null) {
         val version = expectedDataSourceVersion ?: dataSourceVersion
         launchResult(
@@ -2257,6 +2267,20 @@ class SessionsViewModel : BaseViewModel() {
             onSuccess = { list ->
                 if (version == dataSourceVersion) {
                     _characters.value = list ?: emptyList()
+                }
+            }
+        )
+    }
+
+    /** 每次打开新建弹窗时刷新可选角色，避免使用旧归属快照。 */
+    fun loadSessionCreationCharacters(expectedDataSourceVersion: Long? = null) {
+        val version = expectedDataSourceVersion ?: dataSourceVersion
+        _sessionCreationCharacters.value = emptyList()
+        launchResult(
+            block = { unified.listCharactersForSessionCreation() },
+            onSuccess = { list ->
+                if (version == dataSourceVersion) {
+                    _sessionCreationCharacters.value = list ?: emptyList()
                 }
             }
         )

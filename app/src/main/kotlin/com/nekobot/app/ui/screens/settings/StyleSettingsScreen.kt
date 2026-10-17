@@ -2,6 +2,7 @@ package com.nekobot.app.ui.screens.settings
 
 import androidx.compose.ui.platform.LocalResources
 
+import androidx.compose.animation.AnimatedVisibility
 import android.app.Activity
 import android.content.Context
 import android.net.Uri
@@ -28,6 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.UploadFile
 import com.nekobot.app.ui.components.GlassAlertDialog as AlertDialog
@@ -91,6 +94,7 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
 
     var themeColorOverride by remember { mutableStateOf(prefs.themeColorOverride) }
     var messageColorOverride by remember { mutableStateOf(prefs.messageColorOverride) }
+    var assistantMessageColorOverride by remember { mutableStateOf(prefs.assistantMessageColorOverride) }
     var fontsExpanded by remember { mutableStateOf(false) }
     var fontFamily by remember { mutableStateOf(prefs.fontFamily) }
     var customFontPath by remember { mutableStateOf(prefs.customFontPath) }
@@ -148,6 +152,7 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
     fun applyAndRecreate() {
         prefs.themeColorOverride = themeColorOverride
         prefs.messageColorOverride = messageColorOverride
+        prefs.assistantMessageColorOverride = assistantMessageColorOverride
         prefs.fontFamily = fontFamily
         prefs.customFontPath = customFontPath
         prefs.customFontName = customFontName
@@ -240,213 +245,223 @@ fun StyleSettingsScreen(onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ChatAppearancePreview(messageColorOverride)
-            ChatColorSettings(themeColorOverride, messageColorOverride, themeColorOptions,
+            ChatAppearancePreview(messageColorOverride, assistantMessageColorOverride)
+            ChatColorSettings(themeColorOverride, messageColorOverride, assistantMessageColorOverride, themeColorOptions,
                 onThemeColor = { themeColorOverride = it; prefs.themeColorOverride = it },
-                onMessageColor = { messageColorOverride = it; prefs.messageColorOverride = it })
+                onUserMessageColor = { messageColorOverride = it; prefs.messageColorOverride = it },
+                onAssistantMessageColor = { assistantMessageColorOverride = it; prefs.assistantMessageColorOverride = it })
             ChatEffectsSettings()
             GlassCard(Modifier.fillMaxWidth()) {
                 AppearanceSettingRow(textResources.getString(R.string.single_role_fonts_and_text), textResources.getString(R.string.single_role_font_text_size_and_text_color), onClick = { fontsExpanded = !fontsExpanded }) {
-                    Text(if (fontsExpanded) textResources.getString(R.string.single_role_collapse) else textResources.getString(R.string.single_role_expand), style = MaterialTheme.typography.labelLarge)
+                    Icon(
+                        if (fontsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = stringResource(if (fontsExpanded) R.string.common_collapse else R.string.common_expand),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-            if (fontsExpanded) {
-                GlassCard(Modifier.fillMaxWidth()) {
-                    val previewTypography = buildTypography(fontFamily, fontScale)
-                    val previewColor = parseHexColor(fontColorOverride) ?: MaterialTheme.colorScheme.onSurface
-                    Text(stringResource(R.string.style_realtime_preview), style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.style_preview_title), style = previewTypography.titleLarge, color = previewColor)
-                    Spacer(Modifier.height(4.dp))
-                    Text(stringResource(R.string.style_preview_body), style = previewTypography.bodyLarge, color = previewColor)
-                }
-            // 字体类型
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.style_font_type), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    fontFamilyOptions.forEach { (value, label) ->
-                        FilterChip(
-                            selected = fontFamily == value,
-                            onClick = {
-                                if (value == PrefsManager.FONT_FAMILY_CUSTOM) {
-                                    if (!customFontPath.isNullOrBlank()) {
-                                        // 已有持久化的自定义字体，直接切换使用
-                                        fontFamily = PrefsManager.FONT_FAMILY_CUSTOM
-                                        prefs.fontFamily = PrefsManager.FONT_FAMILY_CUSTOM
-                                    } else {
-                                        // 首次选择自定义时触发文件选择器
+                AnimatedVisibility(visible = fontsExpanded) {
+                    Column {
+                        AppearanceDivider()
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                            val previewTypography = buildTypography(fontFamily, fontScale)
+                            val previewColor = parseHexColor(fontColorOverride) ?: MaterialTheme.colorScheme.onSurface
+                            Text(stringResource(R.string.style_realtime_preview), style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+                            Text(stringResource(R.string.style_preview_title), style = previewTypography.titleLarge, color = previewColor)
+                            Spacer(Modifier.height(4.dp))
+                            Text(stringResource(R.string.style_preview_body), style = previewTypography.bodyLarge, color = previewColor)
+                        }
+                        AppearanceDivider()
+                        // 字体类型
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                            Text(stringResource(R.string.style_font_type), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                fontFamilyOptions.forEach { (value, label) ->
+                                    FilterChip(
+                                        selected = fontFamily == value,
+                                        onClick = {
+                                            if (value == PrefsManager.FONT_FAMILY_CUSTOM) {
+                                                if (!customFontPath.isNullOrBlank()) {
+                                                    // 已有持久化的自定义字体，直接切换使用
+                                                    fontFamily = PrefsManager.FONT_FAMILY_CUSTOM
+                                                    prefs.fontFamily = PrefsManager.FONT_FAMILY_CUSTOM
+                                                } else {
+                                                    // 首次选择自定义时触发文件选择器
+                                                    fontLauncher.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf", "application/octet-stream"))
+                                                }
+                                            } else {
+                                                fontFamily = value
+                                                prefs.fontFamily = value
+                                            }
+                                        },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                            // 已上传自定义字体时，展示文件名、更换和删除按钮（不依赖当前字体类型）
+                            if (customFontPath != null) {
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(MaterialTheme.shapes.small)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Filled.UploadFile, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = customFontName ?: stringResource(R.string.style_custom_font_name),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    // 更换字体按钮：重新触发文件选择器
+                                    TextButton(onClick = {
                                         fontLauncher.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf", "application/octet-stream"))
+                                    }) {
+                                        Text(stringResource(R.string.style_change_font), color = MaterialTheme.colorScheme.primary)
                                     }
-                                } else {
-                                    fontFamily = value
-                                    prefs.fontFamily = value
-                                }
-                            },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-                // 已上传自定义字体时，展示文件名、更换和删除按钮（不依赖当前字体类型）
-                if (customFontPath != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(MaterialTheme.shapes.small)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Filled.UploadFile, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = customFontName ?: stringResource(R.string.style_custom_font_name),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-                        // 更换字体按钮：重新触发文件选择器
-                        TextButton(onClick = {
-                            fontLauncher.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf", "application/octet-stream"))
-                        }) {
-                            Text(stringResource(R.string.style_change_font), color = MaterialTheme.colorScheme.primary)
-                        }
-                        IconButton(onClick = {
-                            // 删除自定义字体文件（兼容 file:/// 前缀和裸路径）
-                            customFontPath?.let { path ->
-                                runCatching {
-                                    val raw = Uri.parse(path).path ?: path
-                                    val file = File(raw)
-                                    if (file.exists()) file.delete()
+                                    IconButton(onClick = {
+                                        // 删除自定义字体文件（兼容 file:/// 前缀和裸路径）
+                                        customFontPath?.let { path ->
+                                            runCatching {
+                                                val raw = Uri.parse(path).path ?: path
+                                                val file = File(raw)
+                                                if (file.exists()) file.delete()
+                                            }
+                                        }
+                                        customFontPath = null
+                                        customFontName = null
+                                        prefs.customFontPath = null
+                                        prefs.customFontName = null
+                                        // 若当前正在使用自定义字体，则回退到系统默认
+                                        if (fontFamily == PrefsManager.FONT_FAMILY_CUSTOM) {
+                                            fontFamily = PrefsManager.FONT_FAMILY_SYSTEM
+                                            prefs.fontFamily = PrefsManager.FONT_FAMILY_SYSTEM
+                                        }
+                                    }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.style_delete_custom_font), tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
-                            customFontPath = null
-                            customFontName = null
-                            prefs.customFontPath = null
-                            prefs.customFontName = null
-                            // 若当前正在使用自定义字体，则回退到系统默认
-                            if (fontFamily == PrefsManager.FONT_FAMILY_CUSTOM) {
-                                fontFamily = PrefsManager.FONT_FAMILY_SYSTEM
-                                prefs.fontFamily = PrefsManager.FONT_FAMILY_SYSTEM
+                        }
+
+                        AppearanceDivider()
+                        // 字体大小
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                            Text(stringResource(R.string.style_font_size), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                stringResource(R.string.style_font_size_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                IconButton(
+                                    onClick = { updateBodyFontSize(bodyFontSizeSp - 1f) },
+                                    enabled = bodyFontSizeSp > PrefsManager.MIN_BODY_FONT_SP
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Remove,
+                                        contentDescription = stringResource(R.string.style_decrease_font_size)
+                                    )
+                                }
+                                Text(
+                                    stringResource(R.string.style_font_size_value, bodyFontSizeSp.roundToInt()),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(
+                                    onClick = { updateBodyFontSize(bodyFontSizeSp + 1f) },
+                                    enabled = bodyFontSizeSp < PrefsManager.MAX_BODY_FONT_SP
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Add,
+                                        contentDescription = stringResource(R.string.style_increase_font_size)
+                                    )
+                                }
                             }
-                        }) {
-                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.style_delete_custom_font), tint = MaterialTheme.colorScheme.error)
+                            Slider(
+                                value = bodyFontSizeSp,
+                                onValueChange =(::updateBodyFontSize),
+                                valueRange = PrefsManager.MIN_BODY_FONT_SP..PrefsManager.MAX_BODY_FONT_SP,
+                                steps = (PrefsManager.MAX_BODY_FONT_SP - PrefsManager.MIN_BODY_FONT_SP).roundToInt() - 1
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(12.dp))
+                            // 跟随系统字号开关
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        stringResource(R.string.style_follow_system_font_size),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        stringResource(R.string.style_follow_system_font_size_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = followSystemFontScale,
+                                    onCheckedChange = { value ->
+                                        followSystemFontScale = value
+                                        prefs.followSystemFontScale = value
+                                    }
+                                )
+                            }
+                        }
+
+                        AppearanceDivider()
+                        // 字体颜色
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                            Text(stringResource(R.string.style_font_color), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                colorOptions.forEach { (hex, label) ->
+                                    val circleColor = hex?.let {
+                                        runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
+                                    } ?: MaterialTheme.colorScheme.onSurface
+                                    val selected = fontColorOverride == hex
+                                    ColorCircleButton(
+                                        color = circleColor,
+                                        label = label,
+                                        selected = selected,
+                                        onClick = {
+                                            fontColorOverride = hex
+                                            prefs.fontColorOverride = hex
+                                        }
+                                    )
+                                }
+                                // 自定义颜色按钮
+                                val presetHexes = colorOptions.map { it.first }
+                                val customSelected = fontColorOverride != null && fontColorOverride !in presetHexes
+                                ColorCircleButton(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    label = stringResource(R.string.style_custom),
+                                    selected = customSelected,
+                                    onClick = { showCustomColorDialog = true }
+                                )
+                            }
                         }
                     }
                 }
-            }
-
-            // 字体大小
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.style_font_size), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                Text(
-                    stringResource(R.string.style_font_size_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    IconButton(
-                        onClick = { updateBodyFontSize(bodyFontSizeSp - 1f) },
-                        enabled = bodyFontSizeSp > PrefsManager.MIN_BODY_FONT_SP
-                    ) {
-                        Icon(
-                            Icons.Filled.Remove,
-                            contentDescription = stringResource(R.string.style_decrease_font_size)
-                        )
-                    }
-                    Text(
-                        stringResource(R.string.style_font_size_value, bodyFontSizeSp.roundToInt()),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(
-                        onClick = { updateBodyFontSize(bodyFontSizeSp + 1f) },
-                        enabled = bodyFontSizeSp < PrefsManager.MAX_BODY_FONT_SP
-                    ) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = stringResource(R.string.style_increase_font_size)
-                        )
-                    }
-                }
-                Slider(
-                    value = bodyFontSizeSp,
-                    onValueChange =(::updateBodyFontSize),
-                    valueRange = PrefsManager.MIN_BODY_FONT_SP..PrefsManager.MAX_BODY_FONT_SP,
-                    steps = (PrefsManager.MAX_BODY_FONT_SP - PrefsManager.MIN_BODY_FONT_SP).roundToInt() - 1
-                )
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(12.dp))
-                // 跟随系统字号开关
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.style_follow_system_font_size),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            stringResource(R.string.style_follow_system_font_size_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = followSystemFontScale,
-                        onCheckedChange = { value ->
-                            followSystemFontScale = value
-                            prefs.followSystemFontScale = value
-                        }
-                    )
-                }
-            }
-
-            // 字体颜色
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.style_font_color), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    colorOptions.forEach { (hex, label) ->
-                        val circleColor = hex?.let {
-                            runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
-                        } ?: MaterialTheme.colorScheme.onSurface
-                        val selected = fontColorOverride == hex
-                        ColorCircleButton(
-                            color = circleColor,
-                            label = label,
-                            selected = selected,
-                            onClick = {
-                                fontColorOverride = hex
-                                prefs.fontColorOverride = hex
-                            }
-                        )
-                    }
-                    // 自定义颜色按钮
-                    val presetHexes = colorOptions.map { it.first }
-                    val customSelected = fontColorOverride != null && fontColorOverride !in presetHexes
-                    ColorCircleButton(
-                        color = MaterialTheme.colorScheme.primary,
-                        label = stringResource(R.string.style_custom),
-                        selected = customSelected,
-                        onClick = { showCustomColorDialog = true }
-                    )
-                }
-            }
-
             }
 
             // 聊天界面背景

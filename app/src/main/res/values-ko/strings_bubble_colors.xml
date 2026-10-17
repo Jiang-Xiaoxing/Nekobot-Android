@@ -1,0 +1,6 @@
+<resources>
+    <string name="style_user_bubble_color">사용자 말풍선 색상</string>
+    <string name="style_ai_bubble_color">AI 말풍선 색상</string>
+    <string name="style_bubble_color_default">기본값</string>
+    <string name="style_color_white">흰색</string>
+</resources>

@@ -13,41 +13,42 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CompanionBubbleLinkColorTest {
-    @Test fun lightDefaultLinksAreIdenticalAndReadable() {
+    @Test fun lightDefaultLinksRemainReadable() {
         val palette = companionChatPalette(false)
-        assertEquals(0xFF172A20.toInt(), companionBubbleLinkColor(palette).toArgb())
-        assertSharedReadableLinks(palette)
+        assertEquals(0xFF000000.toInt(), companionBubbleLinkColor(palette).toArgb())
+        assertReadableLinks(palette)
     }
 
-    @Test fun darkDefaultLinksAreIdenticalAndReadable() {
+    @Test fun darkDefaultLinksRemainReadable() {
         val palette = companionChatPalette(true)
-        assertEquals(0xFFF0F6F2.toInt(), companionBubbleLinkColor(palette).toArgb())
-        assertSharedReadableLinks(palette)
+        assertEquals(0xFF000000.toInt(), companionBubbleLinkColor(palette).toArgb())
+        assertReadableLinks(palette)
     }
 
-    @Test fun customLinksAreIdenticalAndReadableInLightMode() = assertCustomLinks(false)
-    @Test fun customLinksAreIdenticalAndReadableInDarkMode() = assertCustomLinks(true)
+    @Test fun customLinksRemainReadableInLightMode() = assertCustomLinks(false)
+    @Test fun customLinksRemainReadableInDarkMode() = assertCustomLinks(true)
 
     @Test fun grayscaleCustomColorsPassContrastAcrossTheBrightnessBoundary() {
         listOf(false, true).forEach { dark ->
             (0..255).forEach { value ->
                 val color = Color(0xFF000000.toInt() or (value shl 16) or (value shl 8) or value)
-                assertSharedReadableLinks(companionChatPalette(dark, color))
+                assertReadableLinks(companionChatPalette(dark, color, color))
             }
         }
     }
 
-    @Test fun bothMarkdownLinksKeepTheSameColorUrlAndUnderline() {
+    @Test fun markdownLinksUseEachBubbleInkAndKeepUrlAndUnderline() {
         listOf(false, true).forEach { dark ->
             (listOf<Color?>(null) + customColors).forEach { custom ->
                 val palette = companionChatPalette(dark, custom)
-                val shared = companionBubbleLinkColor(palette)
                 val assistant = companionAssistantBubbleStyle(palette)
-                listOf(null, assistant.markdown).forEach { colors ->
-                    val rendered = parseInline("[点这里](https://example.com)", palette.outgoingInk,
-                        TextStyle.Default, linkColor = markdownLinkColor(colors, shared))
+                for (isUser in listOf(false, true)) {
+                    val ink = companionBubbleLinkColor(palette, isUser)
+                    val colors = if (isUser) null else assistant.markdown
+                    val rendered = parseInline("[点这里](https://example.com)", ink,
+                        TextStyle.Default, linkColor = markdownLinkColor(colors, ink))
                     assertEquals("点这里", rendered.text)
-                    assertEquals(shared, rendered.spanStyles.single().item.color)
+                    assertEquals(ink, rendered.spanStyles.single().item.color)
                     assertEquals(TextDecoration.Underline, rendered.spanStyles.single().item.textDecoration)
                     assertEquals("https://example.com",
                         rendered.getStringAnnotations("URL", 0, rendered.length).single().item)
@@ -56,7 +57,7 @@ class CompanionBubbleLinkColorTest {
         }
     }
 
-    @Test fun sharedBubbleLinkOverridePreservesDetailSurfaceLinks() {
+    @Test fun assistantBubbleLinkOverridePreservesDetailSurfaceLinks() {
         listOf(false, true).forEach { dark ->
             val palette = companionChatPalette(dark)
             val colors = companionAssistantBubbleStyle(palette).markdown
@@ -73,19 +74,18 @@ class CompanionBubbleLinkColorTest {
     }
 
     private fun assertCustomLinks(dark: Boolean) = customColors.forEach { color ->
-        assertSharedReadableLinks(companionChatPalette(dark, color))
+        assertReadableLinks(companionChatPalette(dark, color, color))
     }
 
-    private fun assertSharedReadableLinks(palette: CompanionChatPalette) {
-        // 与 ChatScreen 一致：独立链接直接取共用色，双方 Markdown 再走各自的局部配色。
-        val shared = companionBubbleLinkColor(palette)
+    private fun assertReadableLinks(palette: CompanionChatPalette) {
+        val userInk = companionBubbleLinkColor(palette, isUser = true)
+        val assistantInk = companionBubbleLinkColor(palette)
         val assistant = companionAssistantBubbleStyle(palette)
-        val userMarkdown = markdownLinkColor(null, shared)
-        val assistantMarkdown = markdownLinkColor(assistant.markdown, shared)
-        assertEquals(shared, assistant.markdown.link)
-        assertEquals(shared, userMarkdown)
-        assertEquals(userMarkdown, assistantMarkdown)
-        assertEquals(userMarkdown.toArgb(), assistantMarkdown.toArgb())
+        val userMarkdown = markdownLinkColor(null, userInk)
+        val assistantMarkdown = markdownLinkColor(assistant.markdown, assistantInk)
+        assertEquals(palette.outgoingInk, userMarkdown)
+        assertEquals(palette.incomingInk, assistantMarkdown)
+        assertEquals(assistantInk, assistant.markdown.link)
         assertReadable(userMarkdown, palette.outgoing)
         assertReadable(assistantMarkdown, assistant.background)
     }

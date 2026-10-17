@@ -45,36 +45,46 @@ class CompanionMessageStyleTest {
     @Test fun missingPhotoFallsBackToInitial() = assertNull(companionPhotoPath(" ", "fasfa-cat"))
     @Test fun avatarPhotoWorksWithoutPortrait() = assertEquals("content://photo/1", companionPhotoPath(null, "content://photo/1"))
 
-    @Test fun lightAssistantUsesExactlyTheUserBubbleColorAndInk() {
+    @Test fun lightAssistantDefaultsToWhite() {
         val palette = companionChatPalette(false)
         val style = companionAssistantBubbleStyle(palette)
         assertEquals(Color(0xFFD5EBD2), palette.outgoing)
         assertEquals(Color(0xFF172A20), palette.outgoingInk)
-        assertEquals(palette.outgoing, style.background)
-        assertEquals(palette.outgoingInk, style.content)
+        assertEquals(Color.White, style.background)
+        assertEquals(Color.Black, style.content)
         assertEquals(1f, style.background.alpha, 0f)
     }
 
-    @Test fun darkAssistantUsesExactlyTheUserBubbleColorAndInk() {
+    @Test fun darkAssistantDefaultsToWhite() {
         val palette = companionChatPalette(true)
         val style = companionAssistantBubbleStyle(palette)
         assertEquals(Color(0xFF355B45), palette.outgoing)
         assertEquals(Color(0xFFF0F6F2), palette.outgoingInk)
-        assertEquals(palette.outgoing, style.background)
-        assertEquals(palette.outgoingInk, style.content)
+        assertEquals(Color.White, style.background)
+        assertEquals(Color.Black, style.content)
         assertEquals(1f, style.background.alpha, 0f)
     }
 
-    @Test fun lightCustomColorIsSharedByUserAndAssistant() = assertCustomColors(false)
-    @Test fun darkCustomColorIsSharedByUserAndAssistant() = assertCustomColors(true)
+    @Test fun lightCustomBubbleColorsRemainIndependentAndReadable() = assertCustomColors(false)
+    @Test fun darkCustomBubbleColorsRemainIndependentAndReadable() = assertCustomColors(true)
 
-    @Test fun changingCustomColorUpdatesBothBubbleBackgroundsAndInk() {
+    @Test fun changingUserColorKeepsAssistantDefault() {
         val dark = companionChatPalette(false, Color(0xFF102030))
         val light = companionChatPalette(false, Color(0xFFEAF7D8))
         assertNotEquals(dark.outgoing, light.outgoing)
         assertNotEquals(dark.outgoingInk, light.outgoingInk)
-        assertEquals(dark.outgoing, companionAssistantBubbleStyle(dark).background)
-        assertEquals(light.outgoing, companionAssistantBubbleStyle(light).background)
+        assertEquals(Color.White, companionAssistantBubbleStyle(dark).background)
+        assertEquals(Color.White, companionAssistantBubbleStyle(light).background)
+    }
+
+    @Test fun changingAssistantColorKeepsUserColor() {
+        val user = Color(0xFFEAF7D8)
+        val first = companionChatPalette(false, user, Color(0xFF102030))
+        val second = companionChatPalette(false, user, Color(0xFF8B6CFF))
+        assertEquals(user, first.outgoing)
+        assertEquals(user, second.outgoing)
+        assertEquals(Color(0xFF102030), companionAssistantBubbleStyle(first).background)
+        assertEquals(Color(0xFF8B6CFF), companionAssistantBubbleStyle(second).background)
     }
 
     @Test fun clearingCustomColorRestoresEachModesOriginalUserColor() {
@@ -180,14 +190,18 @@ class CompanionMessageStyleTest {
             val palette = companionChatPalette(dark, color)
             val style = companionAssistantBubbleStyle(palette)
             assertEquals(color, palette.outgoing)
-            assertEquals(palette.outgoing, style.background)
-            assertEquals(palette.outgoingInk, style.content)
+            assertEquals(Color.White, style.background)
+            assertEquals(Color.Black, style.content)
             assertReadable(style.content, style.background)
             assertReadable(style.markdown.link, style.background)
             assertReadable(style.markdown.parentheses, style.background)
             assertReadable(style.content, Color.Gray.copy(alpha = 0.15f).compositeOver(style.background))
             assertReadable(style.markdown.onSurface, style.markdown.surface)
             assertReadable(style.markdown.surfaceLink, style.markdown.surface)
+            val assistant = companionAssistantBubbleStyle(companionChatPalette(dark, null, color))
+            assertEquals(color, assistant.background)
+            assertReadable(assistant.content, assistant.background)
+            assertReadable(assistant.markdown.link, assistant.background)
         }
     }
 

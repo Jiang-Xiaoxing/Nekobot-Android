@@ -9690,6 +9690,11 @@ class LocalRepository(
         characterDao.listAll().map { it.toCharacterPreset() }
     }
 
+    /** 普通角色和群聊只提供未被单会话窗口独占的角色。 */
+    suspend fun listCharactersForSessionCreation(): List<CharacterPreset> = withContext(Dispatchers.IO) {
+        characterDao.listForSessionCreation().map { it.toCharacterPreset() }
+    }
+
     suspend fun countHighAffectionCharacters(threshold: Int = 90): Int =
         withContext(Dispatchers.IO) {
             LocalRelationshipRepository(db.relationshipDao())
