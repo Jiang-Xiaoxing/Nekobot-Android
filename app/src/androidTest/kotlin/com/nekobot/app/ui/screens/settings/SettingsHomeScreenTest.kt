@@ -237,10 +237,14 @@ class SettingsHomeScreenTest {
                         composable("settings") {
                             SettingsScreen({}, { visited += it; nav.navigate("test/$it") }, { nav.popBackStack() })
                         }
-                        composable("test/{route}") {
-                            Column {
-                                Text("合成测试目的页")
-                                Button(onClick = { nav.popBackStack() }, modifier = Modifier.testTag("settings-test-return")) { Text("返回") }
+                        composable("test/{route}") { entry ->
+                            if (entry.arguments?.getString("route") == "data_portability") {
+                                DataPortabilityScreen(onBack = { nav.popBackStack() })
+                            } else {
+                                Column {
+                                    Text("合成测试目的页")
+                                    Button(onClick = { nav.popBackStack() }, modifier = Modifier.testTag("settings-test-return")) { Text("返回") }
+                                }
                             }
                         }
                     }
@@ -252,6 +256,16 @@ class SettingsHomeScreenTest {
         screenshot("normal-data")
         compose.onNodeWithTag("settings-home-about").performScrollTo()
         screenshot("normal-support")
+        compose.onNodeWithTag("settings-home-data_portability").performScrollTo().performClick()
+        compose.onNodeWithTag("portability-tab-import").assertIsDisplayed()
+        compose.onNodeWithTag("safe-import-choose").assertIsDisplayed()
+        screenshot("combined-import")
+        compose.onNodeWithTag("portability-tab-export").performClick()
+        compose.onNodeWithTag("portability-export-action").assertIsDisplayed()
+        screenshot("combined-export")
+        compose.onNodeWithTag("portability-back").performClick()
+        compose.onNodeWithTag("settings-home-data_portability").assertIsDisplayed()
+        compose.runOnIdle { visited.clear() }
         compose.onNodeWithTag("settings-home-connection").performScrollTo()
         fun homeScroll() = compose.onNodeWithTag("settings-home-scroll").fetchSemanticsNode()
             .config[SemanticsProperties.VerticalScrollAxisRange].value()
