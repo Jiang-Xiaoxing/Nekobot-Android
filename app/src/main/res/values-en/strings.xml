@@ -335,6 +335,7 @@
     <string name="agent_git_truncated">Diff too long, truncated</string>
     <string name="agent_git_view_all">View all %1$d files</string>
     <string name="agent_git_detail_title">All changes</string>
+    <string name="companion_inner_thought">Inner thoughts</string>
     <string name="companion_examples_offer">Pick a few exchanges from your chats to help her voice stay consistent. Enable?</string>
     <string name="companion_examples_enable">Enable</string>
     <string name="companion_examples_decline">No thanks</string>

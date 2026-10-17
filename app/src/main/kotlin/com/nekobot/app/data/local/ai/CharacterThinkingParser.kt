@@ -118,9 +118,12 @@ internal class CharacterThinkingParser(
  * 正常文本不等待结束，也不在标签到达时撤回已显示的原生文本；主备切换重置状态。
  */
 internal class CharacterThinkingStream(
-    private val enabled: Boolean,
-    private val downstream: LocalAiStreamCallbacks
+    enabled: Boolean,
+    private val downstream: LocalAiStreamCallbacks,
+    nativeOnly: Boolean = false
 ) {
+    // 单会话的内心想法只展示服务商原生思考；正文括号/内心独白保持正文身份。
+    private val parseBodyThinking = enabled && !nativeOnly
     private enum class Source { NATIVE, TAGGED }
     private var source: Source? = null
     private val displayedThinking = StringBuilder()
@@ -156,7 +159,7 @@ internal class CharacterThinkingStream(
 
     /** 按本次实际到达顺序落库，避免最后换成另一个通道、与流式显示不一致。 */
     fun resolve(result: LocalAiResult): LocalAiResult {
-        if (!enabled) return result
+        if (!parseBodyThinking) return result
         if (!received) return characterThinkingResult(result, true)
         finish()
         val content = StringBuilder()
@@ -182,17 +185,17 @@ internal class CharacterThinkingStream(
         },
         onContentChunk = {
             received = true
-            if (enabled) parser.append(it) else downstream.onContentChunk(it)
+            if (parseBodyThinking) parser.append(it) else downstream.onContentChunk(it)
         },
         onThinkingChunk = {
             received = true
-            if (enabled) nativeFilter.append(it) else downstream.onThinkingChunk(it)
+            if (parseBodyThinking) nativeFilter.append(it) else downstream.onThinkingChunk(it)
         },
         onStreamObserved = downstream.onStreamObserved
     )
 
     fun finish() {
-        if (!enabled || finished) return
+        if (!parseBodyThinking || finished) return
         finished = true
         parser.finish()
         nativeFilter.finish()
@@ -200,8 +203,8 @@ internal class CharacterThinkingStream(
     }
 }
 
-internal fun characterThinkingResult(result: LocalAiResult, enabled: Boolean): LocalAiResult {
-    if (!enabled) return result
+internal fun characterThinkingResult(result: LocalAiResult, enabled: Boolean, nativeOnly: Boolean = false): LocalAiResult {
+    if (!enabled || nativeOnly) return result
     // 非流式按协议顺序先读原生思考，再读正文标签，不猜测服务器的生成顺序。
     val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks())
     stream.callbacks.onThinkingChunk(result.thinkingContent)

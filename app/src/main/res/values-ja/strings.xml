@@ -335,6 +335,7 @@
     <string name="agent_git_truncated">差分が長すぎるため省略</string>
     <string name="agent_git_view_all">全 %1$d ファイルを表示</string>
     <string name="agent_git_detail_title">すべての変更</string>
+    <string name="companion_inner_thought">内心の思い</string>
     <string name="companion_examples_offer">これまでの会話から数件を選び、話し方の参考にできます。有効にしますか？</string>
     <string name="companion_examples_enable">有効にする</string>
     <string name="companion_examples_decline">使わない</string>

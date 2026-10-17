@@ -2942,14 +2942,13 @@ private fun MessageBubble(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            val showDynamicThinking = ServiceContainer.prefs.dynamicThinking && !isUser && !message.reasoningContent.isNullOrBlank()
-                && (!companionChat || LocalCompanionShowReasoning.current)
+            val showDynamicThinking = !companionChat && ServiceContainer.prefs.dynamicThinking && !isUser && !message.reasoningContent.isNullOrBlank()
             if (showDynamicThinking) {
                 DynamicThinkingSection(
                     identity = "${message.id}:${message.timestamp}",
                     text = message.reasoningContent.orEmpty(),
                     thinking = isStreamingPlaceholder && message.content.isNullOrBlank(),
-                    label = if (companionChat) stringResource(R.string.companion_chat_reasoning) else null
+                    label = null
                 )
             } else if (companionChat && !isUser) {
                 CompanionReasoningSection(

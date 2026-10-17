@@ -1155,7 +1155,7 @@ internal class LocalPipelineCallbacks(
                             relay.onReasoningChunk(chunk)
                         }
                     }
-                ))
+                ), nativeOnly = session.companionMode)
             }
             val streamCallbacks = thinkingStream?.callbacks
 
@@ -1214,7 +1214,7 @@ internal class LocalPipelineCallbacks(
                 }
             }
             val result = if (resolvedResult === rawResult && thinkingStream != null) thinkingStream.resolve(resolvedResult)
-                else characterThinkingResult(resolvedResult, characterThinking)
+                else characterThinkingResult(resolvedResult, characterThinking, nativeOnly = session.companionMode)
 
             if (session.companionMode && db.isOpen) {
                 val used = modelQueue.firstOrNull { it.id == result.usedModelId } ?: activeModel
@@ -1290,7 +1290,7 @@ internal class LocalPipelineCallbacks(
                         streamRelay.onReasoningChunk(it)
                     }
                 }
-            ))
+            ), nativeOnly = session.companionMode)
 
             // UI 事件在网络读取时合并转发；Pipeline 只接收最终正文/思考各一个聚合块，
             // 避免长回复产生“每 token 一个 Map”的内存放大。

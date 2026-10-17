@@ -335,6 +335,7 @@
     <string name="agent_git_truncated">diff가 너무 길어 생략</string>
     <string name="agent_git_view_all">전체 %1$d개 파일 보기</string>
     <string name="agent_git_detail_title">전체 변경</string>
+    <string name="companion_inner_thought">속마음</string>
     <string name="companion_examples_offer">지금까지 나눈 대화 중 몇 가지를 골라 말투의 참고로 사용할 수 있어요. 켤까요?</string>
     <string name="companion_examples_enable">켜기</string>
     <string name="companion_examples_decline">사용 안 함</string>
