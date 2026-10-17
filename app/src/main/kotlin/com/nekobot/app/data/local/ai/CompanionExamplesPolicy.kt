@@ -11,12 +11,13 @@ internal data class CompanionExample(val user: String, val assistant: String)
 internal data class CompanionExampleCandidate(val id: String, val pair: CompanionExample)
 
 internal object CompanionExamplesPolicy {
+    const val INVITATION_ROUNDS = 20
     private val gson = Gson()
     private val correction = Regex("不是|不对|说错|错了|纠正|别这样|不要这样|你误会|我说的是|你理解错|重来|重新回答|not what|that's wrong|incorrect", RegexOption.IGNORE_CASE)
     private val failure = Regex("报错|请求失败|生成失败|网络错误|连接失败|超时|HTTP\\s*[45]\\d\\d|exception|traceback|error[:：]|content_filter", RegexOption.IGNORE_CASE)
 
     fun offer(row: CompanionExamplesEntity, rounds: Int): CompanionExamplesEntity =
-        if (row.state == "waiting" && rounds >= 20) row.copy(state = "offered") else row
+        if (row.state == "waiting" && rounds >= INVITATION_ROUNDS) row.copy(state = "offered") else row
     fun decline(row: CompanionExamplesEntity): CompanionExamplesEntity =
         if (row.state == "offered") row.copy(state = "declined") else row
     fun editorVisible(row: CompanionExamplesEntity?): Boolean = row?.optedIn == true
@@ -34,11 +35,20 @@ internal object CompanionExamplesPolicy {
     }
 
     fun candidates(rows: List<LocalMessageEntity>, limit: Int = 15): List<CompanionExampleCandidate> {
-        val eligible = pairs(rows).filter { (index, pair) ->
-            pair.user.length in 4..300 && pair.assistant.length in 8..800 &&
-                !failure.containsMatchIn(pair.user + "\n" + pair.assistant) &&
-                rows.getOrNull(index + 2)?.takeIf { it.role == "user" }?.let { !correction.containsMatchIn(it.content) } != false
-        }.map { (index, pair) -> CompanionExampleCandidate(rows[index + 1].id, pair) }
+        return balancedCandidates(rows.zipWithNext().mapIndexedNotNull { index, (user, assistant) ->
+            candidate(user, assistant, rows.getOrNull(index + 2))
+        }, limit)
+    }
+
+    fun candidate(user: LocalMessageEntity, assistant: LocalMessageEntity, next: LocalMessageEntity?): CompanionExampleCandidate? {
+        val pair = pairs(listOf(user, assistant)).singleOrNull()?.second ?: return null
+        return if (pair.user.length in 4..300 && pair.assistant.length in 8..800 &&
+            !failure.containsMatchIn(pair.user + "\n" + pair.assistant) &&
+            next?.takeIf { it.role == "user" }?.let { !correction.containsMatchIn(it.content) } != false
+        ) CompanionExampleCandidate(assistant.id, pair) else null
+    }
+
+    fun balancedCandidates(eligible: List<CompanionExampleCandidate>, limit: Int = 15): List<CompanionExampleCandidate> {
         // 每种场景轮流取，避免日常闲聊淹没安慰、玩笑、约定等语气。
         val groups = eligible.groupBy { scene(it.pair.user) }.values.map { it.toMutableList() }
         return buildList { while (size < limit && groups.any { it.isNotEmpty() }) {
