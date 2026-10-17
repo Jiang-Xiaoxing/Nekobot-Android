@@ -39,7 +39,13 @@ internal fun CharacterThinkingSettingsControls(
     effort: ReasoningEffort,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
-    onSaved: () -> Unit = {}
+    onSaved: () -> Unit = {},
+    menuRows: (@Composable (
+        switchModifier: Modifier,
+        promptModifier: Modifier,
+        enabled: Boolean,
+        checked: Boolean
+    ) -> Unit)? = null
 ) {
     val textResources = LocalResources.current
     val prefs = ServiceContainer.prefs
@@ -49,38 +55,61 @@ internal fun CharacterThinkingSettingsControls(
     LaunchedEffect(thinkingControlsEnabled) {
         if (!thinkingControlsEnabled) promptDraft = null
     }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (!compact) HorizontalDivider(Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-        Row(
+    if (menuRows != null) {
+        menuRows(
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
                 .testTag("character-thinking-switch")
-                .toggleable(value = characterThinkingSettings.enabled, enabled = thinkingControlsEnabled,
-                    role = Role.Switch, onValueChange = { enabled ->
-                        prefs.characterThinkingEnabled = enabled
+                .toggleable(
+                    value = characterThinkingSettings.enabled,
+                    enabled = thinkingControlsEnabled,
+                    role = Role.Switch,
+                    onValueChange = { value ->
+                        prefs.characterThinkingEnabled = value
                         onSaved()
-                    }),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            CharacterThinkingRowLabel(Icons.Outlined.PersonOutline, textResources.getString(R.string.single_role_character_perspective_thinking_beta),
-                textResources.getString(R.string.single_role_think_in_chinese_in_the_character_s_first_person_voice), thinkingControlsEnabled, Modifier.weight(1f), compact)
-            Switch(checked = characterThinkingSettings.enabled, onCheckedChange = null, enabled = thinkingControlsEnabled)
-        }
-        HorizontalDivider(Modifier.padding(start = if (compact) 56.dp else 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
-        Row(
+                    }
+                ),
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
                 .testTag("character-thinking-prompt-entry")
                 .clickable(enabled = thinkingControlsEnabled, role = Role.Button) {
                     promptDraft = characterThinkingPromptForEditing(prefs.getCharacterThinkingSettings())
                 },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            CharacterThinkingRowLabel(Icons.Outlined.Edit, textResources.getString(R.string.single_role_custom_thinking_prompt_beta),
-                textResources.getString(R.string.single_role_leave_blank_to_use_the_default), thinkingControlsEnabled, Modifier.weight(1f), compact)
-            Icon(Icons.Default.ChevronRight, null, Modifier.size(24.dp),
-                tint = if (thinkingControlsEnabled) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+            thinkingControlsEnabled,
+            characterThinkingSettings.enabled
+        )
+    } else {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!compact) HorizontalDivider(Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 72.dp)
+                    .testTag("character-thinking-switch")
+                    .toggleable(value = characterThinkingSettings.enabled, enabled = thinkingControlsEnabled,
+                        role = Role.Switch, onValueChange = { enabled ->
+                            prefs.characterThinkingEnabled = enabled
+                            onSaved()
+                        }),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CharacterThinkingRowLabel(Icons.Outlined.PersonOutline, textResources.getString(R.string.single_role_character_perspective_thinking_beta),
+                    textResources.getString(R.string.single_role_think_in_chinese_in_the_character_s_first_person_voice), thinkingControlsEnabled, Modifier.weight(1f), compact)
+                Switch(checked = characterThinkingSettings.enabled, onCheckedChange = null, enabled = thinkingControlsEnabled)
+            }
+            HorizontalDivider(Modifier.padding(start = if (compact) 56.dp else 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 72.dp)
+                    .testTag("character-thinking-prompt-entry")
+                    .clickable(enabled = thinkingControlsEnabled, role = Role.Button) {
+                        promptDraft = characterThinkingPromptForEditing(prefs.getCharacterThinkingSettings())
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CharacterThinkingRowLabel(Icons.Outlined.Edit, textResources.getString(R.string.single_role_custom_thinking_prompt_beta),
+                    textResources.getString(R.string.single_role_leave_blank_to_use_the_default), thinkingControlsEnabled, Modifier.weight(1f), compact)
+                Icon(Icons.Default.ChevronRight, null, Modifier.size(24.dp),
+                    tint = if (thinkingControlsEnabled) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+            }
         }
     }
     if (thinkingControlsEnabled && promptDraft != null) {

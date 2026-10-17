@@ -96,6 +96,8 @@ import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.PersonOutline
 import com.nekobot.app.ui.components.GlassAlertDialog as AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -2573,7 +2575,7 @@ private fun ReasoningEffortSelector(
     onCustomReasoningChange: (com.nekobot.app.data.model.CustomReasoningParam) -> Unit,
     showCharacterThinkingSettings: Boolean
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(false) }
 
     @Composable
     fun label(effort: ReasoningEffort): String = when (effort) {
@@ -2597,127 +2599,135 @@ private fun ReasoningEffortSelector(
         ReasoningEffort.CUSTOM -> stringResource(R.string.single_role_replace_automatically_derived_thinking_parameters_with_these_valu)
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
-        border = null
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = enabled) { expanded = !expanded }
-                    .padding(horizontal = 13.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically
+    ChatSettingEntry(
+        icon = Icons.Outlined.Psychology,
+        title = stringResource(R.string.reasoning_effort_title),
+        value = label(selected),
+        enabled = enabled,
+        onClick = { open = true }
+    )
+    if (open) {
+        NekoDialog(
+            onDismiss = { open = false },
+            title = stringResource(R.string.reasoning_effort_title),
+            message = stringResource(R.string.chat_setting_reasoning_hint),
+            confirmText = stringResource(R.string.common_close),
+            onConfirm = { open = false },
+            cancelText = null,
+            contentScrollable = true
+        ) {
+            Column(
+                modifier = Modifier.selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Psychology,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.reasoning_effort_title),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = description(selected),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                ReasoningEffort.entries.forEach { effort ->
+                    ChatSettingChoice(
+                        title = label(effort),
+                        subtitle = description(effort),
+                        selected = effort == selected,
+                        enabled = enabled,
+                        onClick = {
+                            onSelected(effort)
+                            open = false
+                        }
                     )
                 }
-                Text(
-                    text = selected.wireValue,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.width(5.dp))
-                Icon(
-                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
             }
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
+        }
+    }
+    if (selected == ReasoningEffort.CUSTOM) {
+        CustomReasoningFields(
+            customReasoning,
+            enabled,
+            onChange = onCustomReasoningChange,
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)
+        )
+    }
+    if (showCharacterThinkingSettings) {
+        CharacterThinkingSettingsControls(
+            effort = selected,
+            menuRows = { switchModifier, promptModifier, enabled, checked ->
                 Column {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    )
-                    ReasoningEffort.entries.forEach { effort ->
-                        val active = effort == selected
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = enabled) {
-                                    onSelected(effort)
-                                    expanded = false
-                                }
-                                .background(
-                                    if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                                    else Color.Transparent
-                                )
-                                .padding(horizontal = 13.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    Row(
+                        modifier = switchModifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.13f else 0.06f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier.size(18.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (active) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = label(effort),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                                Text(
-                                    text = description(effort),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
-                            }
-                            Text(
-                                text = effort.wireValue,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (active) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+                            Icon(
+                                Icons.Outlined.PersonOutline,
+                                contentDescription = null,
+                                tint = if (enabled) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.single_role_character_perspective_thinking_beta),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                stringResource(R.string.single_role_think_in_chinese_in_the_character_s_first_person_voice),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+                    }
+                    ModernMenuDivider()
+                    Row(
+                        modifier = promptModifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.13f else 0.06f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Outlined.Edit,
+                                contentDescription = null,
+                                tint = if (enabled) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.single_role_custom_thinking_prompt_beta),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                stringResource(R.string.single_role_leave_blank_to_use_the_default),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            "›",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.62f else 0.28f)
+                        )
                     }
                 }
             }
-            if (selected == ReasoningEffort.CUSTOM) {
-                CustomReasoningFields(customReasoning, enabled,
-                    onChange = onCustomReasoningChange,
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp))
-            }
-            if (showCharacterThinkingSettings) {
-                CharacterThinkingSettingsControls(selected, Modifier.padding(16.dp))
-            }
-        }
+        )
     }
 }
 
