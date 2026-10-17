@@ -11,6 +11,12 @@
     <string name="memory_history_before">변경 전</string>
     <string name="memory_history_after">변경 후</string>
     <string name="memory_history_empty_content">(비어 있음)</string>
+    <string name="memory_history_diff_summary">추가 %1$d · 삭제 %2$d</string>
+    <string name="memory_history_show_all">전체 보기</string>
+    <string name="memory_history_focus_changes">변경만 보기</string>
+    <string name="memory_history_unchanged_lines">… 변경 없는 %1$d줄 …</string>
+    <string name="memory_history_no_changes">내용 변경 없음</string>
+    <string name="memory_history_line_endings_only">줄바꿈 형식만 변경됨</string>
     <string name="memory_history_manual">직접 편집</string>
     <string name="memory_history_agent">자동 기억</string>
     <string name="memory_history_tool">Agent 도구</string>

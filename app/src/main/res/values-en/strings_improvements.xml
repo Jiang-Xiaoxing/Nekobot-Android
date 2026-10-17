@@ -11,6 +11,12 @@
     <string name="memory_history_before">Before</string>
     <string name="memory_history_after">After</string>
     <string name="memory_history_empty_content">(Empty)</string>
+    <string name="memory_history_diff_summary">Added %1$d · Removed %2$d</string>
+    <string name="memory_history_show_all">Show full text</string>
+    <string name="memory_history_focus_changes">Changes only</string>
+    <string name="memory_history_unchanged_lines">… %1$d unchanged lines …</string>
+    <string name="memory_history_no_changes">No content changes</string>
+    <string name="memory_history_line_endings_only">Only line endings changed</string>
     <string name="memory_history_manual">Manual edit</string>
     <string name="memory_history_agent">Automatic memory</string>
     <string name="memory_history_tool">Agent tool</string>

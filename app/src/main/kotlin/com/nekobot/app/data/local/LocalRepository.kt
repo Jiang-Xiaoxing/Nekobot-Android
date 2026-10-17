@@ -1,5 +1,7 @@
 package com.nekobot.app.data.local
 
+import com.nekobot.app.data.repository.Resource
+
 import android.os.StatFs
 import com.google.gson.Gson
 import com.google.gson.JsonArray
@@ -1592,6 +1594,20 @@ class LocalRepository(
         )
     }
 
+    /** 读取指定范围的沙箱环境变量；null 表示全局。 */
+    suspend fun sandboxEnvironment(sessionId: String?): Resource<Map<String, String>> = withContext(Dispatchers.IO) {
+        val context = appContext ?: return@withContext Resource.Error("沙箱运行时不可用")
+        Resource.Success(com.nekobot.app.data.local.ai.SandboxEnvironmentStore.get(context).read(sessionId, db.dbName))
+    }
+
+    suspend fun saveSandboxEnvironment(sessionId: String?, values: Map<String, String>): Resource<Map<String, String>> = withContext(Dispatchers.IO) {
+        val context = appContext ?: return@withContext Resource.Error("沙箱运行时不可用")
+        runCatching<Resource<Map<String, String>>> {
+            com.nekobot.app.data.local.ai.SandboxEnvironmentStore.get(context).replace(values, sessionId, db.dbName)
+            Resource.Success(values)
+        }.getOrElse { Resource.Error(it.message ?: "保存环境变量失败") }
+    }
+
     /**
      * 取得当前 Agent 会话的交互式沙箱终端（PRoot + 真 PTY）。
      *
@@ -2488,6 +2504,7 @@ class LocalRepository(
         LocalLinuxSandboxCoordinator.stopSession(id)
         LocalLinuxSandboxCoordinator.stopTerminal(id)
         automationScheduler?.cancelProactive(id)
+        appContext?.let { com.nekobot.app.data.local.ai.SandboxEnvironmentStore.get(it).replace(emptyMap(), id, db.dbName) }
         automationScheduler?.cancelLifeSim(id)
         messageImageDao.listBySession(id).forEach { image ->
             image.filePath?.let(::deleteMessageImageFile)

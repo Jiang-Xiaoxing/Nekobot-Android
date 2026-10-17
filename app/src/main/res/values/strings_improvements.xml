@@ -11,6 +11,12 @@
     <string name="memory_history_before">修改前</string>
     <string name="memory_history_after">修改后</string>
     <string name="memory_history_empty_content">（空）</string>
+    <string name="memory_history_diff_summary">新增 %1$d · 删除 %2$d</string>
+    <string name="memory_history_show_all">显示全文</string>
+    <string name="memory_history_focus_changes">仅看改动</string>
+    <string name="memory_history_unchanged_lines">… %1$d 行未改动 …</string>
+    <string name="memory_history_no_changes">内容无变化</string>
+    <string name="memory_history_line_endings_only">仅换行格式不同</string>
     <string name="memory_history_manual">手动修改</string>
     <string name="memory_history_agent">自动记忆</string>
     <string name="memory_history_tool">Agent 工具</string>

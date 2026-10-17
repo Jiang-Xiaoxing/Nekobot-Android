@@ -183,6 +183,24 @@ fun WorldBooksScreen(
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 actions = {
+                    IconButton(onClick = {
+                        val newMode = if (viewMode == WorldBookViewMode.LIST) {
+                            WorldBookViewMode.GRID
+                        } else {
+                            WorldBookViewMode.LIST
+                        }
+                        viewMode = newMode
+                        ServiceContainer.prefs.worldBookViewMode = newMode.name
+                    }) {
+                        Icon(
+                            if (viewMode == WorldBookViewMode.LIST) Icons.Filled.Apps else Icons.Filled.ViewList,
+                            contentDescription = stringResource(
+                                if (viewMode == WorldBookViewMode.LIST) R.string.worldbook_view_grid
+                                else R.string.worldbook_view_list
+                            ),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     // 命中调试：作用于当前角色可见的全部世界书，因此放在列表页而不是某本书里
                     IconButton(onClick = onOpenMatchDebug) {
                         Icon(
@@ -220,24 +238,6 @@ fun WorldBooksScreen(
                                 }
                             )
                         }
-                    }
-                    IconButton(onClick = {
-                        val newMode = if (viewMode == WorldBookViewMode.LIST) {
-                            WorldBookViewMode.GRID
-                        } else {
-                            WorldBookViewMode.LIST
-                        }
-                        viewMode = newMode
-                        ServiceContainer.prefs.worldBookViewMode = newMode.name
-                    }) {
-                        Icon(
-                            if (viewMode == WorldBookViewMode.LIST) Icons.Filled.Apps else Icons.Filled.ViewList,
-                            contentDescription = stringResource(
-                                if (viewMode == WorldBookViewMode.LIST) R.string.worldbook_view_grid
-                                else R.string.worldbook_view_list
-                            ),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
                     }
                 }
             )

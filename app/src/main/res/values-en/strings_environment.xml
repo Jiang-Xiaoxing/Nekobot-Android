@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="env_title">Environment variables</string>
+    <string name="env_global_title">Global environment variables</string>
+    <string name="env_global_scope">Global</string>
+    <string name="env_session_scope">This session</string>
+    <string name="env_global_desc">Edit global sandbox variables</string>
+    <string name="env_precedence_hint">Session variables override global variables with the same name.</string>
+    <string name="env_apply_hint">Applies to subsequent commands. Restart open terminals or MCP services.</string>
+    <string name="env_empty">No variables yet. Tap + to add one.</string>
+    <string name="env_variable_name">Variable name</string>
+    <string name="env_variable_value">Value</string>
+    <string name="env_invalid_name">Use letters, digits and underscores. Do not start with a digit or use reserved names.</string>
+    <string name="env_duplicate_name">Variable name already exists</string>
+    <string name="env_show_value">Show value</string>
+    <string name="env_hide_value">Hide value</string>
+    <string name="env_saved">Environment variables saved</string>
+    <string name="env_request_title">Enter environment variables</string>
+    <string name="env_request_hint">You can edit variable names. Values stay on this device; the tool returns names only.</string>
+    <string name="tool_name_request_environment_variables">Request environment variables</string>
+    <string name="tool_desc_request_environment_variables">Ask the user to enter sandbox variables with editable names and scope.</string>
+</resources>

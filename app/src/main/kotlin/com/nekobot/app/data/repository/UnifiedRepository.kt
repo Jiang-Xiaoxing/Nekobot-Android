@@ -243,6 +243,12 @@ class UnifiedRepository(
     }
 
     /** 读取 Linux 沙箱状态（rootfs 安装情况、占用空间、镜像文件实际内容）。 */
+    suspend fun sandboxEnvironment(sessionId: String?): Resource<Map<String, String>> =
+        if (isLocal) local.sandboxEnvironment(sessionId) else localNotSupported("Linux 沙盒")
+
+    suspend fun saveSandboxEnvironment(sessionId: String?, values: Map<String, String>): Resource<Map<String, String>> =
+        if (isLocal) local.saveSandboxEnvironment(sessionId, values) else localNotSupported("Linux 沙盒")
+
     suspend fun sandboxStatus(): Resource<LocalSandboxStatus> =
         if (isLocal) {
             local.sandboxStatus()?.let { Resource.Success(it) } ?: Resource.Error("沙箱状态不可用")

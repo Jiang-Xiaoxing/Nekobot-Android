@@ -92,6 +92,9 @@ object Routes {
     const val BROWSER_SETTINGS = "browser_settings"
     /** Linux 沙盒管理（apk / pip / npm 镜像源与 rootfs 重置） */
     const val SANDBOX_MANAGEMENT = "sandbox_management"
+    const val SANDBOX_ENVIRONMENT = "sandbox_environment?sessionId={sessionId}"
+    fun sandboxEnvironment(sessionId: String? = null): String = "sandbox_environment" +
+        (sessionId?.let { "?sessionId=${android.net.Uri.encode(it)}" } ?: "")
     /** 路由决策历史 */
     const val ROUTING_HISTORY = "routing_history"
     /** A/B 测试配置 */

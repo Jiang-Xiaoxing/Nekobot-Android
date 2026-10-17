@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="env_title">환경 변수</string>
+    <string name="env_global_title">전역 환경 변수</string>
+    <string name="env_global_scope">전역</string>
+    <string name="env_session_scope">이 세션</string>
+    <string name="env_global_desc">샌드박스 전역 변수 편집</string>
+    <string name="env_precedence_hint">같은 이름의 세션 변수가 전역 변수보다 우선합니다.</string>
+    <string name="env_apply_hint">이후 명령에 적용됩니다. 열린 터미널이나 MCP 서비스는 다시 시작하세요.</string>
+    <string name="env_empty">환경 변수가 없습니다. 오른쪽 위 +를 눌러 추가하세요.</string>
+    <string name="env_variable_name">변수 이름</string>
+    <string name="env_variable_value">값</string>
+    <string name="env_invalid_name">영문, 숫자, 밑줄을 사용하세요. 숫자로 시작하거나 예약된 이름은 사용할 수 없습니다.</string>
+    <string name="env_duplicate_name">변수 이름이 중복됩니다</string>
+    <string name="env_show_value">값 표시</string>
+    <string name="env_hide_value">값 숨기기</string>
+    <string name="env_saved">환경 변수를 저장했습니다</string>
+    <string name="env_request_title">환경 변수 입력</string>
+    <string name="env_request_hint">변수 이름을 수정할 수 있습니다. 값은 기기에 저장되며 도구에는 이름만 반환됩니다.</string>
+    <string name="tool_name_request_environment_variables">환경 변수 입력 요청</string>
+    <string name="tool_desc_request_environment_variables">이름과 저장 범위를 수정할 수 있는 샌드박스 변수 입력을 요청합니다.</string>
+</resources>

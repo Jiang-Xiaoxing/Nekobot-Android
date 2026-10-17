@@ -31,6 +31,7 @@ internal val localExecutableToolIds = setOf(
     "todo_write",
     "todo_read",
     "ask_user_question",
+    "request_environment_variables",
     "http_get",
     "web_fetch",
     "grep",
@@ -420,6 +421,7 @@ internal class LocalAgentToolExecutor(
                 "todo_write" -> writeTodos(args)
                 "todo_read" -> readTodos()
                 "ask_user_question" -> askUserQuestion(args)
+                "request_environment_variables" -> requestEnvironmentVariables(args)
                 "http_get" -> httpGet(args)
                 "web_fetch" -> webFetch(args)
                 "grep" -> grepWorkspaceTool(args)
@@ -676,6 +678,33 @@ internal class LocalAgentToolExecutor(
             sessionId = sessionId,
             questions = questions,
             onRequest = onAskUserQuestionRequired
+        )
+    }
+
+    private suspend fun requestEnvironmentVariables(args: Map<String, Any>): Map<String, Any> {
+        val manager = askUserQuestionManager ?: return failure("提问运行时不可用")
+        val context = ServiceContainer.appContext ?: return failure("沙箱运行时不可用")
+        if (generationController.isStopped) return stoppedFailure()
+        val fields = EnvironmentVariableRequestCodec.parse(args).getOrElse {
+            return failure(it.message ?: "环境变量参数无效")
+        }
+        val scope = args.string("scope").ifBlank { "session" }
+        if (scope !in setOf("session", "global")) return failure("scope 必须为 session 或 global")
+        val store = SandboxEnvironmentStore.get(context)
+        val dbName = ServiceContainer.prefs.activeDbName
+        return manager.requestAnswer(
+            sessionId = sessionId,
+            questions = fields.map { AskUserQuestionItem(it.name, it.description.ifBlank { it.name }, it.name, emptyList(), false) },
+            onRequest = onAskUserQuestionRequired,
+            environmentVariables = fields,
+            environmentScope = scope,
+            saveEnvironment = { answers ->
+                store.update(
+                    values = answers.associate { it.id to it.text },
+                    sessionId = sessionId.takeIf { answers.first().environmentScope == "session" },
+                    dbName = dbName,
+                )
+            }
         )
     }
 

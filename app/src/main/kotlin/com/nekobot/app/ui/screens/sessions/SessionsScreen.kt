@@ -222,6 +222,7 @@ private fun TwoPaneSessionsWrapper(
     onOpenContextAnalysis: (String) -> Unit,
     onOpenCompanionMemory: (String) -> Unit = {},
     onOpenStoryGraph: (String) -> Unit,
+    onOpenEnvironmentVariables: (String) -> Unit,
     onOpenWenku8Login: () -> Unit,
     onChatMaximizedChange: (Boolean) -> Unit,
     content: @Composable () -> Unit
@@ -298,6 +299,7 @@ private fun TwoPaneSessionsWrapper(
                             onOpenContextAnalysis = onOpenContextAnalysis,
                             onOpenCompanionMemory = onOpenCompanionMemory,
                             onOpenStoryGraph = onOpenStoryGraph,
+                            onOpenEnvironmentVariables = onOpenEnvironmentVariables,
                             onOpenWenku8Login = onOpenWenku8Login,
                             // 平板双栏：底部悬浮导航栏盖住输入框，输入区整体抬升避让；
                             // 聊天全屏时底栏已隐藏，不再需要避让
@@ -512,6 +514,7 @@ fun SessionsScreen(
         onOpenContextAnalysis = { id -> onNavigate(Routes.contextAnalysis(id)) },
         onOpenCompanionMemory = { id -> onNavigate(Routes.agentCharacterMemory(id)) },
         onOpenStoryGraph = onOpenStoryGraph,
+        onOpenEnvironmentVariables = { id -> onNavigate(Routes.sandboxEnvironment(id)) },
         onOpenWenku8Login = { onNavigate(Routes.WENKU_LOGIN) },
         onChatMaximizedChange = onTwoPaneChatMaximizedChange
     ) {
