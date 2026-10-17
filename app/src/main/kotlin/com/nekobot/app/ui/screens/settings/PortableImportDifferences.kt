@@ -35,7 +35,6 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
         }
         plan.rows.differences.forEachIndexed { index, row ->
             DifferenceHeading(importDetailLabel(PortableCategoryDetail("table:${row.table}", 1)), row.label, row.owner)
-            Text(stringResource(R.string.import_difference_field_scope), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             row.fields.forEach { field ->
                 Text(importFieldLabel(field.column), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                 DifferenceValues(importDifferenceValue(field.column, field.current), importDifferenceValue(field.column, field.incoming))
@@ -53,7 +52,6 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
             val extension = file.fileName.substringAfterLast('.', "").uppercase().ifBlank { stringResource(R.string.import_difference_unknown_type) }
             Text(stringResource(R.string.import_difference_type, extension), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             DifferenceValues(fileSize(file.currentBytes) + checksum(file.currentHash), fileSize(file.incomingBytes) + checksum(file.incomingHash))
-            Text(stringResource(R.string.import_difference_file_scope), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             DifferenceChoice(file.key in draft.files, !busy, "safe-difference-file-$index") { replace ->
                 draft = draft.copy(files = if (replace) draft.files + file.key else draft.files - file.key)
             }
@@ -89,8 +87,10 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
     Text(kind, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
     val parts = buildList {
-        if (owner.character.isNotBlank()) add(stringResource(R.string.import_difference_character, owner.character))
-        if (owner.session.isNotBlank()) add(stringResource(R.string.import_difference_session, owner.session))
+        if (owner.character.isNotBlank() && owner.character.trim() != title.trim())
+            add(stringResource(R.string.import_difference_character, owner.character))
+        if (owner.session.isNotBlank() && owner.session.trim() != title.trim())
+            add(stringResource(R.string.import_difference_session, owner.session))
         if (owner.shared) add(stringResource(R.string.import_difference_shared))
     }
     if (parts.isNotEmpty()) Text(parts.joinToString("\n"), style = MaterialTheme.typography.bodySmall,

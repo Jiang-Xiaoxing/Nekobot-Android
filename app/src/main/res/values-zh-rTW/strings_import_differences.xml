@@ -4,8 +4,6 @@
     <string name="import_difference_save">儲存選擇</string>
     <string name="import_difference_keep">保留軟體中的內容（預設）</string>
     <string name="import_difference_replace">使用資料包中的內容，覆蓋這一項</string>
-    <string name="import_difference_field_scope">以下選擇只影響對應欄位。</string>
-    <string name="import_difference_file_scope">僅替換這個同路徑檔案，不替換整個會話。</string>
     <string name="import_difference_file">附件檔案</string>
     <string name="import_difference_current">軟體中的內容</string>
     <string name="import_difference_incoming">資料包中的內容</string>

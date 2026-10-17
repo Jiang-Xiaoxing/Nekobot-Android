@@ -4,8 +4,6 @@
     <string name="import_difference_save">선택 저장</string>
     <string name="import_difference_keep">앱의 내용 유지 (기본값)</string>
     <string name="import_difference_replace">자료 묶음의 내용으로 이 항목 덮어쓰기</string>
-    <string name="import_difference_field_scope">각 선택은 해당 필드에만 적용됩니다.</string>
-    <string name="import_difference_file_scope">같은 경로의 이 파일만 교체하며 대화 전체는 바꾸지 않습니다.</string>
     <string name="import_difference_file">첨부 파일</string>
     <string name="import_difference_current">앱의 내용</string>
     <string name="import_difference_incoming">자료 묶음의 내용</string>

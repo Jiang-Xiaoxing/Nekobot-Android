@@ -4,8 +4,6 @@
     <string name="import_difference_save">選択を保存</string>
     <string name="import_difference_keep">アプリ内の内容を保持（既定）</string>
     <string name="import_difference_replace">アーカイブの内容でこの項目を上書き</string>
-    <string name="import_difference_field_scope">各選択は対応するフィールドだけに適用されます。</string>
-    <string name="import_difference_file_scope">同じパスのこのファイルだけを置き換え、会話全体は変更しません。</string>
     <string name="import_difference_file">添付ファイル</string>
     <string name="import_difference_current">アプリ内の内容</string>
     <string name="import_difference_incoming">アーカイブ内の内容</string>

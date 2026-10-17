@@ -4,8 +4,6 @@
     <string name="import_difference_save">Save choices</string>
     <string name="import_difference_keep">Keep the content in the app (default)</string>
     <string name="import_difference_replace">Use the content in the archive and replace this item</string>
-    <string name="import_difference_field_scope">Each choice affects only its corresponding field.</string>
-    <string name="import_difference_file_scope">Replace only this file at the same path, not the whole conversation.</string>
     <string name="import_difference_file">Attachment file</string>
     <string name="import_difference_current">Content in the app</string>
     <string name="import_difference_incoming">Content in the archive</string>
