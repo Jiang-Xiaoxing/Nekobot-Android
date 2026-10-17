@@ -252,10 +252,14 @@ fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
                         Text(message, color = MaterialTheme.colorScheme.error)
                         TextButton(onClick = vm::clearError) { Text(stringResource(R.string.common_close)) }
                     } }
-                    items(current, key = { it.category.id }) { summary ->
-                        CategorySelectionRow(summary = summary, selected = summary.category.id in exportUi.selection,
-                            onToggle = { exportUi.selection = exportUi.selection.toggle(summary.category.id, it) },
-                            onClick = { detailCategory = summary.category }, enabled = uiEnabled)
+                    current.groupBy { exportCategoryGroup(it.category) }.toSortedMap().forEach { (group, summaries) ->
+                        item { Text(stringResource(when (group) { 0 -> R.string.portability_group_content; 1 -> R.string.portability_group_tools; else -> R.string.portability_group_files }),
+                            style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp)) }
+                        items(summaries, key = { it.category.id }) { summary ->
+                            CategorySelectionRow(summary = summary, selected = summary.category.id in exportUi.selection,
+                                onToggle = { exportUi.selection = exportUi.selection.toggle(summary.category.id, it) },
+                                onClick = { detailCategory = summary.category }, enabled = uiEnabled)
+                        }
                     }
                     item {
                         HorizontalDivider()
@@ -523,4 +527,12 @@ internal fun portableDetailLabel(detail: PortableCategoryDetail): String {
         else -> null
     }
     return if (resourceId != null) stringResource(resourceId) else key
+}
+
+/** Grouping only changes presentation; every category remains selectable with the same defaults. */
+private fun exportCategoryGroup(category: PortableDataCategory): Int = when (category) {
+    PortableDataCategory.CONVERSATIONS, PortableDataCategory.CHARACTERS, PortableDataCategory.WORLD_BOOKS,
+    PortableDataCategory.MEMORIES, PortableDataCategory.GLOBAL_MEMORY -> 0
+    PortableDataCategory.AI_CONFIG, PortableDataCategory.EXTENSIONS, PortableDataCategory.CREDENTIALS -> 1
+    else -> 2
 }

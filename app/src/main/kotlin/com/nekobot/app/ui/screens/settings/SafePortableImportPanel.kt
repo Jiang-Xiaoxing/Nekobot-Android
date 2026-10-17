@@ -45,121 +45,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.zip.ZipFile
 
-internal enum class SafeImportStep { FILE, CONTENTS, CONFIRM, RESULT }
-
-internal data class SafeImportUiState(
-    val prepared: PreparedPortableImport? = null,
-    val selected: Map<PortableDataCategory, Set<String>> = emptyMap(),
-    val choices: PortableImportChoices = PortableImportChoices(),
-    val plan: PortableImportPreview? = null,
-    val planValid: Boolean = false,
-    val busy: Boolean = false,
-    val progress: String = "",
-    val error: String? = null,
-    val result: PortableImportResult? = null,
-    val route: String? = null,
-    val passwordNeeded: Boolean = false,
-    val step: SafeImportStep = SafeImportStep.FILE,
-    val sourceUri: Uri? = null,
-    val fileName: String = "",
-    val passwordInput: String = "",
-    val picking: Boolean = false
-)
-
-class SafePortableImportViewModel : ViewModel() {
-    internal val state = MutableStateFlow(SafeImportUiState())
-    private var work: Job? = null
-    private var cleared = false
-    private var limit = 50
-    internal fun beginPicking(): Boolean {
-        if (state.value.busy || state.value.picking) return false
-        state.value = state.value.copy(picking = true)
-        return true
-    }
-    internal fun pickerClosed() { state.value = state.value.copy(picking = false) }
-    internal fun password(value: String) { if (!state.value.busy) state.value = state.value.copy(passwordInput = value) }
-    internal fun continueContents() {
-        if (!state.value.busy && state.value.prepared != null) state.value = state.value.copy(step = SafeImportStep.CONTENTS)
-    }
-    internal fun backToContents() { if (!state.value.busy) state.value = state.value.copy(step = SafeImportStep.CONTENTS) }
-    internal fun back(): Boolean {
-        if (state.value.busy) { cancel(); return true }
-        val previous = when (state.value.step) {
-            SafeImportStep.CONTENTS -> SafeImportStep.FILE
-            SafeImportStep.CONFIRM -> SafeImportStep.CONTENTS
-            else -> return false
-        }
-        state.value = state.value.copy(step = previous)
-        return true
-    }
-    fun inspect(context: Context, uri: Uri, password: String) {
-        if (state.value.busy) return
-        state.value.prepared?.close()
-        state.value = SafeImportUiState(busy = true, sourceUri = uri, fileName = uri.lastPathSegment.orEmpty().substringAfterLast('/'), passwordInput = password)
-        work = viewModelScope.launch {
-            try {
-                val prepared = withContext(Dispatchers.IO) {
-                    val name = runCatching { portableArchiveDisplayName(context, uri) }.getOrNull()
-                    if (!name.isNullOrBlank()) state.value = state.value.copy(fileName = name)
-                    context.contentResolver.openInputStream(uri)?.use { PortableDataArchiveManager(context).prepareImport(it, password) }
-                        ?: error(context.getString(R.string.portability_open_input_failed))
-                }
-                val selected = prepared.preview.categories.associate { summary -> summary.category to
-                    if (summary.category == PortableDataCategory.CREDENTIALS) emptySet() else summary.details
-                        .filter { it.key != "plot_story" }.mapTo(linkedSetOf()) { it.key } }
-                state.value = state.value.copy(prepared = prepared, selected = selected, step = SafeImportStep.CONTENTS)
-            } catch (error: CancellationException) { state.value = state.value.copy(error = context.getString(R.string.safe_import_cancelled)) }
-            catch (error: Exception) {
-                val route = withContext(Dispatchers.IO) { recognizeDedicatedImport(context, uri) }
-                state.value = state.value.copy(route = route,
-                    passwordNeeded = route == null && error.message?.contains("加密") == true,
-                    error = if (route != null) context.getString(R.string.safe_import_dedicated) else error.message ?: context.getString(R.string.safe_import_failed))
-            } finally { state.value = state.value.copy(busy = false); if (cleared) state.value.prepared?.close() }
-        }
-    }
-    internal fun select(category: PortableDataCategory, keys: Set<String>, checked: Boolean) {
-        if (state.value.busy) return
-        val old = state.value.selected[category].orEmpty()
-        state.value = state.value.copy(selected = state.value.selected + (category to if (checked) old + keys else old - keys), planValid = false, result = null)
-    }
-    internal fun choices(value: PortableImportChoices) { if (!state.value.busy) state.value = state.value.copy(choices = value, planValid = false, result = null) }
-    fun preview(context: Context, more: Boolean = false) {
-        val prepared = state.value.prepared ?: return
-        if (state.value.busy) return
-        if (more) limit += 50
-        state.value = state.value.copy(busy = true, error = null, result = null, planValid = false, progress = context.getString(R.string.safe_import_checking))
-        work = viewModelScope.launch {
-            try {
-                val snapshot = state.value
-                val plan = PortableDataArchiveManager(context).previewImport(prepared, snapshot.selected, snapshot.choices, limit)
-                state.value = state.value.copy(plan = plan, planValid = true, step = SafeImportStep.CONFIRM)
-            } catch (_: CancellationException) { state.value = state.value.copy(error = context.getString(R.string.safe_import_cancelled)) }
-            catch (error: Exception) { state.value = state.value.copy(error = error.message ?: context.getString(R.string.safe_import_failed), planValid = false) }
-            finally { state.value = state.value.copy(busy = false); if (cleared) prepared.close() }
-        }
-    }
-    fun commit(context: Context) {
-        val snapshot = state.value
-        val prepared = snapshot.prepared ?: return
-        val plan = snapshot.plan ?: return
-        if (snapshot.busy || !snapshot.planValid || plan.issues.isNotEmpty()) return
-        state.value = snapshot.copy(busy = true, error = null)
-        work = viewModelScope.launch {
-            try {
-                val result = PortableDataArchiveManager(context).commitImport(prepared, plan) { message -> state.value = state.value.copy(progress = message) }
-                state.value = state.value.copy(result = result, planValid = false, step = SafeImportStep.RESULT)
-            } catch (_: CancellationException) {
-                state.value = state.value.copy(result = prepared.result, planValid = false, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
-                    error = if (prepared.result == null) context.getString(R.string.safe_import_cancelled) else null)
-            } catch (error: Exception) { state.value = state.value.copy(result = prepared.result, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
-                error = if (prepared.result != null) context.getString(R.string.safe_import_reload_failed) else error.message ?: context.getString(R.string.safe_import_failed), planValid = false) }
-            finally { state.value = state.value.copy(busy = false); if (cleared) prepared.close() }
-        }
-    }
-    fun cancel() { work?.cancel() }
-    override fun onCleared() { cleared = true; val running = work?.isCompleted == false; work?.cancel(); if (!running) state.value.prepared?.close() }
-}
-
 private data class ImportGroup(val category: PortableDataCategory, val title: String, val details: List<PortableCategoryDetail>)
 
 @Composable
@@ -284,33 +169,29 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                 SafeImportStep.CONFIRM -> state.plan?.let { plan ->
                     item {
                         Text(stringResource(R.string.portability_ui_confirm_import), style = MaterialTheme.typography.titleLarge)
-                        Text(stringResource(R.string.safe_import_confirm), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.portability_ui_confirm_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Row {
-                                ImportStat(stringResource(R.string.portability_ui_new), plan.rows.counts.added + plan.fileCounts.added, Modifier.weight(1f))
-                                ImportStat(stringResource(R.string.portability_ui_update), plan.rows.counts.updated + plan.fileCounts.updated + plan.settingDifferences.count { it.column in state.choices.settings }, Modifier.weight(1f))
-                            }
-                            Row {
-                                ImportStat(stringResource(R.string.portability_ui_same), plan.rows.counts.same + plan.fileCounts.same, Modifier.weight(1f))
-                                ImportStat(stringResource(R.string.portability_ui_keep), plan.rows.counts.kept + plan.fileCounts.kept, Modifier.weight(1f))
-                            }
+                    if (state.planValid) item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            ImportStat(stringResource(R.string.portability_ui_new), plan.rows.counts.added + plan.fileCounts.added, Modifier.fillMaxWidth())
+                            ImportStat(stringResource(R.string.portability_ui_update), plan.rows.counts.updated + plan.fileCounts.updated + plan.settingDifferences.count { it.column in plan.choices.settings }, Modifier.fillMaxWidth())
+                            ImportStat(stringResource(R.string.portability_ui_same), plan.rows.counts.same + plan.fileCounts.same, Modifier.fillMaxWidth())
+                            ImportStat(stringResource(R.string.portability_ui_keep), plan.rows.counts.kept + plan.fileCounts.kept, Modifier.fillMaxWidth())
                         }
                     }
-                    if (!state.planValid) item { Text(stringResource(R.string.portability_ui_recheck), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                    if (!state.planValid) item { Text(stringResource(if (state.busy) R.string.safe_import_checking else R.string.portability_ui_recheck), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("safe-import-summary-pending")) }
                     if (plan.rows.differences.isNotEmpty() || plan.fileDifferences.isNotEmpty() || plan.settingDifferences.isNotEmpty() || plan.storyDifferent) item {
-                        TextButton(onClick = { showDifferences = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_changes)) }
+                        TextButton(onClick = { showDifferences = true }, enabled = !state.busy && state.planValid) { Text(stringResource(R.string.safe_import_changes)) }
                     }
-                    if (plan.issues.isNotEmpty()) item {
+                    if (state.planValid && plan.issues.isNotEmpty()) item {
                         TextButton(onClick = { showIssues = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_dependencies, plan.issues.size), color = MaterialTheme.colorScheme.error) }
                     }
-                    if (plan.rows.sameNameCopies > 0 || plan.rows.newKeys.any { it.startsWith("local_characters:") }) item {
+                    if (state.planValid && (plan.rows.sameNameCopies > 0 || plan.rows.newKeys.any { it.startsWith("local_characters:") })) item {
                         Text(stringResource(R.string.portability_ui_character_preview, plan.rows.newKeys.count { it.startsWith("local_characters:") }, plan.rows.sameNameCopies), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (state.choices.restoreCredentials && "credentials_bundle" in state.selected[PortableDataCategory.CREDENTIALS].orEmpty()) item { Text(stringResource(R.string.safe_import_credentials_consent), style = MaterialTheme.typography.bodyMedium) }
-                    if (plan.useStory) item { Text(stringResource(R.string.safe_import_story_confirm_message), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-                    if (plan.rows.sensitiveFieldsOmitted > 0) item { Text(stringResource(R.string.safe_import_secrets_skipped, plan.rows.sensitiveFieldsOmitted), style = MaterialTheme.typography.bodySmall) }
+                    if (state.planValid && plan.useStory) item { Text(stringResource(R.string.safe_import_story_confirm_message), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                    if (state.planValid && plan.rows.sensitiveFieldsOmitted > 0) item { Text(stringResource(R.string.safe_import_secrets_skipped, plan.rows.sensitiveFieldsOmitted), style = MaterialTheme.typography.bodySmall) }
                 }
                 SafeImportStep.RESULT -> state.result?.let { result ->
                     item {
@@ -388,46 +269,9 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
         }
     }
     if (showDifferences) state.plan?.let { plan ->
-        NekoDialog(onDismiss = { showDifferences = false }, title = stringResource(R.string.safe_import_changes),
-            message = stringResource(R.string.safe_import_defaults), confirmText = stringResource(R.string.common_confirm), onConfirm = { showDifferences = false }, cancelText = null, contentScrollable = true) {
-            plan.rows.differences.forEach { row ->
-                Text(row.label, style = MaterialTheme.typography.titleSmall)
-                row.fields.forEach { field ->
-                    val checked = field.column in state.choices.fields[row.key].orEmpty()
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
-                        Checkbox(checked, enabled = !state.busy, onCheckedChange = { value ->
-                            val fields = state.choices.fields[row.key].orEmpty()
-                            vm.choices(state.choices.copy(fields = state.choices.fields + (row.key to if (value) fields + field.column else fields - field.column)))
-                        })
-                        Column(Modifier.weight(1f)) {
-                            Text(importFieldLabel(field.column), style = MaterialTheme.typography.labelLarge)
-                            Text(stringResource(R.string.safe_import_current, field.current), style = MaterialTheme.typography.bodySmall)
-                            Text(stringResource(R.string.safe_import_incoming, field.incoming), style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            }
-            plan.fileDifferences.forEach { file ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(file.key in state.choices.files, enabled = !state.busy, onCheckedChange = { value -> vm.choices(state.choices.copy(files = if (value) state.choices.files + file.key else state.choices.files - file.key)) })
-                    Text(file.label, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            plan.settingDifferences.forEach { field ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(field.column in state.choices.settings, enabled = !state.busy, onCheckedChange = { value -> vm.choices(state.choices.copy(settings = if (value) state.choices.settings + field.column else state.choices.settings - field.column)) })
-                    Column { Text(importFieldLabel(field.column), style = MaterialTheme.typography.labelLarge); Text(stringResource(R.string.safe_import_current, field.current), style = MaterialTheme.typography.bodySmall); Text(stringResource(R.string.safe_import_incoming, field.incoming), style = MaterialTheme.typography.bodySmall) }
-                }
-            }
-            if (plan.storyDifferent) Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox("plot_story" in state.choices.files, enabled = !state.busy, onCheckedChange = { value ->
-                    if (value) storyConfirm = true else vm.choices(state.choices.copy(files = state.choices.files - "plot_story"))
-                })
-                Text(stringResource(R.string.safe_import_story), style = MaterialTheme.typography.bodyMedium)
-            }
-            TextButton(onClick = { vm.preview(context, more = true) }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_more)) }
-        }
+        PortableImportDifferences(plan, state.choices, state.busy, onDismiss = { if (state.busy) vm.cancel(); showDifferences = false },
+            onSave = { choices -> showDifferences = false; vm.saveChoices(context, choices) },
+            onMore = { choices -> vm.choices(choices); vm.preview(context, more = true) })
     }
     if (showIssues) state.plan?.let { plan ->
         NekoDialog(onDismiss = { showIssues = false }, title = stringResource(R.string.safe_import_dependencies_title),
@@ -476,14 +320,14 @@ private fun ImportSteps(step: SafeImportStep) {
 }
 
 @Composable private fun ImportStat(label: String, count: Int, modifier: Modifier) {
-    Column(modifier) { Text(count.toString(), style = MaterialTheme.typography.headlineMedium); Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    Row(modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)); Text(count.toString(), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium) }
 }
 
 private val INDEPENDENT_MEMORY_TABLES = setOf("companion_scopes", "companion_memories", "companion_sources", "companion_receipts",
     "companion_forgotten_sources", "companion_pending", "companion_vectors", "companion_clarifications", "companion_owners")
 
 /** Recognition only: dedicated formats retain their own existing validation/permission screens. */
-private fun recognizeDedicatedImport(context: Context, uri: Uri): String? = runCatching {
+internal fun recognizeDedicatedImport(context: Context, uri: Uri): String? = runCatching {
     val prefix = context.contentResolver.openInputStream(uri)?.use { input -> ByteArray(4096).let { data -> val count = input.read(data); data.copyOf(count.coerceAtLeast(0)) } } ?: return null
     if (prefix.take(4) == listOf(0x89.toByte(), 0x50.toByte(), 0x4e.toByte(), 0x47.toByte())) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
@@ -536,7 +380,7 @@ private fun recognizeDedicatedImport(context: Context, uri: Uri): String? = runC
     } else if (text.startsWith("%PDF") || context.contentResolver.getType(uri)?.startsWith("text/") == true) Routes.KNOWLEDGE else null
 }.getOrNull()
 
-@Composable private fun importDetailLabel(detail: PortableCategoryDetail): String {
+@Composable internal fun importDetailLabel(detail: PortableCategoryDetail): String {
     val key = detail.key.removePrefix("table:")
     return when (key) {
         "companion_memories" -> stringResource(R.string.safe_import_memory_bodies)
@@ -550,7 +394,7 @@ private fun recognizeDedicatedImport(context: Context, uri: Uri): String? = runC
     }
 }
 
-@Composable private fun importFieldLabel(column: String): String = when (column) {
+@Composable internal fun importFieldLabel(column: String): String = when (column) {
     "content" -> stringResource(R.string.safe_import_field_content)
     "name", "title" -> stringResource(R.string.safe_import_field_name)
     "category" -> stringResource(R.string.safe_import_field_category)
