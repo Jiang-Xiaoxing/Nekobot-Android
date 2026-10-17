@@ -830,7 +830,7 @@ fun NekobotNavGraph() {
                 WorkspaceManagerScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.DATA_PORTABILITY) {
-                DataPortabilityScreen(onBack = { navController.popBackStack() })
+                DataPortabilityScreen(onBack = { navController.popBackStack() }, onNavigate = { navController.navigate(it) })
             }
             composable(Routes.STICKERS) {
                 StickerStoreScreen(onBack = { navController.popBackStack() })

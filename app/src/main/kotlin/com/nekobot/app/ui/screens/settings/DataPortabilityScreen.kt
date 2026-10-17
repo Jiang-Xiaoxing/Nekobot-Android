@@ -97,9 +97,6 @@ class DataPortabilityViewModel : BaseViewModel() {
     private val _current = MutableStateFlow<List<PortableCategorySummary>>(emptyList())
     val current: StateFlow<List<PortableCategorySummary>> = _current.asStateFlow()
 
-    private val _preview = MutableStateFlow<PortableArchivePreview?>(null)
-    val preview: StateFlow<PortableArchivePreview?> = _preview.asStateFlow()
-
     fun loadCurrent(context: Context) {
         viewModelScope.launch {
             runCatching { PortableDataArchiveManager(context).scanCurrent() }
@@ -138,62 +135,14 @@ class DataPortabilityViewModel : BaseViewModel() {
         }
     }
 
-    fun inspect(context: Context, uri: Uri, password: String) {
-        viewModelScope.launch {
-            setLoading(true)
-            clearError()
-            try {
-                _preview.value = context.contentResolver.openInputStream(uri)?.use { input ->
-                    PortableDataArchiveManager(context).inspect(input, password)
-                } ?: error(string(R.string.portability_open_input_failed))
-            } catch (error: Exception) {
-                _preview.value = null
-                showError(error.message ?: string(R.string.portability_inspect_failed))
-            } finally {
-                setLoading(false)
-            }
-        }
-    }
-
-    fun import(
-        context: Context,
-        uri: Uri,
-        password: String,
-        categories: Set<PortableDataCategory>
-    ) {
-        viewModelScope.launch {
-            setLoading(true)
-            clearError()
-            try {
-                val result = context.contentResolver.openInputStream(uri)?.use { input ->
-                    PortableDataArchiveManager(context).import(input, password, categories)
-                } ?: error(string(R.string.portability_open_input_failed))
-                showToast(
-                    string(
-                        R.string.portability_import_success,
-                        result.categories,
-                        result.importedRows,
-                        result.importedFiles
-                    )
-                )
-                _preview.value = null
-                loadCurrent(context)
-            } catch (error: Exception) {
-                showError(error.message ?: string(R.string.portability_import_failed))
-            } finally {
-                setLoading(false)
-            }
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DataPortabilityScreen(onBack: () -> Unit) {
+fun DataPortabilityScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     val context = LocalContext.current
     val vm: DataPortabilityViewModel = viewModel()
     val current by vm.current.collectAsStateWithLifecycle()
-    val preview by vm.preview.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val toast by vm.toast.collectAsStateWithLifecycle()
@@ -217,11 +166,9 @@ fun DataPortabilityScreen(onBack: () -> Unit) {
     var pendingExportPassword by remember { mutableStateOf("") }
     var exportDetails by remember { mutableStateOf<Map<String, Set<String>>>(emptyMap()) }
     var detailCategory by remember { mutableStateOf<PortableDataCategory?>(null) }
-    var importUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var importFileName by rememberSaveable { mutableStateOf<String?>(null) }
-    var importPassword by remember { mutableStateOf("") }
-    var importSelection by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
-    var confirmImport by remember { mutableStateOf(false) }
+    var safeImportBusy by remember { mutableStateOf(false) }
+    val safeImportVm: SafePortableImportViewModel = viewModel()
+    androidx.activity.compose.BackHandler(enabled = safeImportBusy) { safeImportVm.cancel() }
 
     LaunchedEffect(Unit) { vm.loadCurrent(context) }
     LaunchedEffect(current) {
@@ -241,9 +188,6 @@ fun DataPortabilityScreen(onBack: () -> Unit) {
             vm.clearToast()
         }
     }
-    LaunchedEffect(preview) {
-        preview?.let { value -> importSelection = value.categories.mapTo(linkedSetOf()) { it.category.id } }
-    }
 
     val createArchive = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -262,20 +206,13 @@ fun DataPortabilityScreen(onBack: () -> Unit) {
         pendingExport = emptySet()
         pendingExportPassword = ""
     }
-    val openArchive = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            importUri = uri.toString()
-            importFileName = displayName(context, uri)
-            vm.inspect(context, uri, importPassword)
-        }
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.portability_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (safeImportBusy) safeImportVm.cancel() else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
@@ -309,6 +246,12 @@ fun DataPortabilityScreen(onBack: () -> Unit) {
                 }
             }
 
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    SafePortableImportPanel(onNavigate = onNavigate, externalBusy = loading,
+                        onBusyChanged = { safeImportBusy = it }, onCompleted = { vm.loadCurrent(context) })
+                }
+            }
             item {
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
                     SectionHeader(
@@ -368,7 +311,7 @@ fun DataPortabilityScreen(onBack: () -> Unit) {
                                 createArchive.launch(suggestedArchiveName())
                             }
                         },
-                        enabled = !loading,
+                        enabled = !loading && !safeImportBusy,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Filled.CloudUpload, contentDescription = null)
@@ -378,118 +321,8 @@ fun DataPortabilityScreen(onBack: () -> Unit) {
                 }
             }
 
-            item {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(
-                        title = stringResource(R.string.portability_import_title),
-                        subtitle = stringResource(R.string.portability_import_subtitle)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = {
-                            openArchive.launch(
-                                arrayOf("application/octet-stream", "application/zip", "application/json", "*/*")
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.SwapVert, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.portability_choose_archive))
-                    }
-                    importFileName?.let { name ->
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = importPassword,
-                        onValueChange = { importPassword = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.portability_import_password)) },
-                        supportingText = { Text(stringResource(R.string.portability_import_password_hint)) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true
-                    )
-                    if (importUri != null) {
-                        Spacer(Modifier.height(8.dp))
-                        TextButton(
-                            onClick = { vm.inspect(context, Uri.parse(importUri), importPassword) },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text(stringResource(R.string.portability_analyze_archive))
-                        }
-                    }
-
-                    preview?.let { archive ->
-                        Spacer(Modifier.height(8.dp))
-                        ArchiveSummary(archive)
-                        Spacer(Modifier.height(6.dp))
-                        SelectionActions(
-                            onAll = { importSelection = archive.categories.mapTo(linkedSetOf()) { it.category.id } },
-                            onClear = { importSelection = emptySet() }
-                        )
-                        archive.categories.forEach { summary ->
-                            CategorySelectionRow(
-                                summary = summary,
-                                selected = summary.category.id in importSelection,
-                                onToggle = { selected ->
-                                    importSelection = importSelection.toggle(summary.category.id, selected)
-                                },
-                                onClick = {}
-                            )
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            stringResource(R.string.portability_merge_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = {
-                                if (importSelection.isEmpty()) vm.showError(context.getString(R.string.portability_select_one))
-                                else confirmImport = true
-                            },
-                            enabled = !loading,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.portability_import_action, importSelection.size))
-                        }
-                    }
-                }
-            }
         }
         LoadingOverlay(visible = loading)
-    }
-
-    if (confirmImport) {
-        NekoDialog(
-            onDismiss = { confirmImport = false },
-            title = stringResource(R.string.portability_confirm_title),
-            message = stringResource(R.string.portability_confirm_message, importSelection.size),
-            confirmText = stringResource(R.string.portability_confirm_action),
-            onConfirm = {
-                confirmImport = false
-                val uri = importUri?.let(Uri::parse) ?: return@NekoDialog
-                vm.import(
-                    context,
-                    uri,
-                    importPassword,
-                    importSelection.mapNotNullTo(linkedSetOf(), PortableDataCategory::fromId)
-                )
-            },
-            cancelText = stringResource(R.string.common_cancel),
-            onCancel = { confirmImport = false }
-        )
     }
 
     detailCategory?.let { category ->
@@ -665,7 +498,7 @@ private fun categoryIcon(category: PortableDataCategory): ImageVector = when (ca
 }
 
 @Composable
-private fun categoryLabel(category: PortableDataCategory): String = stringResource(
+internal fun categoryLabel(category: PortableDataCategory): String = stringResource(
     when (category) {
         PortableDataCategory.CONVERSATIONS -> R.string.portability_category_conversations
         PortableDataCategory.CHARACTERS -> R.string.portability_category_characters
@@ -705,7 +538,7 @@ private fun categoryDescription(category: PortableDataCategory): String = string
 )
 
 @Composable
-private fun portableDetailLabel(detail: PortableCategoryDetail): String {
+internal fun portableDetailLabel(detail: PortableCategoryDetail): String {
     val key = detail.key.substringAfter(':')
     val resourceId = when (key) {
         "local_sessions" -> R.string.portability_detail_local_sessions
