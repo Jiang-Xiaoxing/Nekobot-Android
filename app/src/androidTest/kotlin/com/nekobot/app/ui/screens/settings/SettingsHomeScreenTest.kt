@@ -247,6 +247,11 @@ class SettingsHomeScreenTest {
                 }
             }
         }
+        screenshot("normal-common")
+        compose.onNodeWithTag("settings-home-data_portability").performScrollTo()
+        screenshot("normal-data")
+        compose.onNodeWithTag("settings-home-about").performScrollTo()
+        screenshot("normal-support")
         compose.onNodeWithTag("settings-home-connection").performScrollTo()
         fun homeScroll() = compose.onNodeWithTag("settings-home-scroll").fetchSemanticsNode()
             .config[SemanticsProperties.VerticalScrollAxisRange].value()
