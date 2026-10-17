@@ -1,0 +1,24 @@
+<resources>
+    <string name="companion_conversion_configure">설정</string>
+    <string name="companion_conversion_start">변환</string>
+    <string name="companion_conversion_no_model">변환에 사용할 모델을 선택하세요</string>
+    <string name="companion_conversion_intro">이 대화를 Agent 캐릭터의 독립된 기억으로 정리합니다. 완료 후 새 사본으로 자동으로 가져오며 원본은 유지됩니다.</string>
+    <string name="companion_conversion_service_notice">대화와 이전 기억 참고 자료를 선택한 제공업체에 전송하며 해당 요금이 적용됩니다. 기록이 많으면 시간이 걸립니다. 중지 후 이어서 진행할 수 있습니다.</string>
+    <string name="companion_conversion_rules">변환 규칙</string>
+    <string name="companion_conversion_model_title">변환 모델 선택</string>
+    <string name="companion_conversion_model_hint">설정된 일반 채팅 모델을 사용합니다. 평소 사용하는 채팅 모델은 바뀌지 않습니다.</string>
+    <string name="companion_conversion_empty_models">사용 가능한 채팅 모델이 없습니다. 제공업체와 모델을 추가한 후 선택하세요.</string>
+    <string name="companion_conversion_manage_models">모델 추가 또는 관리</string>
+    <string name="companion_conversion_rule_version">규칙 버전: %1$s</string>
+    <string name="companion_conversion_rules_hint">실제로 모델에 보내는 규칙입니다. 출력 형식을 확인하거나 전체 내용을 복사할 수 있습니다.</string>
+    <string name="companion_conversion_output_format">모델 출력 형식 보기</string>
+    <string name="companion_conversion_copy_rules">전체 규칙 복사</string>
+    <string name="companion_conversion_copied">복사됨</string>
+    <string name="companion_conversion_stopped">변환이 중지되었습니다. 완료된 부분은 저장됩니다. 변환을 눌러 계속하세요.</string>
+    <string name="companion_conversion_copy_error_report">오류 보고서 복사</string>
+    <string name="companion_conversion_view_report">오류 보고서 보기</string>
+    <string name="companion_conversion_hide_report">오류 보고서 접기</string>
+    <string name="companion_conversion_previous_errors">이전 오류 보고서</string>
+    <string name="companion_conversion_report_hint">개발자나 AI에게 공유해 원인을 확인할 수 있습니다. API 키와 대화 본문은 포함하지 않습니다. 최근 오류 5개를 이 변환 기록과 함께 기기에 저장합니다.</string>
+    <string name="companion_conversion_wait_limit">배치별 대기 한도: %1$d초</string>
+</resources>

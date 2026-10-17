@@ -3,7 +3,10 @@ package com.nekobot.app.ui.screens.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -51,12 +54,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewModelScope
 import com.google.gson.JsonElement
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
@@ -69,9 +74,13 @@ import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.theme.accentSecondary
 import com.nekobot.app.ui.theme.accentWarning
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 日志条目：本地日志与服务端日志的统一模型。 */
 data class LogEntry(
@@ -96,18 +105,52 @@ class LogViewerViewModel : BaseViewModel() {
 
     fun load() {
         if (isLocal) {
-            _logs.value = LocalLogger.listLogs().map { rec ->
-                LogEntry(
-                    time = "${rec.date} ${rec.time}",
-                    level = rec.level,
-                    message = if (rec.tag.isNotBlank()) "[${rec.tag}] ${rec.message}" else rec.message
-                )
-            }
+            _logs.value = readLocalLogs()
         } else {
             launchResult(
                 block = { repo.listLogs() },
                 onSuccess = { _logs.value = parseServerLogs(it) }
             )
+        }
+    }
+
+    private var pendingLogExport: List<LogEntry>? = null
+    private val _exporting = MutableStateFlow(false)
+    val exporting: StateFlow<Boolean> = _exporting.asStateFlow()
+
+    /** 点击时冻结完整快照；本地读取最新记录，不受页面筛选影响，也不重复请求服务器。 */
+    fun prepareLogExport(): Boolean {
+        if (_exporting.value) return false
+        val snapshot = if (isLocal) readLocalLogs() else _logs.value.toList()
+        if (snapshot.isEmpty()) return false
+        pendingLogExport = snapshot
+        _exporting.value = true
+        return true
+    }
+
+    fun exportLogs(context: Context, destination: Uri?) {
+        val snapshot = pendingLogExport ?: return
+        pendingLogExport = null
+        if (destination == null) {
+            _exporting.value = false
+            return
+        }
+        val resolver = context.applicationContext.contentResolver
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val output = resolver.openOutputStream(destination, "wt")
+                        ?: error("Cannot open log export destination")
+                    output.use { writeLogExport(snapshot, it) }
+                }
+                showToast(string(R.string.logs_export_saved))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                showError(string(R.string.logs_export_failed))
+            } finally {
+                _exporting.value = false
+            }
         }
     }
 
@@ -117,6 +160,15 @@ class LogViewerViewModel : BaseViewModel() {
         _logs.value = emptyList()
         showToast(string(R.string.settings_local_logs_cleared))
     }
+}
+
+/** 与日志页共用同一份已脱敏的应用日志，不导出系统 logcat。 */
+private fun readLocalLogs(): List<LogEntry> = LocalLogger.listLogs().map { rec ->
+    LogEntry(
+        time = "${rec.date} ${rec.time}",
+        level = rec.level,
+        message = if (rec.tag.isNotBlank()) "[${rec.tag}] ${rec.message}" else rec.message
+    )
 }
 
 /** 解析服务端日志 JSON 数组（按时间降序）。 */
@@ -156,7 +208,7 @@ private fun LogEntry.matchesKeywords(keywords: List<String>): Boolean {
 }
 
 /**
- * 日志查看页：等级筛选 + 关键词搜索 + 复制 / 清空。
+ * 日志查看页：等级筛选 + 关键词搜索 + 复制 / 导出整份日志 / 清空。
  *
  * 取代设置页原先的「查看 / 清空 / 诊断」三按钮排布，作为单一入口的完整日志界面。
  */
@@ -165,6 +217,7 @@ private fun LogEntry.matchesKeywords(keywords: List<String>): Boolean {
 fun LogViewerScreen(onBack: () -> Unit) {
     val vm: LogViewerViewModel = viewModel()
     val logs by vm.logs.collectAsStateWithLifecycle()
+    val exporting by vm.exporting.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val toast by vm.toast.collectAsStateWithLifecycle()
@@ -174,6 +227,10 @@ fun LogViewerScreen(onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var levelFilter by remember { mutableStateOf(LogLevelFilter.ALL) }
     var showClearConfirm by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { vm.exportLogs(context, it) }
 
     LaunchedEffect(Unit) { vm.load() }
 
@@ -223,6 +280,25 @@ fun LogViewerScreen(onBack: () -> Unit) {
                         Icon(
                             Icons.Filled.ContentCopy,
                             contentDescription = stringResource(R.string.diagnostic_copy_log),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (vm.prepareLogExport()) {
+                                try {
+                                    exportLauncher.launch(logExportFileName())
+                                } catch (_: Exception) {
+                                    vm.exportLogs(context, null)
+                                    vm.showError(context.getString(R.string.logs_export_failed))
+                                }
+                            }
+                        },
+                        enabled = logs.isNotEmpty() && !exporting
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_log_export),
+                            contentDescription = stringResource(R.string.logs_export_all),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -355,7 +431,7 @@ fun LogViewerScreen(onBack: () -> Unit) {
                 }
             }
 
-            LoadingOverlay(visible = loading)
+            LoadingOverlay(visible = loading || exporting)
         }
     }
 

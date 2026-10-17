@@ -12,6 +12,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import com.nekobot.app.ui.components.withoutBorder as border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.horizontalScroll
@@ -38,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -84,14 +87,22 @@ fun MarkdownText(
     color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     chatMode: Boolean = false,
-    processParens: Boolean = true
+    processParens: Boolean = true,
+    isStreaming: Boolean = false
 ) {
     if (text.isBlank()) return
     // 预处理保留为兼容入口；区块和行内语义直接解析原文，不再注入可泄漏的占位字符。
     val preprocessed = remember(text, chatMode, processParens) { preprocessMarkdown(text, chatMode, processParens) }
-    val blocks = remember(preprocessed, chatMode) { parseBlocks(preprocessed, chatMode) }
+    val showInner = LocalShowInnerMonologue.current
+    val blocks = remember(preprocessed, chatMode, showInner, isStreaming) {
+        visibleMarkdownBlocks(preprocessed, chatMode, showInner, isStreaming)
+    }
 
-    Column(modifier = modifier) {
+    // 先按最长可见文本/折叠标题定宽，再让独白条、引用等填满这一宽度。
+    // 图片、代码和表格保留原来的专用测量，避免对含子组合的内容请求固有尺寸。
+    Column(modifier = modifier.then(
+        if (chatMode && chatMarkdownWrapsWidth(blocks)) Modifier.width(IntrinsicSize.Max) else Modifier
+    )) {
         blocks.forEachIndexed { index, block ->
             RenderBlock(
                 block = block,
@@ -101,6 +112,290 @@ fun MarkdownText(
                 modifier = blockSpacing(block, isFirst = index == 0, isLast = index == blocks.lastIndex)
             )
         }
+    }
+}
+
+internal fun chatMarkdownWrapsWidth(blocks: List<MdBlock>): Boolean = blocks.none {
+    it is MdBlock.CodeBlock || it is MdBlock.Table || it is MdBlock.Image
+}
+
+/** null 表示普通正文；空列表表示已识别、尚未闭合的流式纯独白。 */
+internal fun companionMonologueBlocks(text: String, isStreaming: Boolean): List<MdBlock.InnerMonologue>? {
+    // token 可能停在「（内」「（内心」处；先暂存可能的独白前缀，避免新泡闪一下再并回正文。
+    val prefix = text.trim()
+    if (isStreaming && prefix.isNotEmpty() && INNER_LABELS.any { label ->
+        listOf("（$label：", "（$label:", "($label：", "($label:").any { it.startsWith(prefix) }
+    }) return emptyList()
+    val blocks = parseBlocks(text, chatMode = true)
+    if (blocks.isNotEmpty() && blocks.all { it is MdBlock.InnerMonologue }) {
+        return blocks.filterIsInstance<MdBlock.InnerMonologue>()
+    }
+    if (isStreaming && text.isNotBlank() && visibleMarkdownBlocks(text, true, false, true).isEmpty()) {
+        return emptyList()
+    }
+    return null
+}
+
+internal data class CompanionMarkdownPart(val sourceIndex: Int, val text: String)
+
+internal fun companionBubbleMarkdownBlocks(text: String, showInnerMonologue: Boolean, isStreaming: Boolean): List<MdBlock> =
+    if (companionMonologueBlocks(text, isStreaming)?.isEmpty() == true) emptyList()
+    else visibleMarkdownBlocks(text, true, showInnerMonologue, isStreaming)
+
+/** 仅供单会话角色的文字气泡调用；各源段分别解析，避免拼接改变 Markdown 结构。 */
+@Composable
+internal fun CompanionBubbleMarkdownText(
+    parts: List<CompanionMarkdownPart>,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    isStreaming: Boolean,
+    selectionMode: Boolean,
+    onToggleSelection: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val showInner = LocalShowInnerMonologue.current
+    val parsed = remember(parts, showInner, isStreaming) {
+        parts.map { it.sourceIndex to companionBubbleMarkdownBlocks(it.text, showInner, isStreaming) }
+    }
+    val allBlocks = parsed.flatMap { it.second }
+    Column(modifier.then(if (chatMarkdownWrapsWidth(allBlocks)) Modifier.width(IntrinsicSize.Max) else Modifier)) {
+        parsed.forEach { (sourceIndex, blocks) ->
+            key(sourceIndex) {
+                blocks.forEachIndexed { index, block ->
+                    if (block is MdBlock.InnerMonologue) {
+                        CompanionMonologueFooter(block, color, style, selectionMode, onToggleSelection, onLongClick)
+                    } else {
+                        RenderBlock(block, color, style, styleParentheses = true,
+                            modifier = blockSpacing(block, isFirst = index == 0, isLast = index == blocks.lastIndex))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CompanionMonologueFooter(
+    block: MdBlock.InnerMonologue,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    selectionMode: Boolean,
+    onToggleSelection: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val ink = color.copy(alpha = 0.76f)
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(color.copy(alpha = 0.14f)))
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                .combinedClickable(
+                    onClick = { if (selectionMode) onToggleSelection() else expanded = !expanded },
+                    onLongClick = onLongClick
+                ),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(stringResource(R.string.markdown_inner_monologue), color = ink,
+                style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.width(4.dp))
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = stringResource(if (expanded) R.string.markdown_collapse else R.string.markdown_expand),
+                tint = ink, modifier = Modifier.size(16.dp))
+        }
+        AnimatedVisibility(expanded, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            MarkdownInlineText(
+                text = parseRenderedInline(block.content, ink, style, styleParentheses = true),
+                style = style.copy(lineHeight = markdownBodyLineHeight(style)),
+                color = ink,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 聊天设置「显示内心独白」：false 时聊天气泡完全跳过 `（内心：...）` 段，不留灰色块。
+ * 仅影响渲染；消息原文、复制与搜索不变。默认 true 保持原行为。
+ */
+val LocalShowInnerMonologue = staticCompositionLocalOf { true }
+/** 单会话气泡采用紧凑淡灰独白条；正文和复制仍使用原文。 */
+val LocalCompactInnerMonologue = staticCompositionLocalOf { false }
+
+/** 仅由单会话角色气泡提供；用户消息及其他 Markdown 页面继续沿用原配色。 */
+internal data class MarkdownBubbleColors(
+    val link: androidx.compose.ui.graphics.Color,
+    val surface: androidx.compose.ui.graphics.Color,
+    val onSurface: androidx.compose.ui.graphics.Color,
+    val surfaceLink: androidx.compose.ui.graphics.Color,
+    val parentheses: androidx.compose.ui.graphics.Color
+)
+internal val LocalMarkdownBubbleColors = staticCompositionLocalOf<MarkdownBubbleColors?> { null }
+/** 双方气泡只覆盖正文链接；独白条和代码块继续使用各自表面配色。 */
+internal val LocalMarkdownBubbleLinkColor = staticCompositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
+
+internal fun markdownLinkColor(
+    colors: MarkdownBubbleColors?,
+    bubbleLinkColor: androidx.compose.ui.graphics.Color?,
+    onSurface: Boolean = false
+): androidx.compose.ui.graphics.Color =
+    (if (onSurface) colors?.surfaceLink else bubbleLinkColor ?: colors?.link)
+        ?: androidx.compose.ui.graphics.Color(0xFF58A6FF)
+
+@Composable
+private fun parseRenderedInline(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    styleParentheses: Boolean = false,
+    onSurface: Boolean = false
+): AnnotatedString {
+    val colors = LocalMarkdownBubbleColors.current
+    return parseInline(text, color, style, styleParentheses,
+        linkColor = markdownLinkColor(colors, LocalMarkdownBubbleLinkColor.current, onSurface),
+        parenthesesColor = if (onSurface) colors?.onSurface ?: color.copy(alpha = 0.62f)
+            else colors?.parentheses ?: color.copy(alpha = 0.62f))
+}
+
+/** 关闭独白时，流式未闭合尾段也隐藏；生成结束仍未闭合才原样保留。 */
+internal fun visibleMarkdownBlocks(
+    text: String,
+    chatMode: Boolean,
+    showInnerMonologue: Boolean,
+    isStreaming: Boolean = false
+): List<MdBlock> {
+    if (!chatMode || showInnerMonologue) return parseBlocks(text, chatMode)
+    return parseBlocks(stripHiddenInnerMonologue(text, isStreaming), chatMode)
+        .filterNot { it is MdBlock.InnerMonologue }
+}
+
+private val INNER_LABELS = arrayOf("内心", "心里", "心想", "内白")
+
+/** 隐藏独白（流式时包括未闭合尾段），全角半角括号和冒号都认。代码块与行内代码原样保留。 */
+private fun stripHiddenInnerMonologue(text: String, isStreaming: Boolean): String {
+    val out = StringBuilder()
+    var i = 0
+    while (i < text.length) {
+        if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
+            val fenceEnd = endOfMarkdownFence(text, i)
+            if (fenceEnd < 0) {
+                out.append(text.substring(i))
+                return out.toString()
+            }
+            out.append(text.substring(i, fenceEnd))
+            i = fenceEnd
+            continue
+        }
+        if (text[i] == '`') {
+            val close = text.indexOf('`', i + 1)
+            if (close < 0) {
+                // 落单反引号是正文，不能让后续真正的独白变成代码。
+                out.append(text[i++])
+                continue
+            }
+            out.append(text.substring(i, close + 1))
+            i = close + 1
+            continue
+        }
+        val openLen = innerMonologueOpenLength(text, i)
+        if (openLen > 0) {
+            val close = indexOfCloseParenOutsideCode(text, i + openLen)
+            if (close < 0) {
+                if (isStreaming) appendCodeRegions(out, text, i, text.length)
+                else out.append(text.substring(i))
+                return out.toString()
+            }
+            appendCodeRegions(out, text, i, close + 1)
+            i = close + 1
+            continue
+        }
+        out.append(text[i])
+        i++
+    }
+    return out.toString()
+}
+
+private fun innerMonologueOpenLength(text: String, index: Int): Int {
+    if (index >= text.length || (text[index] != '（' && text[index] != '(')) return 0
+    val rest = text.substring(index + 1)
+    for (label in INNER_LABELS) {
+        if (!rest.startsWith(label)) continue
+        val colon = index + 1 + label.length
+        if (colon < text.length && (text[colon] == '：' || text[colon] == ':')) return colon - index + 1
+    }
+    return 0
+}
+
+private fun isMarkdownLineStart(text: String, index: Int): Boolean = index == 0 || text[index - 1] == '\n'
+
+/** 围栏从开行算到闭合行之后；没闭合就返回 -1，剩下的都算代码。 */
+private fun endOfMarkdownFence(text: String, openIndex: Int): Int {
+    val lineEnd = text.indexOf('\n', openIndex)
+    if (lineEnd < 0) return -1
+    var i = lineEnd + 1
+    while (i < text.length) {
+        if (text.startsWith("```", i)) {
+            val closeLineEnd = text.indexOf('\n', i)
+            return if (closeLineEnd < 0) text.length else closeLineEnd + 1
+        }
+        val next = text.indexOf('\n', i)
+        if (next < 0) return -1
+        i = next + 1
+    }
+    return -1
+}
+
+private fun indexOfCloseParenOutsideCode(text: String, start: Int): Int {
+    var i = start
+    var depth = 1
+    while (i < text.length) {
+        if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
+            val fenceEnd = endOfMarkdownFence(text, i)
+            if (fenceEnd < 0) return -1
+            i = fenceEnd
+            continue
+        }
+        if (text[i] == '`') {
+            val close = text.indexOf('`', i + 1)
+            i = if (close < 0) i + 1 else close + 1
+            continue
+        }
+        when (text[i]) {
+            '（', '(' -> depth++
+            '）', ')' -> if (--depth == 0) return i
+        }
+        i++
+    }
+    return -1
+}
+
+/** 删掉独白正文时，把夹在中间的代码原样留下。 */
+private fun appendCodeRegions(out: StringBuilder, text: String, start: Int, end: Int) {
+    var i = start
+    while (i < end) {
+        if (isMarkdownLineStart(text, i) && text.startsWith("```", i)) {
+            val fenceEnd = endOfMarkdownFence(text, i)
+            if (fenceEnd < 0 || fenceEnd > end) {
+                if (end == text.length) out.append(text.substring(i))
+                return
+            }
+            out.append(text.substring(i, fenceEnd))
+            i = fenceEnd
+            continue
+        }
+        if (text[i] == '`') {
+            val close = text.indexOf('`', i + 1)
+            if (close < 0 || close >= end) {
+                i++
+                continue
+            }
+            out.append(text.substring(i, close + 1))
+            i = close + 1
+            continue
+        }
+        i++
     }
 }
 
@@ -322,21 +617,22 @@ private const val SEG_INNER = 1
  */
 private fun splitInnerSegments(line: String): List<Pair<Int, String>> {
     val result = mutableListOf<Pair<Int, String>>()
-    val innerRegex = Regex("[（(](?:内心|心里|心想|内白)[：:]([^（）()]*?)[）)]")
-    val matches = innerRegex.findAll(line)
-        .filterNot { match -> line.take(match.range.first).count { it == '`' } % 2 == 1 }
-        .toList()
-    if (matches.isEmpty()) return listOf(SEG_TEXT to line)
-
     var pos = 0
-    matches.forEach { match ->
-        val start = match.range.first
-        if (start > pos) {
-            val before = line.substring(pos, start)
-            if (before.isNotEmpty()) result.add(SEG_TEXT to before)
+    var i = 0
+    while (i < line.length) {
+        if (line[i] == '`') {
+            val close = line.indexOf('`', i + 1)
+            i = if (close < 0) i + 1 else close + 1
+            continue
         }
-        result.add(SEG_INNER to match.groupValues[1])
-        pos = match.range.last + 1
+        val openLen = innerMonologueOpenLength(line, i)
+        if (openLen == 0) { i++; continue }
+        val close = indexOfCloseParenOutsideCode(line, i + openLen)
+        if (close < 0) break
+        if (i > pos) result.add(SEG_TEXT to line.substring(pos, i))
+        result.add(SEG_INNER to line.substring(i + openLen, close))
+        i = close + 1
+        pos = i
     }
     if (pos < line.length) {
         result.add(SEG_TEXT to line.substring(pos))
@@ -435,7 +731,7 @@ private fun RenderBlock(
     when (block) {
         is MdBlock.CodeBlock -> CodeBlockRenderer(block, modifier)
         is MdBlock.Header -> MarkdownInlineText(
-            text = parseInline(block.content, color, style, styleParentheses),
+            text = parseRenderedInline(block.content, color, style, styleParentheses),
             style = headerStyle(style, block.level),
             color = color,
             modifier = modifier
@@ -445,13 +741,15 @@ private fun RenderBlock(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(start = 8.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                .background(LocalMarkdownBubbleColors.current?.surface
+                    ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
                 .padding(8.dp)
         ) {
             MarkdownInlineText(
-                text = parseInline(block.content, color, style, styleParentheses),
+                text = parseRenderedInline(block.content, LocalMarkdownBubbleColors.current?.onSurface ?: color,
+                    style, styleParentheses, onSurface = true),
                 style = style.copy(lineHeight = markdownBodyLineHeight(style)),
-                color = color
+                color = LocalMarkdownBubbleColors.current?.onSurface ?: color
             )
         }
         is MdBlock.Table -> TableRenderer(block, color, style, modifier = modifier)
@@ -465,7 +763,7 @@ private fun RenderBlock(
         )
         is MdBlock.InnerMonologue -> InnerMonologueRenderer(block, color, style, modifier)
         is MdBlock.Paragraph -> MarkdownInlineText(
-            text = parseInline(block.content, color, style, styleParentheses),
+            text = parseRenderedInline(block.content, color, style, styleParentheses),
             style = style.copy(lineHeight = markdownBodyLineHeight(style)),
             color = color,
             modifier = modifier
@@ -531,11 +829,12 @@ private fun CodeBlockContent(
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val colors = if (fullscreen) null else LocalMarkdownBubbleColors.current
 
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .background(colors?.surface ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
     ) {
         if (showToolbar) {
             MarkdownBlockToolbar(
@@ -543,7 +842,8 @@ private fun CodeBlockContent(
                 onCopy = {
                     copyMarkdownText(context, clipboard, block.code)
                 },
-                onFullscreen = onFullscreen
+                onFullscreen = onFullscreen,
+                contentColor = colors?.onSurface ?: MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         SelectionContainer(
@@ -555,7 +855,7 @@ private fun CodeBlockContent(
             Text(
                 text = block.code,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors?.onSurface ?: MaterialTheme.colorScheme.onSurface,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(8.dp)
             )
@@ -580,7 +880,7 @@ private fun ListRenderer(
                     color = color
                 )
                 MarkdownInlineText(
-                    text = parseInline(item, color, style, styleParentheses),
+                    text = parseRenderedInline(item, color, style, styleParentheses),
                     style = style.copy(lineHeight = markdownBodyLineHeight(style)),
                     color = color,
                     modifier = Modifier.weight(1f)
@@ -695,6 +995,7 @@ private fun TableRenderer(
         }
     }
 
+    val fullscreenColor = if (LocalMarkdownBubbleColors.current != null) MaterialTheme.colorScheme.onSurface else color
     if (showFullscreen) {
         MarkdownFullscreenDialog(
             title = stringResource(R.string.markdown_table),
@@ -704,7 +1005,7 @@ private fun TableRenderer(
             LandscapeTableFullscreenContent(modifier = contentModifier) {
                 TableRenderer(
                     block = block,
-                    color = color,
+                    color = fullscreenColor,
                     style = style,
                     modifier = Modifier.fillMaxSize(),
                     fullscreen = true
@@ -758,7 +1059,7 @@ private fun androidx.compose.foundation.layout.RowScope.TableCell(
     ) {
         SelectionContainer(modifier = Modifier.fillMaxWidth()) {
             MarkdownInlineText(
-                text = parseInline(text, color, style),
+                text = parseRenderedInline(text, color, style),
                 style = style.copy(textAlign = TextAlign.Center),
                 color = color,
                 modifier = Modifier.fillMaxWidth()
@@ -771,7 +1072,9 @@ private fun androidx.compose.foundation.layout.RowScope.TableCell(
 private fun MarkdownBlockToolbar(
     title: String,
     onCopy: () -> Unit,
-    onFullscreen: (() -> Unit)?
+    onFullscreen: (() -> Unit)?,
+    contentColor: androidx.compose.ui.graphics.Color = LocalMarkdownBubbleColors.current?.parentheses
+        ?: MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     Row(
         modifier = Modifier
@@ -782,7 +1085,7 @@ private fun MarkdownBlockToolbar(
         Text(
             text = title,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = contentColor,
             modifier = Modifier.weight(1f),
             maxLines = 1
         )
@@ -790,7 +1093,7 @@ private fun MarkdownBlockToolbar(
             Icon(
                 Icons.Filled.ContentCopy,
                 contentDescription = stringResource(R.string.common_copy),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = contentColor,
                 modifier = Modifier.size(15.dp)
             )
         }
@@ -799,7 +1102,7 @@ private fun MarkdownBlockToolbar(
                 Icon(
                     Icons.Filled.Fullscreen,
                     contentDescription = stringResource(R.string.markdown_fullscreen),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = contentColor,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -861,7 +1164,12 @@ private fun MarkdownFullscreenDialog(
                         )
                     }
                 }
-                content(Modifier.weight(1f).fillMaxWidth())
+                CompositionLocalProvider(
+                    LocalMarkdownBubbleColors provides null,
+                    LocalMarkdownBubbleLinkColor provides null
+                ) {
+                    content(Modifier.weight(1f).fillMaxWidth())
+                }
             }
         }
     }
@@ -894,26 +1202,33 @@ private fun InnerMonologueRenderer(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val compact = LocalCompactInnerMonologue.current
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val colors = LocalMarkdownBubbleColors.current
+    val stripColor = colors?.surface ?: if (compact && !dark) androidx.compose.ui.graphics.Color(0xFFEDF0EF)
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (compact) 0.65f else 0.35f)
+    val stripInk = colors?.onSurface ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val expandedInk = colors?.onSurface ?: color.copy(alpha = 0.6f)
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .background(stripColor)
             .clickable { expanded = !expanded }
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = if (compact) 10.dp else 8.dp, vertical = if (compact) 8.dp else 4.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.markdown_inner_monologue),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelSmall,
+                color = stripInk,
                 modifier = Modifier.weight(1f)
             )
             Icon(
                 if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) stringResource(R.string.markdown_collapse) else stringResource(R.string.markdown_expand),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = stripInk,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -923,9 +1238,9 @@ private fun InnerMonologueRenderer(
             exit = shrinkVertically() + fadeOut()
         ) {
             MarkdownInlineText(
-                text = parseInline(block.content, color.copy(alpha = 0.6f), style.copy(fontStyle = FontStyle.Italic)),
+                text = parseRenderedInline(block.content, expandedInk, style.copy(fontStyle = FontStyle.Italic), onSurface = true),
                 style = style.copy(fontStyle = FontStyle.Italic),
-                color = color.copy(alpha = 0.6f),
+                color = expandedInk,
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
@@ -981,7 +1296,9 @@ fun parseInline(
     text: String,
     baseColor: androidx.compose.ui.graphics.Color,
     baseStyle: androidx.compose.ui.text.TextStyle,
-    styleParentheses: Boolean = false
+    styleParentheses: Boolean = false,
+    linkColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF58A6FF),
+    parenthesesColor: androidx.compose.ui.graphics.Color = baseColor.copy(alpha = 0.62f)
 ): AnnotatedString {
     return buildAnnotatedString {
         var i = 0
@@ -1033,7 +1350,7 @@ fun parseInline(
                         withStyle(
                             SpanStyle(
                                 fontStyle = FontStyle.Italic,
-                                color = baseColor.copy(alpha = 0.62f)
+                                color = parenthesesColor
                             )
                         ) {
                             append(text.substring(i, end + 1))
@@ -1054,7 +1371,7 @@ fun parseInline(
                         val linkStart = length
                         withStyle(
                             SpanStyle(
-                                color = androidx.compose.ui.graphics.Color(0xFF58A6FF),
+                                color = linkColor,
                                 textDecoration = TextDecoration.Underline
                             )
                         ) {

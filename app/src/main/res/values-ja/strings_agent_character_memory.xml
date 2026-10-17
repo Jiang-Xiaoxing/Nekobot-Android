@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_character_memory_title">Agentキャラクター記憶</string>
+    <string name="agent_character_memory_desc">Agentキャラクター専用の人物像・経験・約束</string>
+    <string name="agent_character_memory_help">Agentキャラクターを選択して、独立して保存された記憶を確認します。</string>
+    <string name="agent_character_memory_empty">Agentキャラクターはまだありません。会話画面右上の「＋」から作成できます。</string>
+    <string name="agent_character_memory_local_only">ローカルモード専用です。</string>
+    <string name="agent_character_memory_open">記憶を表示</string>
+    <string name="agent_character_memory_unnamed">名前のないキャラクター</string>
+    <string name="agent_character_memory_back">戻る</string>
+    <string name="agent_character_memory_edit">Agentキャラクター記憶を編集</string>
+</resources>

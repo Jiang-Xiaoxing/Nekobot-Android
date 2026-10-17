@@ -51,12 +51,29 @@ import com.nekobot.app.data.local.LocalLogger
         LocalKnowledgeChunkEntity::class,
         RoutingDecisionLogEntity::class,
         LocalMessageVariantEntity::class,
-        LocalStickerEntity::class
+        LocalStickerEntity::class,
+        CompanionScopeEntity::class,
+        CompanionMemoryEntity::class,
+        CompanionSourceEntity::class,
+        CompanionReceiptEntity::class,
+        CompanionForgottenSourceEntity::class,
+        CompanionPendingEntity::class,
+        CompanionVectorEntity::class,
+        CompanionClarificationEntity::class,
+        CompanionOwnerEntity::class,
+        CompanionContextMaterialEntity::class,
+        CompanionRelationshipEntity::class,
+        CompanionRelationshipAssessmentEntity::class,
+        CompanionRelationshipEventEntity::class,
+        CompanionTransferJobEntity::class
     ],
-    version = 52,
+    version = 60,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
+    abstract fun companionRelationshipDao(): CompanionRelationshipDao
+    abstract fun companionTransferDao(): CompanionTransferDao
+    abstract fun companionMemoryDao(): CompanionMemoryDao
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
     abstract fun messageVariantDao(): MessageVariantDao
@@ -97,6 +114,12 @@ abstract class NekobotDatabase : RoomDatabase() {
         private set
 
     companion object {
+        /** 转换临时库不加入资料库实例表；逻辑归属与最终库一致，才能保持来源 ID。 */
+        internal fun conversionStage(context: Context, file: java.io.File, profile: String): NekobotDatabase {
+            val path = file.canonicalFile
+            require(path.name == "conversion.db" && path.toPath().startsWith(java.io.File(context.filesDir, "companion_transfers").canonicalFile.toPath()))
+            return Room.databaseBuilder(context, NekobotDatabase::class.java, path.path).build().also { it.dbName = profile }
+        }
         private const val TAG = "NekobotDatabase"
         /**
          * v1 → v2：local_sessions 新增 custom_prompts 列。
@@ -1207,6 +1230,70 @@ abstract class NekobotDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_52_53 = object : Migration(52, 53) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // main v52 has no companion tables. Keep all released migrations intact,
+                // and introduce the PR's memory/session structures only after that version.
+                CompanionSchema.create(db)
+                CompanionSchema.createSearch(db)
+                FusedCompanionSchema.migrate(db)
+                CompanionTransferSchema.migrate(db)
+            }
+        }
+
+        val MIGRATION_53_54 = object : Migration(53, 54) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE companion_memories ADD COLUMN coreExcluded INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_54_55 = object : Migration(54, 55) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE companion_scopes ADD COLUMN embeddingModelId TEXT")
+            }
+        }
+
+
+        val MIGRATION_55_56 = object : Migration(55, 56) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS companion_relationship_state (sessionId TEXT NOT NULL PRIMARY KEY, characterId TEXT NOT NULL, version INTEGER NOT NULL, enabled INTEGER NOT NULL, automatic INTEGER NOT NULL, interval INTEGER NOT NULL, modelId TEXT, awaitingHistory INTEGER NOT NULL, cursorId TEXT, baselineJson TEXT NOT NULL, legacy INTEGER NOT NULL, mood TEXT NOT NULL, energy TEXT NOT NULL, feelingReason TEXT NOT NULL, feelingSources TEXT NOT NULL, updatedAt INTEGER NOT NULL, notice TEXT, correctionResult TEXT, FOREIGN KEY(sessionId) REFERENCES local_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS companion_relationship_events (id TEXT NOT NULL PRIMARY KEY, sessionId TEXT NOT NULL, eventKey TEXT NOT NULL, revision INTEGER NOT NULL, summary TEXT NOT NULL, reason TEXT NOT NULL, kind TEXT NOT NULL, deltasJson TEXT NOT NULL, sourcesJson TEXT NOT NULL, createdAt INTEGER NOT NULL, corrected INTEGER NOT NULL, FOREIGN KEY(sessionId) REFERENCES companion_relationship_state(sessionId) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_companion_relationship_events_sessionId_eventKey_revision ON companion_relationship_events(sessionId,eventKey,revision)")
+            }
+        }
+
+        val MIGRATION_56_57 = object : Migration(56, 57) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_characters ADD COLUMN chat_model_queue TEXT DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_57_58 = object : Migration(57, 58) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 旧评估没有情绪强度依据，保留未知，不改变既有心情、积累和评估进度。
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN moodIntensity REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN historyScopeVersion INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN historyReviewRequired INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_58_59 = object : Migration(58, 59) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN narrativeJson TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE companion_relationship_state ADD COLUMN legacySnapshotJson TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE companion_relationship_events ADD COLUMN impactsJson TEXT DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS companion_relationship_assessments (id TEXT NOT NULL PRIMARY KEY, sessionId TEXT NOT NULL, revision INTEGER NOT NULL, narrativeJson TEXT NOT NULL, createdAt INTEGER NOT NULL, correctionKey TEXT, FOREIGN KEY(sessionId) REFERENCES companion_relationship_state(sessionId) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_companion_relationship_assessments_sessionId_revision ON companion_relationship_assessments(sessionId,revision)")
+            }
+        }
+
+        val MIGRATION_59_60 = object : Migration(59, 60) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 旧名称可能来自自动命名，不能自动当作用户指定的展示名。
+                db.execSQL("ALTER TABLE local_sessions ADD COLUMN list_title_override TEXT DEFAULT NULL")
+            }
+        }
+
         /**
          * 完整迁移链同时供生产数据库构建和迁移回归测试使用。
          * 新版本必须把迁移追加到这里；缺少迁移时直接失败，绝不静默清空用户数据。
@@ -1224,7 +1311,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60
         )
 
         fun get(context: Context): NekobotDatabase =
@@ -1243,6 +1330,8 @@ abstract class NekobotDatabase : RoomDatabase() {
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         installExperienceInvalidationTriggers(db)
+                        CompanionSchema.installTriggers(db)
+                        FusedCompanionSchema.installTriggers(db)
                     }
                 })
                 .build()

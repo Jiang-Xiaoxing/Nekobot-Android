@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="tool_name_agent_recall_search">查找角色記憶和經歷</string>
+    <string name="companion_memory_title">獨立長期記憶（含歷史版本）</string>
+    <string name="companion_memory_lock">鎖定，保護人工確認內容</string>
+    <string name="companion_memory_unlock">解除鎖定</string>
+    <string name="companion_memory_pending_error">記憶整理未完成，待處理訊息已保留，下次對話繼續：%1$s</string>
+    <string name="tool_name_agent_recall_search">查找獨立記憶與經歷</string>
     <string name="tool_name_agent_history_search">搜尋會話原話</string>
     <string name="tool_name_agent_history_read">讀取會話原話</string>
-    <string name="tool_desc_agent_recall_search">同時查詢當前角色記憶與此會話的經歷檔案，只返回少量相關線索。</string>
+    <string name="tool_desc_agent_recall_search">查詢目前會話與角色的獨立長期記憶及相關經歷，只返回有來源的相關線索。</string>
     <string name="tool_desc_agent_history_search">按關鍵詞搜尋此會話可見的聊天原話。</string>
     <string name="tool_desc_agent_history_read">按訊息 ID 讀取原話及鄰近訊息，超長內容可分段續讀。</string>
     <string name="experience_backfill_title">舊聊天經歷補建</string>
@@ -22,7 +26,10 @@
     <string name="experience_history_copy_rebuild">重建原話副本</string>
     <string name="experience_history_copy_done">原話副本已重建，共 %1$d 條</string>
     <string name="experience_history_copy_failed">原話副本重建失敗</string>
-    <string name="sessions_long_conversation_cost_title">開啟長期單會話前確認費用</string>
-    <string name="sessions_long_conversation_cost_notice">開啟後，未來的新聊天達到上下文壓縮閾值時，會額外呼叫模型生成分段經歷檔案（一次最多 4 段，必要時再壓縮一次摘要），消耗 token 並可能收費。現有舊聊天不會自動付費補建。當前參考模型：%1$s；參考單價：輸入 %2$s、輸出 %3$s 美元/百萬 token。總費用無法預估，智慧路由或故障轉移可能改變模型與單價。確認後還需儲存本頁設定。</string>
+    <string name="sessions_long_conversation_cost_title">開啟長久陪伴前確認費用</string>
+    <string name="sessions_long_conversation_cost_notice">啟用向量模型時，記憶索引和問題嵌入也可能額外收費。開啟後，新訊息會由模型分批擷取和更新獨立記憶；上下文整理時還會產生獨立的分段經歷檔案，不再合併終身總摘要。這些額外呼叫消耗 token 並可能收費，失敗後的後續重試也可能收費。現有舊聊天不會自動付費補建。當前參考模型：%1$s；參考單價：輸入 %2$s、輸出 %3$s 美元/百萬 token。總費用無法預估，智慧路由或故障轉移可能改變模型與單價。確認後還需儲存本頁設定。</string>
+    <string name="sessions_long_conversation_mode_risk">「長久陪伴」使用獨立記憶，暫不支援與普通模式自動銜接。啟用或切換模式後，角色可能無法接續另一模式中的部分記憶。聊天原文仍保留，建議在同一會話中持續使用所選模式。</string>
     <string name="sessions_long_conversation_cost_confirm">瞭解費用，開啟</string>
+    <string name="companion_hybrid_hint">兩類獨立記憶共用關鍵字＋向量檢索。啟用「向量/嵌入」模型後自動索引；未設定或介面失敗時使用關鍵字檢索。索引和問題向量可能產生額外費用，不自動切換備用模型。</string>
+    <string name="companion_embedding_free_hint">可選免費向量模型：矽基流動 BAAI/bge-m3。模型廣場：cloud.siliconflow.cn。需自行設定 API 金鑰並啟用「向量/嵌入」用途；Pro/BAAI/bge-m3 為付費版，價格與限制以平台目前說明為準。</string>
 </resources>

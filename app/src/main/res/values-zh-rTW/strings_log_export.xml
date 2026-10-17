@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="logs_export_all">匯出整份日誌（.log）</string>
+    <string name="logs_export_saved">日誌已匯出</string>
+    <string name="logs_export_failed">日誌匯出失敗，請重新選擇儲存位置</string>
+</resources>

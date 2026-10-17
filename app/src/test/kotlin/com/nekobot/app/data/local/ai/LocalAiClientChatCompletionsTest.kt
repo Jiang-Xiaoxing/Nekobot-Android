@@ -20,6 +20,16 @@ import org.junit.Test
 class LocalAiClientChatCompletionsTest {
 
     @Test
+    fun onlyUnresolvedRefusalPrefixesWaitWhileOrdinaryShortRepliesCanStream() {
+        for (prefix in listOf("", " ", "你", "你好，", "你好，我无", "我无法提供", "相关的")) {
+            assertTrue(prefix, shouldBufferAssistantPrefix(prefix))
+        }
+        for (normal in listOf("怎么", "你好呀", "我在", "<thi", "下面是相关内容", "有效回答".repeat(100))) {
+            assertFalse(normal, shouldBufferAssistantPrefix(normal))
+        }
+    }
+
+    @Test
     fun refusalPlaceholdersAreRecognizedWithoutMatchingLongUsefulAnswers() {
         assertTrue(shouldFailoverForAssistantContent("你好，我无法给到相关内容。"))
         assertTrue(shouldFailoverForAssistantContent("很抱歉，我无法提供此类内容。"))

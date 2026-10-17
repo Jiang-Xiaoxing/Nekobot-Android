@@ -16,6 +16,23 @@ import org.junit.Test
 class ChatSessionRuntimeTest {
 
     @Test
+    fun simultaneousContentAndReasoningCannotStarveEachOthersPreview() {
+        val state = ChatSessionState("stream-throttle")
+        for (now in listOf(0L, 100L, 200L, 300L)) {
+            assertTrue(state.shouldUpdateStreamPreview(reasoning = true, nowMs = now))
+            assertTrue(state.shouldUpdateStreamPreview(reasoning = false, nowMs = now))
+            assertFalse(state.shouldUpdateStreamPreview(reasoning = true, nowMs = now + 1))
+            assertFalse(state.shouldUpdateStreamPreview(reasoning = false, nowMs = now + 1))
+        }
+        state.resetStreamingState()
+        assertTrue(state.shouldUpdateStreamPreview(reasoning = false, nowMs = 301L))
+        assertTrue(state.shouldUpdateStreamPreview(reasoning = true, nowMs = 301L))
+        state.resetStreamPreviewThrottle()
+        assertTrue(state.shouldUpdateStreamPreview(reasoning = true, nowMs = 301L))
+        assertTrue(state.shouldUpdateStreamPreview(reasoning = false, nowMs = 301L))
+    }
+
+    @Test
     fun leavingIdleSessionCancelsListenerAndReentryStartsFromFreshState() = runBlocking {
         val sessionId = "idle-reentry-${System.nanoTime()}"
         val state = ChatSessionManager.acquire(sessionId)

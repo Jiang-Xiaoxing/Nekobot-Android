@@ -62,6 +62,8 @@ internal fun SessionChatModelPickerEntry(sessionId: String, enabled: Boolean) {
     var open by remember(vm, sessionId) { mutableStateOf(false) }
     LaunchedEffect(vm, sessionId) { vm.load(sessionId) }
 
+    if (queue.characterQueueConfigured) return
+
     ChatSettingEntry(
         icon = Icons.Outlined.Memory,
         title = stringResource(R.string.chat_p0_model),

@@ -219,6 +219,13 @@ private fun isReservedStickerName(name: String): Boolean {
     return trimmed.startsWith("File:", ignoreCase = true) || trimmed.startsWith("文件:")
 }
 
+/** 只有整条正文为一个已导入表情标记（允许前后空白）时，才独立展示而不套气泡。 */
+internal fun isStandaloneStickerMessage(content: String, stickerLookup: (String) -> String?): Boolean {
+    val match = STICKER_MARKER_REGEX.matchEntire(content.trim()) ?: return false
+    val name = match.groupValues[1].trim()
+    return name.isNotEmpty() && !isReservedStickerName(name) && stickerLookup(name) != null
+}
+
 /**
  * 根据 URL 扩展名判断内容段类型。
  *
@@ -398,7 +405,7 @@ private fun ImageRendererModel(model: Any, modifier: Modifier = Modifier) {
 /**
  * 表情渲染器：按原图比例内联显示，限制最大边长，点击全屏查看。
  *
- * 表情是"贴在气泡里的图"，不应像普通图片附件一样占满整宽，因此不做 FillWidth。
+ * 表情按内容宽度展示，不应像普通图片附件一样占满整宽，因此不做 FillWidth。
  */
 @Composable
 private fun StickerRenderer(url: String, modifier: Modifier = Modifier) {
@@ -1002,7 +1009,8 @@ fun RenderContentSegments(
     sessionId: String = "",
     chatMode: Boolean = false,
     processParens: Boolean = true,
-    linkColor: Color = accentLink()
+    linkColor: Color = accentLink(),
+    isStreaming: Boolean = false
 ) {
     var previewUrl by remember { mutableStateOf<String?>(null) }
     Column(modifier = modifier) {
@@ -1013,7 +1021,8 @@ fun RenderContentSegments(
                     color = textColor,
                     style = MaterialTheme.typography.bodyMedium,
                     chatMode = chatMode,
-                    processParens = processParens
+                    processParens = processParens,
+                    isStreaming = isStreaming
                 )
                 SegmentType.IMAGE -> ImageRenderer(url = segment.url)
                 SegmentType.VIDEO -> VideoRenderer(url = segment.url)

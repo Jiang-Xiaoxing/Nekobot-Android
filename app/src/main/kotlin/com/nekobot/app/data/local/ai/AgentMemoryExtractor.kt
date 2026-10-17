@@ -513,7 +513,11 @@ data class AgentMemoryNotice(
     val sessionId: String,
     val changedItems: Int,
     val phase: AgentMemoryPhase = AgentMemoryPhase.DONE,
-    val anchorContent: String = ""
+    val anchorContent: String = "",
+    /** 单会话角色后台记忆整理失败（仅 DONE 时有意义）；界面显示可关闭的失败提示。 */
+    val failed: Boolean = false,
+    /** 失败去重键（失败原因）；同一原因被关闭后不再重复提示。 */
+    val failureKey: String = ""
 )
 
 /**

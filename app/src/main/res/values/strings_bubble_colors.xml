@@ -1,0 +1,6 @@
+<resources>
+    <string name="style_user_bubble_color">用户气泡颜色</string>
+    <string name="style_ai_bubble_color">AI 气泡颜色</string>
+    <string name="style_bubble_color_default">默认</string>
+    <string name="style_color_white">白色</string>
+</resources>

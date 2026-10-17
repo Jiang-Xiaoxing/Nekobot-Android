@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_character_memory_title">Agent character memory</string>
+    <string name="agent_character_memory_desc">Independent profiles, experiences and promises for Agent characters</string>
+    <string name="agent_character_memory_help">Select an Agent character to view its independently stored memories.</string>
+    <string name="agent_character_memory_empty">No Agent characters yet. Create one using + on the conversations page.</string>
+    <string name="agent_character_memory_local_only">Available in local mode only.</string>
+    <string name="agent_character_memory_open">View memories</string>
+    <string name="agent_character_memory_unnamed">Unnamed character</string>
+    <string name="agent_character_memory_back">Back</string>
+    <string name="agent_character_memory_edit">Edit Agent character memory</string>
+</resources>

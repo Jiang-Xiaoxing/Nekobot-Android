@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -67,7 +70,11 @@ private data class ContextAnalysisData(
     /** 本会话缓存命中统计：命中率与命中/输入 token 明细。 */
     val cacheStats: SessionCacheStats = SessionCacheStats(),
     /** 参与占比统计的压缩摘要原文（Agent 会话的压缩窗口内），供点击查看。 */
-    val summaries: List<Message> = emptyList()
+    val summaries: List<Message> = emptyList(),
+    val companion: Boolean = false,
+    val companionUi: Boolean = false,
+    val sentAt: Long? = null,
+    val reportedInput: Int? = null
 )
 
 private data class ContextAnalysisUiState(
@@ -82,9 +89,11 @@ fun ContextAnalysisScreen(
     sessionId: String,
     onBack: () -> Unit
 ) {
+    val textResources = LocalResources.current
     var state by remember(sessionId) { mutableStateOf(ContextAnalysisUiState()) }
     var refreshKey by remember(sessionId) { mutableStateOf(0) }
     var showSummaryDialog by remember(sessionId) { mutableStateOf(false) }
+    var companionUi by remember(sessionId) { mutableStateOf(false) }
 
     suspend fun load() {
         state = ContextAnalysisUiState()
@@ -116,7 +125,7 @@ fun ContextAnalysisScreen(
                 } else {
                     null
                 }
-                val liveBreakdown = live?.breakdown?.takeIf { !it.isEmpty }
+                val liveBreakdown = live?.breakdown?.takeIf { live.companionSnapshotMode || !it.isEmpty }
                 // 与占比统计同一窗口取摘要原文：占比里的「压缩摘要」条目对应这几条消息
                 val summaries = if (isAgentSession) {
                     messages.agentContextWindow().filter(Message::isAgentContextSummary)
@@ -128,9 +137,13 @@ fun ContextAnalysisScreen(
                         breakdown = liveBreakdown ?: fallbackContextUsageBreakdown(session, messages),
                         usedTokens = live?.totalTokens
                             ?: ServiceContainer.unified.sessionContextTokenUsage(sessionId),
-                        maxTokens = ServiceContainer.unified.getActiveContextLength(),
+                        maxTokens = live?.maxContext ?: ServiceContainer.unified.getActiveContextLength(),
                         cacheStats = ServiceContainer.unified.sessionCacheStats(sessionId),
-                        summaries = summaries
+                        summaries = summaries,
+                        companion = live?.companionSnapshotMode == true,
+                        companionUi = session?.companionMode == true,
+                        sentAt = live?.sentAt,
+                        reportedInput = live?.reportedInput
                     )
                 )
             }
@@ -139,40 +152,48 @@ fun ContextAnalysisScreen(
             onSuccess = { ContextAnalysisUiState(loading = false, data = it) },
             onFailure = { ContextAnalysisUiState(loading = false, error = it.message) }
         )
+        state.data?.let { companionUi = it.companionUi }
     }
 
     LaunchedEffect(sessionId, refreshKey) { load() }
 
+    MaterialTheme(colorScheme = if (companionUi) companionUsageScheme(MaterialTheme.colorScheme) else MaterialTheme.colorScheme) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.chat_context_analysis_title),
-                        fontWeight = FontWeight.SemiBold
+            if (companionUi) Column(Modifier.statusBarsPadding()) {
+                CompanionReadingHeader(textResources.getString(R.string.single_role_chat_usage), onBack) {
+                IconButton(onClick = { refreshKey += 1 }) { Icon(Icons.Filled.Refresh, stringResource(R.string.common_retry), tint = MaterialTheme.colorScheme.primary) }
+                }
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            stringResource(R.string.chat_context_analysis_title),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.common_back)
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { refreshKey += 1 }) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.common_retry)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { refreshKey += 1 }) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = stringResource(R.string.common_retry)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
                 )
-            )
+            }
         }
     ) { paddingValues ->
         when {
@@ -202,51 +223,65 @@ fun ContextAnalysisScreen(
             }
             else -> {
                 val data = requireNotNull(state.data)
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item { ContextCapacityCard(data.usedTokens, data.maxTokens) }
-                    item { ContextCacheHitRateCard(data.cacheStats) }
-                    item {
-                        Column {
-                            Text(
-                                stringResource(R.string.chat_context_analysis_type_breakdown),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                stringResource(R.string.chat_context_analysis_basis),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                if (data.companionUi) CompanionUsageContent(
+                    data.usedTokens, data.maxTokens, data.breakdown, data.cacheStats, data.companion,
+                    data.sentAt, data.reportedInput, data.summaries.isNotEmpty(), { showSummaryDialog = true },
+                    Modifier.padding(paddingValues)
+                ) else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        item { ContextCapacityCard(data.usedTokens, data.maxTokens,
+                            if (data.companion) textResources.getString(R.string.single_role_last_actual_request_category_estimates) else null) }
+                        if (data.companion) item {
+                            Text(if (data.sentAt == null) textResources.getString(R.string.single_role_no_new_format_request_records_yet_after_a_chat_completes_this_sho)
+                                else textResources.getString(R.string.single_role_request_time_1_s_146, java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(data.sentAt))) +
+                                    (data.reportedInput?.let { textResources.getString(R.string.single_role_provider_reported_input_1_s_tokens, it) } ?: textResources.getString(R.string.single_role_provider_did_not_report_input_usage_for_this_request)),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-                    if (data.breakdown.parts.isEmpty()) {
+                        item { ContextCacheHitRateCard(data.cacheStats) }
                         item {
-                            Text(
-                                stringResource(R.string.chat_context_analysis_empty),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Column {
+                                Text(
+                                    stringResource(R.string.chat_context_analysis_type_breakdown),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    if (data.companion) textResources.getString(R.string.single_role_estimated_by_category_for_the_last_completed_model_request_includ)
+                                    else stringResource(R.string.chat_context_analysis_basis),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                    } else {
-                        items(data.breakdown.parts, key = { it.part.name }) { part ->
-                            val summaryClickable =
-                                part.part == ContextUsagePart.SUMMARY && data.summaries.isNotEmpty()
-                            ContextTypeRow(
-                                part,
-                                data.breakdown.totalTokens,
-                                onClick = if (summaryClickable) {
-                                    { showSummaryDialog = true }
-                                } else {
-                                    null
-                                }
-                            )
+                        if (data.breakdown.parts.isEmpty()) {
+                            item {
+                                Text(
+                                    stringResource(R.string.chat_context_analysis_empty),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            items(data.breakdown.parts, key = { it.part.name }) { part ->
+                                val summaryClickable =
+                                    part.part == ContextUsagePart.SUMMARY && data.summaries.isNotEmpty()
+                                ContextTypeRow(
+                                    part,
+                                    data.breakdown.totalTokens,
+                                    onClick = if (summaryClickable) {
+                                        { showSummaryDialog = true }
+                                    } else {
+                                        null
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -259,10 +294,11 @@ fun ContextAnalysisScreen(
             }
         }
     }
+    }
 }
 
 @Composable
-private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?) {
+private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?, title: String? = null) {
     val progress = maxTokens
         ?.takeIf { it > 0 }
         ?.let { (usedTokens.toFloat() / it).coerceIn(0f, 1f) }
@@ -295,7 +331,7 @@ private fun ContextCapacityCard(usedTokens: Long, maxTokens: Int?) {
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.chat_context_analysis_current),
+                    title ?: stringResource(R.string.chat_context_analysis_current),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )

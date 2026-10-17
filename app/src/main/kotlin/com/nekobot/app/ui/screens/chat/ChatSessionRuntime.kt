@@ -119,6 +119,32 @@ data class AutoMemoryUiState(
     override val order: Int get() = 2
 }
 
+/**
+ * 单会话角色后台记忆整理失败提示：仅内存中的临时界面状态，不是消息、不发给模型、不进备份。
+ * 关闭或下一次整理成功后消失；同一失败原因关闭后不再重复弹出。
+ */
+data class CompanionMemoryFailureUiState(
+    val failureKey: String = "",
+    override val anchorContent: String = ""
+) : ChatInlineNotice {
+    override val running: Boolean get() = false
+    override val order: Int get() = 3
+}
+
+/** 记忆整理失败提示的纯状态机，便于 JVM 单测。返回新的提示（null=不显示）和新的已关闭键。 */
+internal object CompanionMemoryFailureReducer {
+    data class State(val notice: CompanionMemoryFailureUiState?, val dismissedKey: String?)
+
+    fun onDone(state: State, failed: Boolean, failureKey: String, anchor: String): State = when {
+        !failed -> State(null, null)
+        failureKey == state.dismissedKey -> state
+        state.notice?.failureKey == failureKey -> state
+        else -> State(CompanionMemoryFailureUiState(failureKey, anchor), state.dismissedKey)
+    }
+
+    fun dismiss(state: State): State = State(null, state.notice?.failureKey ?: state.dismissedKey)
+}
+
 /** 内联提示锚点保留的消息正文长度上限（与 PrefsManager 的持久化长度保持一致）。 */
 private const val AGENT_NOTICE_ANCHOR_CHARS = 200
 
@@ -335,8 +361,25 @@ class ChatSessionState(
      * - DONE 且有改动：显示"已自动记忆 N 条"，并**持久保留**（不自动消失）；
      * - DONE 但没有改动：收起进行中的提示，回退显示上一次已持久化的结果。
      */
+    private var memoryFailureDismissedKey: String? = null
+
+    /** 用户点 × 关闭记忆整理失败提示。 */
+    fun dismissCompanionMemoryFailure() {
+        val next = CompanionMemoryFailureReducer.dismiss(CompanionMemoryFailureReducer.State(
+            inlineNoticeOrNull<CompanionMemoryFailureUiState>(), memoryFailureDismissedKey))
+        memoryFailureDismissedKey = next.dismissedKey
+        setInlineNotice<CompanionMemoryFailureUiState>(next.notice)
+    }
+
     fun applyAutoMemoryNotice(notice: com.nekobot.app.data.local.ai.AgentMemoryNotice) {
         val anchor = noticeAnchor(notice.anchorContent)
+        if (notice.phase == com.nekobot.app.data.local.ai.AgentMemoryPhase.DONE) {
+            val next = CompanionMemoryFailureReducer.onDone(CompanionMemoryFailureReducer.State(
+                inlineNoticeOrNull<CompanionMemoryFailureUiState>(), memoryFailureDismissedKey),
+                notice.failed, notice.failureKey, anchor)
+            memoryFailureDismissedKey = next.dismissedKey
+            setInlineNotice<CompanionMemoryFailureUiState>(next.notice)
+        }
         if (notice.phase == com.nekobot.app.data.local.ai.AgentMemoryPhase.RUNNING) {
             setInlineNotice(AutoMemoryUiState(running = true, anchorContent = anchor))
             return
@@ -464,11 +507,25 @@ class ChatSessionState(
     val streamingContentPreview = MutableStateFlow("")
     /** 仅供当前流式气泡订阅的思考预览（非 Agent 会话）。 */
     val streamingReasoningPreview = MutableStateFlow("")
-    /** 上次流式 chunk 更新 UI 的时间戳，用于节流（避免高频 chunk 触发 MarkdownText 全量重解析） */
+    /** 正文与思考独立节流，避免其中一条流挡住另一条流的首帧或持续刷新。 */
     @Volatile
-    var lastStreamUiUpdateMs: Long = 0L
+    private var lastContentPreviewMs: Long? = null
+    @Volatile
+    private var lastReasoningPreviewMs: Long? = null
     /** 流式节流间隔（毫秒） */
     val streamThrottleMs = 100L
+
+    fun shouldUpdateStreamPreview(reasoning: Boolean, nowMs: Long): Boolean {
+        val last = if (reasoning) lastReasoningPreviewMs else lastContentPreviewMs
+        if (last != null && nowMs - last < streamThrottleMs) return false
+        if (reasoning) lastReasoningPreviewMs = nowMs else lastContentPreviewMs = nowMs
+        return true
+    }
+
+    fun resetStreamPreviewThrottle() {
+        lastContentPreviewMs = null
+        lastReasoningPreviewMs = null
+    }
     /** 用户是否请求停止生成 */
     @Volatile
     var generationStopRequested = false
@@ -498,7 +555,7 @@ class ChatSessionState(
         streamingReasoning.setLength(0)
         streamingContentPreview.value = ""
         streamingReasoningPreview.value = ""
-        lastStreamUiUpdateMs = 0L
+        resetStreamPreviewThrottle()
         generationStopRequested = false
     }
 

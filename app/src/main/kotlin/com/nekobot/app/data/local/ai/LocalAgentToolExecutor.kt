@@ -371,6 +371,7 @@ internal class LocalAgentToolExecutor(
     private val pluginInstallConfirmationManager: LocalPluginInstallConfirmationManager? = null,
     /** 安装确认请求回调：把 PluginInstallConfirmationRequest 转发到会话界面弹窗。 */
     private val onPluginInstallConfirmationRequired: (PluginInstallConfirmationRequest) -> Unit = {},
+    private val isolateCompanionMemory: Boolean = false,
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -406,7 +407,7 @@ internal class LocalAgentToolExecutor(
         )
     }
     private val recallTool by lazy {
-        recallReader?.let { AgentRecallToolHandler(sessionId, it) }
+        recallReader?.let { AgentRecallToolHandler(sessionId, it, currentOnly = isolateCompanionMemory) }
     }
 
     suspend fun execute(toolName: String, args: Map<String, Any>): Map<String, Any> {
@@ -1188,6 +1189,7 @@ internal class LocalAgentToolExecutor(
                     command = command,
                     timeoutMs = timeoutMs,
                     shouldStop = { generationController.isStopped },
+                    hostProcAccess = !isolateCompanionMemory,
                 )
             } else {
                 LocalLinuxSandboxCoordinator.executeDetached(
@@ -1197,6 +1199,7 @@ internal class LocalAgentToolExecutor(
                     command = command,
                     timeoutMs = timeoutMs,
                     onProcessStarted = { process -> detachedJob.process = process },
+                    hostProcAccess = !isolateCompanionMemory,
                 )
             }
         }.getOrElse { error ->

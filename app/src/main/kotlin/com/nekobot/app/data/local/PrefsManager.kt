@@ -67,6 +67,113 @@ class PrefsManager(context: Context) {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
     private val securePrefs = SecurePreferenceStore(context)
     private val gson = Gson()
+    private val characterThinking = CharacterThinkingPreferences(prefs)
+    val characterThinkingSettings get() = characterThinking.settings
+    private val reasoning = ReasoningPreferences(prefs)
+    val reasoningSettingsRevision get() = reasoning.changes
+
+    /** 角色视角思考默认开启；仅影响角色会话中新请求的提示词。 */
+    var characterThinkingEnabled: Boolean
+        get() = characterThinking.enabled
+        set(value) { characterThinking.enabled = value }
+
+    /** 自定义思考提示词默认空，空白时使用默认中文文案。 */
+    var characterThinkingPrompt: String
+        get() = characterThinking.customPrompt
+        set(value) { characterThinking.customPrompt = value }
+
+    fun getCharacterThinkingSettings() = characterThinking.read()
+
+    private fun companionRecallKey(profile: String, session: String) =
+        "companion_recall:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest("$profile\n$session")
+
+    private fun companionRetrievalKey(profile: String) =
+        "companion_retrieval:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(profile)
+
+    internal fun companionRetrievalSettings(profile: String): CompanionRetrievalSettings = synchronized(this) {
+        val key = companionRetrievalKey(profile)
+        CompanionRetrievalSettings(prefs.getBoolean("$key:enabled", false),
+            prefs.getString("$key:model", null), prefs.getLong("$key:revision", 0))
+    }
+
+    /** 开关、共享模型和当前角色额度一次落盘；取消页面不会改变设置。 */
+    internal fun saveCompanionMemorySettings(profile: String, session: String,
+        recall: com.nekobot.app.data.local.ai.CompanionRecallSettings, enabled: Boolean, modelId: String?
+    ): CompanionRetrievalSettings = synchronized(this) {
+        require(recall.valid())
+        require(!enabled || !modelId.isNullOrBlank()) { "请先选择向量模型" }
+        val old = companionRetrievalSettings(profile)
+        val selected = modelId?.takeIf(String::isNotBlank)
+        val updated = CompanionRetrievalSettings(enabled, selected,
+            old.revision + if (old.enabled != enabled || old.modelId != selected) 1 else 0)
+        val key = companionRetrievalKey(profile)
+        val localKey = companionRecallKey(profile, session)
+        check(prefs.edit().putBoolean("$key:enabled", enabled).putString("$key:model", selected)
+            .putLong("$key:revision", updated.revision).putInt("$localKey:rounds", recall.rounds)
+            .putInt("$localKey:tokens", recall.tokens).putInt("$localKey:perCall", recall.perCall).commit()) { "记忆设置保存失败，请重试" }
+        updated
+    }
+
+    internal fun companionRecallSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRecallSettings {
+        val key = companionRecallKey(profile, session)
+        return com.nekobot.app.data.local.ai.CompanionRecallSettings(prefs.getInt("$key:rounds", 3), prefs.getInt("$key:tokens", 4000),
+            prefs.getInt("$key:perCall", com.nekobot.app.data.local.ai.CompanionRecallBudget.PER_CALL_TOKENS))
+            .let { it.copy(perCall = it.perCall.coerceAtMost(it.tokens)) }
+    }
+
+    internal fun companionConsolidationSettings(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionConsolidationSettings {
+        val key = companionRecallKey(profile, session)
+        val d = com.nekobot.app.data.local.ai.CompanionConsolidationSettings()
+        return com.nekobot.app.data.local.ai.CompanionConsolidationSettings(
+            prefs.getBoolean("$key:consolidate_vector", d.vectorEnabled), prefs.getInt("$key:consolidate_recent", d.recent),
+            prefs.getInt("$key:consolidate_trigger", d.trigger), prefs.getInt("$key:consolidate_existing", d.existing))
+            .takeIf { it.valid() } ?: d
+    }
+
+    internal fun saveCompanionConsolidationSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionConsolidationSettings) {
+        require(value.valid()) { "记忆整理数值不在有效范围内" }
+        val key = companionRecallKey(profile, session)
+        check(prefs.edit().putBoolean("$key:consolidate_vector", value.vectorEnabled).putInt("$key:consolidate_recent", value.recent)
+            .putInt("$key:consolidate_trigger", value.trigger).putInt("$key:consolidate_existing", value.existing).commit()) { "记忆整理设置保存失败，请重试" }
+    }
+
+    internal fun saveCompanionRecallSettings(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRecallSettings) {
+        require(value.valid()) { "回查轮数须为1至100，资料上限须为256至64000 Token，单次上限不能超过资料上限" }
+        val key = companionRecallKey(profile, session)
+        check(prefs.edit().putInt("$key:rounds", value.rounds).putInt("$key:tokens", value.tokens).putInt("$key:perCall", value.perCall).commit()) { "回查设置保存失败，请重试" }
+    }
+
+    internal fun companionRecallUsage(profile: String, session: String, turn: String): String? =
+        prefs.getString(companionRecallKey(profile, session) + ":turn:" + com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn), null)
+
+    internal fun saveCompanionRecallUsage(profile: String, session: String, turn: String, value: String) {
+        check(prefs.edit().putString(companionRecallKey(profile, session) + ":turn:" +
+            com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn), value).commit()) { "回查用量保存失败，已停止本次读取" }
+    }
+
+    /** 重新生成同一句回复时，这句话的回查额度回到满额。 */
+    internal fun clearCompanionRecallUsage(profile: String, session: String, turn: String) {
+        prefs.edit().remove(companionRecallKey(profile, session) + ":turn:" +
+            com.nekobot.app.data.local.ai.CompanionMemoryPolicy.digest(turn)).commit()
+    }
+
+    internal fun clearCompanionRecallSession(profile: String, session: String) {
+        val prefix = companionRecallKey(profile, session) + ":"
+        prefs.edit().apply { prefs.all.keys.filter { it.startsWith(prefix) }.forEach(::remove) }.apply()
+    }
+
+    internal fun companionRequestSnapshot(profile: String, session: String): com.nekobot.app.data.local.ai.CompanionRequestSnapshot? =
+        runCatching { gson.fromJson(prefs.getString(companionRecallKey(profile, session) + ":request", null),
+            com.nekobot.app.data.local.ai.CompanionRequestSnapshot::class.java) }.getOrNull()
+
+    internal fun saveCompanionRequestSnapshot(profile: String, session: String, value: com.nekobot.app.data.local.ai.CompanionRequestSnapshot) {
+        prefs.edit().putString(companionRecallKey(profile, session) + ":request", gson.toJson(value)).apply()
+    }
+
+    fun companionConversionModel(profile: String): String? = prefs.getString("companion_conversion_model:$profile", null)
+    fun setCompanionConversionModel(profile: String, id: String) {
+        prefs.edit().putString("companion_conversion_model:$profile", id).apply()
+    }
 
     var serverUrl: String
         get() = normalizeServerUrl(prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER) ?: DEFAULT_SERVER)
@@ -907,6 +1014,11 @@ class PrefsManager(context: Context) {
             prefs.edit().putString(KEY_CHAT_BACKGROUND_MODE, normalized).apply()
         }
 
+    /** 关系页插画独立保存，不随全局主题或聊天背景改变。 */
+    var relationshipBackground: RelationshipBackground
+        get() = RelationshipBackground.fromId(prefs.getString("relationship_background", null))
+        set(value) { prefs.edit().putString("relationship_background", value.id).apply() }
+
     /** 已复制到应用私有目录的自定义聊天背景路径。 */
     var customChatBackgroundPath: String?
         get() = prefs.getString(KEY_CUSTOM_CHAT_BACKGROUND_PATH, null)
@@ -943,8 +1055,37 @@ class PrefsManager(context: Context) {
     var themeColorOverride: String?
         get() = prefs.getString(KEY_THEME_COLOR, null)
         set(value) {
+            migrateMessageColor()
             prefs.edit().putString(KEY_THEME_COLOR, value).apply()
         }
+
+    /** 首次升级保留旧用户气泡配色，之后主题色和气泡颜色互不联动。 */
+    private fun migrateMessageColor() = synchronized(prefs) {
+        if (!prefs.getBoolean(KEY_MESSAGE_COLOR_MIGRATED, false)) {
+            prefs.edit().putString(KEY_MESSAGE_COLOR, prefs.getString(KEY_THEME_COLOR, null))
+                .putBoolean(KEY_MESSAGE_COLOR_MIGRATED, true).apply()
+        }
+    }
+
+    var messageColorOverride: String?
+        get() { migrateMessageColor(); return prefs.getString(KEY_MESSAGE_COLOR, null) }
+        set(value) { synchronized(prefs) {
+            prefs.edit().putString(KEY_MESSAGE_COLOR, value).putBoolean(KEY_MESSAGE_COLOR_MIGRATED, true).apply()
+        } }
+
+    /** 普通会话 AI 回复独立配色；未设置时跟随官方深浅主题配色。 */
+    var assistantMessageColorOverride: String?
+        get() = prefs.getString(KEY_ASSISTANT_MESSAGE_COLOR, null)
+        set(value) { prefs.edit().putString(KEY_ASSISTANT_MESSAGE_COLOR, value).apply() }
+
+    /** Optional appearance effects; upgrades retain the original presentation. */
+    var dynamicThinking: Boolean
+        get() = prefs.getBoolean(KEY_DYNAMIC_THINKING, false)
+        set(value) { prefs.edit().putBoolean(KEY_DYNAMIC_THINKING, value).apply() }
+
+    var dynamicMessages: Boolean
+        get() = prefs.getBoolean(KEY_DYNAMIC_MESSAGES, false)
+        set(value) { prefs.edit().putBoolean(KEY_DYNAMIC_MESSAGES, value).apply() }
 
     val isLoggedIn: Boolean
         get() = when (appMode) {
@@ -1271,26 +1412,73 @@ class PrefsManager(context: Context) {
         }
 
     /** 获取对应会话类型的全局思考强度；Agent 与角色会话互不影响。 */
+    fun companionReasoningEffort(profile: String, sessionId: String): com.nekobot.app.data.model.ReasoningEffort =
+        reasoning.companionEffort(profile, sessionId)
+    fun setCompanionReasoningEffort(profile: String, sessionId: String, value: com.nekobot.app.data.model.ReasoningEffort) {
+        reasoning.setEffort(profile, sessionId, true, null, value)
+    }
+
+    /** 伴侣会话的自定义思考参数；未设置时沿用 Agent 全局的自定义参数。 */
+    fun companionCustomReasoning(profile: String, sessionId: String): com.nekobot.app.data.model.CustomReasoningParam {
+        return reasoning.companionCustom(profile, sessionId)
+    }
+    fun setCompanionCustomReasoning(profile: String, sessionId: String, value: com.nekobot.app.data.model.CustomReasoningParam) {
+        reasoning.setCustom(profile, sessionId, true, null, value)
+    }
+    /** 全局自定义思考参数，Agent 与角色会话各一份，与思考强度同一作用域。 */
+    fun getCustomReasoning(isAgentSession: Boolean): com.nekobot.app.data.model.CustomReasoningParam {
+        return reasoning.globalCustom(isAgentSession)
+    }
+    fun setCustomReasoning(isAgentSession: Boolean, value: com.nekobot.app.data.model.CustomReasoningParam) {
+        reasoning.setCustom("", "", false, if (isAgentSession) "agent" else "character", value)
+    }
+    /** 发送时按会话取自定义思考参数：伴侣会话按会话，其余按 Agent/角色全局。 */
+    fun customReasoningFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?): com.nekobot.app.data.model.CustomReasoningParam =
+        reasoning.custom(profile, sessionId, companionMode, sessionMode)
+
+    fun reasoningEffortFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?) =
+        reasoning.effort(profile, sessionId, companionMode, sessionMode)
+
+    fun setReasoningEffortFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?,
+        value: com.nekobot.app.data.model.ReasoningEffort) =
+        reasoning.setEffort(profile, sessionId, companionMode, sessionMode, value)
+
+    fun setCustomReasoningFor(profile: String, sessionId: String, companionMode: Boolean, sessionMode: String?,
+        value: com.nekobot.app.data.model.CustomReasoningParam) =
+        reasoning.setCustom(profile, sessionId, companionMode, sessionMode, value)
+
+    /** Display only: never changes model settings or erases saved reasoning. */
+    internal fun companionShowReasoning(profile: String, sessionId: String): Boolean =
+        prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", false)
+
+    internal fun setCompanionShowReasoning(profile: String, sessionId: String, show: Boolean) {
+        prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", show).apply()
+    }
+
+    /** Display only: hides （内心：...） blocks in bubbles; default shown, never changes prompts or message text. */
+    internal fun companionShowInnerMonologue(profile: String, sessionId: String): Boolean =
+        prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", true)
+
+    internal fun setCompanionShowInnerMonologue(profile: String, sessionId: String, show: Boolean) {
+        prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", show).apply()
+    }
+
+    internal fun companionRelationshipNoticeToken(profile: String, sessionId: String): String? =
+        prefs.getString(companionRecallKey(profile, sessionId) + ":relationship_notice", null)
+
+    internal fun setCompanionRelationshipNoticeToken(profile: String, sessionId: String, token: String) {
+        prefs.edit().putString(companionRecallKey(profile, sessionId) + ":relationship_notice", token).apply()
+    }
+
     fun getReasoningEffort(isAgentSession: Boolean): com.nekobot.app.data.model.ReasoningEffort =
-        com.nekobot.app.data.model.ReasoningEffort.fromValue(
-            prefs.getString(
-                if (isAgentSession) KEY_AGENT_REASONING_EFFORT else KEY_CHARACTER_REASONING_EFFORT,
-                // 兼容拆分设置前保存的单一全局值，作为两类会话的初始默认值。
-                prefs.getString(KEY_REASONING_EFFORT_LEGACY, null)
-            )
-        )
+        reasoning.globalEffort(isAgentSession)
 
     /** 持久化对应会话类型的全局思考强度。 */
     fun setReasoningEffort(
         isAgentSession: Boolean,
         effort: com.nekobot.app.data.model.ReasoningEffort
     ) {
-        prefs.edit()
-            .putString(
-                if (isAgentSession) KEY_AGENT_REASONING_EFFORT else KEY_CHARACTER_REASONING_EFFORT,
-                effort.wireValue
-            )
-            .apply()
+        reasoning.setEffort("", "", false, if (isAgentSession) "agent" else "character", effort)
     }
 
     /** 兼容旧调用方：未提供会话类型时按角色会话读取。 */
@@ -1413,6 +1601,11 @@ class PrefsManager(context: Context) {
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_FONT_COLOR = "font_color"
         const val KEY_THEME_COLOR = "theme_color"
+        const val KEY_MESSAGE_COLOR = "message_color"
+        const val KEY_ASSISTANT_MESSAGE_COLOR = "assistant_message_color"
+        const val KEY_MESSAGE_COLOR_MIGRATED = "message_color_independent"
+        const val KEY_DYNAMIC_THINKING = "dynamic_thinking"
+        const val KEY_DYNAMIC_MESSAGES = "dynamic_messages"
         const val KEY_CUSTOM_FONT_PATH = "custom_font_path"
         const val KEY_CUSTOM_FONT_NAME = "custom_font_name"
         const val KEY_CHAT_BACKGROUND_MODE = "chat_background_mode"

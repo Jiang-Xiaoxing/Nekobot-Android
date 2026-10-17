@@ -10,6 +10,28 @@ import org.junit.Test
 class MarkdownTextTest {
 
     @Test
+    fun `short reply and folded inner monologue use content width`() {
+        val blocks = visibleMarkdownBlocks("又是\"1\"……（内心：他是不是在逗我）", true, true)
+        assertTrue(blocks.any { it is MdBlock.InnerMonologue })
+        assertTrue(chatMarkdownWrapsWidth(blocks))
+    }
+
+    @Test
+    fun `hidden inner monologue keeps short visible reply content width`() {
+        val blocks = visibleMarkdownBlocks("好呀（内心：很长的内心内容）", true, false)
+        assertEquals(listOf(MdBlock.Paragraph("好呀")), blocks)
+        assertTrue(chatMarkdownWrapsWidth(blocks))
+    }
+
+    @Test
+    fun `rich blocks keep dedicated sizing instead of intrinsic text sizing`() {
+        listOf("```kotlin\nprintln(1)\n```", "![图片](https://example.com/a.png)",
+            "| A | B |\n| --- | --- |\n| 1 | 2 |").forEach { source ->
+            assertFalse(source, chatMarkdownWrapsWidth(parseBlocks(source, chatMode = true)))
+        }
+    }
+
+    @Test
     fun `chat preprocessing keeps original text and never injects private glyphs`() {
         val source = "她说：**（轻声回应）**，然后写下 `call(foo)` 与 ~~原文~~。"
         val preprocessed = preprocessMarkdown(source, chatMode = true)

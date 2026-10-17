@@ -88,4 +88,6 @@
     <string name="character_export_failed">내보내기 실패</string>
     <string name="character_export_success_msg">다운로드에 내보냈어요:\n%1$s</string>
     <string name="character_export_failed_msg">내보내기 실패. 저장소 권한을 확인하고 다시 시도해 주세요.</string>
+    <string name="characters_no_linked_sessions">연결된 대화가 없어요</string>
+    <string name="characters_session_modes_unavailable">대화 유형을 현재 사용할 수 없어요</string>
 </resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="logs_export_all">Export all logs (.log)</string>
+    <string name="logs_export_saved">Logs exported</string>
+    <string name="logs_export_failed">Log export failed. Choose a save location again.</string>
+</resources>

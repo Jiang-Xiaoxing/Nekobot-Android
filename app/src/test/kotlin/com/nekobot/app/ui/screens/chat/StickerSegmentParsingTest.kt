@@ -1,6 +1,7 @@
 package com.nekobot.app.ui.screens.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,5 +62,55 @@ class StickerSegmentParsingTest {
         val sticker = parseContentSegments("[猫猫]", lookup).first()
 
         assertTrue(sticker.isImageContent())
+    }
+
+    @Test
+    fun `整条消息只有已导入表情时独立展示`() {
+        assertTrue(isStandaloneStickerMessage("[猫猫]", lookup))
+        assertTrue(isStandaloneStickerMessage(" \n\t[ 猫猫 ]\r\n ", lookup))
+    }
+
+    @Test
+    fun `文字和表情混排不作为独立表情`() {
+        listOf("你好[猫猫]", "[猫猫]你好", "你好[猫猫]再见").forEach { content ->
+            assertFalse(content, isStandaloneStickerMessage(content, lookup))
+        }
+    }
+
+    @Test
+    fun `多个表情或分段消息不作为独立表情`() {
+        listOf("[猫猫][生气]", "[猫猫] [猫猫]", "[猫猫]<||>[生气]", "[猫猫]<||>").forEach { content ->
+            assertFalse(content, isStandaloneStickerMessage(content, lookup))
+        }
+    }
+
+    @Test
+    fun `未知表情或空表情库保持气泡`() {
+        assertFalse(isStandaloneStickerMessage("[未知表情]", lookup))
+        assertFalse(isStandaloneStickerMessage("[猫猫]") { null })
+    }
+
+    @Test
+    fun `空内容和不完整标记保持气泡`() {
+        listOf("", " \n ", "[]", "[ ]", "[猫猫", "猫猫]", "[[猫猫]]", "[猫\n猫]").forEach { content ->
+            assertFalse(content, isStandaloneStickerMessage(content, lookup))
+        }
+    }
+
+    @Test
+    fun `文件引用即使命中表情名也不作为独立表情`() {
+        listOf("[File: a.png]", "[file: a.png]", "[文件: a.png]").forEach { content ->
+            assertFalse(content, isStandaloneStickerMessage(content) { "file:///stickers/file.png" })
+        }
+    }
+
+    @Test
+    fun `独立表情与现有解析器使用相同名称和本地图`() {
+        val content = " \n[ 猫猫 ] \t"
+        assertTrue(isStandaloneStickerMessage(content, lookup))
+        assertEquals(
+            listOf(ContentSegment(type = SegmentType.STICKER, text = "猫猫", url = "file:///stickers/cat.png")),
+            parseContentSegments(content, lookup)
+        )
     }
 }

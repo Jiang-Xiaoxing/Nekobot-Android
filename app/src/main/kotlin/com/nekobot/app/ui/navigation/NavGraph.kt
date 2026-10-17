@@ -515,7 +515,8 @@ fun NekobotNavGraph() {
                             launchSingleTop = true
                         }
                     },
-                    onOpenExperienceArchive = { id -> navController.navigate(Routes.experienceArchive(id)) }
+                    onOpenExperienceArchive = { id -> navController.navigate(Routes.experienceArchive(id)) },
+                    onCreateAgentCharacter = { navController.navigate(Routes.COMPANION_CREATE) }
                 )
             }
             composable(
@@ -528,6 +529,7 @@ fun NekobotNavGraph() {
                     onBack = { navController.popBackStack() },
                     onOpenChat = { id -> navController.navigate(Routes.chat(id)) },
                     onOpenContextAnalysis = { id -> navController.navigate(Routes.contextAnalysis(id)) },
+                    onOpenCompanionMemory = { id -> navController.navigate(Routes.agentCharacterMemory(id)) },
                     onOpenSessionDetail = { id -> navController.navigate(Routes.sessionDetail(id)) },
                     onOpenWorkspace = { id -> navController.navigate(Routes.workspace(id)) },
                     onOpenStoryGraph = { id -> navController.navigate(Routes.storyGraph(id)) },
@@ -694,6 +696,32 @@ fun NekobotNavGraph() {
             composable(Routes.MEMORY) {
                 MemoryScreen(onBack = { navController.popBackStack() })
             }
+            composable(Routes.AGENT_CHARACTER_MEMORY) {
+                com.nekobot.app.ui.screens.memory.AgentCharacterMemoryDirectoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpen = { sessionId -> navController.navigate(Routes.agentCharacterMemory(sessionId)) }
+                )
+            }
+            composable(Routes.COMPANION_CREATE) {
+                com.nekobot.app.ui.screens.sessions.CompanionCreateScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpen = { sessionId -> navController.navigate(Routes.chat(sessionId)) {
+                        popUpTo(Routes.COMPANION_CREATE) { inclusive = true }
+                    } },
+                    onNewCharacter = { navController.navigate(Routes.characterDetail("new")) },
+                    onModelSettings = { navController.navigate(Routes.LOCAL_AI_MODELS) }
+                )
+            }
+            composable(
+                route = Routes.AGENT_CHARACTER_MEMORY_DETAIL,
+                arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
+            ) { entry ->
+                val sessionId = entry.arguments?.getString("sessionId").orEmpty()
+                com.nekobot.app.ui.screens.memory.FusedCompanionMemoryScreen(
+                    sessionId, { navController.popBackStack() },
+                    { messageId -> navController.navigate(Routes.chatLocation(sessionId, messageId)) { launchSingleTop = true } }
+                )
+            }
             composable(
                 route = Routes.EXPERIENCE_ARCHIVE,
                 arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
@@ -701,6 +729,7 @@ fun NekobotNavGraph() {
                 ExperienceArchiveScreen(
                     sessionId = entry.arguments?.getString("sessionId").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onLocateMemory = { messageId -> navController.navigate(Routes.chatLocation(entry.arguments?.getString("sessionId").orEmpty(), messageId, null)) { launchSingleTop = true } },
                     onOpenSource = { archiveId ->
                         navController.navigate(Routes.experienceSource(entry.arguments?.getString("sessionId").orEmpty(), archiveId)) { launchSingleTop = true }
                     }
@@ -745,6 +774,9 @@ fun NekobotNavGraph() {
             }
             composable(Routes.STYLE_SETTINGS) {
                 StyleSettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.RELATIONSHIP_BACKGROUND) {
+                com.nekobot.app.ui.screens.settings.RelationshipBackgroundScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = Routes.WORKSPACE,

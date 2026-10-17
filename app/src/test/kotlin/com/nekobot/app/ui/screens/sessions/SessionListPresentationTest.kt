@@ -34,16 +34,30 @@ class SessionListPresentationTest {
     }
 
     @Test
-    fun quickSessionFilters_exposesTheFourPersistentShortcutsInDisplayOrder() {
+    fun quickSessionFilters_exposesIndependentAgentCharacters() {
         assertEquals(
             listOf(
                 SessionFilter.CHARACTER_SESSIONS,
                 SessionFilter.AGENT_SESSIONS,
+                SessionFilter.AGENT_CHARACTERS,
                 SessionFilter.FAVORITE,
                 SessionFilter.ARCHIVED
             ),
             QUICK_SESSION_FILTERS
         )
+    }
+
+    @Test
+    fun agentCharacterCountsDoNotMixWithLegacyAgentAndExcludeArchives() {
+        val sessions = listOf(
+            Session(id = "ordinary", sessionMode = "agent"),
+            Session(id = "legacy", sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true),
+            Session(id = "companion", sessionMode = "agent", companionMode = true),
+            Session(id = "archived", sessionMode = "agent", companionMode = true, archived = true),
+            Session(id = "automatic", sessionMode = "agent", companionMode = true, isArchive = true)
+        )
+        assertEquals(SessionOverview(total = 4, agentSessions = 2, agentCharacterSessions = 1, archived = 1), buildSessionOverview(sessions))
+        assertEquals(listOf("companion", "archived", "automatic"), sessions.filter(Session::isAgentCharacterSession).map { it.id })
     }
 
     @Test
@@ -115,6 +129,42 @@ class SessionListPresentationTest {
         assertEquals(false, rows[2].isGroupSession)
         // 仅有 characterIds 也标记为群聊
         assertEquals(true, rows[3].isGroupSession)
+    }
+
+    @Test
+    fun listTitle_usesPeopleForRolesAndTasksForAgentEvenWithInheritedCharacter() {
+        val characters = listOf(CharacterPreset(id = "lin", name = "林小满"))
+        val rows = buildSessionListRows(listOf(
+            Session(id = "role", name = "手帐记录", characterId = "lin", messageCount = 918),
+            Session(id = "companion", name = "唯一会话", characterId = "lin", sessionMode = "agent", companionMode = true, inheritCharacter = false),
+            Session(id = "agent", name = "九月日报整理", characterId = "lin", sessionMode = "agent", inheritCharacter = true),
+            Session(id = "fallback", name = "无绑定角色")
+        ), characters)
+        assertEquals("林小满", rows[0].listTitle)
+        assertEquals("林小满", rows[1].listTitle)
+        assertEquals("九月日报整理", rows[2].listTitle)
+        assertEquals("无绑定角色", rows[3].listTitle)
+        // Presentation does not replace the stored title or drop the message total.
+        assertEquals("手帐记录", rows[0].name)
+        assertEquals(918, rows[0].messageCount)
+    }
+
+    @Test
+    fun explicitRenameWinsWithoutPromotingOldAutomaticTitlesOrChangingOtherRows() {
+        val character = CharacterPreset(id = "lin", name = "林小满")
+        val rows = buildSessionListRows(listOf(
+            Session(id = "renamed", name = "新的自动标题", characterId = "lin", listTitleOverride = "午后读书会"),
+            Session(id = "other", name = "旧的自动标题", characterId = "lin"),
+            Session(id = "companion", name = "唯一会话", characterId = "lin", sessionMode = "agent", companionMode = true,
+                listTitleOverride = "小满的聊天"),
+            Session(id = "agent", name = "整理报告", sessionMode = "agent")
+        ), listOf(character))
+        assertEquals("午后读书会", rows[0].listTitle)
+        assertEquals("新的自动标题", rows[0].name)
+        assertEquals("林小满", rows[1].listTitle)
+        assertEquals("小满的聊天", rows[2].listTitle)
+        assertEquals("整理报告", rows[3].listTitle)
+        assertEquals("林小满", rows[0].characterLabel)
     }
 
     @Test

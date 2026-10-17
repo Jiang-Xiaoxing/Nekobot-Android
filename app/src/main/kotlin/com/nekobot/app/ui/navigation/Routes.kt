@@ -56,6 +56,10 @@ object Routes {
     const val AGENT_MEMORY = "agent_memory"
     const val STATE_HISTORY = "state_history"
     const val MEMORY = "memory"
+    const val AGENT_CHARACTER_MEMORY = "agent_character_memory"
+    const val COMPANION_CREATE = "companion_create"
+    const val AGENT_CHARACTER_MEMORY_DETAIL = "agent_character_memory/{sessionId}"
+    fun agentCharacterMemory(sessionId: String) = "agent_character_memory/${android.net.Uri.encode(sessionId)}"
     const val EXPERIENCE_ARCHIVE = "experience_archive/{sessionId}"
     fun experienceArchive(sessionId: String) = "experience_archive/$sessionId"
     const val EXPERIENCE_SOURCE = "experience_source/{sessionId}/{archiveId}"
@@ -67,6 +71,7 @@ object Routes {
         return if (archiveId == null) route else "$route?archiveId=${android.net.Uri.encode(archiveId)}"
     }
     const val STYLE_SETTINGS = "style_settings"
+    const val RELATIONSHIP_BACKGROUND = "relationship_background"
 
     const val WORKSPACE = "workspace/{sessionId}"
     fun workspace(sessionId: String) = "workspace/$sessionId"

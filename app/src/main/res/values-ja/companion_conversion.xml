@@ -1,0 +1,24 @@
+<resources>
+    <string name="companion_conversion_configure">設定</string>
+    <string name="companion_conversion_start">変換</string>
+    <string name="companion_conversion_no_model">変換に使うモデルを選択</string>
+    <string name="companion_conversion_intro">この会話から Agent キャラクターの独立した記憶を整理します。完了後、新しいコピーへ自動で取り込みます。元のデータは残ります。</string>
+    <string name="companion_conversion_service_notice">会話と古い記憶の参考資料は選択した提供元に送信され、その料金が適用されます。履歴が多い場合は時間がかかります。停止後は再開できます。</string>
+    <string name="companion_conversion_rules">変換ルール</string>
+    <string name="companion_conversion_model_title">変換モデルを選択</string>
+    <string name="companion_conversion_model_hint">設定済みの通常のチャットモデルを使います。普段のチャットモデルは変更しません。</string>
+    <string name="companion_conversion_empty_models">利用できるチャットモデルがありません。提供元とモデルを追加してから選択してください。</string>
+    <string name="companion_conversion_manage_models">モデルを追加・管理</string>
+    <string name="companion_conversion_rule_version">ルールのバージョン：%1$s</string>
+    <string name="companion_conversion_rules_hint">実際にモデルへ送信するルールです。出力形式の確認や指示全体のコピーもできます。</string>
+    <string name="companion_conversion_output_format">モデルの出力形式を表示</string>
+    <string name="companion_conversion_copy_rules">ルール全体をコピー</string>
+    <string name="companion_conversion_copied">コピーしました</string>
+    <string name="companion_conversion_stopped">変換を停止しました。完了した部分は保存されています。変換をタップすると再開できます。</string>
+    <string name="companion_conversion_copy_error_report">エラーレポートをコピー</string>
+    <string name="companion_conversion_view_report">エラーレポートを表示</string>
+    <string name="companion_conversion_hide_report">エラーレポートを閉じる</string>
+    <string name="companion_conversion_previous_errors">過去のエラーレポート</string>
+    <string name="companion_conversion_report_hint">開発者や AI に共有して調査できます。API キーや会話本文は含みません。直近 5 件をこの変換記録とともに端末に保存します。</string>
+    <string name="companion_conversion_wait_limit">バッチごとの待機上限：%1$d 秒</string>
+</resources>

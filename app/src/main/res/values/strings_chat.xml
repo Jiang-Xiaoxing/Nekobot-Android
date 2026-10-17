@@ -3,7 +3,7 @@
     <!-- ==================== 会话列表页 (SessionsScreen) ==================== -->
     <string name="sessions_filter_all">全部会话</string>
     <string name="sessions_filter_character_sessions">角色会话</string>
-    <string name="sessions_filter_agent_sessions">Agent</string>
+    <string name="sessions_filter_agent_sessions">Agent 会话</string>
     <string name="sessions_filter_unarchived">未归档</string>
     <string name="sessions_filter_archived">已归档</string>
     <string name="sessions_filter_favorite">收藏</string>
@@ -137,10 +137,10 @@
     <string name="sessions_detail_inherit_character_desc">以角色身份回应，同时保留全部 Agent 工具能力；加载角色卡、记忆、世界书与关系状态。</string>
     <string name="sessions_detail_inherit_character_on">继承完整角色能力：开</string>
     <string name="sessions_detail_inherit_character_off">继承完整角色能力：关</string>
-    <string name="sessions_detail_long_conversation">长期单会话记忆</string>
-    <string name="sessions_detail_long_conversation_desc">保留近期原话，按需查角色记忆、经历摘要和旧原话。开启不会自动付费整理已有历史；补建旧档案需另行确认模型费用。</string>
-    <string name="sessions_detail_long_conversation_on">长期单会话记忆：开</string>
-    <string name="sessions_detail_long_conversation_off">长期单会话记忆：关</string>
+    <string name="sessions_detail_long_conversation">长久陪伴</string>
+    <string name="sessions_detail_long_conversation_desc">和你的 AI 伴侣，在同一个窗口一直聊下去。保留近期原话，按需查角色记忆、经历摘要和旧原话。开启不会自动付费整理已有历史；补建旧档案需另行确认模型费用。</string>
+    <string name="sessions_detail_long_conversation_on">长久陪伴：开</string>
+    <string name="sessions_detail_long_conversation_off">长久陪伴：关</string>
     <string name="sessions_detail_delay_reply">延迟回复</string>
     <string name="sessions_detail_delay_reply_desc">发送消息后等待一段时间再回复。继续输入时暂停计时，期间发送的多条消息会一起交给 AI。</string>
     <string name="sessions_detail_delay_reply_on">延迟回复：开</string>
@@ -346,7 +346,10 @@
     <string name="chat_edit_message_failed">编辑消息失败</string>
     <string name="chat_message_actions">消息操作</string>
     <string name="chat_multi_select">多选</string>
-    <string name="chat_select_text_title">选择文本</string>
+    <string name="chat_menu_edit">编辑</string>
+    <string name="chat_menu_regenerate">重新回复</string>
+    <string name="chat_menu_more">更多</string>
+    <string name="chat_menu_details">详情</string>
     <string name="chat_clear_messages_title">清空消息</string>
     <string name="chat_clear_messages_confirm">将删除本会话所有消息，此操作不可撤销。</string>
     <string name="chat_extract_archive_title">提取归档</string>
@@ -611,6 +614,9 @@
     <!-- ==================== 自动长期记忆提示（与技能沉淀提示同形态） ==================== -->
     <string name="chat_auto_memory_running">正在整理长期记忆…</string>
     <string name="chat_auto_memory_done">已自动记忆 %1$d 条</string>
+    <string name="chat_companion_memory_failed">记忆整理失败，稍后会自动重试</string>
+    <string name="chat_companion_memory_failed_view">查看</string>
+    <string name="chat_companion_memory_failed_dismiss">关闭提示</string>
 
     <!-- ==================== 工作区页 (WorkspaceScreen) ==================== -->
     <string name="workspace_title">工作区</string>

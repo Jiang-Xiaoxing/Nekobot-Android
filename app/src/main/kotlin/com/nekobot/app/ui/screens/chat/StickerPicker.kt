@@ -50,7 +50,7 @@ import com.nekobot.app.data.local.db.LocalStickerEntity
 /**
  * 聊天输入区的表情包选择面板。
  *
- * 点选一个表情会把 `[名称]` 插入输入框（可继续补充文字），而不是立即发送；
+ * 点选一个表情会立即独立发送 `[名称]`，保留输入框中的草稿；
  * 名称与已导入表情完全一致，消息气泡会直接渲染为原图。
  */
 @OptIn(ExperimentalMaterial3Api::class)

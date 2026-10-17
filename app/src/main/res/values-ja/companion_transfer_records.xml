@@ -1,0 +1,16 @@
+<resources>
+    <string name="companion_delete_conversion">この変換を削除</string>
+    <string name="companion_record_created">作成日時：%1$s</string>
+    <string name="companion_record_identifier">記録 ID：%1$s</string>
+    <string name="companion_record_backup_deleted">完了・バックアップ削除済み</string>
+    <string name="companion_record_not_started">未開始</string>
+    <string name="companion_record_failed">失敗・再開可能</string>
+    <string name="companion_record_paused">一時停止</string>
+    <string name="companion_record_deleting">削除が未完了です。再度削除してください</string>
+    <string name="companion_record_incomplete">未完了</string>
+    <string name="companion_record_total">元のメッセージ：%1$d 件</string>
+    <string name="companion_record_processed">整理済み：%1$d 件</string>
+    <string name="companion_record_progress_unknown">整理の進捗を現在読み取れません</string>
+    <string name="companion_delete_pending_record_hint">この変換記録、バックアップ、一時コピー、エラーレポート、保存済みの進捗を削除します。この変換は再開できなくなります。\n元のキャラクター、会話、記憶は保持されます。後から新しい変換を開始できます。</string>
+    <string name="companion_delete_completed_record_hint">この変換記録、バックアップ、エラーレポートを削除します。\n作成済みの Agent キャラクター、会話、記憶、添付ファイルと元の資料は保持されます。</string>
+</resources>

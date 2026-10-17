@@ -1,0 +1,24 @@
+<resources>
+    <string name="companion_conversion_configure">配置</string>
+    <string name="companion_conversion_start">转换</string>
+    <string name="companion_conversion_no_model">先选择转换用的模型</string>
+    <string name="companion_conversion_intro">把这段聊天整理成 单会话角色的独立记忆。完成后自动导入新副本，原资料保留。</string>
+    <string name="companion_conversion_service_notice">聊天与旧记忆参考会发送给所选服务商，费用按其标准计费。资料较多时需要一些时间；停止后可以继续。</string>
+    <string name="companion_conversion_rules">转换规则</string>
+    <string name="companion_conversion_model_title">选择转换模型</string>
+    <string name="companion_conversion_model_hint">使用已配置的普通聊天模型。这里只选择转换用的模型，不影响日常聊天。</string>
+    <string name="companion_conversion_empty_models">还没有可用的聊天模型。先添加服务商和模型，再回来选择。</string>
+    <string name="companion_conversion_manage_models">添加或管理模型</string>
+    <string name="companion_conversion_rule_version">规则版本：%1$s</string>
+    <string name="companion_conversion_rules_hint">这是实际发送给模型的规则。下方还可以查看输出格式，或复制完整内容。</string>
+    <string name="companion_conversion_output_format">查看模型输出格式</string>
+    <string name="companion_conversion_copy_rules">复制完整规则</string>
+    <string name="companion_conversion_copied">已复制</string>
+    <string name="companion_conversion_stopped">转换已停止。已完成的部分会保留，点击转换即可继续。</string>
+    <string name="companion_conversion_copy_error_report">复制错误报告</string>
+    <string name="companion_conversion_wait_limit">每批等待上限：%1$d 秒</string>
+    <string name="companion_conversion_view_report">查看错误报告</string>
+    <string name="companion_conversion_hide_report">收起错误报告</string>
+    <string name="companion_conversion_previous_errors">历史错误报告</string>
+    <string name="companion_conversion_report_hint">可发给开发者或 AI 排查。报告不含密钥和聊天正文；最近 5 次错误随转换记录保存在本机。</string>
+</resources>

@@ -244,7 +244,10 @@ class AIPipeline {
     ) {
         // 加载消息历史
         val messagesRaw = callbacks.loadMessages(ctx)
-        var messagesForAi = messagesRaw.map { it.toMap() }
+        val isAgentHistory = ((ctx.metadata["session_mode"] ?: ctx.chatRequest.metadata["session_mode"]) as? String)
+            .equals("agent", ignoreCase = true)
+        // 普通聊天不回传旧思考；本轮工具循环追加的协议消息不经过此历史清理。
+        var messagesForAi = messagesRaw.map { if (isAgentHistory) it.toMap() else withoutHistoricalReasoning(it) }
 
         // 追加当前用户消息（如果 loadMessages 未包含）
         val userContent = ctx.chatRequest.content
@@ -324,7 +327,7 @@ class AIPipeline {
         // 现实时间连续性 + 昼夜节律 + 离线剧情推进注入（对齐原仓库 _phase_real_time_prompt_fallback
         // 与 character/runtime._inject_real_time_context / _inject_circadian_state）
         // CharacterRuntime 未注入时由管线兜底注入，确保现实时间感知生效。
-        phaseRealTimeAndCircadianInjection(ctx)
+        if (ctx.metadata[META_FUSED_COMPANION] != true) phaseRealTimeAndCircadianInjection(ctx)
 
         // 继承完整角色能力的 Agent 会话：角色记忆与 Agent 全局长期记忆会同时注入，
         // 关于用户的事实往往重复，这里做一次去重。
@@ -362,8 +365,34 @@ class AIPipeline {
         if (userPersona.isNotBlank()) {
             ctx.promptStack.add(
                 "user.persona",
-                "Player persona / background (use this to interpret the player's identity, name, preferences, and circumstances; address or refer to the player by the name given in this description rather than generic terms like \"user\"):\n$userPersona",
+                "玩家人设／背景（据此理解玩家的身份、姓名、偏好与处境；称呼或提及玩家时，使用这份描述中给出的名字，不要使用“用户”等泛称）：\n$userPersona",
                 priority = PromptStack.Priority.BEHAVIOR,
+                scope = "session"
+            )
+        }
+
+        // 每次重新准备都按当前条件重建，关闭开关或切到 NONE 不残留旧段落。
+        ctx.promptStack.remove(CHARACTER_THINKING_STYLE_KEY)
+        val sessionMode = (ctx.metadata["session_mode"] ?: ctx.chatRequest.metadata["session_mode"]) as? String
+        val inheritsCharacter = (ctx.metadata[com.nekobot.app.data.local.META_INHERIT_CHARACTER]
+            ?: ctx.chatRequest.metadata[com.nekobot.app.data.local.META_INHERIT_CHARACTER]) == true
+        val hasCharacter = ctx.characterTurn != null ||
+            !callbacks.getCharacterContext(ctx)?.characterId.isNullOrBlank()
+        val isCharacterSession = isCharacterThinkingSession(
+            hasCharacter = hasCharacter,
+            sessionMode = sessionMode,
+            inheritsCharacter = inheritsCharacter,
+            fusedCompanion = ctx.metadata[META_FUSED_COMPANION] == true
+        )
+        val thinkingSettings = callbacks.getCharacterThinkingSettings(ctx)
+        if (isCharacterSession && callbacks.getReasoningEffort(ctx) != com.nekobot.app.data.model.ReasoningEffort.NONE && thinkingSettings.enabled) {
+            ctx.promptStack.add(
+                CHARACTER_THINKING_STYLE_KEY,
+                characterThinkingPrompt(thinkingSettings,
+                    ctx.characterTurn?.profile?.name.orEmpty().ifBlank { (ctx.metadata["sender_name"] as? String).orEmpty() },
+                    (ctx.metadata["user_name"] ?: ctx.chatRequest.metadata["user_name"]) as? String),
+                priority = PromptStack.Priority.BEHAVIOR + 1,
+                // 长久陪伴也放在顶部 system 中，工具循环及缓存重建均保留这项规则。
                 scope = "session"
             )
         }
@@ -377,11 +406,15 @@ class AIPipeline {
         val pipelineExtraItems = ctx.promptStack.getItems()
             .filter { it.enabled && it.content.isNotBlank() }
             .sortedBy { it.priority }
+        val fused = ctx.metadata[META_FUSED_COMPANION] == true
+        val dynamicKeys = setOf("knowledge.rag", "agent.todos", "agent.goal", "agent.spec")
+        val dynamicItems = if (fused) pipelineExtraItems.filter { it.key in dynamicKeys || it.scope == "turn" } else emptyList()
         val baseParts = listOf(characterBasePrompt, basePrompt)
+            .map { PromptStack.stripSection(it, CHARACTER_THINKING_STYLE_KEY) }
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
-        val composedSystem = (baseParts + pipelineExtraItems.map { "## ${it.key}\n${it.content.trim()}" })
+        val composedSystem = (baseParts + pipelineExtraItems.filterNot { it in dynamicItems }.map { "## ${it.key}\n${it.content.trim()}" })
             .joinToString("\n\n")
         ctx.metadata["composed_system_prompt"] = composedSystem
 
@@ -416,13 +449,20 @@ class AIPipeline {
         )
 
         messagesForAi = listOf(mapOf("role" to "system", "content" to composedSystem)) + depthInjectedHistory
+        val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty() else emptyList())
+            .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { "${it.key}: ${it.content}" }
+        messagesForAi = callbacks.finalizeContext(ctx, messagesForAi, tools, dynamic)
+        messagesForAi = withCharacterThinkingRequest(messagesForAi,
+            ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
+        ctx.metadata["composed_system_prompt"] = messagesForAi.filter { it["role"] == "system" }
+            .joinToString("\n\n") { it["content"].toString() }
 
         // 裁剪上下文
         val prepared = prepareChatContext(
             messagesForAi,
             userContent,
             knowledgeText = "",
-            maxTotalChars = maxContextChars
+            maxTotalChars = if (fused) Int.MAX_VALUE else maxContextChars
         )
         ctx.messages = if (sendImagesDirectly) {
             attachImagesToLatestUserMessage(prepared.messages, ctx.imageUrls)
@@ -492,7 +532,9 @@ class AIPipeline {
                 emptyList()
             }
 
-            val turn = runtime.beforeTurn(ctx.chatRequest, identity, recentMessages)
+            val turn = runtime.beforeTurn(ctx.chatRequest, identity, recentMessages,
+                allowSharedMemory = ctx.metadata[META_COMPANION_MEMORY] != true,
+                fusedCompanion = ctx.metadata[META_FUSED_COMPANION] == true)
             ctx.characterTurn = turn
 
             // 角色运行时已在 beforeTurn 内部调用 buildCharacterInjections 注册了 PromptStack 注入项
@@ -840,6 +882,7 @@ class AIPipeline {
         )
 
         val session = ToolLoopSession(
+            preserveConversation = ctx.metadata[META_FUSED_COMPANION] == true,
             initialMessages = ctx.messages,
             modelCall = modelCall,
             toolExecutor = toolExecutor,
@@ -1019,6 +1062,8 @@ class AIPipeline {
             ctx.streamedMessage = streamedMsg
 
             callbacks.saveAssistantMessage(ctx, streamedMsg)
+            callbacks.onAssistantMessageSaved(ctx, streamedMsg)
+            if (ctx.metadata["companion_question_added"] == true) streamedMsg["content"] = ctx.finalContent
 
             val result = PipelineResult(
                 finalContent = ctx.finalContent,
@@ -1051,6 +1096,7 @@ class AIPipeline {
                 "timestamp" to Instant.now().toString()
             )
             callbacks.saveAssistantMessage(ctx, assistantMessage)
+            callbacks.onAssistantMessageSaved(ctx, assistantMessage)
             callbacks.sendResponse(ctx, assistantMessage)
 
             val result = PipelineResult(
@@ -1082,6 +1128,9 @@ class AIPipeline {
 
         // 保存历史
         callbacks.saveAssistantMessage(ctx, assistantMessage)
+        callbacks.onAssistantMessageSaved(ctx, assistantMessage)
+
+        if (ctx.metadata["companion_question_added"] == true) assistantMessage["content"] = ctx.finalContent
 
         // 发送回复
         callbacks.sendResponse(ctx, assistantMessage)
@@ -1108,7 +1157,7 @@ class AIPipeline {
     ) {
         if (ctx.shouldStop() || ctx.stoppedPrematurely) return
         // 静默的内部触发不是用户交互，不能改变角色对用户的情绪、好感和关系状态。
-        if (ctx.metadata["skip_character_after_turn"] != true) {
+        if (ctx.metadata["skip_character_after_turn"] != true && ctx.metadata[META_FUSED_COMPANION] != true) {
             phaseCharacterRuntimeAfterTurn(ctx, callbacks, result)
             // 对话后审查可能回写关系增量，因此与角色 after_turn 使用同一跳过语义。
             phaseReview(ctx, callbacks, result)
@@ -1198,7 +1247,8 @@ class AIPipeline {
         val turn = ctx.characterTurn ?: return
 
         try {
-            runtime.afterTurn(ctx.chatRequest, result.finalContent, turn)
+            runtime.afterTurn(ctx.chatRequest, result.finalContent, turn,
+                allowSharedMemory = ctx.metadata[META_COMPANION_MEMORY] != true)
         } catch (e: Exception) {
             com.nekobot.app.data.local.LocalLogger.w(TAG, R.string.log_pipe_after_turn_error, e.message, throwable = e)
         }

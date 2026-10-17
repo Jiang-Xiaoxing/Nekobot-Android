@@ -5,7 +5,16 @@
     <string name="style_realtime_preview">实时预览</string>
     <string name="style_preview_title">标题文字示例</string>
     <string name="style_preview_body">这是正文内容示例，用于展示当前字体类型、大小与颜色配置的效果。</string>
-    <string name="style_preview_bubble">主题色 / 气泡预览</string>
+    <string name="style_preview_bubble">主题色 / 双方气泡颜色</string>
+    <string name="style_chat_effects">聊天效果</string>
+    <string name="style_reasoning_style">思考样式</string>
+    <string name="style_original_thinking">原有思考</string>
+    <string name="style_dynamic_thinking">动态思考</string>
+    <string name="style_original_thinking_hint">保留原有思考展示与展开方式。</string>
+    <string name="style_dynamic_thinking_hint">思考中文字缓慢明暗变化；自动展开，完成后收起。内容跟随更新，上翻阅读时暂停跟随。</string>
+    <string name="style_dynamic_messages">动态消息</string>
+    <string name="style_dynamic_messages_hint">双方的新气泡轻轻推出一次，后续文字平滑填入。关闭后沿用原有显示方式。</string>
+    <string name="style_effects_scope_hint">只改变外观，不开启模型思考。单会话角色仍由聊天设置中的“显示思考”控制是否展示。</string>
     <string name="style_theme_color">主题色</string>
     <string name="style_font_type">字体类型</string>
     <string name="style_font_size">字体大小</string>

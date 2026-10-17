@@ -79,6 +79,7 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
     androidResources {
         // tom_roush pdfbox 的 afm 资源在 Windows 上压缩时会导致路径异常，跳过压缩
         noCompress += listOf("afm", "ttf", "otf", "pfb")
@@ -103,6 +104,7 @@ ksp {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.xerial:sqlite-jdbc:3.41.2.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

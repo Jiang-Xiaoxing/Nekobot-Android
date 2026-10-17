@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="logs_export_all">전체 로그 내보내기 (.log)</string>
+    <string name="logs_export_saved">로그를 내보냈어요</string>
+    <string name="logs_export_failed">로그를 내보내지 못했어요. 저장 위치를 다시 선택하세요.</string>
+</resources>

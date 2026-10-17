@@ -84,6 +84,9 @@ internal fun ContextUsagePart.displayColor(scheme: ColorScheme): Color = when (t
     ContextUsagePart.SUMMARY -> scheme.outline
     ContextUsagePart.TOOL_TRAJECTORY -> scheme.error.copy(alpha = 0.6f)
     ContextUsagePart.OTHER_MESSAGES -> scheme.outline.copy(alpha = 0.6f)
+    ContextUsagePart.CORE_MEMORY -> androidx.compose.ui.graphics.Color(0xFFAE6E80)
+    ContextUsagePart.RECALLED_MEMORY -> androidx.compose.ui.graphics.Color(0xFF9A752E)
+    ContextUsagePart.AUXILIARY_CONTEXT -> androidx.compose.ui.graphics.Color(0xFF4C8176)
 }
 
 @Composable
@@ -95,4 +98,7 @@ internal fun contextPartLabel(part: ContextUsagePart): String = when (part) {
     ContextUsagePart.SUMMARY -> stringResource(R.string.chat_context_analysis_summary)
     ContextUsagePart.TOOL_TRAJECTORY -> stringResource(R.string.chat_context_analysis_tool_content)
     ContextUsagePart.OTHER_MESSAGES -> stringResource(R.string.chat_context_analysis_other_messages)
+    ContextUsagePart.CORE_MEMORY -> stringResource(R.string.single_role_core_memories)
+    ContextUsagePart.RECALLED_MEMORY -> stringResource(R.string.single_role_relevant_memories)
+    ContextUsagePart.AUXILIARY_CONTEXT -> stringResource(R.string.single_role_time_state_and_supporting_material)
 }

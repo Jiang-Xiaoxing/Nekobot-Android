@@ -41,14 +41,15 @@ class AgentToolTrajectoryPersistenceTest {
     }
 
     @Test
-    fun `JSON 工具结果中的凭据仍会脱敏`() {
-        val message = toolResult("call-credentials", """{"api_key":"secret","base_url":"https://example.com/v1"}""")
-
-        val decoded = decodeAgentToolMessageRow(encodeAgentToolMessageRow(message))!!
-        val content = decoded["content"] as String
-
-        assertFalse(content.contains("secret"))
-        assertTrue(content.contains("[已隐藏]"))
+    fun `工具JSON普通字段保持原格式且凭据仍被隐藏`() {
+        val ordinary = """{ "content": "文件正文", "count": 2 }"""
+        val original = toolResult("plain-json", ordinary)
+        assertEquals(original, decodeAgentToolMessageRow(encodeAgentToolMessageRow(original)))
+        val sensitive = toolResult("credential-json", """{"api_key":"synthetic-key-must-hide","content":"文件正文"}""")
+        val result = decodeAgentToolMessageRow(encodeAgentToolMessageRow(sensitive))!!["content"] as String
+        assertTrue(result.contains("文件正文"))
+        assertTrue(!result.contains("synthetic-key-must-hide"))
+        assertEquals(result, decodeAgentToolMessageRow(encodeAgentToolMessageRow(toolResult("credential-json", result)))!!["content"])
     }
 
     @Test

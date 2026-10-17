@@ -46,6 +46,9 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocaleHelper
 import com.nekobot.app.data.model.CharacterPreset
+import com.nekobot.app.data.repository.Resource
+import com.nekobot.app.ui.screens.sessions.SessionModeBadge
+import com.nekobot.app.ui.screens.sessions.SessionModeLabel
 import com.nekobot.app.ui.adaptive.WindowWidthClass
 import com.nekobot.app.ui.adaptive.rememberWindowWidthClass
 import com.nekobot.app.ui.components.EmptyState
@@ -70,11 +73,35 @@ class CharactersViewModel : com.nekobot.app.ui.BaseViewModel() {
     private val _characters = MutableStateFlow<List<CharacterPreset>>(emptyList())
     val characters: StateFlow<List<CharacterPreset>> = _characters.asStateFlow()
 
+    private val _sessionModes = MutableStateFlow<Map<String, List<SessionModeLabel>>?>(null)
+    val sessionModes: StateFlow<Map<String, List<SessionModeLabel>>?> = _sessionModes.asStateFlow()
+    private var loadGeneration = 0
+
     /** 加载角色列表 */
     fun load() {
+        val generation = ++loadGeneration
+        _sessionModes.value = null
         launchResult(
-            block = { unified.listCharacters() },
-            onSuccess = { _characters.value = it ?: emptyList() }
+            block = {
+                when (val result = unified.listCharacters()) {
+                    is Resource.Success -> {
+                        val modes = when (val sessions = unified.listSessions()) {
+                            is Resource.Success -> buildCharacterSessionModes(sessions.data)
+                            else -> null
+                        }
+                        Resource.Success(result.data to modes)
+                    }
+                    is Resource.Error -> result
+                    is Resource.Loading -> Resource.Loading
+                }
+            },
+            onSuccess = { (characters, modes) ->
+                if (generation == loadGeneration) {
+                    _characters.value = characters
+                    _sessionModes.value = modes
+                }
+            },
+            onError = { if (generation == loadGeneration) showError(it) }
         )
     }
 
@@ -141,6 +168,7 @@ fun CharactersScreen(
     viewModel: CharactersViewModel = viewModel()
 ) {
     val characters by viewModel.characters.collectAsStateWithLifecycle()
+    val sessionModes by viewModel.sessionModes.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -282,7 +310,8 @@ fun CharactersScreen(
                         }
                     }
                     items(characters, key = { it.id ?: it.name ?: it.hashCode().toString() }) { character ->
-                        CharacterListItem(character = character, onClick = {
+                        CharacterListItem(character = character,
+                            modes = sessionModes?.get(character.id).orEmptyWhenLoaded(sessionModes != null), onClick = {
                             character.id?.let { onOpenCharacter(it) }
                         })
                     }
@@ -312,7 +341,8 @@ fun CharactersScreen(
                         }
                     }
                     items(characters, key = { it.id ?: it.name ?: it.hashCode().toString() }) { character ->
-                        CharacterGridItem(character = character, onClick = {
+                        CharacterGridItem(character = character,
+                            modes = sessionModes?.get(character.id).orEmptyWhenLoaded(sessionModes != null), onClick = {
                             character.id?.let { onOpenCharacter(it) }
                         })
                     }
@@ -356,7 +386,7 @@ fun CharactersScreen(
 
 /** 列表模式：单条角色卡片（头像 + 名称 + 描述 + 标签） */
 @Composable
-private fun CharacterListItem(character: CharacterPreset, onClick: () -> Unit) {
+private fun CharacterListItem(character: CharacterPreset, modes: List<SessionModeLabel>?, onClick: () -> Unit) {
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -384,6 +414,7 @@ private fun CharacterListItem(character: CharacterPreset, onClick: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                CharacterModeLabels(modes, Modifier.padding(top = 5.dp))
                 if (!character.description.isNullOrBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -430,7 +461,7 @@ private fun CharacterListItem(character: CharacterPreset, onClick: () -> Unit) {
 
 /** 网格模式：角色卡片（上方立绘 + 下方名称和简介） */
 @Composable
-private fun CharacterGridItem(character: CharacterPreset, onClick: () -> Unit) {
+private fun CharacterGridItem(character: CharacterPreset, modes: List<SessionModeLabel>?, onClick: () -> Unit) {
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -480,6 +511,7 @@ private fun CharacterGridItem(character: CharacterPreset, onClick: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             // 简介
+            CharacterModeLabels(modes, Modifier.fillMaxWidth().padding(top = 5.dp))
             if (!character.description.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -491,6 +523,24 @@ private fun CharacterGridItem(character: CharacterPreset, onClick: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+    }
+}
+
+private fun List<SessionModeLabel>?.orEmptyWhenLoaded(loaded: Boolean): List<SessionModeLabel>? =
+    if (loaded) orEmpty() else null
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CharacterModeLabels(modes: List<SessionModeLabel>?, modifier: Modifier = Modifier) {
+    if (modes.isNullOrEmpty()) {
+        Text(stringResource(if (modes == null) R.string.characters_session_modes_unavailable
+            else R.string.characters_no_linked_sessions), modifier,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+    } else {
+        FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            modes.forEach { SessionModeBadge(it) }
         }
     }
 }

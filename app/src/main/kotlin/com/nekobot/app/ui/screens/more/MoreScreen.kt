@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.more
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.foundation.background
@@ -25,12 +27,14 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Landscape
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +56,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.ui.components.GlassCard
+import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.ui.theme.accentSecondary
 import com.nekobot.app.ui.theme.accentSuccess
 import com.nekobot.app.ui.theme.accentTertiary
@@ -67,6 +72,7 @@ fun MoreScreen(
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit
 ) {
+    val textResources = LocalResources.current
     // 订阅全局 appMode Flow，模式切换时自动重组
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     Scaffold(
@@ -100,6 +106,14 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_style_settings_desc),
                     onClick = { onNavigate("style_settings") }
                 )
+                Spacer(Modifier.height(4.dp))
+                MoreRow(
+                    icon = Icons.Filled.Landscape,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = textResources.getString(R.string.single_role_relationship_page_skins),
+                    desc = textResources.getString(R.string.single_role_seven_sets_of_backgrounds_buttons_and_icons_independent_of_theme),
+                    onClick = { onNavigate(Routes.RELATIONSHIP_BACKGROUND) }
+                )
             }
 
             // -------------------- AI 能力 --------------------
@@ -121,6 +135,16 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_role_memory_desc),
                     onClick = { onNavigate("memory") }
                 )
+                if (appMode == AppMode.LOCAL) {
+                    Spacer(Modifier.height(4.dp))
+                    MoreRow(
+                        icon = Icons.Outlined.Book,
+                        tint = accentTertiary(),
+                        title = stringResource(R.string.agent_character_memory_title),
+                        desc = stringResource(R.string.agent_character_memory_desc),
+                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) }
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 MoreRow(
                     icon = Icons.Filled.Bookmarks,
@@ -247,14 +271,7 @@ private fun MoreRow(
     desc: String,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    MoreRow(title = title, desc = desc, onClick = onClick, leadingIcon = {
         Box(
             modifier = Modifier
                 .size(40.dp)
@@ -264,6 +281,26 @@ private fun MoreRow(
         ) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         }
+    })
+}
+
+/** 自定义彩色图标与普通单色图标共用同一行布局和点击区域。 */
+@Composable
+private fun MoreRow(
+    title: String,
+    desc: String,
+    onClick: () -> Unit,
+    leadingIcon: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        leadingIcon()
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)

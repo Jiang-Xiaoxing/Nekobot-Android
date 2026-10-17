@@ -30,6 +30,8 @@ import com.nekobot.app.integration.NekobotShortcutManager
 import com.nekobot.app.widget.NekobotWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +71,18 @@ object ServiceContainer {
     internal fun updateAppForeground(foreground: Boolean) {
         isAppForeground = foreground
         _appForegroundFlow.value = foreground
+    }
+
+    /**
+     * 回到前台后继续被系统打断的关系评估。
+     *
+     * 关系评估没有前台服务保活，切到后台后进程可能被冻结/回收而中断；
+     * 这里在回到前台时补跑一次恢复，不必等下一轮聊天。仅本地模式有单会话角色的关系评估。
+     */
+    fun resumeCompanionRelationshipAfterForeground() {
+        if (!this::prefs.isInitialized || !prefs.isLocalMode) return
+        if (!this::localRepository.isInitialized) return
+        runCatching { localRepository.resumeCompanionRelationshipAfterForeground() }
     }
 
     /** 当前可见的聊天会话 id（聊天界面在前台且处于 resumed 状态）；null 表示不在任何会话内。 */
@@ -125,6 +139,23 @@ object ServiceContainer {
      * 使用 IO dispatcher：这些任务主要是 I/O 密集型（DB + 网络）。
      */
     val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var localAutomationSyncJob: Job? = null
+
+    /** 后台资料同步属于本次仓库绑定，不能跨越关闭或切库继续使用旧连接。 */
+    private fun syncLocalAutomationSchedules() {
+        localAutomationSyncJob?.cancel()
+        val boundRepository = localRepository
+        localAutomationSyncJob = applicationScope.launch {
+            try {
+                boundRepository.syncAutomationSchedules()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // Room 查询已发出时仍可能与关闭连接竞态；后台失败不应终止整个应用。
+                com.nekobot.app.data.local.LocalLogger.w("LocalSchedules", "后台计划同步已停止：${error.message}", error)
+            }
+        }
+    }
 
     /** 全局运行模式流：模式切换时所有观察页面自动刷新 */
     private val _appModeFlow = MutableStateFlow(AppMode.LOCAL)
@@ -249,6 +280,14 @@ object ServiceContainer {
         }
     }
 
+    private val _sessionChanged = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /** 会话资料（名称等）保存后广播会话 ID，会话列表与聊天页据此立即刷新。 */
+    val sessionChanged: SharedFlow<String> = _sessionChanged
+
+    fun notifySessionChanged(sessionId: String) {
+        _sessionChanged.tryEmit(sessionId)
+    }
+
     /** 广播角色卡数据变化（id 为变化的角色卡 ID，null/blank 时广播通配符 ""）。 */
     fun notifyCharacterChanged(characterId: String?) {
         _characterChanged.tryEmit(characterId?.takeIf { it.isNotBlank() } ?: "")
@@ -289,7 +328,7 @@ object ServiceContainer {
                 }
         }
         if (prefs.isLocalMode) {
-            applicationScope.launch { localRepository.syncAutomationSchedules() }
+            syncLocalAutomationSchedules()
         }
         applicationScope.launch {
             NekobotShortcutManager.refresh(app)
@@ -353,6 +392,7 @@ object ServiceContainer {
     fun switchLocalDb(profileName: String) {
         appContext?.let { ctx ->
             prefs.activeDbName = profileName
+            localAutomationSyncJob?.cancel()
             localRepository.close()
             NekobotDatabase.switchProfile(ctx, profileName)
             val db = NekobotDatabase.get(ctx, profileName)
@@ -369,7 +409,7 @@ object ServiceContainer {
                         com.nekobot.app.data.local.LocalLogger.e("LocalSecrets", R.string.log_app_secrets_migrate_failed, it.message, throwable = it)
                     }
             }
-            applicationScope.launch { localRepository.syncAutomationSchedules() }
+            syncLocalAutomationSchedules()
         }
     }
 
@@ -382,7 +422,7 @@ object ServiceContainer {
         _loginStateFlow.value = prefs.isLoggedIn
         clearGeneratingSessions()
         if (mode == AppMode.LOCAL) {
-            applicationScope.launch { localRepository.syncAutomationSchedules() }
+            syncLocalAutomationSchedules()
         }
     }
 
@@ -500,6 +540,8 @@ class NekobotApp : Application(), coil.ImageLoaderFactory {
                     if (startedActivities == 1) {
                         ServiceContainer.updateAppForeground(true)
                         com.nekobot.app.data.local.ai.AgentAttentionCenter.recheck()
+                        // 回到前台继续被系统打断的关系评估（切后台可能被冻结/回收）。
+                        ServiceContainer.resumeCompanionRelationshipAfterForeground()
                     }
                 }
 

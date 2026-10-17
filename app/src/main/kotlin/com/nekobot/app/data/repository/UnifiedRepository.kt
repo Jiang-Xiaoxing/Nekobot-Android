@@ -167,7 +167,14 @@ class UnifiedRepository(
         if (isLocal) Resource.Success(local.listSessions()) else remote.listSessions()
 
     suspend fun createSession(req: CreateSessionRequest): Resource<Session> =
-        if (isLocal) Resource.Success(local.createSession(req)) else remote.createSession(req)
+        if (isLocal) {
+            try { Resource.Success(local.createSession(req)) }
+            catch (e: com.nekobot.app.data.local.CompanionCreationException) {
+                Resource.Error(ServiceContainer.getString(e.messageRes))
+            }
+        } else remote.createSession(req)
+
+    suspend fun companionCreationEligibility(characterId: String?) = local.companionCreationEligibility(characterId)
 
     suspend fun getSession(id: String): Resource<Session> =
         if (isLocal) {
@@ -175,6 +182,9 @@ class UnifiedRepository(
         } else remote.getSession(id)
 
     suspend fun updateSession(id: String, req: UpdateSessionRequest): Resource<Session> =
+        updateSessionInternal(id, req).also { if (it is Resource.Success) ServiceContainer.notifySessionChanged(id) }
+
+    private suspend fun updateSessionInternal(id: String, req: UpdateSessionRequest): Resource<Session> =
         if (isLocal) {
             // 本地模式：proactive_chat / tts_config 以 JSON 字符串形式存入 Room
             local.updateSession(
@@ -202,7 +212,8 @@ class UnifiedRepository(
                 inheritCharacterGreeting = req.inheritCharacterGreeting,
                 longConversationEnabled = req.longConversationEnabled,
                 delayReplyEnabled = req.delayReplyEnabled,
-                delayReplyDelaySeconds = req.delayReplyDelaySeconds
+                delayReplyDelaySeconds = req.delayReplyDelaySeconds,
+                updateListTitle = req.updateListTitle
             )
             local.getSession(id)?.let { Resource.Success(it) } ?: Resource.Error("会话不存在")
         } else remote.updateSession(id, req)
@@ -794,6 +805,9 @@ class UnifiedRepository(
 
     suspend fun listCharacters(): Resource<List<CharacterPreset>> =
         if (isLocal) Resource.Success(local.listCharacters()) else remote.listCharacters()
+
+    suspend fun listCharactersForSessionCreation(): Resource<List<CharacterPreset>> =
+        if (isLocal) Resource.Success(local.listCharactersForSessionCreation()) else remote.listCharacters()
 
     suspend fun countHighAffectionCharacters(threshold: Int = 90): Resource<Int> =
         if (isLocal) {

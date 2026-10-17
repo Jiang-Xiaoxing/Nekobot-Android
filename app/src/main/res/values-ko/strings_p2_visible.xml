@@ -40,6 +40,7 @@
     <string name="audio_generating">오디오 생성 중…</string>
     <string name="audio_generation_failed">오디오 생성 실패</string>
     <string name="chat_continue_remaining">계속 표시(남은 글자 %1$d자)</string>
+    <string name="chat_dynamic_thinking">생각 중</string>
     <string name="chat_thinking">생각 중…</string>
     <string name="chat_reasoning_process">추론 과정</string>
     <string name="chat_ai_processing">AI 처리 중…</string>

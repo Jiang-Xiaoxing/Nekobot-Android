@@ -131,10 +131,10 @@
     <string name="sessions_detail_inherit_character_desc">キャラクターとして応答しつつ、Agent のツール能力はすべて維持します。キャラクターカード・記憶・世界観・関係状態を読み込みます。</string>
     <string name="sessions_detail_inherit_character_on">キャラクター能力を完全継承：オン</string>
     <string name="sessions_detail_inherit_character_off">キャラクター能力を完全継承：オフ</string>
-    <string name="sessions_detail_long_conversation">長期会話メモリー</string>
-    <string name="sessions_detail_long_conversation_desc">直近の原文を残し、記憶・経験の要約・過去の発言を必要に応じて検索します。有効化だけで過去の履歴を有料で整理しません。過去の整理には別途費用確認が必要です。</string>
-    <string name="sessions_detail_long_conversation_on">長期会話メモリー：オン</string>
-    <string name="sessions_detail_long_conversation_off">長期会話メモリー：オフ</string>
+    <string name="sessions_detail_long_conversation">ずっと一緒</string>
+    <string name="sessions_detail_long_conversation_desc">AI パートナーと、同じチャット画面で会話を続けられます。直近の原文を残し、記憶・経験の要約・過去の発言を必要に応じて検索します。有効化だけで過去の履歴を有料で整理しません。過去の整理には別途費用確認が必要です。</string>
+    <string name="sessions_detail_long_conversation_on">ずっと一緒：オン</string>
+    <string name="sessions_detail_long_conversation_off">ずっと一緒：オフ</string>
     <string name="sessions_detail_delay_reply">遅延返信</string>
     <string name="sessions_detail_delay_reply_desc">メッセージ送信後、少し待ってから返信します。入力中はタイマーを一時停止し、待機中に送信した複数のメッセージをまとめて AI に渡します。</string>
     <string name="sessions_detail_delay_reply_on">遅延返信：オン</string>
@@ -340,7 +340,10 @@
     <string name="chat_edit_message_failed">メッセージの編集に失敗しました</string>
     <string name="chat_message_actions">メッセージ操作</string>
     <string name="chat_multi_select">複数選択</string>
-    <string name="chat_select_text_title">テキストを選択</string>
+    <string name="chat_menu_edit">編集</string>
+    <string name="chat_menu_regenerate">再生成</string>
+    <string name="chat_menu_more">その他</string>
+    <string name="chat_menu_details">詳細</string>
     <string name="chat_clear_messages_title">メッセージをクリア</string>
     <string name="chat_clear_messages_confirm">このチャットのすべてのメッセージが削除されます。この操作は元に戻せません。</string>
     <string name="chat_extract_archive_title">アーカイブから抽出</string>
@@ -624,6 +627,9 @@
     <!-- ==================== 長期記憶の自動整理の通知（スキル通知と同じ形） ==================== -->
     <string name="chat_auto_memory_running">長期記憶を整理中…</string>
     <string name="chat_auto_memory_done">%1$d 件を自動記憶しました</string>
+    <string name="chat_companion_memory_failed">記憶の整理に失敗しました。後で自動的に再試行します</string>
+    <string name="chat_companion_memory_failed_view">表示</string>
+    <string name="chat_companion_memory_failed_dismiss">閉じる</string>
 
     <!-- ==================== マルチメディアコンテンツ (MultimediaContent) ==================== -->
     <string name="chat_media_image">画像</string>

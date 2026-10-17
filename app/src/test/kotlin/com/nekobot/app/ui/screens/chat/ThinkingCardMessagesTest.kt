@@ -129,6 +129,13 @@ class ThinkingCardMessagesTest {
     }
 
     @Test
+    fun companionChatsNeverRenderAgentProgressCards() {
+        assertFalse(shouldRenderProgressCards(isLocalMode = true, sessionMode = "agent", companionMode = true))
+        assertFalse(shouldRenderProgressCards(isLocalMode = false, sessionMode = "agent", companionMode = true))
+        assertFalse(shouldRenderProgressCards(isLocalMode = true, sessionMode = "character", companionMode = true))
+    }
+
+    @Test
     fun fusesTypingIndicatorIntoTheRunningProgressCard() {
         val running = Message(
             id = "user-1",

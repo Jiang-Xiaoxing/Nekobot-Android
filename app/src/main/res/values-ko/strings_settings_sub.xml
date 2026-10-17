@@ -435,4 +435,13 @@
     <string name="sandbox_settings_reset_confirm_message">apk / pip / npm으로 설치한 소프트웨어와 /root 데이터를 삭제합니다(복구 불가). 대화 워크스페이스는 유지됩니다.</string>
     <string name="sandbox_settings_reset_confirm_action">초기화</string>
     <string name="sandbox_settings_reset_done">샌드박스를 초기 상태로 되돌렸습니다</string>
+    <string name="style_chat_effects">채팅 효과</string>
+    <string name="style_dynamic_messages">메시지 애니메이션</string>
+    <string name="style_dynamic_messages_hint">양쪽의 새 말풍선이 한 번 부드럽게 나타난 뒤 글자가 매끄럽게 채워져요. 끄면 기존 표시 방식을 사용해요.</string>
+    <string name="style_reasoning_style">생각 스타일</string>
+    <string name="style_dynamic_thinking">생각 애니메이션</string>
+    <string name="style_dynamic_thinking_hint">생각 중인 글자의 밝기가 천천히 바뀌어요. 자동으로 펼쳐지고 완료되면 접혀요. 내용이 갱신될 때 자동으로 따라가며, 위로 스크롤해 읽는 동안에는 따라가기를 멈춰요.</string>
+    <string name="style_original_thinking">기존 생각 표시</string>
+    <string name="style_original_thinking_hint">기존 생각 표시 및 펼침 방식을 유지해요.</string>
+    <string name="style_effects_scope_hint">외형만 바꾸며 모델의 생각 기능을 켜지 않아요. Agent 캐릭터의 생각 표시 여부는 계속 채팅 설정의 “생각 표시”로 조절해요.</string>
 </resources>

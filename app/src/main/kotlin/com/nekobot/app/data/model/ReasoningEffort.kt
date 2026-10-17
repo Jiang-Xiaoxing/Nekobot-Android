@@ -7,7 +7,9 @@ enum class ReasoningEffort(val wireValue: String, val displayName: String) {
     LOW("low", "Low"),
     MEDIUM("medium", "Medium"),
     HIGH("high", "High"),
-    MAX("max", "Max");
+    MAX("max", "Max"),
+    /** 用户自定义参数名与参数值，见 [CustomReasoningParam]。 */
+    CUSTOM("custom", "自定义");
 
     companion object {
         fun fromValue(value: String?): ReasoningEffort =

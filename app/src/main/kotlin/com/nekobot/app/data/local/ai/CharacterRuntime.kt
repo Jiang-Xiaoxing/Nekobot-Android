@@ -127,7 +127,9 @@ class CharacterRuntime(
     suspend fun beforeTurn(
         chatRequest: ChatRequest,
         identity: CharacterIdentity,
-        recentMessages: List<Map<String, String>> = emptyList()
+        recentMessages: List<Map<String, String>> = emptyList(),
+        allowSharedMemory: Boolean = true,
+        fusedCompanion: Boolean = false
     ): CharacterTurnContext {
         // 1. 读取角色卡
         val profile = getProfile(identity)
@@ -140,7 +142,7 @@ class CharacterRuntime(
         val relationship = getOrCreateRelationship(identity, profile)
 
         // 4. 检索记忆
-        val memories = searchMemories(identity, chatRequest.content)
+        val memories = if (allowSharedMemory) searchMemories(identity, chatRequest.content) else emptyList()
 
         // 5. 分析信号
         val signals = SignalAnalyzer.analyze(chatRequest.content, state, relationship)
@@ -172,10 +174,12 @@ class CharacterRuntime(
         buildCharacterInjections(
             stack = promptStack,
             profile = profile,
-            state = state,
-            relationship = relationship,
+            state = if (fusedCompanion) null else state,
+            relationship = if (fusedCompanion) null else relationship,
             memories = memories,
-            plan = plan
+            plan = if (fusedCompanion) null else plan,
+            // META_FUSED_COMPANION 来自 session.companionMode，与单会话独白显示使用同一模式字段。
+            companionMode = fusedCompanion
         )
         // 世界书注入。按 score 排序后的条目总量可能远超上下文预算：
         // 单条截断 + 总量封顶，避免几本设定集把对话历史挤出去。
@@ -207,7 +211,7 @@ class CharacterRuntime(
             promptStack.add("world_book.after_an", afterAnText, priority = PromptStack.Priority.WORLD_BOOK + 1)
         }
         // MemoryFS 结构化记忆注入（按类别分组：【用户人格】【角色人格】等）
-        if (memoryFS != null) {
+        if (allowSharedMemory && memoryFS != null) {
             try {
                 val memoryContext = memoryFS.buildPromptContext(
                     characterId = identity.characterId,
@@ -229,9 +233,17 @@ class CharacterRuntime(
             promptStack.disableKeys(disabledKeys)
         }
 
-        val promptText = promptStack.render(
+        val promptText = if (fusedCompanion) buildBasePrompt(profile, "", "") else promptStack.render(
             basePrompt = buildBasePrompt(profile, beforeCharText, afterCharText)
         )
+        if (fusedCompanion) {
+            promptStack.add("world_book.before_char", beforeCharText, priority = PromptStack.Priority.WORLD_BOOK)
+            promptStack.add("world_book.after_char", afterCharText, priority = PromptStack.Priority.WORLD_BOOK)
+            atDepthInjections.forEachIndexed { i, entry ->
+                promptStack.add("world_book.depth.$i", entry.content, priority = PromptStack.Priority.WORLD_BOOK)
+            }
+            if (disabledKeys.isNotEmpty()) promptStack.disableKeys(disabledKeys)
+        }
 
         return CharacterTurnContext(
             profile = profile,
@@ -242,7 +254,7 @@ class CharacterRuntime(
             plan = plan,
             promptText = promptText,
             worldBookEntries = worldBookEntries,
-            worldBookDepthInjections = atDepthInjections,
+            worldBookDepthInjections = if (fusedCompanion) emptyList() else atDepthInjections,
             promptStackItems = promptStack.getItems()
         )
     }
@@ -261,7 +273,8 @@ class CharacterRuntime(
     suspend fun afterTurn(
         chatRequest: ChatRequest,
         finalContent: String,
-        turnContext: CharacterTurnContext
+        turnContext: CharacterTurnContext,
+        allowSharedMemory: Boolean = true
     ) {
         val oldState = turnContext.state
         val oldRelationship = turnContext.relationship
@@ -347,7 +360,7 @@ class CharacterRuntime(
 
         // 记忆抽取：异步执行，不阻塞 afterTurn 主流程，也不受 viewModelScope 生命周期影响
         // （记忆抽取含 3 次 LLM 重试，可能耗时 30-60 秒，不应因用户退出聊天界面而被取消）
-        if (memoryService != null) {
+        if (allowSharedMemory && memoryService != null) {
             val response = ChatResponse(finalContent = finalContent)
             val capturedRequest = chatRequest
             val capturedTurn = turnContext

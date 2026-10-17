@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_mode_group_label">群聊會話</string>
+    <string name="session_mode_character_hint">以角色身分展開對話</string>
+    <string name="session_mode_agent_hint">使用工具處理任務</string>
+    <string name="session_mode_companion_hint">固定一個對話，持續記住相處的點滴</string>
+    <string name="single_session_headline">在同一個對話裡，\n一直聊下去。</string>
+    <string name="single_session_about">瞭解這個模式</string>
+    <string name="single_session_about_body">一個角色，一個聊天視窗\n建立後，這個角色固定在同一個對話裡，不再另開第二個視窗。\n\n記住相處中的重要事情\nAgent 角色記憶會整理喜好、經歷和約定；你可以查看、編輯，也可以回到聊天原話核對。它與普通角色記憶、全局 Agent 記憶分別儲存。\n\n如何帶入既有聊天\n在建立頁選擇既有角色，再選擇要遷入的對話。設定模型並轉換後會建立新副本，原角色和聊天保留。\n\n需要時使用工具\n聊天時仍可使用已設定且可用的 Agent 工具。模型和工具可能產生服務提供者費用。</string>
+</resources>

@@ -25,6 +25,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.BufferedReader
 import okio.buffer
 import java.io.ByteArrayOutputStream
@@ -37,6 +38,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 private const val TAG = "LocalAiClient"
+/** 辅助作业要求一次请求时，不因 HTTP 400 自动删参数再调用；各协议不会发送这个内部标记。 */
+internal const val NO_COMPATIBILITY_RETRY_EXTRA = "_no_compatibility_retry"
 private const val IMAGE_GENERATION_TEST_PROMPT = "a test image"
 
 /**
@@ -139,13 +142,22 @@ internal fun mergeStreamTerminalResponse(
 
 /** 识别短篇、明显的供应商拒答占位文本，避免误判正常长回复。 */
 internal fun shouldFailoverForAssistantContent(content: String): Boolean {
-    val compact = content
-        .trim()
-        .replace(Regex("""[\s，,。.!！：:；;\"'“”‘’`*_#>\-]"""), "")
+    val compact = compactAssistantContent(content)
     if (compact.isBlank() || compact.length > FAILOVER_REFUSAL_MAX_CHARS) return false
     if (compact == "相关内容" || compact == "相关的内容") return true
     return FAILOVER_REFUSAL_PREFIXES.any(compact::startsWith)
 }
+
+/** 只等待仍可能是拒答占位的前缀；普通短回答不再统一攒满 240 字或等流结束。 */
+internal fun shouldBufferAssistantPrefix(content: String): Boolean {
+    if (content.length > FAILOVER_REFUSAL_MAX_CHARS) return false
+    val compact = compactAssistantContent(content)
+    return compact.isBlank() || shouldFailoverForAssistantContent(content) ||
+        (FAILOVER_REFUSAL_PREFIXES + listOf("相关内容", "相关的内容")).any { it.startsWith(compact) }
+}
+
+private fun compactAssistantContent(content: String): String = content.trim()
+    .replace(Regex("""[\s，,。.!！：:；;\"'“”‘’`*_#>\-]"""), "")
 
 private const val FAILOVER_REFUSAL_MAX_CHARS = 240
 
@@ -284,11 +296,13 @@ class LocalAiClient(
                             model = runtimeModel.model,
                             modelDisplayName = runtimeModel.name,
                             cachedInputTokens = detail.cachedPromptTokens,
-                            cacheWriteTokens = detail.cacheWriteTokens
+                            cacheWriteTokens = detail.cacheWriteTokens,
+                                cacheReported = detail.cacheReported
                         )
                     )
                 }
-                if (parsed.content.isBlank() && parsed.toolCalls.isEmpty()) {
+                if (parsed.content.isBlank() && parsed.toolCalls.isEmpty() &&
+                    !(extra[CHARACTER_THINKING_EXTRA] == true && parsed.thinkingContent.isNotBlank())) {
                     emit(RealtimeEvent.Error("模型返回了空响应"))
                 }
                 emit(RealtimeEvent.StreamEnd(null))
@@ -315,7 +329,8 @@ class LocalAiClient(
                                 model = runtimeModel.model,
                                 modelDisplayName = runtimeModel.name,
                                 cachedInputTokens = detail.cachedPromptTokens,
-                                cacheWriteTokens = detail.cacheWriteTokens
+                                cacheWriteTokens = detail.cacheWriteTokens,
+                                cacheReported = detail.cacheReported
                             )
                         )
                     }
@@ -354,7 +369,7 @@ class LocalAiClient(
                     fullContent.append(it)
                     emit(RealtimeEvent.StreamChunk(it))
                 }
-            if (fullContent.isEmpty()) {
+            if (fullContent.isEmpty() && !(extra[CHARACTER_THINKING_EXTRA] == true && fullThinking.isNotBlank())) {
                 emit(RealtimeEvent.Error("模型返回了空响应"))
             }
             emit(RealtimeEvent.StreamEnd(null))
@@ -436,7 +451,8 @@ class LocalAiClient(
                     usedModelActualName = runtimeModel.model,
                     toolCalls = parsed.toolCalls,
                     finishReason = parsed.finishReason,
-                    thinkingContent = parsed.thinkingContent
+                    thinkingContent = parsed.thinkingContent,
+                    thinkingSignature = parsed.thinkingSignature
                 )
             }
         } catch (e: FailoverHttpException) {
@@ -446,7 +462,9 @@ class LocalAiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            LocalLogger.e(TAG, R.string.log_laic_chat_once_failed, e.message)
+            if (extra[CompanionRelationshipRequest.EVALUATION_EXTRA] == true) {
+                LocalLogger.w(TAG, "关系评估请求失败：异常=${e.javaClass.simpleName}")
+            } else LocalLogger.e(TAG, R.string.log_laic_chat_once_failed, e.message)
             throw e
         }
     }
@@ -496,7 +514,7 @@ class LocalAiClient(
             var finishReason = ""
             // 思考正文与正文分开放行：
             // - 思考内容不参与「短篇拒答占位」的故障转移判定，到达即转发给 UI（思考卡片实时增长）；
-            // - 正文仍先缓冲，超过阈值（或流正常结束）才放行，故障转移判定保持原样。
+            // - 正文仅暂存仍可能是拒答占位的前缀，正常内容立即放行。
             var thinkingReleased = false
             var callbacksReleased = false
             var callbacksStarted = false
@@ -532,7 +550,8 @@ class LocalAiClient(
             }
             val buffered = parseBufferedJsonResponse(response, protocol)
             if (buffered != null) {
-                if (buffered.content.isBlank() && buffered.toolCalls.isEmpty()) {
+                if (buffered.content.isBlank() && buffered.toolCalls.isEmpty() &&
+                    !(extra[CHARACTER_THINKING_EXTRA] == true && buffered.thinkingContent.isNotBlank())) {
                     throw IllegalStateException("模型返回了空响应")
                 }
                 if (
@@ -541,7 +560,7 @@ class LocalAiClient(
                 ) {
                     throw FailoverRejectedContentException()
                 }
-                streamCallbacks?.onStart?.invoke()
+                ensureCallbacksStarted()
                 buffered.thinkingContent.takeIf(String::isNotBlank)?.let {
                     streamCallbacks?.onThinkingChunk?.invoke(it)
                 }
@@ -598,7 +617,7 @@ class LocalAiClient(
                         content.append(chunk)
                         if (callbacksReleased) {
                             streamCallbacks?.onContentChunk?.invoke(chunk)
-                        } else if (content.length > FAILOVER_REFUSAL_MAX_CHARS) {
+                        } else if (!shouldBufferAssistantPrefix(content.toString())) {
                             releaseBufferedCallbacks()
                         }
                     }
@@ -610,7 +629,8 @@ class LocalAiClient(
             val finalContent = parsed?.content?.takeIf(String::isNotEmpty) ?: content.toString()
             val finalThinking = parsed?.thinkingContent?.takeIf(String::isNotEmpty) ?: thinking.toString()
             val toolCalls = parsed?.toolCalls?.takeIf(List<*>::isNotEmpty) ?: streamedToolCalls
-            if (finalContent.isBlank() && toolCalls.isEmpty()) {
+            if (finalContent.isBlank() && toolCalls.isEmpty() &&
+                !(extra[CHARACTER_THINKING_EXTRA] == true && finalThinking.isNotBlank())) {
                 throw IllegalStateException("模型返回了空响应")
             }
             if (toolCalls.isEmpty() && shouldFailoverForAssistantContent(finalContent)) {
@@ -740,12 +760,24 @@ class LocalAiClient(
         }
         val isCodexSubscription = model.provider == "openai-codex" ||
             model.baseUrl.contains("chatgpt.com/backend-api/codex")
-        val normalized = if (isCodexSubscription && model.protocol == OpenAIResponsesProtocol.name) {
+        val protocolExtra = if (isCodexSubscription && model.protocol == OpenAIResponsesProtocol.name) {
             withStops - setOf("temperature", "max_tokens", "top_p")
         } else {
             withStops
         }
+        val normalized = protocolExtra
         val effort = ReasoningEffort.fromValue(normalized["reasoning_effort"] as? String)
+        if (effort == ReasoningEffort.CUSTOM) {
+            // 自定义思考参数：不做服务商自动换算，由 buildRequest 原样写入请求体。
+            val custom = normalized[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY] as? com.nekobot.app.data.model.CustomReasoningParam
+            return normalized.toMutableMap().apply {
+                remove("reasoning_effort")
+                if (custom == null || !custom.isValid) {
+                    remove(com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY)
+                    runCatching { LocalLogger.w(TAG, "自定义思考参数无效，已不发送思考参数：" + (custom?.validationError() ?: "未设置")) }
+                }
+            }
+        }
         val provider = model.provider.orEmpty().lowercase()
         val endpoint = model.baseUrl.lowercase()
         val deepSeek = provider.contains("deepseek") || endpoint.contains("deepseek")
@@ -811,7 +843,10 @@ class LocalAiClient(
                 messages,
                 stream = stream,
                 extra = normalizedExtra
-            )
+            ).let { built ->
+                (normalizedExtra[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY]
+                    as? com.nekobot.app.data.model.CustomReasoningParam)?.applyTo(built) ?: built
+            }
             return Request.Builder()
                 .url(url)
                 .post(gson.toJson(payload).toRequestBody(JSON_TYPE))
@@ -823,12 +858,34 @@ class LocalAiClient(
         }
 
         val normalizedExtra = normalizeProtocolExtra(model, extra)
-        val response = clientFor(model).newCall(buildRequest(normalizedExtra)).awaitResponse()
-        if (response.code != 400 || protocol.name !in OPENAI_COMPATIBILITY_PROTOCOLS) {
+        val evaluation = extra[CompanionRelationshipRequest.EVALUATION_EXTRA] == true
+        val transport = if (evaluation) clientFor(model).newBuilder()
+            .callTimeout((extra[CompanionRelationshipRequest.CALL_TIMEOUT_EXTRA] as? Number)?.toLong()
+                ?.coerceIn(1L, CompanionRelationshipRecovery.TIMEOUT_SECONDS * 1000L)
+                ?: CompanionRelationshipRecovery.TIMEOUT_SECONDS * 1000L, TimeUnit.MILLISECONDS)
+            .eventListener(RelationshipHttpDiagnostics(requestTag)).build() else clientFor(model)
+        val request = buildRequest(normalizedExtra)
+        if (evaluation) {
+            val body = protocol.buildPayload(model.model, messages, stream, normalizedExtra)
+            val budgetField = when {
+                body.containsKey("max_completion_tokens") -> "max_completion_tokens"
+                body.containsKey("max_output_tokens") -> "max_output_tokens"
+                body.containsKey("generationConfig") -> "maxOutputTokens"
+                else -> "max_tokens"
+            }
+            val safeModel = model.model.filter { it.isLetterOrDigit() || it in "-._/:" }.take(100)
+            LocalLogger.i("RelationshipHttp", "tag=$requestTag，model=$safeModel，协议=${protocol.name}，输出字段=$budgetField，输出上限=${extra["max_tokens"]}，关闭思考=${extra["_disable_thinking"] == true || extra["reasoning_effort"] == "none" || extra["enable_thinking"] == false}，stream=$stream，硬超时毫秒=${transport.callTimeoutMillis}")
+        }
+        val response = transport.newCall(request).awaitResponse(bufferBody = evaluation)
+        if (response.code != 400 || protocol.name !in OPENAI_COMPATIBILITY_PROTOCOLS || extra[NO_COMPATIBILITY_RETRY_EXTRA] == true) {
             return response
         }
 
-        val fallbackSource = (extra - OPENAI_OPTIONAL_TUNING_KEYS).toMutableMap().apply {
+        // 角色视角模式的推理参数保留，避免采样参数 400 导致回退请求意外关闭原生思考。
+        val optionalKeys = if (extra[CHARACTER_THINKING_EXTRA] == true) {
+            OPENAI_OPTIONAL_TUNING_KEYS - "reasoning_effort"
+        } else OPENAI_OPTIONAL_TUNING_KEYS
+        val fallbackSource = (extra - optionalKeys).toMutableMap().apply {
             if (stream && protocol.name == OpenAIChatProtocol.name) {
                 put("omit_stream_options", true)
             }
@@ -840,6 +897,10 @@ class LocalAiClient(
         response.close()
         runCatching {
             LocalLogger.w(TAG, R.string.log_laic_400_minimal_retry, firstError.take(160))
+        }
+        // 自定义思考参数在兼容重试中保留（不在可省略参数内），并记录便于排查。
+        (fallbackExtra[com.nekobot.app.data.model.CustomReasoningParam.EXTRA_KEY] as? com.nekobot.app.data.model.CustomReasoningParam)?.let {
+            runCatching { LocalLogger.w(TAG, "400 重试仍保留自定义思考参数：${it.path}") }
         }
         return clientFor(model).newCall(buildRequest(fallbackExtra)).awaitResponse()
     }
@@ -866,6 +927,18 @@ class LocalAiClient(
      * 捕获 [FailoverHttpException] 等异常，转换为 [LocalAiResult]。
      */
     suspend fun testModel(model: LocalAiModelEntity): LocalAiResult {
+        if (model.purpose == "embedding") {
+            return try {
+                val result = createEmbeddings(model, listOf("你好"))
+                LocalAiResult("向量连接成功，返回 ${result.vectors.single().size} 维向量")
+            } catch (e: FailoverHttpException) {
+                LocalAiResult("", error = e.message ?: "HTTP ${e.statusCode}", statusCode = e.statusCode)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LocalAiResult("", error = e.message ?: "向量请求异常")
+            }
+        }
         if (model.purpose == "tts") {
             return try {
                 val audio = synthesizeSpeech(model, "你好")
@@ -1097,7 +1170,7 @@ class LocalAiClient(
     }
 
     /** 响应头返回后仍跟踪读取中的响应体，停止操作可以立即中断长流。 */
-    private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
+    private suspend fun Call.awaitResponse(bufferBody: Boolean = false): Response = suspendCancellableCoroutine { cont ->
         activeHttpCalls.add(this)
         val tag = request().tag(String::class.java)
         if (tag != null) taggedCalls.compute(tag) { _, calls ->
@@ -1116,6 +1189,23 @@ class LocalAiClient(
                 if (cont.isActive) cont.resumeWithException(error)
             }
             override fun onResponse(call: Call, response: Response) {
+                if (bufferBody) {
+                    // 评估在可取消的挂起期间读完整份正文。取消钩子一直保留到body关闭，
+                    // 外层协程取消会立即Call.cancel()，硬超时也覆盖停住/滴流的正文。
+                    try {
+                        val buffered = response.use {
+                            val body = it.body
+                            it.newBuilder().body(body?.bytes()?.toResponseBody(body.contentType())).build()
+                        }
+                        release()
+                        if (cont.isActive) cont.resume(buffered) { _, _, _ -> buffered.close() }
+                        else buffered.close()
+                    } catch (error: Exception) {
+                        release()
+                        if (cont.isActive) cont.resumeWithException(error)
+                    }
+                    return
+                }
                 val body = response.body
                 val tracked = if (body == null) response else {
                     val source = object : okio.ForwardingSource(body.source()) {
@@ -1157,8 +1247,13 @@ class LocalAiClient(
         messages: List<Map<String, Any>>,
         extra: Map<String, Any?> = emptyMap(),
         requiredContextTokens: Int? = null,
-        requestTag: String? = null
+        requestTag: String? = null,
+        roleQueueCoordinator: FailoverCoordinator? = null
     ): Flow<RealtimeEvent> = flow {
+        if (roleQueueCoordinator != null) {
+            characterQueueStream(models, messages, extra, requiredContextTokens, requestTag, roleQueueCoordinator).collect { emit(it) }
+            return@flow
+        }
         if (models.isEmpty()) {
             emit(RealtimeEvent.Error("无可用模型"))
             emit(RealtimeEvent.StreamEnd(null))
@@ -1184,12 +1279,17 @@ class LocalAiClient(
             exclude.add(model.id)
             val (runtimeModel, credential) = resolveRuntimeModel(model)
 
+            // 标签与暂存原生思考均属于单次请求，备用模型不能继承失败请求的状态。
+            if (attempt > 0 && extra[CHARACTER_THINKING_EXTRA] == true) {
+                emit(RealtimeEvent.StreamStart(null))
+            }
             val fullContent = StringBuilder()
             val fullThinking = StringBuilder()
             var terminal: LocalModelResponse? = null
             var inputTokens: Int? = null
             var outputTokens: Int? = null
             var cachedInputTokens: Int? = null
+            var cacheReported = false
             var cacheWriteTokens: Int? = null
             var failed = false
             var httpCode = 0
@@ -1236,7 +1336,8 @@ class LocalAiClient(
                 }
                 val buffered = parseBufferedJsonResponse(response, protocol)
                 if (buffered != null) {
-                    if (buffered.content.isBlank() && buffered.toolCalls.isEmpty()) {
+                    if (buffered.content.isBlank() && buffered.toolCalls.isEmpty() &&
+                        !(extra[CHARACTER_THINKING_EXTRA] == true && buffered.thinkingContent.isNotBlank())) {
                         lastErrorMsg = "模型返回了空响应"
                         failed = true
                         failover.recordFailure(model.id)
@@ -1271,7 +1372,8 @@ class LocalAiClient(
                                 model = runtimeModel.model,
                                 modelDisplayName = runtimeModel.name,
                                 cachedInputTokens = detail.cachedPromptTokens,
-                                cacheWriteTokens = detail.cacheWriteTokens
+                                cacheWriteTokens = detail.cacheWriteTokens,
+                                cacheReported = detail.cacheReported
                             )
                         )
                     }
@@ -1294,6 +1396,7 @@ class LocalAiClient(
                             outputTokens = detail.completionTokens
                             cachedInputTokens = detail.cachedPromptTokens
                             cacheWriteTokens = detail.cacheWriteTokens
+                            cacheReported = cacheReported || detail.cacheReported
                         }
                         protocol.parseStreamError(data)?.let { message ->
                             streamErrorMessage = message
@@ -1318,7 +1421,7 @@ class LocalAiClient(
                             fullContent.append(chunk)
                             if (contentReleased) {
                                 emit(RealtimeEvent.StreamChunk(chunk))
-                            } else if (fullContent.length > FAILOVER_REFUSAL_MAX_CHARS) {
+                            } else if (!shouldBufferAssistantPrefix(fullContent.toString())) {
                                 // 思考若已逐块转发，这里不再整段补发，避免 UI 重复累积
                                 if (!thinkingReleased) {
                                     fullThinking.takeIf { it.isNotEmpty() }?.let {
@@ -1345,7 +1448,7 @@ class LocalAiClient(
                     ?.let {
                         fullContent.append(it)
                     }
-                if (fullContent.isEmpty()) {
+                if (fullContent.isEmpty() && !(extra[CHARACTER_THINKING_EXTRA] == true && fullThinking.isNotBlank())) {
                     lastErrorMsg = "模型返回了空响应"
                     failed = true
                     failover.recordFailure(model.id)
@@ -1379,7 +1482,8 @@ class LocalAiClient(
                             model = runtimeModel.model,
                             modelDisplayName = runtimeModel.name,
                             cachedInputTokens = cachedInputTokens ?: 0,
-                            cacheWriteTokens = cacheWriteTokens ?: 0
+                            cacheWriteTokens = cacheWriteTokens ?: 0,
+                            cacheReported = cacheReported
                         )
                     )
                 }
@@ -2423,6 +2527,8 @@ class LocalAiClient(
             "model" to runtimeModel.model,
             "input" to inputs
         )
+        val dimensions = requestedEmbeddingDimensions(runtimeModel)
+        if (dimensions != null) payload["dimensions"] = dimensions
         val headers = mergeRuntimeHeaders(
             runtimeModel,
             mapOf(
@@ -2460,6 +2566,13 @@ class LocalAiClient(
                 .orEmpty()
             if (vectors.size != inputs.size) {
                 error("Embedding 响应数量不匹配：期望 ${inputs.size}，实际 ${vectors.size}")
+            }
+            require(vectors.all { vector ->
+                vector.isNotEmpty() && vector.size <= MAX_EMBEDDING_DIMENSIONS &&
+                    vector.all { it.isFinite() } && vector.any { it != 0f }
+            }) { "Embedding 返回了无效向量" }
+            require(dimensions == null || vectors.all { it.size == dimensions }) {
+                "Embedding 返回维度与请求不一致：期望 $dimensions，实际 ${vectors.map { it.size }.distinct()}"
             }
             val usage = root.getAsJsonObject("usage")
             val inputTokens = usage?.get("prompt_tokens")?.asInt

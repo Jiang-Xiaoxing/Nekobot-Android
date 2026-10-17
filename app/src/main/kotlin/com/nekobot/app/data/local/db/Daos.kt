@@ -20,6 +20,9 @@ interface SessionDao {
     @Query("SELECT * FROM local_sessions ORDER BY updated_at DESC")
     suspend fun listAll(): List<LocalSessionEntity>
 
+    @Query("SELECT * FROM local_sessions WHERE character_id = :characterId OR instr(COALESCE(character_ids,''), '\"' || :characterId || '\"') > 0 ORDER BY updated_at DESC")
+    suspend fun listForCompanionEligibility(characterId: String): List<LocalSessionEntity>
+
     @Query("SELECT COUNT(*) FROM local_sessions")
     suspend fun count(): Int
 
@@ -659,11 +662,26 @@ interface AgentToolMessageDao {
 
 @Dao
 interface CharacterDao {
+    @Query("UPDATE local_characters SET chat_model_queue = :queue WHERE id = :id")
+    suspend fun updateChatModelQueue(id: String, queue: String?): Int
+
     @Query("SELECT * FROM local_characters ORDER BY updated_at DESC")
     fun observeAll(): Flow<List<LocalCharacterEntity>>
 
     @Query("SELECT * FROM local_characters ORDER BY updated_at DESC")
     suspend fun listAll(): List<LocalCharacterEntity>
+
+    @Query("""
+        SELECT * FROM local_characters
+        WHERE id NOT IN (
+            SELECT characterId FROM companion_owners
+            UNION
+            SELECT character_id FROM local_sessions
+            WHERE companion_mode = 1 AND character_id IS NOT NULL
+        )
+        ORDER BY updated_at DESC
+    """)
+    suspend fun listForSessionCreation(): List<LocalCharacterEntity>
 
     @Query("SELECT COUNT(*) FROM local_characters")
     suspend fun count(): Int

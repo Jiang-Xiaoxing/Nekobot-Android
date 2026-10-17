@@ -70,6 +70,23 @@ class InLoopContextBudgetTest {
         assertTrue(estimateLocalMessagesTokens(messages) + 7_000 <= 8_000)
     }
 
+    @Test
+    fun `preserved companion history fails without mutation when tools exhaust the budget`() {
+        val messages = conversation(2, 100)
+        val original = messages.map { it.toMap() }
+        val messageTokens = estimateLocalMessagesTokens(messages)
+        val budget = messageTokens * 4
+        assertTrue(messageTokens < budget * 0.8)
+
+        val failure = runCatching {
+            manageInLoopContextBudget(messages, budget,
+                preserveConversation = true, inputOverheadTokens = budget)
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(original, messages)
+    }
+
     private fun bigContent(repeat: Int) = "x".repeat(repeat)
 
     private fun toolMessage(id: String, content: String): MutableMap<String, Any> = mutableMapOf(

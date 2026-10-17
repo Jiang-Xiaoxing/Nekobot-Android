@@ -53,7 +53,19 @@ enum class PortableDataCategory(
             "local_message_images",
             "local_experience_archives",
             "local_experience_sources",
-            "local_experience_archive_jobs"
+            "local_experience_archive_jobs",
+            "companion_scopes",
+            "companion_memories",
+            "companion_sources",
+            "companion_receipts",
+            "companion_forgotten_sources",
+            "companion_pending",
+            "companion_vectors",
+            "companion_clarifications",
+            "companion_owners",
+            "companion_relationship_state",
+            "companion_relationship_events",
+            "companion_relationship_assessments"
         )
     ),
     CHARACTERS("characters", listOf("local_characters")),
@@ -376,6 +388,8 @@ class PortableDataArchiveManager(private val context: Context) {
             val db = activeDatabase()
             requirePortableTableCoverage(db)
             var importedRows = 0
+            val restoredRelationshipSessions = linkedSetOf<String>()
+            val restoredCompanionScopes = linkedSetOf<String>()
             db.withTransaction {
                 PortableDataCategory.entries.filter(selected::contains).forEach { category ->
                     if (category.tables.isEmpty()) return@forEach
@@ -387,11 +401,14 @@ class PortableDataArchiveManager(private val context: Context) {
                         preserveExistingSecrets = PortableDataCategory.CREDENTIALS !in selected,
                         rewriteMediaReferences = PortableDataCategory.MEDIA in selected ||
                             PortableDataCategory.WORLD_BOOKS in selected ||
-                            PortableDataCategory.STICKERS in selected
+                            PortableDataCategory.STICKERS in selected,
+                        restoredRelationshipSessions = restoredRelationshipSessions,
+                        restoredCompanionScopes = restoredCompanionScopes
                     )
                 }
                 if (PortableDataCategory.CONVERSATIONS in selected) {
                     invalidateExperiencesWithoutVisibleSources(db)
+                    rebaseRestoredCompanionRows(db, restoredRelationshipSessions, restoredCompanionScopes)
                 }
                 if (PortableDataCategory.CREDENTIALS in selected) {
                     require(password.trim().length >= MIN_PASSWORD_LENGTH) {
@@ -559,17 +576,32 @@ class PortableDataArchiveManager(private val context: Context) {
         category: PortableDataCategory,
         raw: ByteArray,
         preserveExistingSecrets: Boolean,
-        rewriteMediaReferences: Boolean
+        rewriteMediaReferences: Boolean,
+        restoredRelationshipSessions: MutableSet<String>,
+        restoredCompanionScopes: MutableSet<String>
     ): Int {
-        val root = JsonParser.parseString(String(raw, StandardCharsets.UTF_8)).asJsonObject
-        val tables = root.getAsJsonObject("tables") ?: throw IllegalArgumentException("类别数据格式无效")
         var restored = 0
         category.tables.forEach { table ->
-            val rows = tables.getAsJsonArray(table) ?: return@forEach
             val allowedColumns = tableColumns(database, table)
-            rows.forEach { element ->
-                val row = element.asJsonObject
+            val primaryKeys = tablePrimaryKeys(database, table)
+            // 保留父表先于子表的恢复顺序；逐行解析，避免六万条聊天同时展开为 JSON 树。
+            forEachPortableRow(raw, table) { row ->
                 val values = ContentValues()
+                if (table == "companion_relationship_state") {
+                    // 合并旧备份不能留下目标库另一份新评估/旧版快照。
+                    if (!row.has("narrativeJson")) values.putNull("narrativeJson")
+                    if (!row.has("legacySnapshotJson")) values.putNull("legacySnapshotJson")
+                }
+                if (table == "companion_relationship_events" && !row.has("impactsJson")) values.putNull("impactsJson")
+                // 旧备份没有强度；合并恢复心情/来源时必须同时清掉目标库中的另一份强度。
+                if (table == "companion_relationship_state" && !row.has("moodIntensity")) {
+                    values.putNull("moodIntensity")
+                }
+                if (table == "companion_relationship_state" && !row.has("historyScopeVersion")) {
+                    // 旧备份合并时也重新核对其历史范围，不能混用目标库另一条进度的确认标记。
+                    values.put("historyScopeVersion", 0)
+                    values.put("historyReviewRequired", 0)
+                }
                 row.entrySet().forEach { (column, value) ->
                     if (column in allowedColumns) {
                         val portableValue = if (rewriteMediaReferences) {
@@ -582,7 +614,12 @@ class PortableDataArchiveManager(private val context: Context) {
                     preserveSecretsFromExistingRow(database, table, values)
                 }
                 if (values.size() > 0) {
-                    mergeRow(database, table, values)
+                    mergeRow(database, table, values, primaryKeys)
+                    // 只记录成功恢复的行；旧归档缺少这些表时，目标库既有记录保持原样。
+                    when (table) {
+                        "companion_relationship_state" -> restoredRelationshipSessions += requireNotNull(values.getAsString("sessionId"))
+                        "companion_scopes" -> restoredCompanionScopes += requireNotNull(values.getAsString("id"))
+                    }
                     restored++
                 }
             }
@@ -590,14 +627,48 @@ class PortableDataArchiveManager(private val context: Context) {
         return restored
     }
 
+    private fun rebaseRestoredCompanionRows(
+        database: NekobotDatabase,
+        relationshipSessions: Set<String>,
+        companionScopes: Set<String>
+    ) {
+        val writable = database.openHelper.writableDatabase
+        if (relationshipSessions.isNotEmpty()) {
+            // 仅暂停本次导入的关系评估，避免换设备后直接调用模型；不触碰其他角色。
+            writable.compileStatement(
+                "UPDATE companion_relationship_state SET enabled = 0, version = version + 1, " +
+                    "awaitingHistory = 1, notice = NULL WHERE sessionId = ?"
+            ).use { statement ->
+                relationshipSessions.forEach { sessionId ->
+                    statement.bindString(1, sessionId)
+                    statement.executeUpdateDelete()
+                }
+            }
+        }
+        if (companionScopes.isNotEmpty()) {
+            // 仅重定位本次恢复的独立记忆；未导入角色的整理游标和缓存版本保持原样。
+            writable.compileStatement(
+                "UPDATE companion_scopes SET profile = ?, baselineRowId = 0, " +
+                    "archiveRowId = COALESCE((SELECT rowid FROM local_messages " +
+                    "WHERE id = companion_scopes.archiveMessageId), 0), revision = revision + 1 WHERE id = ?"
+            ).use { statement ->
+                statement.bindString(1, database.dbName)
+                companionScopes.forEach { scopeId ->
+                    statement.bindString(2, scopeId)
+                    statement.executeUpdateDelete()
+                }
+            }
+        }
+    }
+
     /**
      * 先插入、冲突后原位更新，避免 SQLite REPLACE 删除父行并触发级联删除，
      * 从而保留归档之外、但属于同一会话或世界书的现有子记录。
      */
-    private fun mergeRow(database: NekobotDatabase, table: String, values: ContentValues) {
+    private fun mergeRow(database: NekobotDatabase, table: String, values: ContentValues,
+        primaryKeys: List<String> = tablePrimaryKeys(database, table)) {
         val writable = database.openHelper.writableDatabase
         val safeTable = safeName(table)
-        val primaryKeys = tablePrimaryKeys(database, safeTable)
         require(primaryKeys.isNotEmpty() && primaryKeys.all(values::containsKey)) {
             "归档中的 $safeTable 记录缺少主键"
         }
@@ -947,11 +1018,17 @@ class PortableDataArchiveManager(private val context: Context) {
             addProperty("custom_font_name", prefs.customFontName)
             addProperty("font_scale", prefs.fontScale)
             addProperty("chat_background_mode", prefs.chatBackgroundMode)
+            addProperty("relationship_background", prefs.relationshipBackground.id)
             addProperty("custom_chat_background_file", portableFileName(prefs.customChatBackgroundPath))
             addProperty("custom_chat_background_name", prefs.customChatBackgroundName)
             addProperty("chat_background_opacity", prefs.chatBackgroundOpacity)
             addProperty("font_color_override", prefs.fontColorOverride)
             addProperty("theme_color_override", prefs.themeColorOverride)
+            addProperty("message_color_override", prefs.messageColorOverride)
+            addProperty("assistant_message_color_override", prefs.assistantMessageColorOverride)
+            addProperty("message_color_independent", true)
+            addProperty("dynamic_thinking", prefs.dynamicThinking)
+            addProperty("dynamic_messages", prefs.dynamicMessages)
             addProperty("language", prefs.language)
         }.toString().toByteArray(StandardCharsets.UTF_8)
     }
@@ -982,10 +1059,16 @@ class PortableDataArchiveManager(private val context: Context) {
         prefs.customFontName = root.string("custom_font_name")
         root.float("font_scale")?.let { prefs.fontScale = it }
         root.string("chat_background_mode")?.let { prefs.chatBackgroundMode = it }
+        root.string("relationship_background")?.let { prefs.relationshipBackground = RelationshipBackground.fromId(it) }
         prefs.customChatBackgroundName = root.string("custom_chat_background_name")
         root.float("chat_background_opacity")?.let { prefs.chatBackgroundOpacity = it }
         prefs.fontColorOverride = root.string("font_color_override")
         prefs.themeColorOverride = root.string("theme_color_override")
+        prefs.messageColorOverride = if (root.bool("message_color_independent") == true || root.has("message_color_override"))
+            root.string("message_color_override") else prefs.themeColorOverride
+        prefs.assistantMessageColorOverride = root.string("assistant_message_color_override")
+        root.bool("dynamic_thinking")?.let { prefs.dynamicThinking = it }
+        root.bool("dynamic_messages")?.let { prefs.dynamicMessages = it }
         root.string("language")?.let { prefs.language = it }
 
         prefs.customFontPath = root.string("custom_font_file")
@@ -1275,7 +1358,7 @@ class PortableDataArchiveManager(private val context: Context) {
     }
 
     private fun safeName(value: String): String {
-        require(value.matches(Regex("[a-z0-9_]+"))) { "数据库对象名称无效" }
+        require(value.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) { "数据库对象名称无效" }
         return value
     }
 

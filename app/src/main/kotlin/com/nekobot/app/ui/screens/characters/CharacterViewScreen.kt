@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.screens.characters
 
+import androidx.compose.ui.platform.LocalResources
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import android.content.ContentValues
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -49,6 +52,8 @@ import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.model.CharacterPreset
 import com.nekobot.app.data.model.CreateSessionRequest
 import com.nekobot.app.data.model.RELATIONSHIP_STATE_SOURCE_INHERIT
+import com.nekobot.app.data.repository.Resource
+import com.nekobot.app.ui.screens.sessions.CompanionRelationshipScreen
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.MarkdownText
@@ -71,12 +76,20 @@ class CharacterViewModelView(characterId: String) : com.nekobot.app.ui.BaseViewM
 
     private val _character = MutableStateFlow<CharacterPreset?>(null)
     val character: StateFlow<CharacterPreset?> = _character.asStateFlow()
+    val companionSessionId = MutableStateFlow<String?>(null)
+    val modeResolved = MutableStateFlow(false)
 
     init { load(characterId) }
 
     fun load(id: String) {
+        modeResolved.value = false
         launchResult(
-            block = { unified.getCharacter(id) },
+            block = {
+                val owner = if (isLocalMode) ServiceContainer.localRepository.companionSessionForCharacter(id) else null
+                unified.getCharacter(id).also { result -> if (result is Resource.Success) {
+                    companionSessionId.value = owner; modeResolved.value = true
+                } }
+            },
             onSuccess = { _character.value = it }
         )
     }
@@ -99,6 +112,15 @@ class CharacterViewModelView(characterId: String) : com.nekobot.app.ui.BaseViewM
         onError: () -> Unit = {}
     ) {
         val c = _character.value ?: return
+        if (!modeResolved.value) { onError(); return }
+        if (companionSessionId.value != null) {
+            launchResult(
+                block = { Resource.Success(requireNotNull(ServiceContainer.localRepository.companionSessionForCharacter(requireNotNull(c.id))) { string(R.string.single_role_character_ownership_changed_reopen_this_page) }) },
+                onSuccess = onSuccess,
+                onError = { showError(it); onError() }
+            )
+            return
+        }
         val req = CreateSessionRequest(
             name = string(R.string.character_new_session),
             sessionMode = "character",
@@ -183,12 +205,16 @@ fun CharacterViewScreen(
     onEdit: (String) -> Unit,
     onOpenChat: (String) -> Unit = {}
 ) {
+    val textResources = LocalResources.current
     val vm: CharacterViewModelView = viewModel(
         key = "char_view_$characterId",
         factory = viewModelFactory { initializer { CharacterViewModelView(characterId) } }
     )
     val character by vm.character.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val companionSessionId by vm.companionSessionId.collectAsStateWithLifecycle()
+    val modeResolved by vm.modeResolved.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var exportResult by remember { mutableStateOf<String?>(null) }
@@ -196,7 +222,18 @@ fun CharacterViewScreen(
     var showRelationshipSourceDialog by remember { mutableStateOf(false) }
     var relationshipStateSource by remember { mutableStateOf(RELATIONSHIP_STATE_SOURCE_INHERIT) }
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
+    var modelQueueOpen by androidx.compose.runtime.saveable.rememberSaveable(characterId) { mutableStateOf(false) }
+    var relationshipOpen by androidx.compose.runtime.saveable.rememberSaveable(characterId) { mutableStateOf(false) }
+    if (appMode == AppMode.LOCAL && relationshipOpen && companionSessionId != null) {
+        CompanionRelationshipScreen(companionSessionId!!) { relationshipOpen = false }
+        return
+    }
+    if (appMode == AppMode.LOCAL && modelQueueOpen) {
+        CharacterModelQueueScreen(characterId) { modelQueueOpen = false }
+        return
+    }
     val context = LocalContext.current
+    LaunchedEffect(loadError) { loadError?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show(); vm.clearError() } }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     fun createCharacterSession(source: String) {
@@ -289,14 +326,20 @@ fun CharacterViewScreen(
                 val c = character
                 if (c != null) {
                     // 顶部：头像/立绘 + 名称 + 标签
-                    HeaderCard(c)
+                    HeaderCard(c, companionSessionId != null)
+                    if (appMode == AppMode.LOCAL) {
+                        OutlinedButton(onClick = { modelQueueOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(textResources.getString(R.string.single_role_chat_models))
+                        }
+                    }
                     // 用此角色新建会话
                     Button(
                         onClick = {
-                            if (appMode == AppMode.LOCAL) showRelationshipSourceDialog = true
+                            if (companionSessionId != null) createCharacterSession(RELATIONSHIP_STATE_SOURCE_INHERIT)
+                            else if (appMode == AppMode.LOCAL) showRelationshipSourceDialog = true
                             else createCharacterSession(RELATIONSHIP_STATE_SOURCE_INHERIT)
                         },
-                        enabled = !creatingSession,
+                        enabled = !creatingSession && modeResolved && !loading,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         if (creatingSession) {
@@ -305,11 +348,21 @@ fun CharacterViewScreen(
                                 strokeWidth = 2.dp,
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
-                        } else {
+                        } else if (companionSessionId == null) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                         }
-                        Text(stringResource(R.string.character_new_session_button))
+                        Text(if (companionSessionId != null) textResources.getString(R.string.single_role_continue_chatting) else stringResource(R.string.character_new_session_button))
+                    }
+                    if (companionSessionId != null) Surface(onClick = { relationshipOpen = true }, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+                        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(textResources.getString(R.string.portability_detail_local_relationship_states), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(textResources.getString(R.string.single_role_view_this_conversation_s_relationship_and_last_recorded_feelings), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                        }
                     }
                     // 各字段分区
                     FieldSection(stringResource(R.string.character_field_basic_info), c.basicInfo)
@@ -326,7 +379,7 @@ fun CharacterViewScreen(
                     }
                     // 六维关系状态
                     val st = c.state
-                    if (st != null && st.isJsonObject) {
+                    if (modeResolved && companionSessionId == null && st != null && st.isJsonObject) {
                         val obj = st.asJsonObject
                         StateCard(obj)
                     }
@@ -337,7 +390,7 @@ fun CharacterViewScreen(
         }
     }
 
-    if (showRelationshipSourceDialog) {
+    if (showRelationshipSourceDialog && modeResolved && companionSessionId == null) {
         NekoDialog(
             onDismiss = { showRelationshipSourceDialog = false },
             title = stringResource(R.string.sessions_relationship_state_source),
@@ -391,12 +444,17 @@ fun CharacterViewScreen(
 
 /** 顶部头像/立绘 + 名称 + 标签卡片 */
 @Composable
-private fun HeaderCard(c: CharacterPreset) {
+private fun HeaderCard(c: CharacterPreset, companion: Boolean = false) {
+    val textResources = LocalResources.current
     var fullscreenUrl by remember { mutableStateOf<String?>(null) }
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val avatarUrl = c.avatarUrl?.let { resolveImageUrl(it) }
-            AsyncImage(
+            val avatarUrl = if (companion) com.nekobot.app.ui.components.resolveAvatarUrl(c.avatarUrl) else c.avatarUrl?.let { resolveImageUrl(it) }
+            if (companion && avatarUrl.isNullOrBlank()) {
+                Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                    Text(c.displayName.take(1), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            } else AsyncImage(
                 model = avatarUrl,
                 contentDescription = stringResource(R.string.character_avatar),
                 contentScale = ContentScale.Crop,
@@ -418,6 +476,14 @@ private fun HeaderCard(c: CharacterPreset) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (companion) {
+                    Spacer(Modifier.height(6.dp))
+                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)) {
+                        Text(textResources.getString(R.string.sessions_filter_agent_characters), Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(textResources.getString(R.string.single_role_one_chat_window_for_each_character), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (!c.description.isNullOrBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
