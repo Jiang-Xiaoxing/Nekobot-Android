@@ -168,7 +168,7 @@ internal object FusedCompanionPolicy {
     }
 
     // Bump when the auxiliary format changes so old interval hints are not replayed.
-    const val contextFormat = "fused-visible-core-v4"
+    const val contextFormat = "fused-natural-dialogue-v5"
 
     fun timeKey(now: ZonedDateTime): String =
         "${now.format(java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm", java.util.Locale.ROOT))}（${now.zone.id}，UTC${if (now.offset.totalSeconds == 0) "+00:00" else now.offset.id}）"
@@ -181,6 +181,7 @@ internal object FusedCompanionPolicy {
         分类 category：user_profile 用户画像、character_profile 交流形成的角色特点、relationship 双方关系、
         episode 经历档案、promise 约定、open_issue 未解决事项。没有必要就不记录；不生成近期摘要或历史总摘要。
         $episodeScope
+        ${CompanionPromptLanguage.diaryRule}
         ${CompanionCoreMemory.selectionRules.trimIndent()}
         经历记录已发生的原因、经过、结果和进行状态；尚未结束就写进行中，不编结局。
         同一场景跨批延续，用 existing 的稳定 key 更新同一事件；同一事实重复用 merge 合并来源。

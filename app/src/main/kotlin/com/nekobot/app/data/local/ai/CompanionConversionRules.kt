@@ -2,7 +2,7 @@ package com.nekobot.app.data.local.ai
 
 /** 查看页和实际请求共用这份规则，避免只展示一份没有实际执行的说明。 */
 internal object CompanionConversionRules {
-    const val version = "2026-10-10.2"
+    const val version = "2026-10-17.1"
     const val referenceProvenance = "conversion_reference"
     val explanation = """
         你正在把旧聊天整理成 Agent 角色自己的记忆，请按以下规则处理。
@@ -13,6 +13,8 @@ internal object CompanionConversionRules {
         2. 按新的记忆分类保存
         分清用户的喜好与资料、角色在相处中形成的特点、双方关系、经历档案、约定和未解决的事情。
         ${FusedCompanionPolicy.episodeScope}
+        ${CompanionPromptLanguage.diaryRule}
+        ${CompanionPromptLanguage.recallRules}
         旧系统没有经历记录也没关系：原话里发生过的事可以重新整理，没有依据的内容不要编。
 
         3. 每条记忆都能找到出处
@@ -40,7 +42,7 @@ internal object CompanionConversionRules {
         只输出 JSON 对象 {"changes":[...]}，不要 Markdown，不要省略 operation。
         每条必须包含以下字段：
         {"key":"稳定且简短的事实键", "operation":"add", "category":"user_profile", "kind":"fact",
-         "subject":"用户", "content":"原话支持的简洁记忆正文", "source_id":"m1", "quote":"原话中的完整连续片段",
+         "subject":"用户", "content":"我记得的、有原话依据的一句话", "source_id":"m1", "quote":"原话中的完整连续片段",
          "event_evidence":"", "target_key":"", "legacy_key":"", "tags":[]}
         category 只能是 user_profile（用户资料）、character_profile（角色特点）、relationship（双方关系）、episode（经历档案）、promise（约定）、open_issue（未解决事项）。
         kind 只能是 core（核心信息）、fact（事实）、task（约定）、birthday（生日）、episode（经历）。
@@ -60,7 +62,7 @@ internal object CompanionConversionRules {
     """.trimIndent()
     val outputReminder = """
         现在只整理紧接着的 target。reference 和 legacy_reference 都不能作为新增记忆的来源。
-        只返回 {"changes":[{"key":"事实键","operation":"add","category":"episode","kind":"episode","subject":"当事人","content":"有依据的记忆","source_id":"照抄本批 target 的 id","quote":"该 id 原文中的连续片段","event_evidence":"","target_key":"","legacy_key":"","tags":[]}]}。
+        只返回 {"changes":[{"key":"事实键","operation":"add","category":"episode","kind":"episode","subject":"当事人","content":"我记得的、有依据的一句话","source_id":"照抄本批 target 的 id","quote":"该 id 原文中的连续片段","event_evidence":"","target_key":"","legacy_key":"","tags":[]}]}。
         以上为字段模板，不是待保存的内容；按真实类别和操作填写。每一条都必须有 operation、source_id 和 quote。
         输出前逐条核对编号属于 target；reference 独有的内容不要放进 changes；修复时保留本批有依据的经历，不要把经历全部改成个人喜好。
     """.trimIndent()

@@ -67,7 +67,7 @@ class CharacterThinkingDebugTest {
     }
 
     @Test
-    fun debugThinkingItemMatchesActualPipelineInjectionForAllEligibilityBoundaries() = runBlocking {
+    fun ordinaryDebugMatchesInjectionWhileCompanionChangesOnlyModelText() = runBlocking {
         val sessions = listOf(session,
             Session(characterId = "role", sessionMode = "character"),
             Session(characterId = "role", sessionMode = "agent", inheritCharacter = true),
@@ -91,7 +91,11 @@ class CharacterThinkingDebugTest {
             val debug = liveCharacterThinkingDebugItems(listOf(old, other), s, settings, effort, "林小满")
                 .firstOrNull { it.key == CHARACTER_THINKING_STYLE_KEY }
             val actual = ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)
-            assertEquals(actual?.content, debug?.content)
+            if (s.companionMode == true && actual != null) {
+                // 本次范围只改模型收到的文本，调试页显示文案按要求保留。
+                assertEquals(characterThinkingPrompt(settings, "林小满", null, companionMode = true), actual.content)
+                assertEquals(characterThinkingPrompt(settings, "林小满", null), debug?.content)
+            } else assertEquals(actual?.content, debug?.content)
             assertEquals(actual?.priority, debug?.priority)
             assertEquals(actual?.role, debug?.role)
             assertEquals(actual?.scope, debug?.scope)

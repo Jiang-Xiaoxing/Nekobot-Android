@@ -172,14 +172,14 @@ class CharacterThinkingStyleTest {
         val callbacks = object : FixtureCallbacks() {
             override suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>,
                 tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> {
-                assertTrue(messages.first()["content"].toString().contains(CHARACTER_THINKING_STYLE_KEY))
+                assertTrue(messages.first()["content"].toString().contains("林小满自己的心里话"))
                 assertFalse(dynamic.contains(CHARACTER_THINKING_STYLE_KEY))
                 return messages
             }
         }
         AIPipeline().prepareContext(ctx, callbacks)
-        assertTrue(system(ctx).contains(CHARACTER_THINKING_STYLE_KEY))
-        assertTrue(system(ctx).contains(confirmedDefaultPrompt.replace("{{char}}", "林小满").replace("{{user}}", "小禾")))
+        assertFalse(system(ctx).contains(CHARACTER_THINKING_STYLE_KEY))
+        assertTrue(system(ctx).contains(COMPANION_THINKING_PROMPT.replace("{{char}}", "林小满").replace("{{user}}", "小禾")))
         assertUserMessageUnchanged(ctx.messages)
     }
 

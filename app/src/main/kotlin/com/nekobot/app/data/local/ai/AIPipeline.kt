@@ -390,7 +390,8 @@ class AIPipeline {
                 CHARACTER_THINKING_STYLE_KEY,
                 characterThinkingPrompt(thinkingSettings,
                     ctx.characterTurn?.profile?.name.orEmpty().ifBlank { (ctx.metadata["sender_name"] as? String).orEmpty() },
-                    (ctx.metadata["user_name"] ?: ctx.chatRequest.metadata["user_name"]) as? String),
+                    (ctx.metadata["user_name"] ?: ctx.chatRequest.metadata["user_name"]) as? String,
+                    companionMode = ctx.metadata[META_FUSED_COMPANION] == true),
                 priority = PromptStack.Priority.BEHAVIOR + 1,
                 // 长久陪伴也放在顶部 system 中，工具循环及缓存重建均保留这项规则。
                 scope = "session"
@@ -414,7 +415,7 @@ class AIPipeline {
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
-        val composedSystem = (baseParts + pipelineExtraItems.filterNot { it in dynamicItems }.map { "## ${it.key}\n${it.content.trim()}" })
+        val composedSystem = (baseParts + pipelineExtraItems.filterNot { it in dynamicItems }.map { PromptStack.renderItem(it, fused) })
             .joinToString("\n\n")
         ctx.metadata["composed_system_prompt"] = composedSystem
 
@@ -450,10 +451,16 @@ class AIPipeline {
 
         messagesForAi = listOf(mapOf("role" to "system", "content" to composedSystem)) + depthInjectedHistory
         val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty() else emptyList())
-            .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { "${it.key}: ${it.content}" }
+            .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { if (fused) it.content.trim() else "${it.key}: ${it.content}" }
         messagesForAi = callbacks.finalizeContext(ctx, messagesForAi, tools, dynamic)
         messagesForAi = withCharacterThinkingRequest(messagesForAi,
-            ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
+            ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content, companionMode = fused)
+        if (fused) {
+            val firstSystem = messagesForAi.indexOfFirst { it["role"] == "system" }
+            messagesForAi = messagesForAi.mapIndexed { index, message ->
+                if (index == firstSystem) markCompanionSystem(message, pipelineExtraItems.filterNot { it in dynamicItems }) else message
+            }
+        }
         ctx.metadata["composed_system_prompt"] = messagesForAi.filter { it["role"] == "system" }
             .joinToString("\n\n") { it["content"].toString() }
 

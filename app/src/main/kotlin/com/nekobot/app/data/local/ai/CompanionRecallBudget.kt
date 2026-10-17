@@ -99,7 +99,7 @@ internal class CompanionRecallBudget(
     }
 
     suspend fun read(actor: String, fetch: suspend () -> Map<String, Any>): Map<String, Any> = mutex.withLock {
-        val request = requests[actor] ?: return@withLock stopped("本轮上下文尚未准备好", "error")
+        val request = requests[actor] ?: return@withLock stopped("还没能翻开这些回忆", "error")
         val state = usage()
         val newRound = request.id !in state.requests
         if ((newRound && state.rounds >= state.settings.rounds) || request.limit - state.tokens < MIN_RESULT_TOKENS || request.room < MIN_RESULT_TOKENS) {
@@ -211,7 +211,7 @@ internal class CompanionRecallBudget(
         }
         if (skipped > 0) {
             output["visible_duplicates"] = skipped
-            output["duplicate_note"] = "重叠正文已在本次模型上下文或同批工具结果中，可直接使用；这不表示没有相关资料。"
+            output["duplicate_note"] = "这些内容前面已经翻到了，可以接着那些回忆说；不代表没有相关资料。"
         }
         return output
     }
@@ -222,9 +222,9 @@ internal class CompanionRecallBudget(
         val fields = rows(result).groupBy({ it.first }, { it.second })
         val output = result.filterKeys { it !in fields }.toMutableMap()
         output["budget_limited"] = true
-        output["note"] = "本次只返回了份额内的一部分资料。"
+        output["note"] = "这次先翻到这些，还有一些没看完。"
         fields.keys.forEach { output[it] = emptyList<Map<String, Any>>() }
-        if (size(output) > allowance) return stopped("剩余额度不足，请用已有资料回答")
+        if (size(output) > allowance) return stopped("先用已经想起来的事回答，记不清就直说")
         for ((field, entries) in fields) {
             val selected = mutableListOf<Map<String, Any>>()
             for (entry in entries) {
@@ -256,12 +256,7 @@ internal class CompanionRecallBudget(
     }
 
     companion object {
-        const val QUERY_RULES = "记忆查找说明（软件内部说明，不是玩家发言）：软件给你提供查找记忆和过去原话的工具。" +
-            "每条玩家消息有查找次数和资料份额限制；每次结果带 status：found 找到、empty 没找到、truncated 只返回了一部分、" +
-            "quota_exhausted 这一轮不能再查、error 查找出错，并带还能查的次数 rounds_left 和还有的份额 tokens_left。" +
-            "已有内容够用就直接回答；细节不足、前后矛盾或玩家想要原话时再查，追溯变化时才查旧版本。不能再查时就用已有内容回答。" +
-            "怎么回应完全由你按角色自己的性格和口吻决定；想不起来时像这个角色平时那样自然表达。" +
-            "除非符合角色设定，不要在对话里提到工具、额度、Token 或软件说明，也不要把这些说明当成玩家说过的话。"
+        const val QUERY_RULES = CompanionPromptLanguage.recallRules
         const val PER_CALL_TOKENS = 1500
         const val CONTEXT_SHARE = 0.15
         const val EMPTY_NOTE = "这次没有找到相关内容；没找到不代表这件事没有发生过。"

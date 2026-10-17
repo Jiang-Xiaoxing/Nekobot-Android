@@ -224,7 +224,7 @@ class FusedCompanionAndroidTest {
                 "ROLE",emptyList(),mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusDays(2))
             val json=gson.toJson(payload)
             assertFalse(json.contains("距上一条")); assertFalse(json.contains("离线"))
-            assertTrue(json.contains("2026-10-10 23:59")); assertTrue(json.contains("喝茶不加糖"))
+            assertTrue(json.contains("2026年10月10日 星期六 晚上11:59")); assertTrue(json.contains("喝茶不加糖"))
             assertTrue(json.contains(first.content)); assertEquals(1,dao.contextMaterials(scope.id).size)
             assertEquals(3,db.messageDao().listBySession("s").size)
             assertEquals("喝茶不加糖",store.validatedMemories(scope).single().content)

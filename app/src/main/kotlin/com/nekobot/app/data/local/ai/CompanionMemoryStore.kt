@@ -419,7 +419,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                     (vectors["fact:${it.id}"]?.takeIf { s -> s >= FusedCompanionTools.VECTOR_MIN_SCORE } ?: 0f)
             })
             return mapOf("success" to true, "scope" to "当前长久陪伴窗口", "memories" to facts.map {
-                mapOf("key" to it.factKey, "id" to it.id, "category" to it.category, "content" to it.content,
+                mapOf("key" to it.factKey, "id" to it.id, "category" to it.category, "content" to CompanionPromptLanguage.memory(it),
                     "status" to it.status, "only_user_can_edit" to it.locked,
                     "evidence" to CompanionImportPolicy.evidence(it), "expires_at" to it.expiresAt)
             })
@@ -444,12 +444,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         // Rank saved facts first; validate all evidence of each selected candidate before
         // injection. Unrelated old transcripts never need to be loaded on the reply path.
         val all = dao.memories(scope.id).filter { it.current && it.status !in setOf("conflict", "cancelled") }
-        val sourceAnchors = mutableMapOf<String, List<String>>()
-        fun view(rows: List<CompanionMemoryEntity>) = gson.toJson(rows.map { mapOf("id" to it.id,
-            "key" to it.factKey, "category" to it.category, "content" to it.content, "status" to it.status,
-            "event_date" to it.eventDate, "tags" to MemoryTags.fromJson(it.tagsJson),
-            "evidence" to CompanionImportPolicy.evidence(it), "expires_at" to it.expiresAt,
-            "source_message_ids" to sourceAnchors[it.id]?.take(3)) })
+        fun view(rows: List<CompanionMemoryEntity>) = CompanionPromptLanguage.memories(rows)
         // 与页面共用清单规则，完整发送；容量在整理/编辑时维护，不在请求时丢掉清单条目。
         val core = CompanionCoreMemory.rows(validatedMemories(scope, all.filter { CompanionCoreMemory.contains(it) }))
         val coreIds = core.map { it.id }.toSet()
@@ -467,7 +462,6 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             if (score <= 0f && (vectors["fact:${fact.id}"] ?: 0f) < .35f) continue
             if (recallTokens + estimateLocalTextTokens(view(listOf(fact))) + 2 > budgets.recall) continue
             if (validatedMemories(scope, listOf(fact)).isEmpty()) continue
-            sourceAnchors[fact.id] = dao.sourceAnchorIds(fact.id)
             val cost = estimateLocalTextTokens(view(listOf(fact))) + 2
             if (recallTokens + cost <= budgets.recall) {
                 recalled += fact

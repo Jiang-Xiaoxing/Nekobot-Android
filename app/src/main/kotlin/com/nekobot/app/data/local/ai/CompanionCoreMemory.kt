@@ -1,6 +1,5 @@
 package com.nekobot.app.data.local.ai
 
-import com.google.gson.Gson
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import java.time.Instant
 
@@ -16,13 +15,8 @@ internal object CompanionCoreMemory {
     fun rows(memories: List<CompanionMemoryEntity>): List<CompanionMemoryEntity> =
         memories.filter { contains(it) }.sortedBy { it.factKey }
 
-    // 原话通过记忆 ID 按需读取；省去版本和来源数组，保留正文所属对象及时间事实。
-    fun render(memories: List<CompanionMemoryEntity>): String = Gson().toJson(memories.map {
-        mapOf("id" to it.id, "key" to it.factKey, "category" to it.category, "subject" to it.subject,
-            "content" to it.content, "status" to it.status, "event_date" to it.eventDate,
-            "annual_month_day" to it.annualMonthDay, "expires_at" to it.expiresAt,
-            "evidence" to CompanionImportPolicy.evidence(it))
-    })
+    // 内部归属和来源仍存原库；发送时只提供有依据的日期与正文。
+    fun render(memories: List<CompanionMemoryEntity>): String = CompanionPromptLanguage.memories(memories)
 
     fun tokens(memories: List<CompanionMemoryEntity>): Int =
         if (memories.isEmpty()) 0 else estimateLocalTextTokens(render(memories))

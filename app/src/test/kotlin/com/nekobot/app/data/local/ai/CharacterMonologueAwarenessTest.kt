@@ -21,13 +21,11 @@ class CharacterMonologueAwarenessTest {
         val inner = requireNotNull(stack.get("output.inner_monologue"))
         for (text in listOf(
             "你知道玩家能看到你写出的内心独白", "不要把它当成对方看不到的秘密",
-            "有意让对方看见", "半有意半无意地流露", "把它放在气泡末尾",
-            "克制使用", "不要每次回复都加内心独白", "保持简短（1—2句）",
-            "不要借内心独白解释规则或脱离角色"
+            "有意让对方看见", "半有意半无意地流露", "话末写一两句", "不必每次都写"
         )) assertTrue(text, inner.content.contains(text))
         assertFalse(inner.content.contains("角色隐藏的想法"))
         assertEquals(PromptStack.Priority.BUBBLE_SPLIT + 1, inner.priority)
-        assertEquals(injections(false).get("output.bubble_split"), stack.get("output.bubble_split"))
+        assertTrue(stack.get("output.bubble_split")!!.content.contains("<||>"))
     }
 
     @Test
@@ -56,7 +54,7 @@ class CharacterMonologueAwarenessTest {
         val auxiliary = ctx.messages.single { it.containsKey(CompanionRequestUsage.META) }
         assertTrue(auxiliary["content"].toString().contains(inner.content))
         assertTrue(auxiliary["content"].toString().contains("半有意半无意地流露"))
-        assertTrue(auxiliary["content"].toString().startsWith("<software_context>"))
+        assertFalse(auxiliary["content"].toString().contains("software_context"))
         assertEquals(listOf(userInput), playerMessages(ctx).map { it["content"] })
         // 单会话原本不注入反应计划，本次不为这条说明额外启用计划。
         assertFalse(requireNotNull(ctx.characterTurn).promptStackItems.any { it.key == "character.reaction_plan" })
@@ -119,7 +117,7 @@ class CharacterMonologueAwarenessTest {
                 if (!session.companionMode) return messages
                 // 对齐 FusedCompanionContext 的软件资料路径，不冒充玩家原话或挪到 system。
                 val auxiliary = CompanionRequestUsage.auxiliary(
-                    "<software_context>软件提供的本轮辅助资料，不是玩家发言。\n$dynamic\n</software_context>"
+                    "这些是帮助回忆的参考，不是对方刚说的话。\n$dynamic"
                 )
                 return messages.dropLast(1) + auxiliary + messages.last()
             }

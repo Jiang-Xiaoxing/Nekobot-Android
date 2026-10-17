@@ -16,6 +16,8 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
+internal fun companionTransferName(characterName: String): String = characterName
+
 internal data class CompanionTransferPreview(
     val jobId: String, val name: String, val sourceName: String, val messages: Long, val variants: Long,
     val memories: Int, val skippedMemories: Long, val reviewNotes: List<String>, val attachments: Int,
@@ -53,7 +55,7 @@ internal class CompanionTransferService(
             return@withLock toPreview(existing)
         }
         val memory = CompanionTransferMemory(db).selection(directory, snapshot)
-        val name = "${snapshot.characterName}（Agent）"
+        val name = companionTransferName(snapshot.characterName)
         val report = CompanionTransferReport(snapshot, media, memory, db.sessionDao().getById(sourceId)?.name.orEmpty())
         val now = Instant.now().toString()
         val job = CompanionTransferJobEntity(jobId, db.dbName, sourceId, fingerprint,

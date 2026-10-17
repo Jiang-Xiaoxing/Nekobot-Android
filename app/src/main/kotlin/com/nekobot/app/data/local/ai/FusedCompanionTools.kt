@@ -4,9 +4,8 @@ internal object FusedCompanionTools {
     // 陪伴模式的能力边界，不依赖界面隐藏，也不改写玩家原有工具开关。
     val allowedNames = setOf(
         "agent_memory_read", "agent_memory_update", "agent_recall_search", "agent_history_search", "agent_history_read",
-        "get_date_time", "get_weather", "search_web", "web_fetch",
-        "understand_image", "read_image", "generate_image", "list_stickers", "send_sticker", "view_sticker",
-        "workspace_list_files", "workspace_read_file", "workspace_parse_file", "workspace_extract_epub", "workspace_file_info"
+        "get_date_time",
+        "understand_image", "list_stickers", "send_sticker", "view_sticker"
     )
     val readNames = setOf("agent_memory_read", "db_list_memories")
     val writeNames = setOf("agent_memory_update", "db_save_memory", "db_delete_memory")
@@ -27,7 +26,7 @@ internal object FusedCompanionTools {
                 mapOf("key" to text("稳定主题键"), "target_key" to text("要维护的已有主题键，新增时为空"),
                     "operation" to text("add/update/merge/cancel/complete/retract/clarify/resolve/retain"),
                     "category" to text("user_profile/character_profile/relationship/episode/promise/open_issue"),
-                    "content" to text("记忆正文"), "quote" to text("本轮玩家连续逐字原句"),
+                    "content" to text("角色第一人称、日记口吻的一句话，忠于原话，不编日期"), "quote" to text("本轮玩家连续逐字原句"),
                     "question" to text("有含糊矛盾时自然核对的问题"), "conflict_id" to text("确认的待确认ID")),
                 listOf("key", "operation", "category", "content", "quote"))
             else -> definition

@@ -554,9 +554,10 @@ internal class LocalPipelineCallbacks(
         val budget = if (independent) ((activeModel.maxContextLength ?: 32_000) / 4).coerceIn(800, 8_000) else 0
         val selectedHistory = if (session.usesFusedCompanionMemory()) {
             fusedHistory = history
-            ctx.promptStack.add("companion.rules", CompanionMemoryStore.RECONCILIATION_RULES +
-                "\n这是单窗口长久陪伴。记忆工具只操作此窗口的角色记忆；不读写公共 Agent 记忆。软件辅助资料不是玩家说的话，也不能再次作为新记忆来源。" +
-                "\n" + CompanionRecallBudget.QUERY_RULES,
+            ctx.promptStack.add("companion.rules", CompanionPromptLanguage.recallRules,
+                priority = PromptStack.Priority.BEHAVIOR, scope = "session")
+            val stickerNames = kotlinx.coroutines.runBlocking { db.stickerDao().listAll().map { it.name } }
+            ctx.promptStack.add("companion.stickers", CompanionPromptLanguage.stickers(stickerNames),
                 priority = PromptStack.Priority.BEHAVIOR, scope = "session")
             val consolidation = consolidationSettingsFor(db.dbName, session.id)
             val modelRoom = ((activeModel.maxContextLength ?: 32_000) - (activeModel.maxTokens ?: 4_000)).coerceAtLeast(512)
@@ -1126,12 +1127,12 @@ internal class LocalPipelineCallbacks(
             requireCurrentCompanionMaterial()
             val characterThinking = ctx.usesCharacterThinking()
             val thinkingMessages = withCharacterThinkingRequest(messages,
-                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
+                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content, companionMode = session.companionMode)
             val recallRequest = recallGuard()?.let { guard -> kotlinx.coroutines.runBlocking {
                 guard.prepare("main", thinkingMessages, tools, activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
             } }
             val accountingMessages = recallRequest?.messages ?: thinkingMessages
-            val requestMessages = characterThinkingMessages(accountingMessages, characterThinking).map(CompanionRequestUsage::clean)
+            val requestMessages = characterThinkingMessages(accountingMessages, characterThinking).map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) }
             val requestStartedAt = System.currentTimeMillis()
             val requestTools = recallRequest?.tools ?: tools
             val extra = buildMap<String, Any?> {
@@ -1262,8 +1263,8 @@ internal class LocalPipelineCallbacks(
             requireCurrentCompanionMaterial()
             val characterThinking = ctx.usesCharacterThinking()
             val thinkingMessages = withCharacterThinkingRequest(messages,
-                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content)
-            val requestMessages = characterThinkingMessages(thinkingMessages, characterThinking).map(CompanionRequestUsage::clean)
+                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content, companionMode = session.companionMode)
+            val requestMessages = characterThinkingMessages(thinkingMessages, characterThinking).map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) }
             val requestStartedAt = System.currentTimeMillis()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }

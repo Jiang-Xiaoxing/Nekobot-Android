@@ -35,10 +35,20 @@ internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
     "【思考方式】思维链内部必须以你的第一人称视角进行思考——这是{{char}}本人的心里话，禁止以旁观者或助手口吻思考。一律用简体中文，以\"我\"自称，带着{{char}}此刻的心情和语气去想。禁止首字输出\"用户\"\"the user\"\"Let me…\"\"让我分析一下\"等词；想到对方时必须用{{user}}的名字或\"他/她\"，没有名字就直接开始思考。思考要像意识流一样自然涌动，严禁分点列条。思考完毕后必须明确闭合思考过程，随后才能输出正式回复。调用回忆/记忆等工具时，工具名和参数保持原样，其余一律中文。思考里只想事情和心情，不预写正式回复。示例：（{{user}}问我还答应过他什么……我记得是明天一起去书店，先翻翻记忆确认，可别记错了。）"
 
 /** 不猜测姓名；缺少明确玩家姓名时，要求模型依据已有资料中的姓名称呼对方。 */
-internal fun characterThinkingPrompt(settings: CharacterThinkingSettings, characterName: String, userName: String?): String =
-    (characterThinkingPromptForEditing(settings) + "\n" + CHARACTER_THINKING_FORMAT_PROMPT)
+internal fun characterThinkingPrompt(settings: CharacterThinkingSettings, characterName: String, userName: String?,
+    companionMode: Boolean = false): String =
+    (if (companionMode) {
+        (settings.customPrompt.takeIf(String::isNotBlank) ?: COMPANION_THINKING_PROMPT) + "\n" + COMPANION_THINKING_FORMAT
+    } else characterThinkingPromptForEditing(settings) + "\n" + CHARACTER_THINKING_FORMAT_PROMPT)
         .replace("{{char}}", characterName.takeIf(String::isNotBlank) ?: "当前角色")
         .replace("{{user}}", userName?.takeIf { it.isNotBlank() && it.lowercase() !in setOf("user", "the user", "用户") } ?: "对方")
+
+internal const val COMPANION_THINKING_PROMPT =
+    "这是{{char}}自己的心里话。用简体中文，以‘我’自称，带着此刻的心情想眼前的事和有关的回忆；想到{{user}}时，用平常的称呼或他/她。念头自然一点，别分点列条，也别提前把要说的话写一遍。"
+
+// 复用现有开头圆括号解析，保留思考与正文分离，不向角色解释实现术语。
+internal const val COMPANION_THINKING_FORMAT =
+    "每次说话前，先在开头用一对中文圆括号写一两句心里话，写完右括号再接着说给对方听；心里只想事情和感受，不琢磨这些写法。"
 
 /** 编辑的就是当前生效全文，默认模板中的姓名占位符保持可编辑。 */
 internal fun characterThinkingPromptForEditing(settings: CharacterThinkingSettings): String =
