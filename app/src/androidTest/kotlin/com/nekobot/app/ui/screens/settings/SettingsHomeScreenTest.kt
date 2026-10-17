@@ -7,7 +7,8 @@ import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +32,7 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -173,7 +175,7 @@ class SettingsHomeScreenTest {
         ServiceContainer.prefs.fontScale = 1.6f
         compose.setContent {
             Theme(dark = true) {
-                Box(Modifier.requiredSize(320.dp, 560.dp).testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) { Home(AppMode.LOCAL) }
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) { Home(AppMode.LOCAL) }
             }
         }
         compose.onNodeWithTag("settings-home-open-latest").performScrollTo()
@@ -185,6 +187,9 @@ class SettingsHomeScreenTest {
             .performClick().assertIsOn()
         compose.onNodeWithTag("settings-home-data_portability").performScrollTo().assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
+        val dataBounds = compose.onNodeWithTag("settings-home-data_portability").getUnclippedBoundsInRoot()
+        val viewportBounds = compose.onNodeWithTag("settings-test-root").getUnclippedBoundsInRoot()
+        assertTrue(dataBounds.top >= viewportBounds.top && dataBounds.bottom <= viewportBounds.bottom)
         screenshot("large-dark-data")
         compose.onNodeWithTag("settings-home-about").performScrollTo().assertIsDisplayed()
         screenshot("large-dark-support")
@@ -207,7 +212,7 @@ class SettingsHomeScreenTest {
         ServiceContainer.prefs.fontScale = 1.6f
         compose.setContent {
             Theme {
-                Box(Modifier.requiredSize(320.dp, 560.dp).testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
                     SettingsConnectionContent(
                         rememberScrollState(), mode, url, "合成测试账号", false,
                         { mode = it }, { url = it }, { saves++ }, { reloads++ }, { logouts++ }
