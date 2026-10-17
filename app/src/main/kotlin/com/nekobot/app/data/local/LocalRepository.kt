@@ -536,6 +536,34 @@ class LocalRepository(
         report
     }
 
+    internal fun observeCompanionExamples(sessionId: String) = db.companionExamplesDao().observe(sessionId).map {
+        if (it?.state == "selecting") com.nekobot.app.data.local.ai.CompanionExamplesStore(db).recoverInterrupted(sessionId)
+        it
+    }
+    internal suspend fun companionExamples(sessionId: String): com.nekobot.app.data.local.db.CompanionExamplesEntity? {
+        com.nekobot.app.data.local.ai.CompanionExamplesStore(db).recoverInterrupted(sessionId)
+        return db.companionExamplesDao().get(sessionId)
+    }
+    internal suspend fun saveCompanionExamples(sessionId: String, pairs: List<com.nekobot.app.data.local.ai.CompanionExample>) =
+        com.nekobot.app.data.local.ai.CompanionExamplesStore(db).save(sessionId, pairs)
+    internal suspend fun declineCompanionExamples(sessionId: String) =
+        com.nekobot.app.data.local.ai.CompanionExamplesStore(db).decline(sessionId)
+    internal suspend fun selectCompanionExamples(sessionId: String) = withContext(Dispatchers.IO) {
+        com.nekobot.app.data.local.ai.CompanionExamplesStore(db).select(sessionId) { system, input ->
+            // 复用该角色聊天队列的当前首选模型；不另选模型，不做补正/故障转移二次调用。
+            val model = requireNotNull(routedChatQueue(sessionId, input).firstOrNull()) { "请先为角色配置聊天模型。" }
+            val messages = listOf(mapOf<String, Any>("role" to "system", "content" to system), mapOf("role" to "user", "content" to input))
+            require(estimateLocalMessagesTokens(messages) + (model.maxTokens ?: 4000) <= (model.maxContextLength ?: 32000)) { "候选对话超过聊天模型容量，请手动添加示例。" }
+            val result = aiClient.chatOnce(model, messages, requestTag = "companion-examples:$sessionId")
+            require(result.error == null) { "挑选示例未完成，可在角色卡手动添加。" }
+            // 挑选在应用级协程中执行；用户切换聊天后仍归属原会话。
+            appendTokenUsageRecord(sessionId = sessionId, model = model.name, actualModel = model.model,
+                inputTokens = result.usage["prompt"] ?: 0, outputTokens = result.usage["completion"] ?: 0,
+                timestamp = nowIsoTimestamp(), source = "dialogue_examples", purpose = TokenStatsManager.PURPOSE_UTILITY)
+            requireCompanionConversionContent(result)
+        }
+    }
+
     fun readGlobalAgentMemory() = agentMemoryStore.read()
     fun globalAgentMemoryVersions() = agentMemoryStore.versions()
     fun saveGlobalAgentMemory(content: String, expected: String) = agentMemoryStore.replace(content, expected)
@@ -1896,7 +1924,10 @@ class LocalRepository(
                 }
             }
             sessionDao.upsert(entity)
-            if (entity.companionMode) CompanionMemoryStore(db).ensureScope(entity)
+            if (entity.companionMode) {
+                CompanionMemoryStore(db).ensureScope(entity)
+                db.companionExamplesDao().save(com.nekobot.app.data.local.db.CompanionExamplesEntity(entity.id, "waiting"))
+            }
         }
 
         // 新建本地 Agent 会话可沿用 Agent 设置中的默认 YOLO 状态。
@@ -7054,7 +7085,10 @@ class LocalRepository(
         }
         val callbacks = com.nekobot.app.data.local.ai.LocalPipelineCallbacks(
             companionStatePrompt = { companionRelationship.context(sessionId) },
-            onCompanionTurnCompleted = { companionRelationship.afterChat(sessionId) },
+            onCompanionTurnCompleted = {
+                ServiceContainer.applicationScope.launch(Dispatchers.IO) { com.nekobot.app.data.local.ai.CompanionExamplesStore(db).afterChat(sessionId) }
+                companionRelationship.afterChat(sessionId)
+            },
             db = db,
             aiClient = aiClient,
             activeModel = activeModel,
@@ -7675,7 +7709,10 @@ class LocalRepository(
         val callbacks = com.nekobot.app.data.local.ai.LocalPipelineCallbacks(
             db, aiClient, activeModel, session, character, worldBookEntries, runtime, identity,
             companionStatePrompt = { companionRelationship.context(sessionId) },
-            onCompanionTurnCompleted = { companionRelationship.afterChat(sessionId) },
+            onCompanionTurnCompleted = {
+                ServiceContainer.applicationScope.launch(Dispatchers.IO) { com.nekobot.app.data.local.ai.CompanionExamplesStore(db).afterChat(sessionId) }
+                companionRelationship.afterChat(sessionId)
+            },
             parentMessageId = parentMessageId,
             variantTargetMessageId = variantTargetMessageId,
             appendVariantThroughRepository = { id, content, reasoning, model, input, output, duration ->

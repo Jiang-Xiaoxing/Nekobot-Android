@@ -335,4 +335,21 @@
     <string name="agent_git_truncated">差分が長すぎるため省略</string>
     <string name="agent_git_view_all">全 %1$d ファイルを表示</string>
     <string name="agent_git_detail_title">すべての変更</string>
+    <string name="companion_examples_offer">これまでの会話から数件を選び、話し方の参考にできます。有効にしますか？</string>
+    <string name="companion_examples_enable">有効にする</string>
+    <string name="companion_examples_decline">使わない</string>
+    <string name="companion_examples_title">会話の例</string>
+    <string name="companion_examples_help">会話の例について</string>
+    <string name="companion_examples_add">＋ 追加</string>
+    <string name="companion_examples_you">あなた：%1$s</string>
+    <string name="companion_examples_user_label">あなた</string>
+    <string name="companion_examples_edit">例を編集</string>
+    <string name="companion_examples_delete">例を削除</string>
+    <string name="companion_examples_help_body">会話を始めたばかりの頃は、この数件を話し方の参考にします。履歴が十分に増えると最近の会話を直接参考にし、話し方が固定されないよう例は自動的に使われなくなります。</string>
+    <string name="companion_examples_active">● 使用中：履歴が十分に増えると自動停止します</string>
+    <string name="companion_examples_inactive">● 停止済み：最近の会話を参考にしています</string>
+    <string name="companion_examples_empty">会話の例はまだありません</string>
+    <string name="companion_examples_selecting">会話の例を選んでいます…</string>
+    <string name="companion_examples_failed">適切な例を選べませんでした。キャラクターカードで追加できます。</string>
+    <string name="companion_examples_disabled_notice">会話の履歴が十分に増えました。%1$sは最近の会話を直接参考にします。話し方が固定されないよう、会話の例は停止しました。</string>
 </resources>

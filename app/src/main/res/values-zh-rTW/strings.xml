@@ -360,4 +360,21 @@
     <string name="agent_git_truncated">差異內容過長，已截斷</string>
     <string name="agent_git_view_all">查看全部 %1$d 個檔案</string>
     <string name="agent_git_detail_title">全部更改</string>
+    <string name="companion_examples_offer">可以從你們剛才的聊天裡挑幾段，當作她的說話示範，讓語氣更穩。要開啟嗎？</string>
+    <string name="companion_examples_enable">開啟</string>
+    <string name="companion_examples_decline">不用</string>
+    <string name="companion_examples_title">對話範例</string>
+    <string name="companion_examples_help">對話範例說明</string>
+    <string name="companion_examples_add">＋ 新增</string>
+    <string name="companion_examples_you">你：%1$s</string>
+    <string name="companion_examples_user_label">你</string>
+    <string name="companion_examples_edit">編輯範例</string>
+    <string name="companion_examples_delete">刪除範例</string>
+    <string name="companion_examples_help_body">剛開始聊天時，用這幾段幫她找到語氣。聊天紀錄夠多後，她會直接參考最近的聊天，範例自動停用，免得語氣被定死。</string>
+    <string name="companion_examples_active">● 生效中：聊天紀錄夠多後會自動停用</string>
+    <string name="companion_examples_inactive">● 已停用：直接參考最近的聊天</string>
+    <string name="companion_examples_empty">尚未新增對話範例</string>
+    <string name="companion_examples_selecting">正在挑選對話範例…</string>
+    <string name="companion_examples_failed">未能挑選到合適的範例，可以在角色卡手動新增。</string>
+    <string name="companion_examples_disabled_notice">你們的聊天紀錄已經夠多了，%1$s會直接參考最近的聊天。對話範例已停用，免得語氣被定死。</string>
 </resources>

@@ -53,6 +53,7 @@ import com.nekobot.app.data.local.LocalLogger
         LocalMessageVariantEntity::class,
         LocalStickerEntity::class,
         CompanionScopeEntity::class,
+        CompanionExamplesEntity::class,
         CompanionMemoryEntity::class,
         CompanionSourceEntity::class,
         CompanionReceiptEntity::class,
@@ -67,12 +68,13 @@ import com.nekobot.app.data.local.LocalLogger
         CompanionRelationshipEventEntity::class,
         CompanionTransferJobEntity::class
     ],
-    version = 60,
+    version = 61,
     exportSchema = true
 )
 abstract class NekobotDatabase : RoomDatabase() {
     abstract fun companionRelationshipDao(): CompanionRelationshipDao
     abstract fun companionTransferDao(): CompanionTransferDao
+    abstract fun companionExamplesDao(): CompanionExamplesDao
     abstract fun companionMemoryDao(): CompanionMemoryDao
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
@@ -1294,6 +1296,14 @@ abstract class NekobotDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_60_61 = object : Migration(60, 61) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                CompanionExamplesSchema.create(db)
+                // 不给存量会话补邀请资格。只清理单会话中有明确后继的旧条目。
+                CompanionMemoryReplacementSql.prune(db)
+            }
+        }
+
         /**
          * 完整迁移链同时供生产数据库构建和迁移回归测试使用。
          * 新版本必须把迁移追加到这里；缺少迁移时直接失败，绝不静默清空用户数据。
@@ -1311,7 +1321,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61
         )
 
         fun get(context: Context): NekobotDatabase =

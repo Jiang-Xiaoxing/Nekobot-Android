@@ -17,8 +17,8 @@ import java.sql.DriverManager
 @RunWith(Parameterized::class)
 class UpstreamMigrationTest(private val version: Int) {
     companion object {
-        @JvmStatic @Parameterized.Parameters(name = "v{0} to v60")
-        fun versions() = (31..59).map { arrayOf(it) }
+        @JvmStatic @Parameterized.Parameters(name = "v{0} to v61")
+        fun versions() = (31..60).map { arrayOf(it) }
     }
 
     @Test fun upgradePreservesDataAndMatchesCurrentSchemaAfterReopen() {
@@ -97,7 +97,8 @@ class UpstreamMigrationTest(private val version: Int) {
             schema.getAsJsonArray("entities").forEach { entry ->
                 val entity = entry.asJsonObject
                 statement.execute(entity["createSql"].asString.replace("\${TABLE_NAME}", entity["tableName"].asString))
-                entity.getAsJsonArray("indices").forEach {
+                // Room 新导出格式省略空索引数组；非空索引仍逐个创建并核对。
+                entity.getAsJsonArray("indices")?.forEach {
                     statement.execute(it.asJsonObject["createSql"].asString.replace("\${TABLE_NAME}", entity["tableName"].asString))
                 }
             }
@@ -132,8 +133,8 @@ class UpstreamMigrationTest(private val version: Int) {
         // Compare PRAGMA metadata with a freshly created current Room export. Triggers are
         // migration-only; defaults are checked whenever the Room entity declares one.
         DriverManager.getConnection("jdbc:sqlite::memory:").use { fresh ->
-            createSchema(fresh, schema(60))
-            schema(60).getAsJsonArray("entities").forEach { entry ->
+            createSchema(fresh, schema(61))
+            schema(61).getAsJsonArray("entities").forEach { entry ->
                 val table = entry.asJsonObject["tableName"].asString
                 val expected = rows(fresh, "PRAGMA table_info(`$table`)").associateBy { it[1] }
                 val actual = rows(connection, "PRAGMA table_info(`$table`)").associateBy { it[1] }
@@ -145,7 +146,7 @@ class UpstreamMigrationTest(private val version: Int) {
                 }
                 assertEquals("$table foreign keys", rows(fresh, "PRAGMA foreign_key_list(`$table`)"),
                     rows(connection, "PRAGMA foreign_key_list(`$table`)"))
-                entry.asJsonObject.getAsJsonArray("indices").forEach { index ->
+                entry.asJsonObject.getAsJsonArray("indices")?.forEach { index ->
                     val name = index.asJsonObject["name"].asString
                     assertEquals("$name columns", rows(fresh, "PRAGMA index_info(`$name`)").map { it[0] to it[2] },
                         rows(connection, "PRAGMA index_info(`$name`)").map { it[0] to it[2] })

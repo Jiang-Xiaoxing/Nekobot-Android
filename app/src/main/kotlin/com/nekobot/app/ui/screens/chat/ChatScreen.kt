@@ -328,6 +328,7 @@ fun ChatScreen(
     val session by viewModel.session.collectAsStateWithLifecycle()
     // Agent 会话开启「继承完整角色能力」后按角色会话渲染：显示角色头像，气泡不再占满整宽。
     val inheritsCharacter = session?.sessionMode == "agent" && session?.inheritCharacter == true
+    val companionExamples by viewModel.companionExamples.collectAsStateWithLifecycle()
     val companionChat = session?.companionMode == true
     val companionName = companionChatTitle(session)
     val companionPortrait = companionPhotoPath(session?.portrait, session?.characterAvatar)
@@ -1103,9 +1104,13 @@ fun ChatScreen(
             // 多选模式下隐藏输入栏
             if (!selectionMode) {
                 if (customBottomBar != null) {
-                    customBottomBar()
+                    Column {
+                        if (companionChat) CompanionExamplesOffer(viewModel)
+                        customBottomBar()
+                    }
                 } else {
                     Column {
+                        if (companionChat) CompanionExamplesOffer(viewModel)
                         if (agentRecovery != null && !sending) {
                             AgentRecoveryBar(
                                 state = agentRecovery!!,
@@ -1350,6 +1355,9 @@ fun ChatScreen(
                         // 注意：LazyColumn 单个 item 内的多个平级节点会像 Box 一样叠放，
                         // 因此日期分隔条与气泡必须包在 Column 里纵向排布
                         Column {
+                            if (companionChat && index > 0 && renderMessages[index - 1].id == companionExamples?.noticeAfterId) {
+                                CompanionExamplesDisabledNotice(companionName)
+                            }
                             // 跨天消息之间插入日期分隔条
                             val day = dayKey(msg.timestamp)
                             val prevDay = renderMessages.getOrNull(index - 1)?.let { dayKey(it.timestamp) }

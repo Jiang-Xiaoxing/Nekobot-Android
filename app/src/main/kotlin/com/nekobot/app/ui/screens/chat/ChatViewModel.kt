@@ -340,6 +340,21 @@ class ChatViewModel : BaseViewModel() {
     private val _ttsStates: MutableStateFlow<Map<String, MessageTtsUiState>>
         get() = runtime.ttsStates
 
+    internal val companionExamples = MutableStateFlow<com.nekobot.app.data.local.db.CompanionExamplesEntity?>(null)
+    private var companionExamplesJob: kotlinx.coroutines.Job? = null
+
+    fun declineCompanionExamples() {
+        val id = currentSessionId
+        viewModelScope.launch { ServiceContainer.localRepository.declineCompanionExamples(id) }
+    }
+    fun selectCompanionExamples() {
+        val id = currentSessionId
+        ServiceContainer.applicationScope.launch {
+            try { ServiceContainer.localRepository.selectCompanionExamples(id) }
+            catch (_: Exception) { showToast(string(R.string.companion_examples_failed)) }
+        }
+    }
+
     private val _session = MutableStateFlow<Session?>(null)
     val session: StateFlow<Session?> = _session.asStateFlow()
 
@@ -731,6 +746,13 @@ class ChatViewModel : BaseViewModel() {
             ChatSessionManager.release(currentSessionId)
         }
         currentSessionId = sessionId
+        companionExamplesJob?.cancel()
+        companionExamples.value = null
+        if (isLocalMode) companionExamplesJob = viewModelScope.launch {
+            ServiceContainer.localRepository.observeCompanionExamples(sessionId).collect {
+                if (currentSessionId == sessionId) companionExamples.value = it
+            }
+        }
         messageImagesJob?.cancel()
         messageImagesJob = viewModelScope.launch {
             unified.observeMessageImages(sessionId).collect { images ->

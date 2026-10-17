@@ -133,6 +133,8 @@ internal object FusedCompanionPolicy {
         turns.map { turn -> turn.filter { it.id in pendingIds } }.filter { it.isNotEmpty() }
 
     fun tokens(rows: List<LocalMessageEntity>) = rows.sumOf { estimateLocalTextTokens(it.content) + 24 }
+    fun rawWindowFull(history: List<LocalMessageEntity>, selected: List<LocalMessageEntity>, budget: Int): Boolean =
+        history.isNotEmpty() && (selected.size < history.size || tokens(selected) >= budget)
     fun turns(rows: List<LocalMessageEntity>) = CompanionMemoryPolicy.batches(rows, 1)
 
     /** 聊天近期额度取用户上限与按上下文缩放后的份额中较小的一个。 */

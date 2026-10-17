@@ -54,6 +54,7 @@ enum class PortableDataCategory(
             "local_experience_archives",
             "local_experience_sources",
             "local_experience_archive_jobs",
+            "companion_examples",
             "companion_scopes",
             "companion_memories",
             "companion_sources",
@@ -610,6 +611,11 @@ class PortableDataArchiveManager(private val context: Context) {
                         putJsonValue(values, column, portableValue)
                     }
                 }
+                if (table == "companion_examples") {
+                    // 便携归档保留可编辑原文，但导入的单会话不再邀请、挑选或发送示例。
+                    values.put("state", "disabled")
+                    values.putNull("noticeAfterId")
+                }
                 if (preserveExistingSecrets) {
                     preserveSecretsFromExistingRow(database, table, values)
                 }
@@ -655,6 +661,7 @@ class PortableDataArchiveManager(private val context: Context) {
                 statement.bindString(1, database.dbName)
                 companionScopes.forEach { scopeId ->
                     com.nekobot.app.data.local.db.CompanionMemoryReplacementSql.prune(writable, scopeId)
+                    writable.execSQL("UPDATE companion_examples SET state='disabled', noticeAfterId=NULL WHERE sessionId=(SELECT sessionId FROM companion_scopes WHERE id=?)", arrayOf(scopeId))
                     statement.bindString(2, scopeId)
                     statement.executeUpdateDelete()
                 }

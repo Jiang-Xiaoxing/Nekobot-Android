@@ -31,8 +31,10 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         var selected = if (first != null && from >= 0) history.drop(from) else emptyList()
         val timeKey = FusedCompanionPolicy.timeKey(now)
         val raw = requireNotNull(db.messageDao().getById(messageId))
-        val turnReminder = CompanionPromptLanguage.clock(now, history.lastOrNull { it.role in setOf("user", "assistant") }) +
-            "\n" + CompanionPromptLanguage.styleReminder
+        val examples = CompanionExamplesStore(db)
+        val exampleReference = examples.reference(session)
+        var turnReminder = CompanionPromptLanguage.clock(now, history.lastOrNull { it.role in setOf("user", "assistant") }) +
+            "\n" + CompanionPromptLanguage.styleReminder + exampleReference.takeIf(String::isNotBlank)?.let { "\n$it" }.orEmpty()
         fun material(): String = buildString {
             appendLine("这些是帮助你想起往事的参考，不是对方刚说的话，也不是新发生的经历；别把这里的说明另记成往事。")
             appendLine(recall)
@@ -45,14 +47,20 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         fun size(rows: List<LocalMessageEntity>, materials: List<CompanionContextMaterialEntity>, text: String) =
             FusedCompanionPolicy.tokens(rows) + materials.sumOf { estimateLocalTextTokens(it.content) + estimateLocalTextTokens(it.userPayload) + 24 } +
                 estimateLocalTextTokens(turnReminder) + estimateLocalTextTokens(text) + estimateLocalTextTokens(Gson().toJson(currentMessage)) + 72
-        val rebuild = selected.isEmpty() || size(selected, cached, auxiliary) > available
+        val recentCap = FusedCompanionPolicy.chatRecentBudget(available, consolidation)
+        val rebuild = selected.isEmpty() || FusedCompanionPolicy.tokens(selected) > recentCap || size(selected, cached, auxiliary) > available
         if (rebuild) {
             cached = emptyList()
             auxiliary = material()
             // 近期额度取设定与上下文份额的较小值。积压的未整理消息不扩大本轮窗口，留给后台整理。
-            val recentCap = FusedCompanionPolicy.chatRecentBudget(available, consolidation)
             selected = FusedCompanionPolicy.selectChatHistory(history, recentCap) { rows ->
                 size(rows, cached, auxiliary) <= available
+            }
+        }
+        if (FusedCompanionPolicy.rawWindowFull(history, selected, recentCap)) {
+            examples.windowFull(session.id, history.lastOrNull { it.role == "assistant" }?.id ?: messageId)
+            if (exampleReference.isNotBlank()) {
+                turnReminder = turnReminder.removeSuffix("\n$exampleReference")
             }
         }
         require(size(selected, cached, auxiliary) <= available) {
