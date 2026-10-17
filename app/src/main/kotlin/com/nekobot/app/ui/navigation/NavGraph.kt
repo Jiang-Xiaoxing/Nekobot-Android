@@ -437,6 +437,7 @@ fun NekobotNavGraph() {
                     ) {
                             when (bottomRoutes[page]) {
                                 Routes.SESSIONS -> SessionsScreen(
+                                    isActive = selectedMainRoute == Routes.SESSIONS && currentRoute == Routes.SESSIONS,
                                     onOpenChat = { id ->
                                         navController.navigate(Routes.chat(id))
                                     },

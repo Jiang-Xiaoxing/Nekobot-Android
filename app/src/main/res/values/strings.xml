@@ -378,4 +378,16 @@
     <string name="companion_examples_selecting">正在挑选对话示例…</string>
     <string name="companion_examples_failed">未能挑选到合适的示例，可以在角色卡手动添加。</string>
     <string name="companion_examples_disabled_notice">你们的聊天记录已经够多了，%1$s会直接参考最近的聊天。对话示例已停用，免得语气被定死。</string>
+    <!-- Session page V2 -->
+    <string name="sessions_page_character">角色</string>
+    <string name="sessions_page_agent">Agent</string>
+    <string name="sessions_page_companion">专属</string>
+    <string name="sessions_page_search_action">搜索与筛选%1$s会话</string>
+    <string name="sessions_page_create_action">新建%1$s会话</string>
+    <string name="sessions_page_menu">会话更多操作</string>
+    <string name="sessions_create_group">新建群聊</string>
+    <string name="sessions_page_clear_filters">重置筛选</string>
+    <string name="sessions_page_local_only">专属会话仅支持本地模式</string>
+    <string name="sessions_page_empty_hint">点右上角＋，新建%1$s会话</string>
+    <string name="sessions_page_search_title">搜索与筛选 · %1$s</string>
 </resources>
