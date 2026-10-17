@@ -18,17 +18,24 @@ internal object CompanionPromptLanguage {
     const val recallRules = "想不起来的事，可以先翻一翻记忆再回答；翻过还是没有，就老实说记不清了，不要编。和记忆对不上时，自然地问一句确认；已经确认过的事就接受，不反复追问。"
     const val styleReminder = "像平时和对方聊天一样，用口语，简短自然；想分成几条短消息时，用<||>隔开。别用总结、汇报或记账的语气，也别列清单；不确定或忘了就直说，不要复述设定和规则。"
 
-    fun memory(memory: CompanionMemoryEntity): String = memory(memory.content, memory.eventDate, memory.annualMonthDay)
+    fun memory(memory: CompanionMemoryEntity, today: LocalDate = LocalDate.now()): String =
+        memory(memory.content, memory.eventDate, memory.annualMonthDay, today)
 
-    fun memory(content: String, eventDate: String? = null, annualMonthDay: String? = null): String {
+    fun memory(content: String, eventDate: String? = null, annualMonthDay: String? = null,
+        today: LocalDate = LocalDate.now()): String {
         val date = eventDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         val annual = annualMonthDay?.let { runCatching { MonthDay.parse("--$it") }.getOrNull() }
-        val prefix = date?.let { "${it.monthValue}月${it.dayOfMonth}日：" }
-            ?: annual?.let { "${it.monthValue}月${it.dayOfMonth}日：" }.orEmpty()
+        val prefix = annual?.let { "${it.monthValue}月${it.dayOfMonth}日：" } ?: date?.let { when (it) {
+            today -> "今天"
+            today.minusDays(1) -> "昨天"
+            today.minusDays(2) -> "前天"
+            else -> (if (it.year == today.year) "" else "${it.year}年") + "${it.monthValue}月${it.dayOfMonth}日"
+        } + "：" }
+            .orEmpty()
         return prefix + content.replace(Regex("[\\r\\n]+"), " ").trim()
     }
 
-    fun memories(rows: List<CompanionMemoryEntity>): String = rows.joinToString("\n", transform = ::memory)
+    fun memories(rows: List<CompanionMemoryEntity>, today: LocalDate = LocalDate.now()): String = rows.joinToString("\n") { memory(it, today) }
 
     fun stickers(names: List<String>): String {
         // 不改名称这个匹配键；无法在正文中无歧义表达的名字不列出。

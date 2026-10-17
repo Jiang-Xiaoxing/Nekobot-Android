@@ -36,6 +36,7 @@ class CompanionCoreMemoryTest {
             eventDate = "2000-05-20", expiresAt = "2099-01-01T00:00:00Z")
         val sent = CompanionCoreMemory.render(listOf(birthday))
         assertEquals("5月20日：生日", sent)
+        assertEquals("2000-05-20", birthday.eventDate)
         assertFalse(sent.contains("expires_at"))
         assertFalse(sent.contains(birthday.expiresAt!!))
     }

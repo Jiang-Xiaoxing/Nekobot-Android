@@ -17,11 +17,11 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val expired = dao.memories(scope.id).filterNot { CompanionImportPolicy.usable(it, now.toInstant()) }.map { it.id }.sorted()
         // State changes invalidate auxiliary caches, including turning the feature off.
         val retrieval = com.nekobot.app.ServiceContainer.prefs.companionRetrievalSettings(db.dbName)
-        val configuration = CompanionMemoryPolicy.digest(retrieval.toString() + stateKey + FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + expired)
+        val configuration = CompanionMemoryPolicy.digest(retrieval.toString() + stateKey + FusedCompanionPolicy.contextFormat + system + Gson().toJson(tools) + maxContext + outputReserve + now.zone.id + now.toLocalDate() + expired)
         val available = maxContext - outputReserve - estimateLocalTextTokens(system) - estimateLocalTextTokens(Gson().toJson(tools)) - 256
         val consolidation = consolidationSettingsFor(db.dbName, session.id)
         val budgets = FusedCompanionPolicy.budgets(available, consolidation)
-        val (recall, mode) = store.fusedRecall(session, currentMessage["content"].toString(), budgets)
+        val (recall, mode) = store.fusedRecall(session, currentMessage["content"].toString(), budgets, now.toLocalDate())
         val old = dao.contextMaterials(scope.id)
         var cached = old.takeIf { rows -> rows.all { it.revision == scope.revision && it.configuration == configuration } }.orEmpty()
         val sequence = db.messageDao().cursorOf(messageId)?.rowId ?: error("本轮用户消息尚未保存")

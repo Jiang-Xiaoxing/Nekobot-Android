@@ -39,7 +39,7 @@ class CompanionNaturalPromptTest {
     @Test fun memoryUsesEventDateAndOnlyDiaryBodyWithoutInternalFields() {
         val memory = CompanionMemoryEntity("secret-id", "s", "key", 2, "episode", "角色", "我陪他改好了简历。", "active",
             createdAt = "2026-10-17", updatedAt = "2026-10-17", eventDate = "2026-10-12", expiresAt = "2099-01-01")
-        assertEquals("10月12日：我陪他改好了简历。", CompanionCoreMemory.render(listOf(memory)))
+        assertEquals("10月12日：我陪他改好了简历。", CompanionCoreMemory.render(listOf(memory), now.toLocalDate()))
         assertEquals("我陪他改好了简历。", CompanionPromptLanguage.memory(memory.copy(eventDate = null)))
         assertEquals(memory.content, "我陪他改好了简历。")
         for (field in listOf("id", "key", "type", "confidence", "source", "expires", "status")) {

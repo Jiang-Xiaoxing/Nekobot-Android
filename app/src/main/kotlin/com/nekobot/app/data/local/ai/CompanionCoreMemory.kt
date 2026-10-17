@@ -16,7 +16,8 @@ internal object CompanionCoreMemory {
         memories.filter { contains(it) }.sortedBy { it.factKey }
 
     // 内部归属和来源仍存原库；发送时只提供有依据的日期与正文。
-    fun render(memories: List<CompanionMemoryEntity>): String = CompanionPromptLanguage.memories(memories)
+    fun render(memories: List<CompanionMemoryEntity>, today: java.time.LocalDate = java.time.LocalDate.now()): String =
+        CompanionPromptLanguage.memories(memories, today)
 
     fun tokens(memories: List<CompanionMemoryEntity>): Int =
         if (memories.isEmpty()) 0 else estimateLocalTextTokens(render(memories))

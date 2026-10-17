@@ -168,7 +168,7 @@ internal object FusedCompanionPolicy {
     }
 
     // Bump when the auxiliary format changes so old interval hints are not replayed.
-    const val contextFormat = "fused-natural-dialogue-v5"
+    const val contextFormat = "fused-natural-dialogue-v6"
 
     fun timeKey(now: ZonedDateTime): String =
         "${now.format(java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm", java.util.Locale.ROOT))}（${now.zone.id}，UTC${if (now.offset.totalSeconds == 0) "+00:00" else now.offset.id}）"
