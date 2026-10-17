@@ -4,7 +4,7 @@ internal object FusedCompanionTools {
     // 陪伴模式的能力边界，不依赖界面隐藏，也不改写玩家原有工具开关。
     val allowedNames = setOf(
         "agent_memory_read", "agent_memory_update", "agent_recall_search", "agent_history_search", "agent_history_read",
-        "get_date_time",
+        "get_date_time", "generate_image",
         "understand_image", "list_stickers", "send_sticker", "view_sticker"
     )
     val readNames = setOf("agent_memory_read", "db_list_memories")

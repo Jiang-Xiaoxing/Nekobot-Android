@@ -86,7 +86,7 @@ class CompanionNaturalPromptTest {
             "workspace_list_files", "workspace_read_file", "workspace_write_file", "workspace_parse_file", "workspace_file_info", "workspace_extract_epub")
         val original = names.map { mapOf<String, Any>("type" to "function", "function" to mapOf("name" to it)) }
         val snapshot = Gson().toJson(original)
-        assertEquals(names.take(8).toSet(), FusedCompanionTools.definitions(original).map(::toolNameOf).toSet())
+        assertEquals((names.take(8) + "generate_image").toSet(), FusedCompanionTools.definitions(original).map(::toolNameOf).toSet())
         assertEquals(snapshot, Gson().toJson(original))
     }
 
