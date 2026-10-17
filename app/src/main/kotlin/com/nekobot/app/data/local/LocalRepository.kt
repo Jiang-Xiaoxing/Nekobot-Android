@@ -11344,7 +11344,7 @@ ${AiOutputLanguage.directive()}
      * 内容为 base64 编码的 JSON 字符串。
      * @return 解码后的 JSON 字符串；非 PNG 或未找到 chunk 时返回 null
      */
-    private fun extractCharacterJsonFromPng(bytes: ByteArray): String? {
+    internal fun extractCharacterJsonFromPng(bytes: ByteArray): String? {
         // PNG 签名: 89 50 4E 47 0D 0A 1A 0A
         val pngSig = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
         if (bytes.size < pngSig.size || !bytes.copyOfRange(0, pngSig.size).contentEquals(pngSig)) {

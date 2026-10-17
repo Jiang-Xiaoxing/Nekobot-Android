@@ -24,6 +24,7 @@ class PortableDataArchiveManagerTest {
         var db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
         val stamp = "2026-10-11T02:00:00Z"
         val characterId = "$mergeSessionId-character"
+        db.characterDao().upsert(com.nekobot.app.data.local.db.LocalCharacterEntity(characterId, "Synthetic relationship fixture", createdAt = stamp, updatedAt = stamp))
         db.sessionDao().upsert(LocalSessionEntity(mergeSessionId, "文字关系备份", characterId = characterId, companionMode = true,
             sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true, createdAt = stamp, updatedAt = stamp))
         val words = "{\"description\":\"愿意分享日常，但对承诺仍有保留\"}"
@@ -103,6 +104,7 @@ class PortableDataArchiveManagerTest {
     @Test fun fusedModeBackupRestoresOwnershipFactsSourcesAndProgressWithoutRequestCache() = runBlocking {
         val db = NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
         val characterId = "fused-portable-${UUID.randomUUID()}"
+        db.characterDao().upsert(com.nekobot.app.data.local.db.LocalCharacterEntity(characterId, "Synthetic fused fixture", createdAt = "now", updatedAt = "now"))
         val row = LocalSessionEntity(mergeSessionId,"Portable fused fixture",characterId=characterId,
             sessionMode="agent",inheritCharacter=true,longConversationEnabled=true,companionMode=true,createdAt="now",updatedAt="now")
         db.sessionDao().upsert(row)
@@ -233,14 +235,16 @@ class PortableDataArchiveManagerTest {
         )
 
         com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived = !expected
-        val result = manager.import(
-            input = ByteArrayInputStream(output.toByteArray()),
-            password = "",
-            selected = setOf(PortableDataCategory.APP_SETTINGS)
-        )
-
-        assertEquals(expected, com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived)
-        assertEquals(1, result.importedRows)
+        manager.prepareImport(ByteArrayInputStream(output.toByteArray()), "").use { source ->
+            val selected = mapOf(PortableDataCategory.APP_SETTINGS to setOf("app_settings"))
+            val keep = manager.commitImport(source, manager.previewImport(source, selected))
+            assertEquals(!expected, com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived)
+            assertEquals(0, keep.settingsUpdated)
+            val chosen = PortableImportChoices(settings = setOf("recent_sessions_include_archived"))
+            val result = manager.commitImport(source, manager.previewImport(source, selected, chosen))
+            assertEquals(expected, com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived)
+            assertEquals(1, result.settingsUpdated)
+        }
     }
 
     @Test

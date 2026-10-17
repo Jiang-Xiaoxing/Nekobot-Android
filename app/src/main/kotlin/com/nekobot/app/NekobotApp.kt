@@ -296,6 +296,7 @@ object ServiceContainer {
     fun init(app: Application) {
         appContext = app.applicationContext
         prefs = PrefsManager(app)
+        com.nekobot.app.data.local.recoverPendingPortableImport(app)
         realtimeCredentialStore = RealtimeCredentialStore(app)
         bindGlobalAgentMemory(app, prefs.activeDbName)
         prefs.migrateSensitivePreferences()
@@ -389,7 +390,8 @@ object ServiceContainer {
     }
 
     /** 切换本地 db profile：重建 LocalRepository/UnifiedRepository，广播全局刷新。 */
-    fun switchLocalDb(profileName: String) {
+    fun switchLocalDb(profileName: String, portableImportOwner: Boolean = false) {
+        com.nekobot.app.data.local.PortableImportGate.requireSwitchAllowed(profileName, portableImportOwner)
         appContext?.let { ctx ->
             prefs.activeDbName = profileName
             localAutomationSyncJob?.cancel()
