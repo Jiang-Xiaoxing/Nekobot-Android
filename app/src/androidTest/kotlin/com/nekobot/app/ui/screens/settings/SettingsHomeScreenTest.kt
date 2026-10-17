@@ -3,6 +3,7 @@ package com.nekobot.app.ui.screens.settings
 import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -97,7 +98,11 @@ class SettingsHomeScreenTest {
                 Configuration(compose.activity.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) }
             )
         }
-        CompositionLocalProvider(LocalContext provides context, LocalConfiguration provides context.resources.configuration) {
+        CompositionLocalProvider(
+            LocalContext provides context,
+            LocalConfiguration provides context.resources.configuration,
+            LocalActivityResultRegistryOwner provides compose.activity
+        ) {
             NekobotTheme(darkTheme = dark, content = content)
         }
     }
