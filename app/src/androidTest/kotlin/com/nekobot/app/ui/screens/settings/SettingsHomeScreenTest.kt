@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -175,7 +178,7 @@ class SettingsHomeScreenTest {
         ServiceContainer.prefs.fontScale = 1.6f
         compose.setContent {
             Theme(dark = true) {
-                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) { Home(AppMode.LOCAL) }
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) { Home(AppMode.LOCAL) }
             }
         }
         compose.onNodeWithTag("settings-home-open-latest").performScrollTo()
@@ -212,7 +215,7 @@ class SettingsHomeScreenTest {
         ServiceContainer.prefs.fontScale = 1.6f
         compose.setContent {
             Theme {
-                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
                     SettingsConnectionContent(
                         rememberScrollState(), mode, url, "合成测试账号", false,
                         { mode = it }, { url = it }, { saves++ }, { reloads++ }, { logouts++ }
