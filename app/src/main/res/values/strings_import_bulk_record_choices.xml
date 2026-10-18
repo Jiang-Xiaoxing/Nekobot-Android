@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="import_bulk_record_incoming">所有记录使用导入值</string>
+    <string name="import_bulk_record_keep">所有记录保留本机</string>
+    <string name="import_bulk_record_scope">全部 %1$d 条差异记录；文件、设置与凭据选择不变。</string>
+    <string name="import_bulk_record_confirm">将为本次全部 %1$d 条差异记录选择使用导入值，包含尚未载入的记录。文件、应用设置与凭据的选择保持。此时只更新选择和预览，仍可逐项调整；最后执行导入才会写入资料。</string>
+    <string name="import_bulk_record_changed">差异记录已变化，请重新预览后再批量选择。</string>
+</resources>

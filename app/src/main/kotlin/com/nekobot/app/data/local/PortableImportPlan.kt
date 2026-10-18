@@ -43,7 +43,8 @@ data class PortableImportRowPlan(
     val requiredTables: Set<String> = emptySet(),
     internal val skillNames: Set<String> = emptySet(),
     internal val newKeys: Set<String> = emptySet(),
-    val sameNameCopies: Int = 0
+    val sameNameCopies: Int = 0,
+    internal val sourceMemoryStates: Map<String, JsonObject> = emptyMap()
 )
 
 /** No deletion/REPLACE, no matching by display name, no network or activation side effects. */
@@ -74,6 +75,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
         val sessionWrites = mutableListOf<JsonObject>()
         val memoryWrites = mutableListOf<JsonObject>()
         val scopeOwners = hashSetOf<String>()
+        val memorySources = PortableMemorySourceIntegrity(sql)
         var added = 0; var same = 0; var different = 0; var updated = 0; var sensitive = 0
         var sameNameCopies = 0
         rows { incoming ->
@@ -122,6 +124,10 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
                 key.entrySet().forEach { add(it.key, it.value) }
                 differences(table, values, existing).filter { it in choices.fields[token].orEmpty() }.forEach { add(it, values[it]) }
             }
+            if (table in setOf("companion_memories", "companion_sources", "companion_scopes")) {
+                val effective = (existing?.deepCopy() ?: JsonObject()).apply { written.entrySet().forEach { add(it.key, it.value) } }
+                memorySources.record(table, values, effective, existing == null || written.size() > key.size())
+            }
             if (table == "local_sessions" && (existing == null || written.size() > key.size()))
                 sessionWrites += (existing?.deepCopy() ?: JsonObject()).apply { written.entrySet().forEach { add(it.key, it.value) } }
             if (table == "companion_memories" && (existing == null || written.size() > key.size()))
@@ -159,6 +165,15 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
                 if (issues.size < 50) issues += "$label：缺少 ${ref.first} 关联资料，请返回补选或取消此项"
             }
         }
+        memorySources.validate(rows, { incoming ->
+            val values = normalize(incoming).first
+            val key = primaryKey(incoming.table, values)
+            val existing = find(incoming.table, key)
+            if (existing == null) values else existing.deepCopy().apply {
+                differences(incoming.table, values, existing).filter { it in choices.fields[rowKey(incoming.table, key)].orEmpty() }
+                    .forEach { add(it, values[it]) }
+            }
+        }, { key, value -> digest.update((key + ":" + canonical(value) + "\n").toByteArray()) }, issues, requiredTables, checkpoint)
         fun currentMemory(row: JsonObject) = row["current"]?.asInt == 1 && row["valid"]?.asInt == 1 &&
             row["status"]?.asString !in setOf("conflict", "locked_conflict")
         memoryWrites.filter { it.has("factKey") && it.has("scopeId") }
@@ -197,14 +212,19 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             }
         }
         return PortableImportRowPlan(hex(digest.digest()), PortableImportCounts(added, same, different, updated),
-            details, issues.take(50), sensitive, localFiles.toList(), requiredTables, skillNames, newKeys, sameNameCopies)
+            details, issues.take(50), sensitive, localFiles.toList(), requiredTables, skillNames, newKeys, sameNameCopies,
+            memorySources.memoryStates())
     }
 
     /** Caller must hold one database transaction and compare preview fingerprint before this call. */
     fun apply(rows: PortableRowVisitor, choices: PortableImportChoices, checkpoint: () -> Unit = {},
               originallyNew: Set<String>? = null,
+              sourceMemoryStates: Map<String, JsonObject>? = null,
               onWrite: (String, JsonObject, Boolean, Set<String>) -> Unit = { _, _, _, _ -> }): Int {
-        val newKeys = originallyNew ?: preview(rows, choices, 0).also { require(it.issues.isEmpty()) { it.issues.first() } }.newKeys
+        val checkedPlan = if (originallyNew == null || sourceMemoryStates == null)
+            preview(rows, choices, 0).also { require(it.issues.isEmpty()) { it.issues.first() } } else null
+        val newKeys = originallyNew ?: requireNotNull(checkedPlan).newKeys
+        val verifiedStates = sourceMemoryStates ?: requireNotNull(checkedPlan).sourceMemoryStates
         var changed = 0
         rows { incoming ->
             checkpoint()
@@ -233,6 +253,20 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             val written = existing?.deepCopy() ?: JsonObject()
             values.entrySet().forEach { written.add(it.key, it.value) }
             onWrite(table, written, wasNew, values.keySet().toSet())
+        }
+        // Message triggers can invalidate a linked memory before its replacement source is written.
+        // Restore only the already-reviewed state for proofs validated against the effective messages.
+        for ((id, flags) in verifiedStates) {
+            checkpoint()
+            val key = JsonObject().apply { addProperty("id", id) }
+            val existing = find("companion_memories", key) ?: continue
+            val names = flags.keySet().filter { flags[it] != existing[it] }
+            if (names.isEmpty()) continue
+            sql.execute("UPDATE companion_memories SET ${names.joinToString { "${q(it)}=?" }} WHERE id=?",
+                names.map { bind(flags[it]) } + id)
+            val token = rowKey("companion_memories", key)
+            names.forEach { existing.add(it, flags[it]) }
+            onWrite("companion_memories", existing, token in newKeys, names.toSet())
         }
         return changed
     }
@@ -317,6 +351,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
         }
         val logical = when {
             table == "local_sessions" -> listOf("character_id" to "local_characters")
+            table == "companion_sources" -> listOf("memoryId" to "companion_memories", "messageId" to "local_messages")
             table == "companion_scopes" || table == "companion_owners" -> listOf("sessionId" to "local_sessions", "characterId" to "local_characters")
             table.startsWith("companion_") && table !in setOf("companion_relationship_state", "companion_relationship_events", "companion_relationship_assessments", "companion_examples") -> listOf("scopeId" to "companion_scopes", "memoryId" to "companion_memories")
             table == "local_character_memories" -> listOf("character_id" to "local_characters")

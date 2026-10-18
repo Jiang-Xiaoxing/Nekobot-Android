@@ -181,7 +181,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                     }
                     if (!state.planValid) item { Text(stringResource(if (state.busy) R.string.safe_import_checking else R.string.portability_ui_recheck), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("safe-import-summary-pending")) }
                     if (plan.rows.differences.isNotEmpty() || plan.fileDifferences.isNotEmpty() || plan.settingDifferences.isNotEmpty() || plan.storyDifferent) item {
-                        TextButton(onClick = { showDifferences = true }, enabled = !state.busy && state.planValid) { Text(stringResource(R.string.safe_import_changes)) }
+                        TextButton(onClick = { if (vm.beginDifferenceReview()) showDifferences = true }, enabled = !state.busy && state.planValid) { Text(stringResource(R.string.safe_import_changes)) }
                     }
                     if (state.planValid && plan.issues.isNotEmpty()) item {
                         TextButton(onClick = { showIssues = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_dependencies, plan.issues.size), color = MaterialTheme.colorScheme.error) }
@@ -269,9 +269,11 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
         }
     }
     if (showDifferences) state.plan?.let { plan ->
-        PortableImportDifferences(plan, state.choices, state.busy, onDismiss = { if (state.busy) vm.cancel(); showDifferences = false },
-            onSave = { choices -> showDifferences = false; vm.saveChoices(context, choices) },
-            onMore = { choices -> vm.choices(choices); vm.preview(context, more = true) })
+        DisposableEffect(vm) { onDispose { vm.discardDifferenceReview() } }
+        PortableImportDifferences(plan, state.choices, state.busy, onDismiss = { vm.discardDifferenceReview(); showDifferences = false },
+            onSave = { choices -> if (vm.saveDifferenceReview(context, choices)) showDifferences = false },
+            onMore = { choices -> vm.choices(choices); vm.preview(context, more = true) },
+            onBulkRecords = { choices, useIncoming -> vm.chooseAllRecordFields(context, choices, useIncoming) })
     }
     if (showIssues) state.plan?.let { plan ->
         NekoDialog(onDismiss = { showIssues = false }, title = stringResource(R.string.safe_import_dependencies_title),

@@ -137,6 +137,24 @@ class PortableImportDifferencesTest {
         dialogAction(R.string.import_difference_save).performClick()
         assertSame(before, vm.state.value.plan); assertTrue(vm.state.value.planValid); unchanged()
     }
+    @Test fun cancellingTheWindowAfterCompletedBulkRestoresTheOpeningSelectionAndPreview() {
+        launch()
+        val before = vm.state.value
+        val openingPlan = requireNotNull(before.plan)
+        openDifferences()
+        compose.onNodeWithTag("safe-difference-bulk-record-incoming").performScrollTo().performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.import_bulk_record_confirm,
+            openingPlan.rows.counts.different)).assertExists()
+        dialogAction(R.string.common_confirm).performClick(); awaitPreview()
+        assertEquals(openingPlan.rows.counts.different, vm.state.value.plan!!.rows.counts.updated)
+        assertTrue(vm.state.value.choices.fields.isNotEmpty()); unchanged()
+        dialogAction(R.string.common_cancel).performClick()
+        assertEquals(before.choices, vm.state.value.choices); assertSame(before.plan, vm.state.value.plan)
+        assertTrue(vm.state.value.planValid); unchanged()
+        openDifferences()
+        compose.onNodeWithTag("safe-difference-row-0-name-keep").assertIsSelected()
+        dialogAction(R.string.common_cancel).performClick()
+    }
     @Test fun savingAFileReplacementRefreshesSummaryButOnlyFinalConfirmationWrites() {
         launch(); openDifferences()
         screenshot("field-comparison")

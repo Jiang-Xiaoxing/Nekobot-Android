@@ -50,6 +50,9 @@ class SafePortableImportViewModel internal constructor(private val operations: S
     private var limit = 50
     private var request = 0L
     private var committing = false
+    private var bulkRecordBaseline: SafeImportUiState? = null
+    private data class DifferenceReviewBaseline(val state: SafeImportUiState, val limit: Int)
+    private var differenceReviewBaseline: DifferenceReviewBaseline? = null
     internal fun beginPicking(): Boolean {
         if (state.value.busy || state.value.picking) return false
         state.value = state.value.copy(picking = true)
@@ -74,6 +77,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
     fun inspect(context: Context, uri: Uri, password: String) {
         if (state.value.busy) return
         val token = ++request
+        differenceReviewBaseline = null
         limit = 50
         state.value.prepared?.close()
         state.value = SafeImportUiState(busy = true, sourceUri = uri, fileName = uri.lastPathSegment.orEmpty().substringAfterLast('/'), passwordInput = password)
@@ -119,6 +123,73 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         if (state.value.busy) return
         if (choices(value) || !state.value.planValid) preview(context)
     }
+    internal fun beginDifferenceReview(): Boolean {
+        if (cleared || state.value.busy || !state.value.planValid || state.value.plan == null) return false
+        if (differenceReviewBaseline == null) differenceReviewBaseline = DifferenceReviewBaseline(state.value, limit)
+        return true
+    }
+    internal fun saveDifferenceReview(context: Context, draft: PortableImportChoices): Boolean {
+        if (cleared || state.value.busy || differenceReviewBaseline == null) return false
+        differenceReviewBaseline = null
+        saveChoices(context, draft)
+        return true
+    }
+    /** Closing the comparison discards every temporary refresh, including completed bulk choices. */
+    internal fun discardDifferenceReview() {
+        val baseline = differenceReviewBaseline ?: return
+        differenceReviewBaseline = null
+        if (cleared) return
+        request++
+        bulkRecordBaseline = null
+        work?.cancel()
+        limit = baseline.limit
+        state.value = baseline.state
+    }
+    /** Publish a bulk draft only after both reads succeed; cancellation leaves the old review intact. */
+    internal fun chooseAllRecordFields(context: Context, draft: PortableImportChoices, useIncoming: Boolean) {
+        val snapshot = state.value
+        val prepared = snapshot.prepared ?: return
+        val previousPlan = snapshot.plan ?: return
+        if (snapshot.busy || cleared || previousPlan.rows.counts.different == 0) return
+        val token = ++request
+        val requestedLimit = limit
+        val selected = snapshot.selected.mapValues { it.value.toSet() }
+        val originalDraft = draft.normalized()
+        bulkRecordBaseline = snapshot
+        state.value = snapshot.copy(busy = true, error = null, result = null, planValid = false,
+            progress = context.getString(R.string.safe_import_checking))
+        work = viewModelScope.launch {
+            try {
+                val (choices, plan) = withContext(Dispatchers.IO) {
+                    val complete = operations.preview(context, prepared, selected, originalDraft, Int.MAX_VALUE)
+                    ensureActive()
+                    require(complete.rows.counts.different == previousPlan.rows.counts.different &&
+                        complete.rows.differences.size == complete.rows.counts.different) {
+                        context.getString(R.string.import_bulk_record_changed)
+                    }
+                    val fields = originalDraft.fields.toMutableMap()
+                    complete.rows.differences.forEach { row ->
+                        ensureActive()
+                        val columns = row.fields.mapTo(linkedSetOf()) { it.column }
+                        fields[row.key] = if (useIncoming) fields[row.key].orEmpty() + columns else fields[row.key].orEmpty() - columns
+                    }
+                    val next = originalDraft.copy(fields = fields).normalized()
+                    next to operations.preview(context, prepared, selected, next, requestedLimit)
+                }
+                ensureActive()
+                if (token == request && !cleared) state.value = state.value.copy(plan = plan, choices = choices,
+                    planValid = true, step = SafeImportStep.CONFIRM)
+            } catch (_: CancellationException) {
+                if (token == request && !cleared) state.value = snapshot
+            } catch (error: Exception) {
+                if (token == request && !cleared) state.value = snapshot.copy(planValid = false,
+                    error = error.message ?: context.getString(R.string.safe_import_failed))
+            } finally {
+                if (token == request) { bulkRecordBaseline = null; state.value = state.value.copy(busy = false) }
+                if (cleared) prepared.close()
+            }
+        }
+    }
     fun preview(context: Context, more: Boolean = false) {
         val snapshot = state.value
         val prepared = snapshot.prepared ?: return
@@ -144,7 +215,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         val snapshot = state.value
         val prepared = snapshot.prepared ?: return
         val plan = snapshot.plan ?: return
-        if (cleared || snapshot.busy || !snapshot.planValid || snapshot.result != null || plan.issues.isNotEmpty() ||
+        if (cleared || differenceReviewBaseline != null || snapshot.busy || !snapshot.planValid || snapshot.result != null || plan.issues.isNotEmpty() ||
             plan.choices.normalized() != snapshot.choices.normalized() || plan.selected.filterValues { it.isNotEmpty() } != snapshot.selected.filterValues { it.isNotEmpty() }) return
         val token = ++request
         committing = true
@@ -163,9 +234,14 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         }
     }
     fun cancel() {
+        val baseline = bulkRecordBaseline
         work?.cancel()
         // Writes retain the busy guard until the transaction and attachment recovery finish.
-        if (!committing) { request++; state.value = state.value.copy(busy = false, planValid = false, error = null, progress = "") }
+        if (!committing) {
+            request++
+            state.value = baseline ?: state.value.copy(busy = false, planValid = false, error = null, progress = "")
+            bulkRecordBaseline = null
+        }
     }
     override fun onCleared() { cleared = true; work?.cancel(); if (work?.isCompleted != false) state.value.prepared?.close() }
 }

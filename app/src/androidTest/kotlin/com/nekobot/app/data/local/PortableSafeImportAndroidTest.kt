@@ -183,6 +183,149 @@ class PortableSafeImportAndroidTest {
             assertFalse(restored.active)
         }
     }
+    @Test fun sourceOnlyWriteInvalidatesOnlyItsMemoryContextAndRepeatsWithoutWrites() = runBlocking {
+        val character = UUID.randomUUID().toString(); val sessionId = UUID.randomUUID().toString()
+        db().characterDao().upsert(LocalCharacterEntity(character, "Synthetic source fixture", createdAt = stamp, updatedAt = stamp))
+        val session = LocalSessionEntity(sessionId, "Synthetic source session", characterId = character, companionMode = true,
+            sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true, createdAt = stamp, updatedAt = stamp)
+        db().sessionDao().upsert(session)
+        val message = LocalMessageEntity(UUID.randomUUID().toString(), sessionId, "user", "合成资料：我喜欢茉莉茶。", timestamp = stamp, createdAt = stamp)
+        db().messageDao().upsert(message)
+        val store = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        val scope = store.ensureScope(session)
+        val memory = CompanionMemoryEntity(UUID.randomUUID().toString(), scope.id, "synthetic-tea", 1, "fact", "玩家", "喜欢茉莉茶", "active",
+            provenance = "imported_verified", createdAt = stamp, updatedAt = stamp)
+        val source = CompanionSourceEntity(memory.id, message.id, com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(message), "我喜欢茉莉茶", "2026-01-01", "user")
+        db().companionMemoryDao().saveMemory(memory)
+        db().companionMemoryDao().saveSources(listOf(source))
+        val out = ByteArrayOutputStream()
+        val manager = PortableDataArchiveManager(context)
+        manager.export(setOf(PortableDataCategory.CONVERSATIONS), "", out, "synthetic")
+        db().openHelper.writableDatabase.execSQL("DELETE FROM companion_sources WHERE memoryId=?", arrayOf(memory.id))
+        val cache = CompanionContextMaterialEntity(scope.id, message.id, 1, scope.revision, "fixture", message.id, "synthetic cached material", "fixture", 0, "fixture")
+        db().companionMemoryDao().saveContextMaterial(cache)
+        db().companionMemoryDao().saveContextMaterial(cache.copy(scopeId = "unrelated-synthetic-scope"))
+        val beforeRevision = requireNotNull(db().companionMemoryDao().scope(scope.id)).revision
+        val selection = mapOf(PortableDataCategory.CONVERSATIONS to setOf("table:companion_memories", "table:companion_sources"))
+        prepared(out.toByteArray()).use { archive ->
+            val plan = manager.previewImport(archive, selection)
+            assertTrue(plan.issues.toString(), plan.issues.isEmpty())
+            assertEquals(1, manager.commitImport(archive, plan).importedRows)
+        }
+        assertTrue(requireNotNull(db().companionMemoryDao().scope(scope.id)).revision > beforeRevision)
+        assertTrue(db().companionMemoryDao().contextMaterials(scope.id).isEmpty())
+        assertEquals(1, db().companionMemoryDao().contextMaterials("unrelated-synthetic-scope").size)
+        assertEquals(listOf(memory.id), store.validatedMemories(store.ensureScope(session)).map { it.id })
+        assertEquals(listOf(source), db().companionMemoryDao().sources(memory.id))
+        prepared(out.toByteArray()).use { archive ->
+            assertEquals(0, manager.commitImport(archive, manager.previewImport(archive, selection)).importedRows)
+        }
+    }
+    private data class ChangedMessageEvidenceFixture(
+        val session: LocalSessionEntity,
+        val localMessage: LocalMessageEntity,
+        val incomingMessage: LocalMessageEntity,
+        val localMemory: CompanionMemoryEntity,
+        val incomingMemory: CompanionMemoryEntity,
+        val localSource: CompanionSourceEntity,
+        val incomingSource: CompanionSourceEntity,
+        val archive: ByteArray
+    )
+    private suspend fun changedMessageEvidenceFixture(): ChangedMessageEvidenceFixture {
+        val character = UUID.randomUUID().toString(); val sessionId = UUID.randomUUID().toString()
+        db().characterDao().upsert(LocalCharacterEntity(character, "Synthetic replacement fixture", createdAt = stamp, updatedAt = stamp))
+        val session = LocalSessionEntity(sessionId, "Synthetic replacement session", characterId = character, companionMode = true,
+            sessionMode = "agent", inheritCharacter = true, longConversationEnabled = true, createdAt = stamp, updatedAt = stamp)
+        db().sessionDao().upsert(session)
+        val incomingMessage = LocalMessageEntity(UUID.randomUUID().toString(), sessionId, "user", "合成资料B：我喜欢桂花茶。",
+            timestamp = stamp, createdAt = stamp)
+        db().messageDao().upsert(incomingMessage)
+        val store = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        val scope = store.ensureScope(session)
+        val incomingMemory = CompanionMemoryEntity(UUID.randomUUID().toString(), scope.id, "synthetic-replacement-tea", 1,
+            "fact", "玩家", "喜欢桂花茶", "active", current = true, valid = true,
+            provenance = "imported_verified", createdAt = stamp, updatedAt = stamp)
+        val incomingSource = CompanionSourceEntity(incomingMemory.id, incomingMessage.id,
+            com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(incomingMessage), "我喜欢桂花茶", "2026-01-01", "user")
+        db().companionMemoryDao().saveMemory(incomingMemory)
+        db().companionMemoryDao().saveSources(listOf(incomingSource))
+        val out = ByteArrayOutputStream()
+        PortableDataArchiveManager(context).export(setOf(PortableDataCategory.CONVERSATIONS), "", out, "synthetic")
+        val localMessage = incomingMessage.copy(content = "合成资料A：我喜欢茉莉茶。")
+        val localMemory = incomingMemory.copy(content = "喜欢茉莉茶")
+        val localSource = incomingSource.copy(
+            fingerprint = com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(localMessage), quote = "我喜欢茉莉茶")
+        // UPDATE preserves message identity and exercises the real invalidation trigger before restoring coherent local A evidence.
+        db().openHelper.writableDatabase.execSQL("UPDATE local_messages SET content=? WHERE id=?", arrayOf(localMessage.content, localMessage.id))
+        db().companionMemoryDao().saveMemory(localMemory)
+        db().companionMemoryDao().saveSources(listOf(localSource))
+        return ChangedMessageEvidenceFixture(session, localMessage, incomingMessage, localMemory, incomingMemory,
+            localSource, incomingSource, out.toByteArray())
+    }
+    @Test fun replacingMessageFactAndProofKeepsAlreadyCurrentValidMemoryUsableAndRepeatsWithoutWrites() = runBlocking {
+        val fixture = changedMessageEvidenceFixture()
+        val store = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        assertEquals(fixture.localMessage, db().messageDao().listBySession(fixture.session.id).single())
+        assertEquals(fixture.localMemory, db().companionMemoryDao().memories(fixture.localMemory.scopeId).single())
+        assertEquals(listOf(fixture.localSource), db().companionMemoryDao().sources(fixture.localMemory.id))
+        assertEquals(listOf(fixture.localMemory), store.validatedMemories(store.ensureScope(fixture.session)))
+        val manager = PortableDataArchiveManager(context)
+        val selected = mapOf(PortableDataCategory.CONVERSATIONS to
+            setOf("table:local_messages", "table:companion_memories", "table:companion_sources"))
+        prepared(fixture.archive).use { archive ->
+            val initial = manager.previewImport(archive, selected, detailLimit = Int.MAX_VALUE)
+            assertEquals(3, initial.rows.counts.different)
+            val memoryDifference = initial.rows.differences.single { it.table == "companion_memories" }
+            assertTrue(memoryDifference.fields.any { it.column == "content" })
+            // Both versions are already valid/current. These flags are absent from the user's selectable differences.
+            assertFalse(memoryDifference.fields.any { it.column == "valid" || it.column == "current" })
+            val choices = PortableImportChoices(fields = initial.rows.differences.associate { row ->
+                row.key to row.fields.mapTo(linkedSetOf()) { it.column }
+            })
+            val plan = manager.previewImport(archive, selected, choices)
+            assertTrue(plan.issues.toString(), plan.issues.isEmpty())
+            assertEquals(3, manager.commitImport(archive, plan).updatedRows)
+        }
+        assertEquals(fixture.incomingMessage, db().messageDao().listBySession(fixture.session.id).single())
+        val saved = db().companionMemoryDao().versions(fixture.incomingMemory.scopeId, fixture.incomingMemory.factKey).single()
+        assertTrue(saved.valid); assertTrue(saved.current); assertEquals(fixture.incomingMemory, saved)
+        assertEquals(listOf(fixture.incomingSource), db().companionMemoryDao().sources(saved.id))
+        assertEquals(listOf(saved), store.validatedMemories(store.ensureScope(fixture.session)))
+        prepared(fixture.archive).use { archive ->
+            val plan = manager.previewImport(archive, selected)
+            assertTrue(plan.issues.toString(), plan.issues.isEmpty())
+            assertEquals(0, plan.rows.counts.different)
+            assertEquals(0, manager.commitImport(archive, plan).importedRows)
+        }
+        assertEquals(listOf(saved), store.validatedMemories(store.ensureScope(fixture.session)))
+    }
+    @Test fun replacingOnlyTheMessageWithoutNewProofStillInvalidatesTheOldMemory() = runBlocking {
+        val fixture = changedMessageEvidenceFixture()
+        val store = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        assertEquals(listOf(fixture.localMemory), store.validatedMemories(store.ensureScope(fixture.session)))
+        val manager = PortableDataArchiveManager(context)
+        val selected = mapOf(PortableDataCategory.CONVERSATIONS to setOf("table:local_messages"))
+        prepared(fixture.archive).use { archive ->
+            val initial = manager.previewImport(archive, selected, detailLimit = Int.MAX_VALUE)
+            assertEquals(1, initial.rows.counts.different)
+            val choices = PortableImportChoices(fields = initial.rows.differences.associate { row ->
+                row.key to row.fields.mapTo(linkedSetOf()) { it.column }
+            })
+            val plan = manager.previewImport(archive, selected, choices)
+            assertTrue(plan.issues.toString(), plan.issues.isEmpty())
+            assertEquals(1, manager.commitImport(archive, plan).updatedRows)
+        }
+        assertEquals(fixture.incomingMessage, db().messageDao().listBySession(fixture.session.id).single())
+        val saved = db().companionMemoryDao().versions(fixture.localMemory.scopeId, fixture.localMemory.factKey).single()
+        assertEquals(fixture.localMemory.content, saved.content)
+        assertFalse(saved.valid); assertFalse(saved.current)
+        assertEquals(listOf(fixture.localSource), db().companionMemoryDao().sources(saved.id))
+        assertTrue(store.validatedMemories(store.ensureScope(fixture.session)).isEmpty())
+        prepared(fixture.archive).use { archive ->
+            assertEquals(0, manager.commitImport(archive, manager.previewImport(archive, selected)).importedRows)
+        }
+        assertFalse(db().companionMemoryDao().versions(saved.scopeId, saved.factKey).single().valid)
+    }
     @Test fun selectingOneSettingPreservesExactLocalFontAndBackgroundUris() = runBlocking {
         val prefs = ServiceContainer.prefs
         val oldFont = prefs.customFontPath; val oldBackground = prefs.customChatBackgroundPath

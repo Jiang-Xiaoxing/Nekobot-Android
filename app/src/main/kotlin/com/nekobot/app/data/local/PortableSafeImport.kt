@@ -380,12 +380,17 @@ suspend fun PortableDataArchiveManager.commitImport(prepared: PreparedPortableIm
                 val latestRows = planner.preview(portableRows(prepared, preview.selected), preview.choices, 0, checkpoint)
                 require(latestRows.fingerprint == preview.rows.fingerprint && latestRows.issues.isEmpty()) { "资料在预览后已变化，请重新预览" }
                 if (preview.choices.restoreCredentials) require(portableCredentialFingerprint(db.openHelper.readableDatabase) == preview.credentialFingerprint) { "凭据在预览后已变化，请重新预览" }
-                changed = planner.apply(portableRows(prepared, preview.selected), preview.choices, checkpoint, latestRows.newKeys) { table, row, isNew, fields ->
+                changed = planner.apply(portableRows(prepared, preview.selected), preview.choices, checkpoint, latestRows.newKeys, latestRows.sourceMemoryStates) { table, row, isNew, fields ->
                     if (table == "local_experience_archives") restoredArchives += row["id"].asString
                     if (isNew && table == "companion_scopes") newScopes += row["id"].asString
                     if (table == "companion_memories") {
                         changedScopes += row["scopeId"].asString
                         if (!isNew && "content" in fields) changedBodies += row["scopeId"].asString to row["id"].asString
+                    }
+                    if (table == "companion_sources") {
+                        db.openHelper.writableDatabase.query("SELECT scopeId FROM companion_memories WHERE id=?", arrayOf(row["memoryId"].asString)).use {
+                            if (it.moveToFirst()) changedScopes += it.getString(0)
+                        }
                     }
                 }
                 if (newScopes.isNotEmpty()) rebaseRestoredCompanionRows(db, emptySet(), newScopes)

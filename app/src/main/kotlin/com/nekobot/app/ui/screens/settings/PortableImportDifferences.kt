@@ -19,12 +19,14 @@ import com.nekobot.app.data.local.*
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.screens.memory.memoryCategoryNames
 
-/** One comparison surface; edits stay in a disposable draft until Save. */
+/** Individual edits remain a draft; explicit bulk actions also refresh the review without writing data. */
 @Composable
 internal fun PortableImportDifferences(plan: PortableImportPreview, choices: PortableImportChoices, busy: Boolean,
-    onDismiss: () -> Unit, onSave: (PortableImportChoices) -> Unit, onMore: (PortableImportChoices) -> Unit) {
+    onDismiss: () -> Unit, onSave: (PortableImportChoices) -> Unit, onMore: (PortableImportChoices) -> Unit,
+    onBulkRecords: (PortableImportChoices, Boolean) -> Unit) {
     var draft by remember(plan) { mutableStateOf(choices.normalized()) }
     var confirmStory by remember { mutableStateOf(false) }
+    var confirmRecords by remember(plan) { mutableStateOf(false) }
     NekoDialog(onDismiss = onDismiss, title = stringResource(R.string.safe_import_changes),
         message = stringResource(R.string.import_difference_notice),
         confirmText = stringResource(R.string.import_difference_save), confirmEnabled = !busy,
@@ -32,6 +34,19 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
         if (busy) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(stringResource(R.string.safe_import_checking), style = MaterialTheme.typography.bodyMedium)
+        }
+        if (plan.rows.counts.different > 0) {
+            Text(stringResource(R.string.import_bulk_record_scope, plan.rows.counts.different),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { confirmRecords = true }, enabled = !busy,
+                modifier = Modifier.fillMaxWidth().testTag("safe-difference-bulk-record-incoming")) {
+                Text(stringResource(R.string.import_bulk_record_incoming))
+            }
+            TextButton(onClick = { onBulkRecords(draft.normalized(), false) }, enabled = !busy,
+                modifier = Modifier.fillMaxWidth().testTag("safe-difference-bulk-record-keep")) {
+                Text(stringResource(R.string.import_bulk_record_keep))
+            }
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
         }
         plan.rows.differences.forEachIndexed { index, row ->
             DifferenceHeading(importDetailLabel(PortableCategoryDetail("table:${row.table}", 1)), row.label, row.owner)
@@ -81,6 +96,10 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
     if (confirmStory) NekoDialog(onDismiss = { confirmStory = false }, title = stringResource(R.string.safe_import_story_confirm_title),
         message = stringResource(R.string.safe_import_story_confirm_message),
         onConfirm = { confirmStory = false; draft = draft.copy(files = draft.files + "plot_story") }, onCancel = { confirmStory = false })
+    if (confirmRecords) NekoDialog(onDismiss = { confirmRecords = false }, title = stringResource(R.string.import_bulk_record_incoming),
+        message = stringResource(R.string.import_bulk_record_confirm, plan.rows.counts.different),
+        confirmEnabled = !busy,
+        onConfirm = { confirmRecords = false; onBulkRecords(draft.normalized(), true) }, onCancel = { confirmRecords = false })
 }
 
 @Composable private fun DifferenceHeading(kind: String, title: String, owner: PortableImportOwner) {

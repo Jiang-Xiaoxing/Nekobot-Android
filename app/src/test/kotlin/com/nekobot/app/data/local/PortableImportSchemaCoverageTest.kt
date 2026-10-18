@@ -63,6 +63,13 @@ class PortableImportSchemaCoverageTest {
                 if (row.has("memoryId")) row.add("memoryId", fixtures.getValue("companion_memories")["id"])
                 if (row.has("characterId")) row.add("characterId", character)
             }
+            val message = fixtures.getValue("local_messages")
+            fixtures.getValue("companion_sources").apply {
+                add("messageId", message["id"]); add("quote", message["content"]); add("role", message["role"])
+                addProperty("fingerprint", com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(
+                    message["id"].asString, message["role"].asString, message["created_at"].asString,
+                    message["timestamp"].asString, message["content"].asString, false))
+            }
             val visitor: PortableRowVisitor = { consume -> portableTables.forEach { consume(PortableIncomingRow(it, fixtures.getValue(it))) } }
             val planner = PortableImportPlanner(sql, "synthetic.db")
             val first = planner.preview(visitor, PortableImportChoices())
