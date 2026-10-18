@@ -1,5 +1,7 @@
 package com.nekobot.app.ui.components
 
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,7 +10,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,13 +36,66 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 
+internal class PopupGlassCaptureLifecycle {
+    var consumerCount = 0
+        private set
+    var captureEnabled = false
+        private set
+    // 每次获取或释放都会推进代次，使旧的延迟释放票据不能关闭新一轮采样。
+    private var generation = 0L
+
+    fun acquire(): Boolean {
+        consumerCount++
+        generation++
+        captureEnabled = true
+        return captureEnabled
+    }
+
+    fun release(): Long? {
+        if (consumerCount == 0) return null
+        consumerCount--
+        if (consumerCount > 0) return null
+        // 最后一位消费者离开后由调用方延迟提交该票据，给切换中的弹窗留出交接时间。
+        return ++generation
+    }
+
+    fun finishRelease(ticket: Long): Boolean {
+        if (consumerCount == 0 && generation == ticket) captureEnabled = false
+        return captureEnabled
+    }
+}
+
+private const val PopupGlassCaptureHandoffMillis = 250L
+
 private class PopupGlassSource(val backdrop: GlassBackdrop, val windowRoot: View) {
-    var consumers by mutableIntStateOf(0)
+    private val captureLifecycle = PopupGlassCaptureLifecycle()
+    private val releaseHandler = Handler(Looper.getMainLooper())
+    private var pendingRelease: Runnable? = null
+    var captureEnabled by mutableStateOf(false)
+        private set
+
+    fun acquireCapture() {
+        pendingRelease?.let(releaseHandler::removeCallbacks)
+        pendingRelease = null
+        captureEnabled = captureLifecycle.acquire()
+    }
+
+    fun releaseCapture() {
+        val ticket = captureLifecycle.release() ?: return
+        val release = object : Runnable {
+            override fun run() {
+                captureEnabled = captureLifecycle.finishRelease(ticket)
+                if (pendingRelease === this) pendingRelease = null
+            }
+        }
+        pendingRelease = release
+        releaseHandler.postDelayed(release, PopupGlassCaptureHandoffMillis)
+    }
 }
 
 private val LocalPopupGlassSource = staticCompositionLocalOf<PopupGlassSource?> { null }
 
-/** 只在菜单或弹窗显示时录制页面，独立窗口中的玻璃不会采样自身。 */
+/** 菜单/弹窗活跃时录制页面；切换弹窗时短暂保留采样层，避免 backdrop 坐标注册出现空窗。 */
 @Composable
 fun LiquidGlassMenuHost(content: @Composable () -> Unit) {
     val available = rememberLiquidGlassAvailable()
@@ -53,7 +107,7 @@ fun LiquidGlassMenuHost(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalPopupGlassSource provides if (available) source else null) {
         Box(
             Modifier.fillMaxSize()
-                .then(if (available && source.consumers > 0) Modifier.glassBackdropSource(layer) else Modifier)
+                .then(if (available && source.captureEnabled) Modifier.glassBackdropSource(layer) else Modifier)
                 .onGloballyPositioned { coordinates.value = it }
         ) {
             content()
@@ -73,8 +127,8 @@ internal fun rememberPopupGlassBackdrop(
     val windowBackdrop = if (useWindow) rememberWindowGlassBackdrop(expanded) else null
     DisposableEffect(source, expanded, useWindow) {
         val capturePage = expanded && !useWindow
-        if (capturePage) source?.let { it.consumers++ }
-        onDispose { if (capturePage) source?.let { it.consumers-- } }
+        if (capturePage) source?.acquireCapture()
+        onDispose { if (capturePage) source?.releaseCapture() }
     }
     return if (!expanded) null else if (useWindow) windowBackdrop else source?.backdrop
 }

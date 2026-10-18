@@ -120,8 +120,9 @@ fun AgentSettingsScreen(
     // 工具集模式相关弹窗与刷新计数（任何改动后立即刷新摘要文案）
     var showDefaultModeDialog by remember { mutableStateOf(false) }
     var showDefaultToolSetDialog by remember { mutableStateOf(false) }
-    var showManageModesDialog by remember { mutableStateOf(false) }
-    var editingCustomModeId by remember { mutableStateOf<String?>(null) }
+    var customModesNavigation by remember {
+        mutableStateOf<CustomModesNavigationState>(CustomModesNavigationState.Closed)
+    }
     var toolSetRevision by remember { mutableStateOf(0) }
     val toolSetStat = remember(toolSetRevision) { loadToolSetStat() }
     // Agent 悬浮窗：使用 Android 工具时在其他应用上方展示思考与工具名
@@ -180,20 +181,33 @@ fun AgentSettingsScreen(
             onChanged = { toolSetRevision++ }
         )
     }
-    if (showManageModesDialog) {
+    if (customModesNavigation == CustomModesNavigationState.Managing) {
         ManageCustomModesDialog(
-            onDismiss = { showManageModesDialog = false },
+            refreshKey = toolSetRevision,
+            onDismiss = {
+                customModesNavigation = transitionCustomModesNavigation(
+                    customModesNavigation,
+                    CustomModesNavigationAction.CloseManager
+                )
+            },
             onChanged = { toolSetRevision++ },
             onEditMode = { modeId ->
-                showManageModesDialog = false
-                editingCustomModeId = modeId
+                customModesNavigation = transitionCustomModesNavigation(
+                    customModesNavigation,
+                    CustomModesNavigationAction.OpenEditor(modeId)
+                )
             }
         )
     }
-    editingCustomModeId?.let { modeId ->
+    (customModesNavigation as? CustomModesNavigationState.Editing)?.let { editing ->
         CustomModeToolSetDialog(
-            modeId = modeId,
-            onDismiss = { editingCustomModeId = null },
+            modeId = editing.modeId,
+            onDismiss = {
+                customModesNavigation = transitionCustomModesNavigation(
+                    customModesNavigation,
+                    CustomModesNavigationAction.CloseEditor
+                )
+            },
             onChanged = { toolSetRevision++ }
         )
     }
@@ -578,7 +592,12 @@ fun AgentSettingsScreen(
                             toolSetStat.customModeCount
                         ),
                         trailing = {
-                            TextButton(onClick = { showManageModesDialog = true }) {
+                            TextButton(onClick = {
+                                customModesNavigation = transitionCustomModesNavigation(
+                                    customModesNavigation,
+                                    CustomModesNavigationAction.OpenManager
+                                )
+                            }) {
                                 Text(stringResource(R.string.agent_settings_custom_modes_manage))
                             }
                         }
@@ -1157,11 +1176,12 @@ private fun DefaultToolSetDialog(
  */
 @Composable
 private fun ManageCustomModesDialog(
+    refreshKey: Int,
     onDismiss: () -> Unit,
     onChanged: () -> Unit,
     onEditMode: (String) -> Unit
 ) {
-    var modes by remember { mutableStateOf(ServiceContainer.unified.customToolSetModes()) }
+    var modes by remember(refreshKey) { mutableStateOf(ServiceContainer.unified.customToolSetModes()) }
     var pendingAction by remember { mutableStateOf<CustomModeAction?>(null) }
     var nameInput by remember { mutableStateOf("") }
 

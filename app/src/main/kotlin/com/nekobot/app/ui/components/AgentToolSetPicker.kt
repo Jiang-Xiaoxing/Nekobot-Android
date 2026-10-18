@@ -1,4 +1,4 @@
-﻿package com.nekobot.app.ui.components
+package com.nekobot.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background

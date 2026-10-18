@@ -273,6 +273,7 @@ fun NekoDialog(
     val backdrop = rememberPopupGlassBackdrop(true)
     val shape = RoundedCornerShape(24.dp)
     val containerColor = MaterialTheme.colorScheme.surface
+    val dialogTint = glassDialogTint(containerColor)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -292,7 +293,7 @@ fun NekoDialog(
                     .fillMaxWidth(0.9f)
                     .heightIn(max = maxDialogHeight)
                     .padding(8.dp)
-                    .liquidGlassDialogSurface(backdrop, shape, glassDialogTint(containerColor)),
+                    .liquidGlassDialogSurface(backdrop, shape, dialogTint),
                 cornerRadius = 24,
                 containerColor = if (backdrop == null) containerColor else Color.Transparent,
                 borderWidth = borderWidth

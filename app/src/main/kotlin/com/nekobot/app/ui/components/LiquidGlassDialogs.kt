@@ -1,7 +1,6 @@
 package com.nekobot.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog as MaterialAlertDialog
 import androidx.compose.material3.AlertDialogDefaults
@@ -88,7 +87,7 @@ fun GlassDialogSurface(
 
 @Composable
 internal fun glassDialogTint(color: Color): Color =
-    color.copy(alpha = color.alpha * if (isSystemInDarkTheme()) 0.78f else 0.68f)
+    color.copy(alpha = 0.9f)
 
 internal fun Modifier.liquidGlassDialogSurface(
     backdrop: GlassBackdrop?,
