@@ -30,24 +30,32 @@ class PortableImportNextFlowTest {
     private lateinit var vm: SafePortableImportViewModel
     private val reads = AtomicInteger()
     private val commits = AtomicInteger()
+    private var memoryCount = 7
+    private var includeReasoning = false
     private val selected = mapOf(PortableDataCategory.CONVERSATIONS to setOf("table:companion_memories", "table:companion_sources"))
 
     private fun plan(choices: PortableImportChoices = PortableImportChoices(), limit: Int = 50): PortableImportPreview {
-        val memories = (0..6).map { i -> PortableImportRowDifference("memory-$i", "companion_memories", "合成记忆 ${i + 1}",
-            listOf(PortableImportFieldDifference("content", "原有合成内容 $i", "文件合成内容 $i")), memoryId = "id-$i") }
+        val memories = (0 until memoryCount).map { i -> PortableImportRowDifference("memory-$i", "companion_memories", "合成记忆 ${i + 1}",
+            listOf(PortableImportFieldDifference("content", "[PINNED] 合成内容 $i", "合成内容 $i")), memoryId = "id-$i") }
         val sources = (0..6).filter { "id-$it" !in choices.keepMemorySources }.map { i ->
             PortableImportRowDifference("source-$i", "companion_sources", "合成出处 ${i + 1}", listOf(PortableImportFieldDifference("quote", "old", "new"))) }
-        val unresolved = memories.filter { it.memoryId !in choices.keepMemorySources && "content" !in choices.fields[it.key].orEmpty() }
+        val reasoning = if (includeReasoning) listOf(PortableImportRowDifference("history-reasoning", "local_messages", "合成历史思考",
+            listOf(PortableImportFieldDifference("reasoning_content", "", "合成思考原文")))) else emptyList()
+        val differences = memories + sources + reasoning
+        val unresolved = memories.take(7).filter { it.memoryId !in choices.keepMemorySources && "content" !in choices.fields[it.key].orEmpty() }
         val issue = if (unresolved.isEmpty()) emptyList() else listOf("记忆正文、主体或归属与新来源不属于同一版本")
         val updated = memories.count { "content" in choices.fields[it.key].orEmpty() }
         val sourceUpdated = sources.count { "quote" in choices.fields[it.key].orEmpty() }
+        val reasoningUpdated = if ("reasoning_content" in choices.fields["history-reasoning"].orEmpty()) 1 else 0
         return PortableImportPreview(PortableImportRowPlan("rows-${choices.hashCode()}",
-            PortableImportCounts(different = memories.size + sources.size, updated = updated + sourceUpdated), (memories + sources).take(limit), issue, 0,
-            tableCounts = mapOf("companion_memories" to PortableImportCounts(different = 7, updated = updated),
-                "companion_sources" to PortableImportCounts(different = sources.size, updated = sourceUpdated)),
+            PortableImportCounts(different = differences.size, updated = updated + sourceUpdated + reasoningUpdated), differences.take(limit), issue, 0,
+            tableCounts = mapOf("companion_memories" to PortableImportCounts(different = memoryCount, updated = updated),
+                "companion_sources" to PortableImportCounts(different = sources.size, updated = sourceUpdated)) +
+                if (includeReasoning) mapOf("local_messages" to PortableImportCounts(different = reasoning.size, updated = reasoningUpdated)) else emptyMap(),
             sourceConflictKeys = unresolved.mapTo(linkedSetOf()) { it.key }, sourceConflictMemoryCount = unresolved.size,
             skippedSourceRows = choices.keepMemorySources.size,
-            sourceFieldChoices = (0..6).associate { "id-$it" to mapOf("source-$it" to setOf("quote")) }),
+            sourceFieldChoices = (0..6).associate { "id-$it" to mapOf("source-$it" to setOf("quote")) },
+            recordDifferenceKeys = differences.mapTo(linkedSetOf()) { it.key }),
             PortableImportCounts(), emptyList(), emptyList(), false, issue, emptyList(), "preview-${choices.hashCode()}", prepared.id,
             selected, choices, emptyMap(), emptyMap(), JsonObject(), null, false, emptySet(), "", emptyMap())
     }
@@ -106,6 +114,48 @@ class PortableImportNextFlowTest {
     }
     @Test fun sevenUpdatesGoToPreviewThenOneStartActionImports() = updateFlow(false)
     @Test fun sevenUpdatesAndFinalActionRemainReachableWithLargeText() = updateFlow(true)
+    @Test fun sevenSourceConflictsIncludeAllSixteenCoreTextRepairsInOneChoice() {
+        memoryCount = 16
+        start()
+        compose.onNodeWithTag("safe-difference-bulk-record-incoming").performScrollTo().performClick()
+        next()
+        assertTrue(vm.state.value.plan!!.issues.isEmpty())
+        assertEquals(16, vm.state.value.plan!!.rows.tableCounts["companion_memories"]!!.updated)
+        (0 until 16).forEach { assertEquals(setOf("content"), vm.state.value.choices.fields["memory-$it"]) }
+        assertEquals(0, commits.get())
+    }
+    @Test fun aTextOnlyRepairCanStillBeKeptAfterChoosingAllSixteenUpdates() {
+        memoryCount = 16
+        start()
+        compose.onNodeWithTag("safe-difference-bulk-record-incoming").performScrollTo().performClick()
+        compose.onNodeWithTag("safe-difference-memory-15-keep").performScrollTo().performClick()
+        next()
+        assertTrue(vm.state.value.plan!!.issues.isEmpty())
+        assertEquals(15, vm.state.value.plan!!.rows.tableCounts["companion_memories"]!!.updated)
+        assertEquals(setOf("id-15"), vm.state.value.choices.keepMemorySources)
+        assertEquals(0, commits.get())
+    }
+    @Test fun theSameFileChoiceIncludesNativeReasoningRepairsAlongsideMemoryRepairs() {
+        memoryCount = 16; includeReasoning = true
+        start()
+        compose.onNodeWithTag("safe-difference-bulk-record-incoming").performScrollTo().performClick()
+        next()
+        assertTrue(vm.state.value.plan!!.issues.isEmpty())
+        assertEquals(setOf("reasoning_content"), vm.state.value.choices.fields["history-reasoning"])
+        assertEquals(16, vm.state.value.plan!!.rows.tableCounts["companion_memories"]!!.updated)
+        assertEquals(1, vm.state.value.plan!!.rows.tableCounts["local_messages"]!!.updated)
+        assertEquals(0, commits.get())
+    }
+    @Test fun bulkChoiceIncludesTextRepairsBeyondTheFirstFiftyDisplayedRecords() {
+        memoryCount = 70
+        start()
+        compose.onNodeWithTag("safe-difference-bulk-record-incoming").performScrollTo().performClick()
+        next()
+        assertTrue(vm.state.value.plan!!.issues.isEmpty())
+        assertEquals(70, vm.state.value.plan!!.rows.tableCounts["companion_memories"]!!.updated)
+        assertEquals(setOf("content"), vm.state.value.choices.fields["memory-69"])
+        assertEquals(0, commits.get())
+    }
     @Test fun keepingSevenMemoriesGoesStraightToPreviewWithoutWriting() {
         start(); compose.onNodeWithTag("safe-difference-bulk-record-keep").performScrollTo().performClick(); next()
         assertEquals(7, vm.state.value.choices.keepMemorySources.size)

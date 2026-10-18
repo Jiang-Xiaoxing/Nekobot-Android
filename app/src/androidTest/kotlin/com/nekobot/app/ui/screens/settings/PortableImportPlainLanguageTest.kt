@@ -77,7 +77,8 @@ class PortableImportPlainLanguageTest {
                     "companion_memories" to PortableImportCounts(different = 687, updated = memoryUpdated),
                     "local_characters" to PortableImportCounts(different = 1, updated = if ("row-687" in choices.fields) 1 else 0)),
                 sourceConflictKeys = if (resolved || sameNames > 0) emptySet() else related,
-                sourceConflictMemoryCount = if (resolved || sameNames > 0) 0 else 1, skippedSourceRows = if (kept) 1 else 0),
+                sourceConflictMemoryCount = if (resolved || sameNames > 0) 0 else 1, skippedSourceRows = if (kept) 1 else 0,
+                recordDifferenceKeys = (0..687).mapTo(linkedSetOf()) { "row-$it" }),
             fileCounts = PortableImportCounts(), fileDifferences = emptyList(), settingDifferences = emptyList(), storyDifferent = false,
             issues = if (resolved) emptyList() else listOf(issue), dependencyOptions = emptyList(), fingerprint = "preview-$updated-$kept",
             preparedId = prepared.id, selected = selected, choices = choices, fileBefore = emptyMap(), fileAfter = emptyMap(),
@@ -142,17 +143,19 @@ class PortableImportPlainLanguageTest {
         compose.onNodeWithText(compose.activity.getString(R.string.import_review_compare)).performClick()
         assertEquals(1, reviews)
     }
-    @Test fun directActionLoadsTheRelatedMemoryBeyondTheFirstPageAndDoesNotChooseForUser() {
+    @Test fun directActionIncludesAllChangesButPagesTheirDisplayAndDoesNotChooseForUser() {
         start()
         openRelated()
-        compose.onNodeWithText("合成记忆 686").assertExists()
-        compose.onNodeWithText("合成记忆 0").assertDoesNotExist()
+        compose.onNodeWithText("合成记忆 0").assertExists()
+        compose.onNodeWithText("合成记忆 686").assertDoesNotExist()
+        compose.onNodeWithText(compose.activity.getString(R.string.import_review_related_scope, 688)).assertExists()
+        assertEquals(688, vm.state.value.plan!!.rows.sourceReviewKeys.size)
         compose.onNodeWithTag("safe-difference-memory-0-keep").performScrollTo().assertIsNotSelected()
         compose.onNodeWithText(compose.activity.getString(R.string.portability_ui_next)).assertIsNotEnabled()
         assertTrue(vm.state.value.choices.fields.isEmpty()); assertEquals(0, commits.get())
         screenshot("related")
     }
-    @Test fun keepingRelatedMemorySkipsItsNewSourcesAndRetainsAllOtherRecordChoices() {
+    @Test fun keepingAllRecordsSkipsMatchingNewSourcesWithoutWriting() {
         start()
         openRelated()
         compose.onNodeWithTag("safe-difference-bulk-record-keep").performScrollTo().performClick(); awaitReady()
@@ -160,16 +163,18 @@ class PortableImportPlainLanguageTest {
         compose.onNodeWithText(compose.activity.getString(R.string.import_review_skipped_sources, 1)).performScrollTo().assertIsDisplayed()
         assertTrue(vm.state.value.plan!!.issues.isEmpty())
         assertEquals(50, vm.state.value.plan!!.rows.differences.size)
-        assertEquals(setOf("memory-686"), vm.state.value.choices.keepMemorySources)
+        assertEquals((0..686).mapTo(linkedSetOf()) { "memory-$it" }, vm.state.value.choices.keepMemorySources)
         assertTrue(vm.state.value.choices.fields.isEmpty()); assertEquals(0, commits.get())
         screenshot("kept")
     }
-    @Test fun updatingRelatedMemoryLeavesOther687DifferencesAloneUntilFinalImport() {
+    @Test fun anIndividualOverrideAfterKeepingAllLeavesTheOther687ChangesKept() {
         start()
         openRelated()
+        compose.onNodeWithTag("safe-difference-bulk-record-keep").performScrollTo().performClick()
         compose.onNodeWithTag("safe-difference-memory-0-replace").performScrollTo().performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.portability_ui_next)).performClick(); awaitReady()
-        assertEquals(setOf("row-686"), vm.state.value.choices.fields.keys)
+        assertEquals(setOf("row-0"), vm.state.value.choices.fields.keys)
+        assertEquals(686, vm.state.value.choices.keepMemorySources.size)
         assertEquals(1, vm.state.value.plan!!.rows.counts.updated)
         assertEquals(50, vm.state.value.plan!!.rows.differences.size)
         assertTrue(vm.state.value.plan!!.issues.isEmpty()); assertEquals(0, commits.get())
@@ -206,6 +211,7 @@ class PortableImportPlainLanguageTest {
     @Test fun smallViewportLargeFontKeepsDirectReviewBothDecisionsAndSaveReachable() {
         start(large = true)
         openRelated()
+        compose.onNodeWithTag("safe-difference-bulk-record-keep").performScrollTo().performClick()
         compose.onNodeWithTag("safe-difference-memory-0-keep").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("safe-difference-memory-0-replace").performScrollTo().assertIsDisplayed()
         val visibleBounds = compose.onNodeWithTag("safe-difference-memory-0-replace").fetchSemanticsNode().boundsInRoot

@@ -13,11 +13,11 @@
     <string name="import_review_same">相同，无需修改 %1$d 条</string>
     <string name="import_review_sources_hint">原话出处是记忆引用的聊天原文，不会因此新增聊天或角色。</string>
     <string name="import_review_skipped_sources">保留旧记忆及其原有出处；不导入对应的 %1$d 条新出处。</string>
-    <string name="import_review_source_title">先决定这部分记忆是否更新</string>
-    <string name="import_review_source_message">文件中的 %1$d 条记忆与现有内容不同。更新时会一起导入配套的原话出处；保留时，会保留旧记忆和原有出处。请先比较，再做选择。</string>
-    <string name="import_review_compare_count">比较这 %1$d 条记忆</string>
+    <string name="import_review_source_title">核对文件中的修改</string>
+    <string name="import_review_source_message">其中 %1$d 条记忆还涉及原话出处。请一起核对文件中的全部修改；更新记忆时导入配套出处，保留时也会保留原有出处。</string>
+    <string name="import_review_compare_count">比较全部 %1$d 条资料修改</string>
     <string name="import_review_attention">有内容需要你决定</string>
-    <string name="import_review_compare">比较相关记忆</string>
+    <string name="import_review_compare">比较文件中的修改</string>
     <string name="import_review_adjust">返回调整导入内容</string>
     <string name="import_review_chat_changed">文件中的出处无法在现有聊天里核对，可能缺少原文，或原文后来有改动。请返回调整导入内容，取消这部分新出处，或选择包含对应聊天原文的备份。不会用未核对的出处替换现有资料。</string>
     <string name="import_review_missing_source">这些记忆标记为“已核对原话”，但没有选中配套出处。请返回调整导入内容，同时选择原话出处，或保留这些记忆原来的内容。</string>
@@ -34,7 +34,7 @@
     <string name="import_review_preview">导入结果预览</string>
     <string name="import_review_preview_hint">请核对将新增、更新和保留的内容。点“开始导入”后才会写入软件。</string>
     <string name="import_review_start">开始导入</string>
-    <string name="import_review_related_scope">只处理这 %1$d 条记忆，其他资料的选择保持。</string>
+    <string name="import_review_related_scope">本次选择应用到全部 %1$d 条已有资料的修改，也可逐条调整。附件和应用设置保持各自的选择。</string>
     <string name="import_review_update_related">这部分全部更新</string>
     <string name="import_review_keep_related">这部分全部保留</string>
     <string name="import_review_memory_person">这条记忆说的是谁</string>

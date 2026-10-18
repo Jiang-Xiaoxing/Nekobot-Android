@@ -70,7 +70,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
     }
     val chooseFile = { if (!externalBusy && vm.beginPicking()) picker.launch(arrayOf("*/*")) }
     val reviewSources = {
-        val keys = state.plan?.rows?.sourceConflictKeys.orEmpty()
+        val keys = state.plan?.rows?.sourceReviewKeys.orEmpty()
         if (vm.beginSourceDifferenceReview(context)) {
             reviewRowKeys = keys; showIssues = false; showDifferences = true
         }

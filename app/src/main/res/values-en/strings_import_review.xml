@@ -13,11 +13,11 @@
     <string name="import_review_same">%1$d identical, no change</string>
     <string name="import_review_sources_hint">Quotes link memories to existing chat text. Adding quotes does not add chats or characters.</string>
     <string name="import_review_skipped_sources">Keep old memories and their quotes; skip %1$d new quotes for those memories.</string>
-    <string name="import_review_source_title">Decide whether to update these memories</string>
-    <string name="import_review_source_message">The new quotes belong to %1$d memories that differ from yours. Updating a memory also imports its matching quotes. Keeping a memory keeps its existing quotes. Compare them before choosing.</string>
-    <string name="import_review_compare_count">Compare %1$d memories</string>
+    <string name="import_review_source_title">Review the changes in this file</string>
+    <string name="import_review_source_message">%1$d memories also have matching quotes. Review all changes in the file together. Updating a memory imports the matching quotes; keeping it keeps its existing quotes.</string>
+    <string name="import_review_compare_count">Compare all %1$d record changes</string>
     <string name="import_review_attention">Some content needs your choice</string>
-    <string name="import_review_compare">Compare related memories</string>
+    <string name="import_review_compare">Compare the file changes</string>
     <string name="import_review_adjust">Adjust import contents</string>
     <string name="import_review_chat_changed">These quotes cannot be verified against your current chat. The original text may be missing or changed. Adjust import contents to skip these new quotes, or choose a backup containing the matching original chat. Unverified quotes will not replace existing content.</string>
     <string name="import_review_missing_source">These memories are marked as verified, but their matching quotes are not selected. Adjust import contents to include the quotes, or keep the existing memories.</string>
@@ -34,7 +34,7 @@
     <string name="import_review_preview">Import result preview</string>
     <string name="import_review_preview_hint">Review what will be added, updated and kept. Only Start import writes these changes.</string>
     <string name="import_review_start">Start import</string>
-    <string name="import_review_related_scope">Only these %1$d memories. Other choices stay as they are.</string>
+    <string name="import_review_related_scope">This choice applies to all %1$d changed existing records. You can adjust individual records. Files and app settings keep their separate choices.</string>
     <string name="import_review_update_related">Update all of these</string>
     <string name="import_review_keep_related">Keep all of these</string>
     <string name="import_review_memory_person">Who this memory describes</string>

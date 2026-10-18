@@ -34,10 +34,12 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
     val errorView = remember { BringIntoViewRequester() }
     LaunchedEffect(error) { if (error != null) errorView.bringIntoView() }
     val focused = reviewRowKeys != null
-    val reviewRows = plan.rows.differences.filter { reviewRowKeys == null || it.key in reviewRowKeys }
+    var visibleCount by remember(plan) { mutableIntStateOf(50) }
+    val allReviewRows = plan.rows.differences.filter { reviewRowKeys == null || it.key in reviewRowKeys }
+    val reviewRows = if (focused) allReviewRows.take(visibleCount) else allReviewRows
     val count = reviewRowKeys?.size ?: plan.rows.counts.different
-    val hasChoices = bulkChoice != null || !focused || reviewRows.size == count && reviewRows.all { row ->
-        row.fields.all { it.column in draft.fields[row.key].orEmpty() } || row.memoryId in draft.keepMemorySources
+    val hasChoices = bulkChoice != null || !focused || allReviewRows.size == count && allReviewRows.all { row ->
+        row.key in individualRows || row.fields.all { it.column in draft.fields[row.key].orEmpty() } || row.memoryId in draft.keepMemorySources
     }
     NekoDialog(onDismiss = onDismiss, title = stringResource(if (focused) R.string.import_review_compare else R.string.safe_import_changes),
         message = null,
@@ -59,7 +61,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = bulkChoice == incoming,
                         enabled = !busy, role = Role.RadioButton, onClick = {
                             bulkChoice = incoming; individualRows = emptySet()
-                            reviewRows.forEach { row -> draft = draft.withRecordChoice(row, incoming,
+                            allReviewRows.forEach { row -> draft = draft.withRecordChoice(row, incoming,
                                 plan.rows.sourceFieldChoices[row.memoryId].orEmpty()) }
                         }).testTag(if (incoming) "safe-difference-bulk-record-incoming" else "safe-difference-bulk-record-keep")
                         .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -74,7 +76,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
         reviewRows.forEachIndexed { index, row ->
             DifferenceHeading(importDetailLabel(PortableCategoryDetail("table:${row.table}", 1)), row.label, row.owner)
             if (focused || row.table in setOf("companion_memories", "local_characters")) {
-                val visible = row.fields.filter { it.column in setOf("content", "subject", "name", "description", "basic_info", "rules", "personality", "category", "alwaysProvide") }
+                val visible = row.fields.filter { it.column in setOf("content", "reasoning_content", "subject", "name", "description", "basic_info", "rules", "personality", "category", "alwaysProvide") }
                 visible.forEach { field ->
                     Text(when (field.column) {
                         "subject" -> stringResource(R.string.import_review_memory_person)
@@ -119,6 +121,9 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
+        }
+        if (focused && reviewRows.size < allReviewRows.size) TextButton(onClick = { visibleCount += 50 }, enabled = !busy) {
+            Text(stringResource(R.string.safe_import_more))
         }
         plan.fileDifferences.filter { !focused }.forEachIndexed { index, file ->
             DifferenceHeading(stringResource(R.string.import_difference_file), file.fileName, file.owner)

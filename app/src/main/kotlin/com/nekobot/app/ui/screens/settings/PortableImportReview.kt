@@ -62,7 +62,7 @@ internal fun PortableImportSourceNotice(plan: PortableImportPreview, busy: Boole
             if (plan.rows.sourceConflictKeys.isNotEmpty()) TextButton(onClick = onReview, enabled = !busy,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer),
                 modifier = Modifier.fillMaxWidth().testTag("import-review-related")) {
-                Text(stringResource(R.string.import_review_compare_count, plan.rows.sourceConflictKeys.size))
+                Text(stringResource(R.string.import_review_compare_count, plan.rows.sourceReviewKeys.size))
             }
         }
     }

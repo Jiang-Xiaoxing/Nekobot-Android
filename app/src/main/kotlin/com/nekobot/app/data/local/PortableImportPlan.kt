@@ -51,8 +51,12 @@ data class PortableImportRowPlan(
     val sourceConflictKeys: Set<String> = emptySet(),
     val sourceConflictMemoryCount: Int = 0,
     val skippedSourceRows: Int = 0,
-    val sourceFieldChoices: Map<String, Map<String, Set<String>>> = emptyMap()
-)
+    val sourceFieldChoices: Map<String, Map<String, Set<String>>> = emptyMap(),
+    val recordDifferenceKeys: Set<String> = emptySet()
+) {
+    /** A source conflict must not hide the file's text-only or other record repairs. */
+    val sourceReviewKeys: Set<String> get() = recordDifferenceKeys.ifEmpty { sourceConflictKeys }
+}
 
 /** No deletion/REPLACE, no matching by display name, no network or activation side effects. */
 internal class PortableImportPlanner(private val sql: PortableImportSql, private val profile: String,
@@ -86,6 +90,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
         val memorySources = PortableMemorySourceIntegrity(sql)
         val tableCounts = linkedMapOf<String, PortableImportCounts>()
         val memoryDifferenceKeys = mutableMapOf<String, String>()
+        val recordDifferenceKeys = linkedSetOf<String>()
         val sourceFieldChoices = linkedMapOf<String, MutableMap<String, Set<String>>>()
         var added = 0; var same = 0; var different = 0; var updated = 0; var sensitive = 0
         var sameNameCopies = 0
@@ -133,6 +138,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
                 val changes = differences(table, values, existing)
                 if (changes.isEmpty()) same++ else {
                     different++
+                    recordDifferenceKeys += token
                     if (changes.any { it in choices.fields[token].orEmpty() }) updated++
                     if (table == "companion_memories") memoryDifferenceKeys[values["id"].asString] = token
                     if (table == "companion_sources") sourceFieldChoices.getOrPut(values["memoryId"].asString) { linkedMapOf() }[token] = changes.toSet()
@@ -243,7 +249,8 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             details, issues.take(50), sensitive, localFiles.toList(), requiredTables, skillNames, newKeys, sameNameCopies,
             memorySources.memoryStates(), tableCounts,
             memorySources.conflictingMemoryIds.mapNotNullTo(linkedSetOf()) { memoryDifferenceKeys[it] },
-            memorySources.conflictingMemoryIds.size, skippedSourceRows, sourceFieldChoices)
+            memorySources.conflictingMemoryIds.size, skippedSourceRows, sourceFieldChoices,
+            recordDifferenceKeys)
     }
 
     /** Caller must hold one database transaction and compare preview fingerprint before this call. */
