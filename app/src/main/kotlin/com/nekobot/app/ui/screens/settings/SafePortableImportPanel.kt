@@ -57,6 +57,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
     LaunchedEffect(state.result) { if (state.result != null) onCompleted() }
     var group by remember { mutableStateOf<ImportGroup?>(null) }
     var showDifferences by remember { mutableStateOf(false) }
+    var reviewRowKeys by remember { mutableStateOf<Set<String>?>(null) }
     var showIssues by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     var storyConfirm by remember { mutableStateOf(false) }
@@ -69,6 +70,16 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
         if (selected != null) vm.inspect(context, selected, "")
     }
     val chooseFile = { if (!externalBusy && vm.beginPicking()) picker.launch(arrayOf("*/*")) }
+    val reviewSources = {
+        val keys = state.plan?.rows?.sourceConflictKeys.orEmpty()
+        if (vm.beginSourceDifferenceReview(context)) {
+            reviewRowKeys = keys; showIssues = false; showDifferences = true
+        }
+    }
+    val sourceDecisionOnly = state.plan?.let { plan ->
+        plan.rows.sourceConflictKeys.isNotEmpty() && plan.issues.isNotEmpty() &&
+            plan.issues.all { it.contains("记忆正文、主体或归属") }
+    } == true
     val groups = buildList {
         state.prepared?.preview?.categories?.forEach { summary ->
             if (summary.category == PortableDataCategory.CONVERSATIONS) {
@@ -172,18 +183,16 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                         Text(stringResource(R.string.portability_ui_confirm_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (state.planValid) item {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            ImportStat(stringResource(R.string.portability_ui_new), plan.rows.counts.added + plan.fileCounts.added, Modifier.fillMaxWidth())
-                            ImportStat(stringResource(R.string.portability_ui_update), plan.rows.counts.updated + plan.fileCounts.updated + plan.settingDifferences.count { it.column in plan.choices.settings }, Modifier.fillMaxWidth())
-                            ImportStat(stringResource(R.string.portability_ui_same), plan.rows.counts.same + plan.fileCounts.same, Modifier.fillMaxWidth())
-                            ImportStat(stringResource(R.string.portability_ui_keep), plan.rows.counts.kept + plan.fileCounts.kept, Modifier.fillMaxWidth())
-                        }
+                        PortableImportChangeSummary(plan)
+                    }
+                    if (state.planValid && plan.rows.sourceConflictMemoryCount > 0) item {
+                        PortableImportSourceNotice(plan, state.busy, reviewSources)
                     }
                     if (!state.planValid) item { Text(stringResource(if (state.busy) R.string.safe_import_checking else R.string.portability_ui_recheck), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("safe-import-summary-pending")) }
-                    if (plan.rows.differences.isNotEmpty() || plan.fileDifferences.isNotEmpty() || plan.settingDifferences.isNotEmpty() || plan.storyDifferent) item {
-                        TextButton(onClick = { if (vm.beginDifferenceReview()) showDifferences = true }, enabled = !state.busy && state.planValid) { Text(stringResource(R.string.safe_import_changes)) }
+                    if (!sourceDecisionOnly && (plan.rows.differences.isNotEmpty() || plan.fileDifferences.isNotEmpty() || plan.settingDifferences.isNotEmpty() || plan.storyDifferent)) item {
+                        TextButton(onClick = { if (vm.beginDifferenceReview()) { reviewRowKeys = null; showDifferences = true } }, enabled = !state.busy && state.planValid) { Text(stringResource(R.string.safe_import_changes)) }
                     }
-                    if (state.planValid && plan.issues.isNotEmpty()) item {
+                    if (state.planValid && plan.issues.isNotEmpty() && !sourceDecisionOnly) item {
                         TextButton(onClick = { showIssues = true }, enabled = !state.busy) { Text(stringResource(R.string.safe_import_dependencies, plan.issues.size), color = MaterialTheme.colorScheme.error) }
                     }
                     if (state.planValid && (plan.rows.sameNameCopies > 0 || plan.rows.newKeys.any { it.startsWith("local_characters:") })) item {
@@ -227,6 +236,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                     state.step == SafeImportStep.FILE -> chooseFile()
                     state.step == SafeImportStep.CONTENTS -> vm.preview(context)
                     !state.planValid -> vm.preview(context)
+                    sourceDecisionOnly -> reviewSources()
                     state.plan?.issues?.isNotEmpty() == true -> showIssues = true
                     else -> confirm = true
                 }
@@ -242,6 +252,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                     state.step == SafeImportStep.FILE -> R.string.portability_choose_archive
                     state.step == SafeImportStep.CONTENTS -> R.string.portability_ui_next
                     !state.planValid -> R.string.safe_import_refresh
+                    sourceDecisionOnly -> R.string.import_review_compare
                     state.plan?.issues?.isNotEmpty() == true -> R.string.portability_ui_resolve
                     else -> R.string.portability_ui_confirm_import
                 }), textAlign = TextAlign.Center)
@@ -273,24 +284,13 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
         PortableImportDifferences(plan, state.choices, state.busy, onDismiss = { vm.discardDifferenceReview(); showDifferences = false },
             onSave = { choices -> if (vm.saveDifferenceReview(context, choices)) showDifferences = false },
             onMore = { choices -> vm.choices(choices); vm.preview(context, more = true) },
-            onBulkRecords = { choices, useIncoming -> vm.chooseAllRecordFields(context, choices, useIncoming) })
+            onBulkRecords = { choices, useIncoming -> vm.chooseAllRecordFields(context, choices, useIncoming, reviewRowKeys) },
+            reviewRowKeys = reviewRowKeys)
     }
     if (showIssues) state.plan?.let { plan ->
-        NekoDialog(onDismiss = { showIssues = false }, title = stringResource(R.string.safe_import_dependencies_title),
-            confirmText = stringResource(R.string.safe_import_back_selection), onConfirm = { showIssues = false; vm.backToContents() }, cancelText = null, contentScrollable = true) {
-            plan.issues.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp)) }
-            plan.dependencyOptions.forEach { option ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(option.detail.key in state.selected[option.category].orEmpty(), enabled = !state.busy,
-                        onCheckedChange = { vm.select(option.category, setOf(option.detail.key), it) })
-                    Text(importDetailLabel(option.detail), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(state.choices.allowSameName, enabled = !state.busy, onCheckedChange = { vm.choices(state.choices.copy(allowSameName = it)) })
-                Text(stringResource(R.string.safe_import_same_name_consent), style = MaterialTheme.typography.bodySmall)
-            }
-        }
+        PortableImportIssueDialog(plan, state.choices, state.busy, onDismiss = { showIssues = false },
+            onBack = { showIssues = false; vm.backToContents() }, onReview = reviewSources,
+            onChoices = { vm.choices(it) }, onSelect = { option, selected -> vm.select(option.category, setOf(option.detail.key), selected) })
     }
     if (confirm) NekoDialog(onDismiss = { confirm = false }, title = stringResource(R.string.safe_import_execute),
         message = stringResource(R.string.safe_import_confirm), confirmText = stringResource(R.string.safe_import_execute),

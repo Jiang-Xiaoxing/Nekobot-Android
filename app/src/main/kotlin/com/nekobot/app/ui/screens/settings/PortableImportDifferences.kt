@@ -23,34 +23,75 @@ import com.nekobot.app.ui.screens.memory.memoryCategoryNames
 @Composable
 internal fun PortableImportDifferences(plan: PortableImportPreview, choices: PortableImportChoices, busy: Boolean,
     onDismiss: () -> Unit, onSave: (PortableImportChoices) -> Unit, onMore: (PortableImportChoices) -> Unit,
-    onBulkRecords: (PortableImportChoices, Boolean) -> Unit) {
+    onBulkRecords: (PortableImportChoices, Boolean) -> Unit, reviewRowKeys: Set<String>? = null) {
     var draft by remember(plan) { mutableStateOf(choices.normalized()) }
     var confirmStory by remember { mutableStateOf(false) }
     var confirmRecords by remember(plan) { mutableStateOf(false) }
-    NekoDialog(onDismiss = onDismiss, title = stringResource(R.string.safe_import_changes),
-        message = stringResource(R.string.import_difference_notice),
-        confirmText = stringResource(R.string.import_difference_save), confirmEnabled = !busy,
+    val focused = reviewRowKeys != null
+    val reviewRows = plan.rows.differences.filter { reviewRowKeys == null || it.key in reviewRowKeys }
+    val count = reviewRowKeys?.size ?: plan.rows.counts.different
+    val hasChoices = !focused || reviewRows.size == count && reviewRows.all { row ->
+        row.fields.all { it.column in draft.fields[row.key].orEmpty() } || row.memoryId in draft.keepMemorySources
+    }
+    NekoDialog(onDismiss = onDismiss, title = stringResource(if (focused) R.string.import_review_compare else R.string.safe_import_changes),
+        message = stringResource(if (focused) R.string.import_review_memory_choice_hint else R.string.import_difference_notice),
+        confirmText = stringResource(R.string.import_difference_save), confirmEnabled = !busy && hasChoices,
         onConfirm = { onSave(draft.normalized()) }, onCancel = onDismiss, contentScrollable = true) {
         if (busy) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(stringResource(R.string.safe_import_checking), style = MaterialTheme.typography.bodyMedium)
         }
-        if (plan.rows.counts.different > 0) {
-            Text(stringResource(R.string.import_bulk_record_scope, plan.rows.counts.different),
+        if (count > 0) {
+            Text(stringResource(if (focused) R.string.import_review_related_scope else R.string.import_bulk_record_scope, count),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { confirmRecords = true }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("safe-difference-bulk-record-incoming")) {
-                Text(stringResource(R.string.import_bulk_record_incoming))
+                Text(stringResource(if (focused) R.string.import_review_update_related else R.string.import_bulk_record_incoming))
             }
             TextButton(onClick = { onBulkRecords(draft.normalized(), false) }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("safe-difference-bulk-record-keep")) {
-                Text(stringResource(R.string.import_bulk_record_keep))
+                Text(stringResource(if (focused) R.string.import_review_keep_related else R.string.import_bulk_record_keep))
             }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
         }
-        plan.rows.differences.forEachIndexed { index, row ->
+        reviewRows.forEachIndexed { index, row ->
             DifferenceHeading(importDetailLabel(PortableCategoryDetail("table:${row.table}", 1)), row.label, row.owner)
-            row.fields.forEach { field ->
+            if (focused || row.table in setOf("companion_memories", "local_characters")) {
+                val visible = row.fields.filter { it.column in setOf("content", "subject", "name", "description", "basic_info", "rules", "personality", "category", "alwaysProvide") }
+                visible.forEach { field ->
+                    Text(when (field.column) {
+                        "subject" -> stringResource(R.string.import_review_memory_person)
+                        "basic_info" -> stringResource(R.string.import_review_basic_info)
+                        "rules" -> stringResource(R.string.import_review_rules)
+                        "personality" -> stringResource(R.string.import_review_personality)
+                        else -> importFieldLabel(field.column)
+                    },
+                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                    DifferenceValues(importDifferenceValue(field.column, field.current), importDifferenceValue(field.column, field.incoming))
+                }
+                val other = row.fields - visible.toSet()
+                if (other.isNotEmpty()) {
+                    Text(stringResource(if (row.memoryId != null) R.string.import_review_memory_metadata else R.string.import_review_record_metadata),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    var expanded by remember(row.key) { mutableStateOf(false) }
+                    TextButton(onClick = { expanded = !expanded }) { Text(stringResource(if (expanded) R.string.import_review_hide_details else R.string.import_review_details)) }
+                    if (expanded) other.forEach { field ->
+                        Text(importFieldLabel(field.column), style = MaterialTheme.typography.titleSmall)
+                        DifferenceValues(importDifferenceValue(field.column, field.current), importDifferenceValue(field.column, field.incoming))
+                    }
+                }
+                val decision = when {
+                    row.fields.all { it.column in draft.fields[row.key].orEmpty() } -> true
+                    row.memoryId in draft.keepMemorySources -> false
+                    else -> if (focused) null else false
+                }
+                DifferenceChoice(decision, !busy,
+                    if (focused) "safe-difference-memory-$index" else "safe-difference-row-$index-${row.fields.first().column}",
+                    if (row.memoryId != null) R.string.import_review_keep_memory else R.string.import_review_keep_record,
+                    if (row.memoryId != null) R.string.import_review_update_memory else R.string.import_review_update_record) { replace ->
+                    draft = draft.withRecordChoice(row, replace)
+                }
+            } else row.fields.forEach { field ->
                 Text(importFieldLabel(field.column), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
                 DifferenceValues(importDifferenceValue(field.column, field.current), importDifferenceValue(field.column, field.incoming))
                 DifferenceChoice(field.column in draft.fields[row.key].orEmpty(), !busy, "safe-difference-row-$index-${field.column}") { replace ->
@@ -60,7 +101,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
             }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
         }
-        plan.fileDifferences.forEachIndexed { index, file ->
+        plan.fileDifferences.filter { !focused }.forEachIndexed { index, file ->
             DifferenceHeading(stringResource(R.string.import_difference_file), file.fileName, file.owner)
             Text(portableDetailLabel(PortableCategoryDetail("root:${file.root}", 1, true)), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -75,7 +116,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
             if (pathVisible) SelectionContainer { Text(file.label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth()) }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
         }
-        plan.settingDifferences.forEach { field ->
+        plan.settingDifferences.filter { !focused }.forEach { field ->
             DifferenceHeading(stringResource(R.string.portability_category_app_settings), importFieldLabel(field.column), PortableImportOwner())
             DifferenceValues(field.current, field.incoming)
             DifferenceChoice(field.column in draft.settings, !busy, "safe-difference-setting-${field.column}") { replace ->
@@ -83,7 +124,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
             }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
         }
-        if (plan.storyDifferent) {
+        if (plan.storyDifferent && !focused) {
             DifferenceHeading(stringResource(R.string.safe_import_story_confirm_title), stringResource(R.string.safe_import_story), PortableImportOwner())
             Text(stringResource(R.string.safe_import_story_confirm_message), style = MaterialTheme.typography.bodyMedium)
             DifferenceChoice("plot_story" in draft.files, !busy, "safe-difference-story") { replace ->
@@ -91,13 +132,13 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
             }
         }
         val more = plan.rows.differences.size < plan.rows.counts.different || plan.fileDifferences.size < plan.fileCounts.different
-        if (more) TextButton(onClick = { onMore(draft.normalized()) }, enabled = !busy) { Text(stringResource(R.string.safe_import_more)) }
+        if (more && !focused) TextButton(onClick = { onMore(draft.normalized()) }, enabled = !busy) { Text(stringResource(R.string.safe_import_more)) }
     }
     if (confirmStory) NekoDialog(onDismiss = { confirmStory = false }, title = stringResource(R.string.safe_import_story_confirm_title),
         message = stringResource(R.string.safe_import_story_confirm_message),
         onConfirm = { confirmStory = false; draft = draft.copy(files = draft.files + "plot_story") }, onCancel = { confirmStory = false })
-    if (confirmRecords) NekoDialog(onDismiss = { confirmRecords = false }, title = stringResource(R.string.import_bulk_record_incoming),
-        message = stringResource(R.string.import_bulk_record_confirm, plan.rows.counts.different),
+    if (confirmRecords) NekoDialog(onDismiss = { confirmRecords = false }, title = stringResource(if (focused) R.string.import_review_update_related else R.string.import_bulk_record_incoming),
+        message = stringResource(if (focused) R.string.import_review_update_confirm else R.string.import_bulk_record_confirm, count),
         confirmEnabled = !busy,
         onConfirm = { confirmRecords = false; onBulkRecords(draft.normalized(), true) }, onCancel = { confirmRecords = false })
 }
@@ -132,7 +173,8 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
     }
 }
 
-@Composable private fun DifferenceChoice(replace: Boolean, enabled: Boolean, tag: String, onSelect: (Boolean) -> Unit) {
+@Composable private fun DifferenceChoice(replace: Boolean?, enabled: Boolean, tag: String,
+    keepLabel: Int = R.string.import_difference_keep, updateLabel: Int = R.string.import_difference_replace, onSelect: (Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().selectableGroup().padding(top = 4.dp)) {
         listOf(false, true).forEach { useIncoming ->
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = replace == useIncoming, enabled = enabled,
@@ -140,7 +182,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
                 verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(selected = replace == useIncoming, enabled = enabled, onClick = null)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(if (useIncoming) R.string.import_difference_replace else R.string.import_difference_keep),
+                Text(stringResource(if (useIncoming) updateLabel else keepLabel),
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             }
         }

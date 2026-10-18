@@ -128,10 +128,18 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         if (differenceReviewBaseline == null) differenceReviewBaseline = DifferenceReviewBaseline(state.value, limit)
         return true
     }
+    internal fun beginSourceDifferenceReview(context: Context): Boolean {
+        if (state.value.plan?.rows?.sourceConflictKeys.isNullOrEmpty() || !beginDifferenceReview()) return false
+        limit = Int.MAX_VALUE
+        preview(context)
+        return true
+    }
     internal fun saveDifferenceReview(context: Context, draft: PortableImportChoices): Boolean {
         if (cleared || state.value.busy || differenceReviewBaseline == null) return false
+        val restorePageSize = limit == Int.MAX_VALUE && differenceReviewBaseline!!.limit != Int.MAX_VALUE
+        if (restorePageSize) limit = differenceReviewBaseline!!.limit
         differenceReviewBaseline = null
-        saveChoices(context, draft)
+        if (restorePageSize) { choices(draft); preview(context) } else saveChoices(context, draft)
         return true
     }
     /** Closing the comparison discards every temporary refresh, including completed bulk choices. */
@@ -146,7 +154,8 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         state.value = baseline.state
     }
     /** Publish a bulk draft only after both reads succeed; cancellation leaves the old review intact. */
-    internal fun chooseAllRecordFields(context: Context, draft: PortableImportChoices, useIncoming: Boolean) {
+    internal fun chooseAllRecordFields(context: Context, draft: PortableImportChoices, useIncoming: Boolean,
+                                       rowKeys: Set<String>? = null) {
         val snapshot = state.value
         val prepared = snapshot.prepared ?: return
         val previousPlan = snapshot.plan ?: return
@@ -167,13 +176,11 @@ class SafePortableImportViewModel internal constructor(private val operations: S
                         complete.rows.differences.size == complete.rows.counts.different) {
                         context.getString(R.string.import_bulk_record_changed)
                     }
-                    val fields = originalDraft.fields.toMutableMap()
-                    complete.rows.differences.forEach { row ->
+                    var next = originalDraft
+                    complete.rows.differences.filter { rowKeys == null || it.key in rowKeys }.forEach { row ->
                         ensureActive()
-                        val columns = row.fields.mapTo(linkedSetOf()) { it.column }
-                        fields[row.key] = if (useIncoming) fields[row.key].orEmpty() + columns else fields[row.key].orEmpty() - columns
+                        next = next.withRecordChoice(row, useIncoming)
                     }
-                    val next = originalDraft.copy(fields = fields).normalized()
                     next to operations.preview(context, prepared, selected, next, requestedLimit)
                 }
                 ensureActive()

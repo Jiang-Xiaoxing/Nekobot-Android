@@ -46,5 +46,13 @@ internal class PortableImportLabels(
 /** Empty field selections and insertion order cannot turn an unchanged choice into a new request. */
 internal fun PortableImportChoices.normalized(): PortableImportChoices = copy(
     fields = fields.filterValues { it.isNotEmpty() }.mapValues { it.value.toSet() },
-    files = files.toSet(), settings = settings.toSet()
+    files = files.toSet(), settings = settings.toSet(), keepMemorySources = keepMemorySources.toSet()
 )
+
+/** A memory and its incoming evidence are one user decision; keeping never mixes new evidence into old text. */
+internal fun PortableImportChoices.withRecordChoice(row: PortableImportRowDifference, useIncoming: Boolean): PortableImportChoices {
+    val columns = row.fields.mapTo(linkedSetOf()) { it.column }
+    val next = if (useIncoming) fields[row.key].orEmpty() + columns else fields[row.key].orEmpty() - columns
+    val sources = row.memoryId?.let { if (useIncoming) keepMemorySources - it else keepMemorySources + it } ?: keepMemorySources
+    return copy(fields = fields + (row.key to next), keepMemorySources = sources).normalized()
+}

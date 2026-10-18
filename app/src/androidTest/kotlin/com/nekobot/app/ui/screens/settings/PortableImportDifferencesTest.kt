@@ -215,11 +215,12 @@ class PortableImportDifferencesTest {
             override suspend fun commit(context: Context, prepared: PreparedPortableImport, plan: PortableImportPreview, progress: (String) -> Unit): PortableImportResult { commits++; return PortableImportResult(0, 0, 0) }
         })
         compose.runOnIdle { vm.state.value = SafeImportUiState(prepared = prepared, selected = selected,
-            plan = plan.copy(rows = plan.rows.copy(counts = PortableImportCounts(added = 98765))), planValid = true, step = SafeImportStep.CONFIRM) }
+            plan = plan.copy(rows = plan.rows.copy(counts = PortableImportCounts(added = 98765),
+                tableCounts = mapOf("local_characters" to PortableImportCounts(added = 98765)))), planValid = true, step = SafeImportStep.CONFIRM) }
         compose.setContent { NekobotTheme { SafePortableImportPanel(vm = vm) } }
-        compose.onNodeWithText("98765").assertExists()
+        compose.onNodeWithText("98765", substring = true).assertExists()
         compose.runOnIdle { vm.saveChoices(compose.activity, PortableImportChoices(files = setOf(plan.fileDifferences.single().key))) }
-        compose.onNodeWithText("98765").assertDoesNotExist()
+        compose.onNodeWithText("98765", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("safe-import-summary-pending").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { vm.commit(compose.activity) }
         release.complete(Unit)

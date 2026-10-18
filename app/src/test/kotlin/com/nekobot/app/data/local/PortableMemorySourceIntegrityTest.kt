@@ -65,6 +65,67 @@ class PortableMemorySourceIntegrityTest {
         assertTrue(planner.preview(incoming, overwrite(incoming)).issues.isEmpty())
     }
 
+    @Test fun sourceAndMemoryCountsExplainTheScreenshotWithoutInventingNewMemories() {
+        sql.execute("UPDATE companion_memories SET content='本机旧记忆'")
+        val plan = planner.preview(rows(memory(), source()), PortableImportChoices())
+        assertEquals(PortableImportCounts(added = 1), plan.tableCounts["companion_sources"])
+        assertEquals(PortableImportCounts(different = 1), plan.tableCounts["companion_memories"])
+        assertEquals(1, plan.sourceConflictMemoryCount)
+        assertEquals(setOf(plan.differences.single().key), plan.sourceConflictKeys)
+        assertEquals("memory", plan.differences.single().memoryId)
+        assertEquals(0, plan.sameNameCopies)
+    }
+
+    @Test fun keepingAMemoryAutomaticallyKeepsItsOldEvidenceAndRepeatWritesNothing() {
+        sql.execute("UPDATE companion_memories SET content='本机旧记忆'")
+        val incoming = rows(memory(), source())
+        val row = planner.preview(incoming, PortableImportChoices()).differences.single()
+        val choices = PortableImportChoices().withRecordChoice(row, false)
+        val plan = planner.preview(incoming, choices)
+        assertTrue(plan.issues.isEmpty())
+        assertEquals(1, plan.skippedSourceRows)
+        assertEquals(0, plan.counts.added)
+        assertEquals(0, planner.apply(incoming, choices))
+        assertEquals(0, planner.apply(incoming, choices))
+        assertEquals("本机旧记忆", sql.query("SELECT * FROM companion_memories").single()["content"].asString)
+        assertTrue(sql.query("SELECT * FROM companion_sources").isEmpty())
+    }
+
+    @Test fun updatingARecordSelectsItsMatchingFieldsAndRestoresOnlyItsIncomingSources() {
+        sql.execute("UPDATE companion_memories SET content='本机旧记忆'")
+        val incoming = rows(memory(), source())
+        val row = planner.preview(incoming, PortableImportChoices()).differences.single()
+        val kept = PortableImportChoices(keepMemorySources = setOf("unrelated")).withRecordChoice(row, false)
+        val choices = kept.withRecordChoice(row, true)
+        assertEquals(setOf("unrelated"), choices.keepMemorySources)
+        assertTrue(planner.preview(incoming, choices).issues.isEmpty())
+        assertEquals(2, planner.apply(incoming, choices))
+        assertEquals(body, sql.query("SELECT * FROM companion_memories").single()["content"].asString)
+        assertEquals(1, sql.query("SELECT * FROM companion_sources").size)
+        assertEquals(0, planner.apply(incoming, choices))
+    }
+
+    @Test fun skippingIncomingSourcesCannotBypassVerifiedMemoryRequirements() {
+        val incoming = rows(memory(), source())
+        val choices = overwrite(incoming).copy(keepMemorySources = setOf("memory"))
+        val plan = planner.preview(incoming, choices)
+        assertTrue(plan.issues.any { it.contains("缺少原话来源") })
+        assertTrue(sql.query("SELECT * FROM companion_sources").isEmpty())
+    }
+
+    @Test fun keepingOneMemoryDoesNotSkipAnotherMemorysSourceValidation() {
+        sql.execute("INSERT INTO companion_memories VALUES ('another','scope','另一条旧记忆','imported_unverified',0,'玩家')")
+        val another = memory().also { it.values.addProperty("id", "another") }
+        val invalidSource = source(quote = "原文里没有这句话").also { it.values.addProperty("memoryId", "another") }
+        val incoming = rows(memory(), source(), another, invalidSource)
+        val choices = overwrite(incoming).copy(keepMemorySources = setOf("memory"))
+        val plan = planner.preview(incoming, choices)
+        assertEquals(1, plan.skippedSourceRows)
+        assertEquals(1, plan.tableCounts["companion_sources"]!!.added)
+        assertTrue(plan.issues.any { it.contains("原话来源与当前聊天不一致") })
+        assertTrue(sql.query("SELECT * FROM companion_sources").isEmpty())
+    }
+
     @Test fun keepingBothMemoryAndItsSourcesLeavesLocalChangesUntouched() {
         sql.execute("UPDATE companion_memories SET content='本机后续修订'")
         val incoming = rows(memory())

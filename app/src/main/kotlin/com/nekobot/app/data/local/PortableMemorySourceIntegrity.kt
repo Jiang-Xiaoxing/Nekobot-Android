@@ -7,6 +7,7 @@ import com.nekobot.app.data.local.ai.CompanionMemoryPolicy
 
 /** A source must describe the version of the memory and message that will actually remain locally. */
 internal class PortableMemorySourceIntegrity(private val sql: PortableImportSql) {
+    val conflictingMemoryIds = linkedSetOf<String>()
     private val incomingMemories = linkedMapOf<String, JsonObject>()
     private val memories = linkedMapOf<String, JsonObject>()
     private val scopes = linkedMapOf<String, JsonObject>()
@@ -55,6 +56,7 @@ internal class PortableMemorySourceIntegrity(private val sql: PortableImportSql)
             if (listOf("content", "subject", "scopeId").any { column ->
                     incoming?.text(column) == null || memory?.text(column) != incoming.text(column)
                 }) {
+                conflictingMemoryIds += id
                 issues += "记忆正文、主体或归属与新来源不属于同一版本，请同时选择对应记忆字段，或取消本次来源导入"
             }
         }
