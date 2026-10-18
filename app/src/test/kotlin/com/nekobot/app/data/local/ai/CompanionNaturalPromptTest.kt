@@ -47,6 +47,32 @@ class CompanionNaturalPromptTest {
         }
     }
 
+    @Test fun importedUnverifiedCoreAndRecallTextRetainEvidenceWithoutEditingStoredBody() {
+        val memory = CompanionMemoryEntity("m", "s", "k", 1, "fact", "玩家", "我记得他喜欢茉莉茶。", "active",
+            alwaysProvide = true, provenance = CompanionImportPolicy.IMPORTED_UNVERIFIED,
+            createdAt = "2026-10-17", updatedAt = "2026-10-17", eventDate = "2026-10-12")
+        val expected = "（${CompanionImportPolicy.UNVERIFIED_EVIDENCE}）10月12日：我记得他喜欢茉莉茶。"
+        assertEquals(expected, CompanionCoreMemory.render(listOf(memory), now.toLocalDate()))
+        assertEquals(expected, CompanionPromptLanguage.memories(listOf(memory), now.toLocalDate()))
+        assertEquals("我记得他喜欢茉莉茶。", memory.content)
+        for (trusted in listOf(memory.copy(manual = true), memory.copy(provenance = CompanionImportPolicy.IMPORTED_VERIFIED))) {
+            assertEquals("10月12日：我记得他喜欢茉莉茶。", CompanionPromptLanguage.memory(trusted, now.toLocalDate()))
+        }
+    }
+
+    @Test fun savedMemoryToolEvidenceSurvivesPlainTextConversionExactlyOnce() {
+        val notice = "（${CompanionImportPolicy.UNVERIFIED_EVIDENCE}）"
+        for ((name, key) in listOf("agent_memory_read" to "memories", "agent_recall_search" to "results")) {
+            for (content in listOf("旧记忆原文。", notice + "旧记忆原文。")) {
+                val payload = Gson().toJson(mapOf(key to listOf(mapOf("content" to content,
+                    "evidence" to CompanionImportPolicy.UNVERIFIED_EVIDENCE))))
+                val source = mapOf<String, Any>("role" to "tool", "name" to name, "content" to payload)
+                assertEquals(notice + "旧记忆原文。", CompanionPromptLanguage.message(source)["content"])
+                assertEquals(payload, source["content"])
+            }
+        }
+    }
+
     @Test fun invalidDatesStayUnknownAndAnnualDatesRemainAvailable() {
         assertEquals("我记得他的生日。", CompanionPromptLanguage.memory("我记得他的生日。", "2026-02-30"))
         assertEquals("5月20日：我记得他的生日。", CompanionPromptLanguage.memory("我记得他的生日。", annualMonthDay = "05-20"))

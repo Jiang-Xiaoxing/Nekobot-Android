@@ -209,7 +209,7 @@ class SessionsScreenV2SyntheticTest {
                 SessionPage.CHARACTER -> {
                     compose.onNodeWithText(text(R.string.sessions_new)).assertIsDisplayed()
                     capture("large-character-create", isDialog())
-                    compose.onNodeWithText(text(R.string.common_cancel)).performClick()
+                    closeCreateDialog()
                 }
                 SessionPage.AGENT -> {
                     compose.waitUntil(15_000) { destination?.startsWith("chat/") == true }
@@ -231,9 +231,9 @@ class SessionsScreenV2SyntheticTest {
             .forEach { compose.onNodeWithText(text(it)).assertIsDisplayed() }
         capture("large-title-menu", isPopup())
         compose.onNodeWithText(text(R.string.sessions_create_group)).performClick()
-        compose.onNodeWithText(text(R.string.sessions_select_characters)).performScrollTo().assertIsDisplayed()
         capture("large-group-create", isDialog())
-        compose.onNodeWithText(text(R.string.common_cancel)).performClick()
+        compose.onNodeWithText(text(R.string.sessions_select_characters)).assertIsDisplayed()
+        closeCreateDialog()
         compose.onNodeWithTag("sessions-page-companion").assertIsSelected()
     }
 
@@ -301,9 +301,20 @@ class SessionsScreenV2SyntheticTest {
         val start = Instant.parse("2026-01-01T00:00:00Z")
         val rows = SessionPage.entries.associateWith { page ->
             val characterId = "synthetic-v2-character-${page.name}"
-            db.characterDao().upsert(LocalCharacterEntity(characterId, "合成${text(page.titleResId)}角色",
-                createdAt = start.toString(), updatedAt = start.toString()))
+            val characterName = "合成${text(page.titleResId)}角色"
+            if (page != SessionPage.COMPANION) {
+                db.characterDao().upsert(LocalCharacterEntity(characterId, characterName,
+                    createdAt = start.toString(), updatedAt = start.toString()))
+            }
             (0 until 24).map { index ->
+                // The production single-window guard allows only one companion per character.
+                // Keep that guard active and give every synthetic companion its own owner.
+                val ownerId = if (page == SessionPage.COMPANION) "$characterId-$index" else characterId
+                val ownerName = if (page == SessionPage.COMPANION) "$characterName$index" else characterName
+                if (page == SessionPage.COMPANION) {
+                    db.characterDao().upsert(LocalCharacterEntity(ownerId, ownerName,
+                        createdAt = start.toString(), updatedAt = start.toString()))
+                }
                 val title = "合成${text(page.titleResId)}会话${index.toString().padStart(2, '0')}" +
                     if (page == SessionPage.CHARACTER && index == 0) "莲花" else ""
                 val mode = when {
@@ -314,8 +325,8 @@ class SessionsScreenV2SyntheticTest {
                 }
                 val time = start.plusSeconds((100 - index) * 60L).toString()
                 LocalSessionEntity("synthetic-v2-${page.name}-$index", "合成原会话名-$index",
-                    characterId = if (page == SessionPage.AGENT && index == 0) null else characterId,
-                    characterName = if (page == SessionPage.AGENT && index == 0) null else "合成${text(page.titleResId)}角色",
+                    characterId = if (page == SessionPage.AGENT && index == 0) null else ownerId,
+                    characterName = if (page == SessionPage.AGENT && index == 0) null else ownerName,
                     senderName = if (page == SessionPage.AGENT && index == 0) "纸舟" else "合成发言者",
                     listTitleOverride = title, sessionMode = mode,
                     groupId = if (mode == "group") "synthetic-v2-group" else null,
@@ -445,6 +456,22 @@ class SessionsScreenV2SyntheticTest {
         compose.onNodeWithContentDescription(text(R.string.sessions_page_menu)).performClick()
         compose.onNodeWithText(text(R.string.stats_dashboard_title)).performClick()
         compose.onNodeWithText(text(R.string.stats_dashboard_title)).assertIsDisplayed()
+    }
+
+    private fun closeCreateDialog() {
+        val close = compose.onNode(hasContentDescription(text(R.string.common_close)) and hasAnyAncestor(isDialog()))
+            .assertIsDisplayed().assertIsEnabled()
+        val node = close.fetchSemanticsNode()
+        val touch = node.touchBoundsInRoot
+        val minimum = with(node.layoutInfo.density) { 48.dp.toPx() }
+        val tolerance = with(node.layoutInfo.density) { 0.5.dp.toPx() }
+        val viewport = compose.onNode(isDialog()).fetchSemanticsNode().boundsInRoot
+        // Material's close glyph draws at 40dp; the actual interactive target remains 48dp.
+        assertTrue(touch.width + tolerance >= minimum && touch.height + tolerance >= minimum)
+        assertTrue(touch.left >= viewport.left - tolerance && touch.right <= viewport.right + tolerance &&
+            touch.top >= viewport.top - tolerance && touch.bottom <= viewport.bottom + tolerance)
+        close.performTouchInput { click() }
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
     }
 
     private fun systemBack() {

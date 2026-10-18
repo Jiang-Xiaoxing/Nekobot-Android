@@ -215,7 +215,8 @@ class PortableSafeImportAndroidTest {
         assertTrue(requireNotNull(db().companionMemoryDao().scope(scope.id)).revision > beforeRevision)
         assertTrue(db().companionMemoryDao().contextMaterials(scope.id).isEmpty())
         assertEquals(1, db().companionMemoryDao().contextMaterials("unrelated-synthetic-scope").size)
-        assertEquals(listOf(memory.id), store.validatedMemories(store.ensureScope(session)).map { it.id })
+        val reopenedStore = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        assertEquals(listOf(memory.id), reopenedStore.validatedMemories(reopenedStore.ensureScope(session)).map { it.id })
         assertEquals(listOf(source), db().companionMemoryDao().sources(memory.id))
         prepared(out.toByteArray()).use { archive ->
             assertEquals(0, manager.commitImport(archive, manager.previewImport(archive, selection)).importedRows)
@@ -290,14 +291,15 @@ class PortableSafeImportAndroidTest {
         val saved = db().companionMemoryDao().versions(fixture.incomingMemory.scopeId, fixture.incomingMemory.factKey).single()
         assertTrue(saved.valid); assertTrue(saved.current); assertEquals(fixture.incomingMemory, saved)
         assertEquals(listOf(fixture.incomingSource), db().companionMemoryDao().sources(saved.id))
-        assertEquals(listOf(saved), store.validatedMemories(store.ensureScope(fixture.session)))
+        val reopenedStore = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        assertEquals(listOf(saved), reopenedStore.validatedMemories(reopenedStore.ensureScope(fixture.session)))
         prepared(fixture.archive).use { archive ->
             val plan = manager.previewImport(archive, selected)
             assertTrue(plan.issues.toString(), plan.issues.isEmpty())
             assertEquals(0, plan.rows.counts.different)
             assertEquals(0, manager.commitImport(archive, plan).importedRows)
         }
-        assertEquals(listOf(saved), store.validatedMemories(store.ensureScope(fixture.session)))
+        assertEquals(listOf(saved), reopenedStore.validatedMemories(reopenedStore.ensureScope(fixture.session)))
     }
     @Test fun replacingOnlyTheMessageWithoutNewProofStillInvalidatesTheOldMemory() = runBlocking {
         val fixture = changedMessageEvidenceFixture()
@@ -320,7 +322,8 @@ class PortableSafeImportAndroidTest {
         assertEquals(fixture.localMemory.content, saved.content)
         assertFalse(saved.valid); assertFalse(saved.current)
         assertEquals(listOf(fixture.localSource), db().companionMemoryDao().sources(saved.id))
-        assertTrue(store.validatedMemories(store.ensureScope(fixture.session)).isEmpty())
+        val reopenedStore = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
+        assertTrue(reopenedStore.validatedMemories(reopenedStore.ensureScope(fixture.session)).isEmpty())
         prepared(fixture.archive).use { archive ->
             assertEquals(0, manager.commitImport(archive, manager.previewImport(archive, selected)).importedRows)
         }

@@ -229,7 +229,7 @@ class ImportedMemorySourceNavigationTest {
         val viewSource = hasText(text(R.string.single_role_view_original_messages)) and hasClickAction()
         compose.onNodeWithTag("fused-memory-list").performScrollToNode(viewSource)
         val sourceButton = compose.onNode(viewSource).performScrollTo().assertIsDisplayed()
-        sourceButton.assertHeightIsAtLeast(48.dp)
+        assertReachableTouchTarget(sourceButton, compose.onNodeWithTag(ROOT_TAG))
         compose.onNodeWithText(fixture.memory.content).assertExists()
         val sourceBounds = sourceButton.getUnclippedBoundsInRoot()
         val viewportBounds = compose.onNodeWithTag(ROOT_TAG).getUnclippedBoundsInRoot()
@@ -238,7 +238,7 @@ class ImportedMemorySourceNavigationTest {
                 sourceBounds.left >= viewportBounds.left && sourceBounds.right <= viewportBounds.right)
         compose.onNodeWithText(text(R.string.single_role_manual_memory)).assertDoesNotExist()
         captureSynthetic("$name-memory-source-action")
-        sourceButton.performClick()
+        sourceButton.performTouchInput { click() }
 
         val dialogList = hasScrollAction() and hasAnyAncestor(isDialog())
         compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isNotEmpty() }
@@ -249,9 +249,10 @@ class ImportedMemorySourceNavigationTest {
         captureSynthetic("$name-source-quote", dialog = true)
         val locate = hasText(text(R.string.single_role_go_to_this_message)) and hasClickAction()
         compose.onNode(dialogList).performScrollToNode(locate)
-        compose.onNode(locate).performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        val locateButton = compose.onNode(locate).performScrollTo().assertIsDisplayed()
+        assertReachableTouchTarget(locateButton, compose.onNode(isDialog()))
         captureSynthetic("$name-source-location-action", dialog = true)
-        compose.onNode(locate).performClick()
+        locateButton.performTouchInput { click() }
 
         // Do not scroll here: the real location screen must reveal the stored message itself.
         val sourceTag = "source-message:${fixture.message.id}"
@@ -268,6 +269,21 @@ class ImportedMemorySourceNavigationTest {
         compose.onNodeWithTag("fused-memory-list").performScrollToNode(hasText(fixture.memory.content))
         compose.onNodeWithText(fixture.memory.content).assertIsDisplayed()
         compose.onNodeWithTag(sourceTag).assertDoesNotExist()
+    }
+
+    private fun assertReachableTouchTarget(button: SemanticsNodeInteraction, viewport: SemanticsNodeInteraction) {
+        val node = button.assertIsDisplayed().assertIsEnabled().assertHasClickAction().fetchSemanticsNode()
+        // Material 3 TextButton can draw at 40dp while exposing a 48dp minimum touch target.
+        // Measure the hit bounds rather than weakening the minimum or asserting the visual height.
+        val touch = node.touchBoundsInRoot
+        val minimum = with(node.layoutInfo.density) { 48.dp.toPx() }
+        val tolerance = with(node.layoutInfo.density) { 0.5.dp.toPx() }
+        assertTrue("Touch width ${touch.width}px must be at least ${minimum}px", touch.width + tolerance >= minimum)
+        assertTrue("Touch height ${touch.height}px must be at least ${minimum}px", touch.height + tolerance >= minimum)
+        val visible = viewport.fetchSemanticsNode().boundsInRoot
+        assertTrue("The complete touch target must fit inside the visible viewport",
+            touch.left >= visible.left - tolerance && touch.right <= visible.right + tolerance &&
+                touch.top >= visible.top - tolerance && touch.bottom <= visible.bottom + tolerance)
     }
 
     private fun awaitMemoryReady() {

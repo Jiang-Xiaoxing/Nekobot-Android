@@ -18,8 +18,13 @@ internal object CompanionPromptLanguage {
     const val recallRules = "想不起来的事，可以先翻一翻记忆再回答；翻过还是没有，就老实说记不清了，不要编。和记忆对不上时，自然地问一句确认；已经确认过的事就接受，不反复追问。"
     const val styleReminder = "像平时和对方聊天一样，用口语，简短自然；想分成几条短消息时，用<||>隔开。别用总结、汇报或记账的语气，也别列清单；不确定或忘了就直说，不要复述设定和规则。"
 
-    fun memory(memory: CompanionMemoryEntity, today: LocalDate = LocalDate.now()): String =
-        memory(memory.content, memory.eventDate, memory.annualMonthDay, today)
+    fun memory(memory: CompanionMemoryEntity, today: LocalDate = LocalDate.now()): String {
+        val text = memory(memory.content, memory.eventDate, memory.annualMonthDay, today)
+        // 纯文本发送副本也必须保留未核验声明；存储正文和已核验记忆不加说明。
+        return if (!memory.manual && memory.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED) {
+            "（${CompanionImportPolicy.evidence(memory)}）$text"
+        } else text
+    }
 
     fun memory(content: String, eventDate: String? = null, annualMonthDay: String? = null,
         today: LocalDate = LocalDate.now()): String {
@@ -81,7 +86,15 @@ internal object CompanionPromptLanguage {
         if (message["role"] != "tool" || message["name"] !in setOf("agent_memory_read", "agent_recall_search")) return cleaned
         val result = runCatching { Gson().fromJson(message["content"] as? String, Map::class.java) }.getOrNull() ?: return cleaned
         val rows = (result["memories"] ?: result["results"]) as? List<*>
-        val body = rows.orEmpty().mapNotNull { (it as? Map<*, *>)?.get("content") as? String }.joinToString("\n")
+        val body = rows.orEmpty().mapNotNull {
+            val row = it as? Map<*, *> ?: return@mapNotNull null
+            val content = row["content"] as? String ?: return@mapNotNull null
+            // 兼容已保存的工具结果：它们的正文尚未带来源说明，不能在转纯文本时丢掉 evidence。
+            val notice = "（${CompanionImportPolicy.UNVERIFIED_EVIDENCE}）"
+            if (row["evidence"] == CompanionImportPolicy.UNVERIFIED_EVIDENCE && !content.startsWith(notice)) {
+                notice + content
+            } else content
+        }.joinToString("\n")
         val note = when {
             result["success"] == false -> "这次没能翻到记忆，记不清的地方就直说。"
             body.isNotBlank() -> body
