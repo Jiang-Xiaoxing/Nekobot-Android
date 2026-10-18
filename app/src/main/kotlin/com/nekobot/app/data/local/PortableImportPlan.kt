@@ -50,7 +50,8 @@ data class PortableImportRowPlan(
     val tableCounts: Map<String, PortableImportCounts> = emptyMap(),
     val sourceConflictKeys: Set<String> = emptySet(),
     val sourceConflictMemoryCount: Int = 0,
-    val skippedSourceRows: Int = 0
+    val skippedSourceRows: Int = 0,
+    val sourceFieldChoices: Map<String, Map<String, Set<String>>> = emptyMap()
 )
 
 /** No deletion/REPLACE, no matching by display name, no network or activation side effects. */
@@ -85,12 +86,21 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
         val memorySources = PortableMemorySourceIntegrity(sql)
         val tableCounts = linkedMapOf<String, PortableImportCounts>()
         val memoryDifferenceKeys = mutableMapOf<String, String>()
+        val sourceFieldChoices = linkedMapOf<String, MutableMap<String, Set<String>>>()
         var added = 0; var same = 0; var different = 0; var updated = 0; var sensitive = 0
         var sameNameCopies = 0
         var skippedSourceRows = 0
         rows { incoming ->
             checkpoint()
-            if (skipMemorySource(incoming, choices)) { skippedSourceRows++; return@rows }
+            if (skipMemorySource(incoming, choices)) {
+                val values = normalize(incoming).first
+                val key = primaryKey(incoming.table, values)
+                find(incoming.table, key)?.let { existing ->
+                    val changes = differences(incoming.table, values, existing)
+                    if (changes.isNotEmpty()) sourceFieldChoices.getOrPut(values["memoryId"].asString) { linkedMapOf() }[rowKey(incoming.table, key)] = changes.toSet()
+                }
+                skippedSourceRows++; return@rows
+            }
             val (values, omitted) = normalize(incoming)
             sensitive += omitted
             val table = incoming.table
@@ -125,6 +135,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
                     different++
                     if (changes.any { it in choices.fields[token].orEmpty() }) updated++
                     if (table == "companion_memories") memoryDifferenceKeys[values["id"].asString] = token
+                    if (table == "companion_sources") sourceFieldChoices.getOrPut(values["memoryId"].asString) { linkedMapOf() }[token] = changes.toSet()
                     if (details.size < detailLimit) details += PortableImportRowDifference(token, table,
                         labels.title(existing, labels.title(values, label(values, key))), changes.map {
                             val (current, incoming) = displayDifference(it, existing[it], values[it])
@@ -232,7 +243,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             details, issues.take(50), sensitive, localFiles.toList(), requiredTables, skillNames, newKeys, sameNameCopies,
             memorySources.memoryStates(), tableCounts,
             memorySources.conflictingMemoryIds.mapNotNullTo(linkedSetOf()) { memoryDifferenceKeys[it] },
-            memorySources.conflictingMemoryIds.size, skippedSourceRows)
+            memorySources.conflictingMemoryIds.size, skippedSourceRows, sourceFieldChoices)
     }
 
     /** Caller must hold one database transaction and compare preview fingerprint before this call. */
@@ -338,6 +349,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
 
     private fun skipMemorySource(incoming: PortableIncomingRow, choices: PortableImportChoices): Boolean =
         incoming.table == "companion_sources" && incoming.values["memoryId"]?.asString in choices.keepMemorySources
+
 
     private fun columns(table: String): List<Column> = schemas.getOrPut(table) {
         sql.query("PRAGMA table_info(${q(table)})").map {

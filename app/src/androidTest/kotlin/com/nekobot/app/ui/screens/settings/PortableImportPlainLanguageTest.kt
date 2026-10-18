@@ -111,6 +111,8 @@ class PortableImportPlainLanguageTest {
     }
     private fun screenshot(name: String) {
         compose.waitForIdle()
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        android.os.SystemClock.sleep(150)
         InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { image ->
             File(compose.activity.cacheDir, "import-review-$name.png").outputStream().use {
                 image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
@@ -206,6 +208,8 @@ class PortableImportPlainLanguageTest {
         openRelated()
         compose.onNodeWithTag("safe-difference-memory-0-keep").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("safe-difference-memory-0-replace").performScrollTo().assertIsDisplayed()
+        val visibleBounds = compose.onNodeWithTag("safe-difference-memory-0-replace").fetchSemanticsNode().boundsInRoot
+        assertTrue("Choice must have a visible touch target after scrolling", visibleBounds.height >= 48f * compose.activity.resources.displayMetrics.density - 1f)
         screenshot("small-large-text")
         compose.onNodeWithTag("safe-difference-memory-0-keep").performScrollTo().performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.import_difference_save)).assertIsDisplayed().performClick(); awaitReady()

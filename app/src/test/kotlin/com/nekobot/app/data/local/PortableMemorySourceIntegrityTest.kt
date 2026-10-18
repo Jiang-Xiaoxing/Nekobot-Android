@@ -126,6 +126,37 @@ class PortableMemorySourceIntegrityTest {
         assertTrue(sql.query("SELECT * FROM companion_sources").isEmpty())
     }
 
+    @Test fun recordUpdateAlsoUpdatesAnExistingMatchingSourceInsteadOfKeepingItsOldQuote() {
+        val baseline = rows(memory(), source(quote = "喜欢茉莉茶"))
+        planner.apply(baseline, overwrite(baseline))
+        sql.execute("UPDATE companion_memories SET content='本机旧记忆'")
+        val incoming = rows(memory(), source())
+        val before = planner.preview(incoming, PortableImportChoices())
+        val row = before.differences.first { it.table == "companion_memories" }
+        val kept = PortableImportChoices().withRecordChoice(row, false, before.sourceFieldChoices["memory"].orEmpty())
+        val keptPlan = planner.preview(incoming, kept)
+        val choices = kept.withRecordChoice(row, true, keptPlan.sourceFieldChoices["memory"].orEmpty())
+        val plan = planner.preview(incoming, choices)
+        assertTrue(plan.issues.isEmpty())
+        assertEquals(1, plan.tableCounts["companion_sources"]!!.updated)
+        assertEquals(2, planner.apply(incoming, choices))
+        assertEquals("我喜欢茉莉茶", sql.query("SELECT * FROM companion_sources").single()["quote"].asString)
+        assertEquals(0, planner.apply(incoming, choices))
+    }
+
+    @Test fun automaticExistingSourceUpdateStillRejectsAnUnverifiableQuote() {
+        val baseline = rows(memory(), source(quote = "喜欢茉莉茶"))
+        planner.apply(baseline, overwrite(baseline))
+        sql.execute("UPDATE companion_memories SET content='本机旧记忆'")
+        val incoming = rows(memory(), source(quote = "原文中没有这句话"))
+        val before = planner.preview(incoming, PortableImportChoices())
+        val row = before.differences.first { it.table == "companion_memories" }
+        val choices = PortableImportChoices().withRecordChoice(row, true, before.sourceFieldChoices["memory"].orEmpty())
+        assertTrue(planner.preview(incoming, choices).issues.any { it.contains("原话来源与当前聊天不一致") })
+        assertEquals("本机旧记忆", sql.query("SELECT * FROM companion_memories").single()["content"].asString)
+        assertEquals("喜欢茉莉茶", sql.query("SELECT * FROM companion_sources").single()["quote"].asString)
+    }
+
     @Test fun keepingBothMemoryAndItsSourcesLeavesLocalChangesUntouched() {
         sql.execute("UPDATE companion_memories SET content='本机后续修订'")
         val incoming = rows(memory())

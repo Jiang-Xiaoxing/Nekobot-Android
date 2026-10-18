@@ -50,9 +50,12 @@ internal fun PortableImportChoices.normalized(): PortableImportChoices = copy(
 )
 
 /** A memory and its incoming evidence are one user decision; keeping never mixes new evidence into old text. */
-internal fun PortableImportChoices.withRecordChoice(row: PortableImportRowDifference, useIncoming: Boolean): PortableImportChoices {
+internal fun PortableImportChoices.withRecordChoice(row: PortableImportRowDifference, useIncoming: Boolean,
+    sourceFields: Map<String, Set<String>> = emptyMap()): PortableImportChoices {
     val columns = row.fields.mapTo(linkedSetOf()) { it.column }
     val next = if (useIncoming) fields[row.key].orEmpty() + columns else fields[row.key].orEmpty() - columns
     val sources = row.memoryId?.let { if (useIncoming) keepMemorySources - it else keepMemorySources + it } ?: keepMemorySources
-    return copy(fields = fields + (row.key to next), keepMemorySources = sources).normalized()
+    val selected = (fields + (row.key to next)).toMutableMap()
+    sourceFields.forEach { (key, columns) -> selected[key] = if (useIncoming) selected[key].orEmpty() + columns else selected[key].orEmpty() - columns }
+    return copy(fields = selected, keepMemorySources = sources).normalized()
 }

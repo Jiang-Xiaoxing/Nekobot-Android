@@ -179,7 +179,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
                     var next = originalDraft
                     complete.rows.differences.filter { rowKeys == null || it.key in rowKeys }.forEach { row ->
                         ensureActive()
-                        next = next.withRecordChoice(row, useIncoming)
+                        next = next.withRecordChoice(row, useIncoming, complete.rows.sourceFieldChoices[row.memoryId].orEmpty())
                     }
                     next to operations.preview(context, prepared, selected, next, requestedLimit)
                 }

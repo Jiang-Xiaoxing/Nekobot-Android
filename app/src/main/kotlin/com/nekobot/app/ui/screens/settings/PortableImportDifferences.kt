@@ -34,9 +34,10 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
         row.fields.all { it.column in draft.fields[row.key].orEmpty() } || row.memoryId in draft.keepMemorySources
     }
     NekoDialog(onDismiss = onDismiss, title = stringResource(if (focused) R.string.import_review_compare else R.string.safe_import_changes),
-        message = stringResource(if (focused) R.string.import_review_memory_choice_hint else R.string.import_difference_notice),
+        message = if (focused) null else stringResource(R.string.import_difference_notice),
         confirmText = stringResource(R.string.import_difference_save), confirmEnabled = !busy && hasChoices,
         onConfirm = { onSave(draft.normalized()) }, onCancel = onDismiss, contentScrollable = true) {
+        if (focused) Text(stringResource(R.string.import_review_memory_choice_hint), style = MaterialTheme.typography.bodyMedium)
         if (busy) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(stringResource(R.string.safe_import_checking), style = MaterialTheme.typography.bodyMedium)
@@ -89,7 +90,7 @@ internal fun PortableImportDifferences(plan: PortableImportPreview, choices: Por
                     if (focused) "safe-difference-memory-$index" else "safe-difference-row-$index-${row.fields.first().column}",
                     if (row.memoryId != null) R.string.import_review_keep_memory else R.string.import_review_keep_record,
                     if (row.memoryId != null) R.string.import_review_update_memory else R.string.import_review_update_record) { replace ->
-                    draft = draft.withRecordChoice(row, replace)
+                    draft = draft.withRecordChoice(row, replace, plan.rows.sourceFieldChoices[row.memoryId].orEmpty())
                 }
             } else row.fields.forEach { field ->
                 Text(importFieldLabel(field.column), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
