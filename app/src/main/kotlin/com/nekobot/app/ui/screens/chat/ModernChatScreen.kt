@@ -3751,7 +3751,8 @@ private fun ModernFavoritesDialog(
     if (companion) {
         CompanionFavoritesReading(favorites, loading, selectedCollection, characterName,
             onBack = { if (selectedCollection != null) selectedCollection = null else onDismiss() },
-            onSelect = { selectedCollection = it }, onDelete = { deletingCollection = it })
+            onSelect = { selectedCollection = it }, onDelete = { deletingCollection = it },
+            importedSnapshots = { ImportedFavoriteSnapshotsEntry(sessionId) })
         return
     }
 
@@ -3806,18 +3807,20 @@ private fun ModernFavoritesDialog(
                     }
                 }
             }
-        } else if (favorites.isEmpty()) {
-            Text(
-                stringResource(R.string.chat_no_favorites_content),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp)
-            )
         } else {
             // 第一层：收藏夹列表
             LazyColumn(
                 modifier = Modifier.heightIn(max = 420.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                item { ImportedFavoriteSnapshotsEntry(sessionId) }
+                if (favorites.isEmpty()) item {
+                    Text(
+                        stringResource(R.string.chat_no_favorites_content),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
                 itemsIndexed(favorites, key = { index, item ->
                     item.get("id")?.takeIf { !it.isJsonNull }?.asString?.takeIf(String::isNotBlank)
                         ?: item.get("collection_id")?.takeIf { !it.isJsonNull }?.asString?.takeIf(String::isNotBlank)

@@ -1628,6 +1628,7 @@ fun ChatScreen(
                             .padding(8.dp)
                             .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     ) {
+                        ImportedImageDescriptionButton(image.prompt)
                         IconButton(onClick = { downloadGeneratedImage(image) }) {
                             Icon(
                                 imageVector = Icons.Filled.Download,
@@ -2197,6 +2198,7 @@ fun ChatScreen(
         MessageFavoritesDialog(
             favorites = favorites,
             loading = favoritesLoading,
+            importedSnapshots = { ImportedFavoriteSnapshotsEntry(sessionId) },
             onDismiss = { showFavoritesDialog = false }
         )
     }
@@ -2374,6 +2376,7 @@ private fun VoiceRecordingDialog(
 private fun MessageFavoritesDialog(
     favorites: List<JsonObject>,
     loading: Boolean,
+    importedSnapshots: (@Composable () -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var selectedCollection by remember(favorites) { mutableStateOf<JsonObject?>(null) }
@@ -2411,13 +2414,15 @@ private fun MessageFavoritesDialog(
                     }
                 }
             }
-        } else if (favorites.isEmpty()) {
-            Text(stringResource(R.string.chat_no_favorites), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
         } else {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 400.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                item { importedSnapshots?.invoke() }
+                if (favorites.isEmpty()) item {
+                    Text(stringResource(R.string.chat_no_favorites), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                }
                 itemsIndexed(
                     favorites,
                     key = { index, collection ->

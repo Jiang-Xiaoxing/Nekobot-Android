@@ -190,6 +190,14 @@ internal fun CompanionMemorySources(
                 Text(it.content, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
+            if (rows.isNotEmpty() && memory?.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED) item("partial-sources") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(textResources.getString(R.string.imported_history_partial_sources_title),
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text(textResources.getString(R.string.imported_history_partial_sources_message),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (rows.isEmpty()) item("empty") {
                 CompanionMemoryIntro(textResources.getString(R.string.single_role_no_original_messages_linked_yet), when {
                     memory?.manual == true -> textResources.getString(R.string.single_role_you_entered_this_memory_manually_it_has_no_linked_chat_sources)
