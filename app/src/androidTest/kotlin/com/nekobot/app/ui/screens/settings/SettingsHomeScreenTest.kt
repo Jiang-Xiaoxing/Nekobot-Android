@@ -120,7 +120,6 @@ class SettingsHomeScreenTest {
     ) {
         var latest by remember { mutableStateOf(false) }
         var archived by remember { mutableStateOf(true) }
-        var optimize by remember { mutableStateOf(false) }
         SettingsHomeContent(
             scrollState = rememberScrollState(),
             appMode = mode,
@@ -130,11 +129,9 @@ class SettingsHomeScreenTest {
             recentSessionsIncludeArchived = archived,
             appLockEnabled = false,
             appLockAvailable = lockAvailable,
-            imagePromptOptimizeEnabled = optimize,
             onOpenLatestSessionChange = { latest = it },
             onIncludeArchivedChange = { archived = it },
             onAppLockChange = onLock,
-            onImagePromptOptimizeChange = { optimize = it },
             onLanguageClick = {},
             onConnectionClick = {},
             onNavigate = onNavigate
@@ -150,28 +147,23 @@ class SettingsHomeScreenTest {
         image.recycle()
     }
 
-    @Test fun localAndServerModesKeepEveryApplicableHomeDestination() {
+    @Test fun appSettingsKeepPreferencesPermissionsAndServerFeatureSwitchesOnly() {
         val visited = mutableListOf<String>()
         var mode by mutableStateOf(AppMode.LOCAL)
-        compose.setContent { Theme { Box(Modifier.testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) { Home(mode, visited::add) } } }
-        val common = listOf("data_portability", "webdav_backup", "data_maintenance", "agent_settings", "logs", "diagnostic_center", "about")
-        (listOf("local_ai_models") + common).forEach { route ->
-            compose.onNodeWithTag("settings-home-$route").performScrollTo().performClick()
-        }
-        assertEquals(listOf("local_ai_models") + common, visited)
+        compose.setContent { Theme { Box(Modifier.testTag("settings-test-root")) { Home(mode, visited::add) } } }
+        val common = listOf("system_operations", "about")
+        common.forEach { compose.onNodeWithTag("settings-home-$it").performScrollTo().performClick() }
+        assertEquals(common, visited)
         compose.onNodeWithTag("settings-home-feature_switches").assertDoesNotExist()
-        compose.onNodeWithTag("settings-home-system_settings").assertDoesNotExist()
-        compose.onNodeWithTag("settings-home-config_transfer").assertDoesNotExist()
-        compose.runOnIdle { mode = AppMode.SERVER; visited.clear() }
-        (common + listOf("feature_switches", "system_settings", "config_transfer")).forEach { route ->
-            compose.onNodeWithTag("settings-home-$route").performScrollTo().performClick()
+        listOf("local_ai_models", "data_portability", "webdav_backup", "data_maintenance", "agent_settings", "logs", "diagnostic_center", "system_settings", "config_transfer", "image-prompt").forEach {
+            compose.onNodeWithTag("settings-home-$it").assertDoesNotExist()
         }
-        assertEquals(common + listOf("feature_switches", "system_settings", "config_transfer"), visited)
-        compose.onNodeWithTag("settings-home-local_ai_models").assertDoesNotExist()
-        compose.onNodeWithTag("settings-home-image-prompt").assertDoesNotExist()
-        // The index does not expose the expert form or operations inline.
+        compose.runOnIdle { mode = AppMode.SERVER; visited.clear() }
+        (common + "feature_switches").forEach { compose.onNodeWithTag("settings-home-$it").performScrollTo().performClick() }
+        assertEquals(common + "feature_switches", visited)
         compose.onNodeWithTag("settings-connection-server-url").assertDoesNotExist()
         compose.onNodeWithTag("settings-connection-reload").assertDoesNotExist()
+        screenshot("normal-server")
     }
 
     @Test fun largeTextAndSmallWidthKeepNavigationAndWholeRowSwitchesReachable() {
@@ -181,21 +173,16 @@ class SettingsHomeScreenTest {
                 Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) { Home(AppMode.LOCAL) }
             }
         }
-        compose.onNodeWithTag("settings-home-open-latest").performScrollTo()
-            .assertHeightIsAtLeast(48.dp).assertIsOff().performClick().assertIsOn()
-        compose.onNodeWithTag("settings-home-include-archived").performScrollTo().assertIsOn()
-            .performClick().assertIsOff()
+        compose.onNodeWithTag("settings-home-open-latest").performScrollTo().assertHeightIsAtLeast(48.dp).assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithTag("settings-home-include-archived").performScrollTo().assertIsOn().performClick().assertIsOff()
         screenshot("large-dark-common")
-        compose.onNodeWithTag("settings-home-image-prompt").performScrollTo().assertIsOff()
-            .performClick().assertIsOn()
-        compose.onNodeWithTag("settings-home-data_portability").performScrollTo().assertIsDisplayed()
-            .assertHeightIsAtLeast(48.dp)
-        val dataBounds = compose.onNodeWithTag("settings-home-data_portability").getUnclippedBoundsInRoot()
-        val viewportBounds = compose.onNodeWithTag("settings-test-root").getUnclippedBoundsInRoot()
-        assertTrue(dataBounds.top >= viewportBounds.top && dataBounds.bottom <= viewportBounds.bottom)
-        screenshot("large-dark-data")
+        compose.onNodeWithTag("settings-home-system_operations").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        val bounds = compose.onNodeWithTag("settings-home-system_operations").getUnclippedBoundsInRoot()
+        val viewport = compose.onNodeWithTag("settings-test-root").getUnclippedBoundsInRoot()
+        assertTrue(bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+        screenshot("large-dark-permissions")
         compose.onNodeWithTag("settings-home-about").performScrollTo().assertIsDisplayed()
-        screenshot("large-dark-support")
+        screenshot("large-dark-about")
     }
 
     @Test fun pendingFingerprintAuthenticationDisablesTheSingleSwitchTarget() {
@@ -244,7 +231,7 @@ class SettingsHomeScreenTest {
         val visited = mutableListOf<String>()
         compose.setContent {
             Theme {
-                Box(Modifier.testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
                     val nav = rememberNavController()
                     NavHost(nav, "settings") {
                         composable("settings") {
@@ -265,20 +252,8 @@ class SettingsHomeScreenTest {
             }
         }
         screenshot("normal-common")
-        compose.onNodeWithTag("settings-home-data_portability").performScrollTo()
-        screenshot("normal-data")
         compose.onNodeWithTag("settings-home-about").performScrollTo()
-        screenshot("normal-support")
-        compose.onNodeWithTag("settings-home-data_portability").performScrollTo().performClick()
-        compose.onNodeWithTag("portability-tab-import").assertIsDisplayed()
-        compose.onNodeWithTag("safe-import-choose").assertIsDisplayed()
-        screenshot("combined-import")
-        compose.onNodeWithTag("portability-tab-export").performClick()
-        compose.onNodeWithTag("portability-export-action").assertIsDisplayed()
-        screenshot("combined-export")
-        compose.onNodeWithTag("portability-back").performClick()
-        compose.onNodeWithTag("settings-home-data_portability").assertIsDisplayed()
-        compose.runOnIdle { visited.clear() }
+        screenshot("normal-about")
         compose.onNodeWithTag("settings-home-connection").performScrollTo()
         fun homeScroll() = compose.onNodeWithTag("settings-home-scroll").fetchSemanticsNode()
             .config[SemanticsProperties.VerticalScrollAxisRange].value()
@@ -293,15 +268,42 @@ class SettingsHomeScreenTest {
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithTag("settings-home-connection").assertIsDisplayed()
         assertEquals(before, homeScroll(), 1f)
-        compose.onNodeWithTag("settings-home-agent_settings").performScrollTo().performTouchInput {
+        compose.onNodeWithTag("settings-home-system_operations").performScrollTo().performTouchInput {
             click()
             advanceEventTime(1)
             click()
         }
         compose.onNodeWithTag("settings-test-return").assertIsDisplayed()
-        assertEquals(listOf("agent_settings"), visited)
+        assertEquals(listOf("system_operations"), visited)
         compose.onNodeWithTag("settings-test-return").performClick()
-        compose.onNodeWithTag("settings-home-agent_settings").assertIsDisplayed().performClick()
-        assertEquals(listOf("agent_settings", "agent_settings"), visited)
+        compose.onNodeWithTag("settings-home-system_operations").assertIsDisplayed().performClick()
+        assertEquals(listOf("system_operations", "system_operations"), visited)
     }
+    @Test fun maintenanceStillOpensTheExistingImportAndExportTabs() {
+        compose.setContent {
+            Theme {
+                Box(Modifier.testTag("settings-test-root")) {
+                    val nav = rememberNavController()
+                    NavHost(nav, "maintenance") {
+                        composable("maintenance") {
+                            com.nekobot.app.ui.screens.more.MoreCategoryContent(
+                                com.nekobot.app.ui.screens.more.MoreCategory.MAINTENANCE, AppMode.LOCAL,
+                                { nav.navigate("test/$it") }, {})
+                        }
+                        composable("test/data_portability") { DataPortabilityScreen(onBack = { nav.popBackStack() }) }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("more-home-data_portability").performScrollTo().performClick()
+        compose.onNodeWithTag("portability-tab-import").assertIsDisplayed()
+        compose.onNodeWithTag("safe-import-choose").assertIsDisplayed()
+        screenshot("combined-import")
+        compose.onNodeWithTag("portability-tab-export").performClick()
+        compose.onNodeWithTag("portability-export-action").assertIsDisplayed()
+        screenshot("combined-export")
+        compose.onNodeWithTag("portability-back").performClick()
+        compose.onNodeWithTag("more-home-data_portability").assertIsDisplayed()
+    }
+
 }

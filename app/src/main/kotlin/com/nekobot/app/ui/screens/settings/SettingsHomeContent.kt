@@ -17,22 +17,14 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.ImportExport
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +43,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nekobot.app.R
+import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.data.local.AppMode
 
 /** Settings navigation and preferences only. Connection details stay on the next page. */
@@ -64,11 +57,9 @@ internal fun SettingsHomeContent(
     recentSessionsIncludeArchived: Boolean,
     appLockEnabled: Boolean,
     appLockAvailable: Boolean,
-    imagePromptOptimizeEnabled: Boolean,
     onOpenLatestSessionChange: (Boolean) -> Unit,
     onIncludeArchivedChange: (Boolean) -> Unit,
     onAppLockChange: (Boolean) -> Unit,
-    onImagePromptOptimizeChange: (Boolean) -> Unit,
     onLanguageClick: () -> Unit,
     onConnectionClick: () -> Unit,
     onNavigate: (String) -> Unit,
@@ -85,18 +76,8 @@ internal fun SettingsHomeContent(
     ) {
         errorContent()
         SettingsHomeGroup(stringResource(R.string.settings_home_common)) {
-            if (appMode == AppMode.LOCAL) {
-                SettingsHomeNavRow(
-                    icon = Icons.Filled.Memory,
-                    title = stringResource(R.string.settings_local_ai_config),
-                    subtitle = stringResource(R.string.settings_home_models_summary),
-                    tag = "settings-home-local_ai_models",
-                    onClick = { onNavigate("local_ai_models") }
-                )
-                SettingsHomeDivider()
-            }
             SettingsHomeNavRow(
-                icon = Icons.Filled.Language,
+                icon = Icons.Outlined.Language,
                 title = stringResource(R.string.settings_language),
                 subtitle = language,
                 tag = "settings-home-language",
@@ -104,7 +85,7 @@ internal fun SettingsHomeContent(
             )
             SettingsHomeDivider()
             SettingsHomeSwitchRow(
-                icon = Icons.Filled.History,
+                icon = Icons.Outlined.History,
                 title = stringResource(R.string.settings_home_open_latest),
                 checked = openLatestSessionOnLaunch,
                 tag = "settings-home-open-latest",
@@ -112,7 +93,7 @@ internal fun SettingsHomeContent(
             )
             SettingsHomeDivider()
             SettingsHomeSwitchRow(
-                icon = Icons.Filled.Forum,
+                icon = Icons.Outlined.Forum,
                 title = stringResource(R.string.settings_home_include_archived),
                 checked = recentSessionsIncludeArchived,
                 tag = "settings-home-include-archived",
@@ -122,7 +103,7 @@ internal fun SettingsHomeContent(
 
         SettingsHomeGroup(stringResource(R.string.settings_home_privacy_experience)) {
             SettingsHomeSwitchRow(
-                icon = Icons.Filled.Fingerprint,
+                icon = Icons.Outlined.Fingerprint,
                 title = stringResource(R.string.settings_app_lock),
                 subtitle = stringResource(R.string.settings_home_lock_summary),
                 checked = appLockEnabled,
@@ -130,83 +111,29 @@ internal fun SettingsHomeContent(
                 tag = "settings-home-app-lock",
                 onCheckedChange = onAppLockChange
             )
-            if (appMode == AppMode.LOCAL) {
-                SettingsHomeDivider()
-                SettingsHomeSwitchRow(
-                    icon = Icons.Filled.AutoAwesome,
-                    title = stringResource(R.string.settings_message_image_prompt_optimize),
-                    subtitle = stringResource(R.string.settings_home_image_prompt_summary),
-                    checked = imagePromptOptimizeEnabled,
-                    tag = "settings-home-image-prompt",
-                    onCheckedChange = onImagePromptOptimizeChange
-                )
-            }
-        }
-
-        SettingsHomeGroup(stringResource(R.string.settings_home_data_backup)) {
-            SettingsHomeNavRow(
-                icon = Icons.Filled.ImportExport,
-                title = stringResource(R.string.settings_data_portability),
-                subtitle = stringResource(R.string.settings_home_portability_summary),
-                tag = "settings-home-data_portability",
-                onClick = { onNavigate("data_portability") }
-            )
             SettingsHomeDivider()
             SettingsHomeNavRow(
-                icon = Icons.Filled.CloudUpload,
-                title = stringResource(R.string.settings_webdav_backup),
-                subtitle = stringResource(R.string.settings_webdav_backup_desc),
-                tag = "settings-home-webdav_backup",
-                onClick = { onNavigate("webdav_backup") }
-            )
-            if (appMode != AppMode.LOCAL) {
-                SettingsHomeDivider()
-                SettingsHomeNavRow(
-                    icon = Icons.Filled.ImportExport,
-                    title = stringResource(R.string.settings_config_transfer),
-                    subtitle = stringResource(R.string.settings_config_transfer_desc),
-                    tag = "settings-home-config_transfer",
-                    onClick = { onNavigate("config_transfer") }
-                )
-            }
-            SettingsHomeDivider()
-            SettingsHomeNavRow(
-                icon = Icons.Filled.Build,
-                title = stringResource(R.string.settings_data_maintenance),
-                subtitle = stringResource(R.string.settings_data_maintenance_desc),
-                tag = "settings-home-data_maintenance",
-                onClick = { onNavigate("data_maintenance") }
+                icon = Icons.Outlined.Security,
+                title = stringResource(R.string.more_system_operations),
+                subtitle = stringResource(R.string.more_permissions_summary),
+                tag = "settings-home-system_operations",
+                onClick = { onNavigate(Routes.SYSTEM_OPERATIONS) }
             )
         }
 
         SettingsHomeGroup(stringResource(R.string.settings_home_advanced)) {
-            SettingsHomeNavRow(
-                icon = Icons.Filled.Psychology,
-                title = stringResource(R.string.agent_settings_title),
-                subtitle = stringResource(R.string.settings_home_agent_summary),
-                tag = "settings-home-agent_settings",
-                onClick = { onNavigate("agent_settings") }
-            )
             if (appMode != AppMode.LOCAL) {
-                SettingsHomeDivider()
                 SettingsHomeNavRow(
-                    icon = Icons.Filled.Tune,
+                    icon = Icons.Outlined.Tune,
                     title = stringResource(R.string.settings_feature_switches),
                     subtitle = stringResource(R.string.settings_feature_switches_desc),
                     tag = "settings-home-feature_switches",
                     onClick = { onNavigate("feature_switches") }
                 )
                 SettingsHomeDivider()
-                SettingsHomeNavRow(
-                    icon = Icons.Filled.Settings,
-                    title = stringResource(R.string.settings_system_settings),
-                    tag = "settings-home-system_settings",
-                    onClick = { onNavigate("system_settings") }
-                )
             }
-            SettingsHomeDivider()
             SettingsHomeNavRow(
-                icon = Icons.Filled.Tune,
+                icon = Icons.Outlined.Tune,
                 title = stringResource(R.string.settings_home_connection),
                 subtitle = stringResource(
                     if (appMode == AppMode.LOCAL) R.string.settings_local_mode
@@ -219,25 +146,7 @@ internal fun SettingsHomeContent(
 
         SettingsHomeGroup(stringResource(R.string.settings_home_support_about)) {
             SettingsHomeNavRow(
-                icon = Icons.Filled.Description,
-                title = stringResource(
-                    if (appMode == AppMode.LOCAL) R.string.settings_local_logs
-                    else R.string.settings_logs_view
-                ),
-                tag = "settings-home-logs",
-                onClick = { onNavigate("logs") }
-            )
-            SettingsHomeDivider()
-            SettingsHomeNavRow(
-                icon = Icons.Filled.BugReport,
-                title = stringResource(R.string.diagnostic_center_title),
-                subtitle = stringResource(R.string.settings_home_diagnostics_summary),
-                tag = "settings-home-diagnostic_center",
-                onClick = { onNavigate("diagnostic_center") }
-            )
-            SettingsHomeDivider()
-            SettingsHomeNavRow(
-                icon = Icons.Filled.Info,
+                icon = Icons.Outlined.Info,
                 title = stringResource(R.string.settings_about),
                 subtitle = "v$version",
                 tag = "settings-home-about",

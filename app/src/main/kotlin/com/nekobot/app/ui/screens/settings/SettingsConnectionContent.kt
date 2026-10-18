@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,7 +55,7 @@ internal fun SettingsConnectionContent(
         errorContent()
         SettingsHomeGroup(stringResource(R.string.settings_run_mode)) {
             SettingsHomeSwitchRow(
-                icon = Icons.Filled.Tune,
+                icon = Icons.Outlined.Tune,
                 title = stringResource(R.string.settings_local_mode),
                 subtitle = stringResource(
                     if (appMode == AppMode.LOCAL) R.string.settings_local_mode_desc
@@ -109,7 +109,7 @@ internal fun SettingsConnectionContent(
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                         .testTag("settings-connection-reload")
                 ) {
-                    Icon(Icons.Filled.CloudSync, contentDescription = null)
+                    Icon(Icons.Outlined.CloudSync, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.settings_reload_config))
                 }
@@ -131,7 +131,7 @@ internal fun SettingsConnectionContent(
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth().testTag("settings-connection-logout")
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.settings_logout))
                     }

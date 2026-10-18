@@ -75,17 +75,6 @@ import org.junit.Test
 class MoreHomeScreenTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private val commonRoutes = listOf(
-        Routes.AI_CONFIG_CENTER, Routes.GLOBAL_SEARCH, Routes.SETTINGS,
-        Routes.MEMORY, Routes.AGENT_MEMORY, Routes.STATE_HISTORY,
-        Routes.STYLE_SETTINGS, Routes.RELATIONSHIP_BACKGROUND, Routes.STICKERS,
-        Routes.EXTENSIONS, Routes.SYSTEM_OPERATIONS
-    )
-    private val localRoutes = commonRoutes.toMutableList().apply {
-        add(indexOf(Routes.AGENT_MEMORY), Routes.AGENT_CHARACTER_MEMORY)
-        add(Routes.DB_PROFILE)
-    }
-
     @Before fun emulatorOnly() {
         assumeTrue(Build.HARDWARE.contains("ranchu") || Build.HARDWARE.contains("goldfish"))
     }
@@ -93,12 +82,13 @@ class MoreHomeScreenTest {
     @Composable private fun Theme(
         scale: Float = 1f,
         dark: Boolean = false,
+        locale: Locale = Locale.SIMPLIFIED_CHINESE,
         content: @Composable () -> Unit
     ) {
-        val context = remember {
+        val context = remember(locale) {
             compose.activity.createConfigurationContext(
                 Configuration(compose.activity.resources.configuration).apply {
-                    setLocale(Locale.SIMPLIFIED_CHINESE)
+                    setLocale(locale)
                 }
             )
         }
@@ -124,14 +114,6 @@ class MoreHomeScreenTest {
         }
     }
 
-    @Composable private fun Home(
-        mode: AppMode,
-        onNavigate: (String) -> Unit = {},
-        onLogout: () -> Unit = {}
-    ) {
-        MoreHomeContent(mode, "synthetic-user", onNavigate, onLogout)
-    }
-
     private fun screenshot(name: String) {
         compose.waitForIdle()
         val image = compose.onNodeWithTag("more-test-root").captureToImage().asAndroidBitmap()
@@ -141,123 +123,171 @@ class MoreHomeScreenTest {
         image.recycle()
     }
 
-    @Test fun localAndServerModesKeepEveryApplicableDestination() {
+    private val homeRoutes = listOf(
+        Routes.GLOBAL_SEARCH, Routes.MORE_MEMORY, Routes.MORE_APPEARANCE,
+        Routes.MORE_AI, Routes.SETTINGS, Routes.MORE_MAINTENANCE
+    )
+
+    private fun destinations(category: MoreCategory, mode: AppMode): List<String> = when (category) {
+        MoreCategory.MEMORY -> listOf(Routes.MEMORY) +
+            (if (mode == AppMode.LOCAL) listOf(Routes.AGENT_CHARACTER_MEMORY) else emptyList()) +
+            listOf(Routes.AGENT_MEMORY, Routes.STATE_HISTORY)
+        MoreCategory.APPEARANCE -> listOf(Routes.STYLE_SETTINGS, Routes.RELATIONSHIP_BACKGROUND, Routes.STICKERS)
+        MoreCategory.AI -> listOf(Routes.AI_CONFIG_CENTER, Routes.AGENT_SETTINGS, Routes.EXTENSIONS)
+        MoreCategory.MAINTENANCE -> listOf(Routes.DATA_PORTABILITY, Routes.WEBDAV_BACKUP) +
+            (if (mode == AppMode.SERVER) listOf(Routes.CONFIG_TRANSFER) else emptyList()) +
+            listOf(Routes.LOGS, Routes.DIAGNOSTIC_CENTER, Routes.DATA_MAINTENANCE) +
+            listOf(if (mode == AppMode.LOCAL) Routes.DB_PROFILE else Routes.SYSTEM_SETTINGS)
+        MoreCategory.APP -> emptyList()
+    }
+
+    @Test fun homeShowsSearchAndExactlyFiveCategoryEntrances() {
         val visited = mutableListOf<String>()
+        compose.setContent { Theme { Box(Modifier.testTag("more-test-root")) { MoreHomeContent(visited::add) } } }
+        homeRoutes.forEach { route ->
+            compose.onNodeWithTag("more-home-$route").performScrollTo().assertIsDisplayed().performClick()
+        }
+        assertEquals(homeRoutes, visited)
+        listOf(Routes.AI_CONFIG_CENTER, Routes.MEMORY, Routes.EXTENSIONS, Routes.SYSTEM_OPERATIONS, Routes.DB_PROFILE).forEach {
+            compose.onNodeWithTag("more-home-$it").assertDoesNotExist()
+        }
+        compose.onNodeWithTag("more-home-${Routes.GLOBAL_SEARCH}").performScrollTo()
+        screenshot("normal-home")
+    }
+
+    @Test fun categoriesKeepEveryApplicableOriginalDestinationAndModeVisibility() {
+        val visited = mutableListOf<String>()
+        var category by mutableStateOf(MoreCategory.MEMORY)
         var mode by mutableStateOf(AppMode.LOCAL)
-        var logouts = 0
+        var optimize by mutableStateOf(false)
         compose.setContent {
             Theme {
                 Box(Modifier.testTag("more-test-root")) {
-                    Home(mode, visited::add, { logouts++ })
+                    MoreCategoryContent(category, mode, visited::add, {}, imagePromptOptimizeEnabled = optimize,
+                        onImagePromptOptimizeChange = { optimize = it })
                 }
             }
         }
-        localRoutes.forEach { route ->
-            compose.onNodeWithTag("more-home-$route").performScrollTo()
-                .assertIsDisplayed().performClick()
-        }
-        assertEquals(localRoutes, visited)
-        compose.onNodeWithTag("more-home-logout").assertDoesNotExist()
-
-        compose.runOnIdle { mode = AppMode.SERVER; visited.clear() }
-        commonRoutes.forEach { route ->
-            compose.onNodeWithTag("more-home-$route").performScrollTo()
-                .assertIsDisplayed().performClick()
-        }
-        assertEquals(commonRoutes, visited)
-        compose.onNodeWithTag("more-home-${Routes.AGENT_CHARACTER_MEMORY}").assertDoesNotExist()
-        compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").assertDoesNotExist()
-        compose.onNodeWithTag("more-home-logout").performScrollTo().performClick()
-        assertEquals(1, logouts)
-        screenshot("normal-server-management")
-    }
-
-    @Test fun commonDestinationsAppearBeforeMemoryAndAppearance() {
-        compose.setContent {
-            Theme {
-                Box(Modifier.testTag("more-test-root")) { Home(AppMode.LOCAL) }
+        listOf(AppMode.LOCAL, AppMode.SERVER).forEach { currentMode ->
+            MoreCategory.entries.filter { it != MoreCategory.APP }.forEach { currentCategory ->
+                compose.runOnIdle { mode = currentMode; category = currentCategory; visited.clear() }
+                destinations(currentCategory, currentMode).forEach { route ->
+                    compose.onNodeWithTag("more-home-$route").performScrollTo().assertIsDisplayed().performClick()
+                }
+                assertEquals(destinations(currentCategory, currentMode), visited)
+                if (currentCategory == MoreCategory.AI) {
+                    if (currentMode == AppMode.LOCAL) {
+                        compose.onNodeWithTag("more-ai-image-prompt").performScrollTo().performClick()
+                        assertTrue(optimize)
+                    } else compose.onNodeWithTag("more-ai-image-prompt").assertDoesNotExist()
+                    compose.onNodeWithTag("more-home-${Routes.LOCAL_AI_MODELS}").assertDoesNotExist()
+                }
+                if (currentMode == AppMode.SERVER) {
+                    compose.onNodeWithTag("more-home-${Routes.AGENT_CHARACTER_MEMORY}").assertDoesNotExist()
+                    compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").assertDoesNotExist()
+                } else {
+                    compose.onNodeWithTag("more-home-${Routes.CONFIG_TRANSFER}").assertDoesNotExist()
+                    compose.onNodeWithTag("more-home-${Routes.SYSTEM_SETTINGS}").assertDoesNotExist()
+                }
+                screenshot("normal-${currentMode.name.lowercase()}-${currentCategory.name.lowercase()}")
             }
         }
-        val ai = compose.onNodeWithTag("more-home-${Routes.AI_CONFIG_CENTER}")
-            .assertIsDisplayed().getUnclippedBoundsInRoot()
-        val search = compose.onNodeWithTag("more-home-${Routes.GLOBAL_SEARCH}")
-            .assertIsDisplayed().getUnclippedBoundsInRoot()
-        val settings = compose.onNodeWithTag("more-home-${Routes.SETTINGS}")
-            .assertIsDisplayed().getUnclippedBoundsInRoot()
-        val memory = compose.onNodeWithTag("more-home-${Routes.MEMORY}").getUnclippedBoundsInRoot()
-        assertTrue(ai.top < search.top && search.top < settings.top && settings.top < memory.top)
-        screenshot("normal-common")
-        compose.onNodeWithTag("more-home-${Routes.AGENT_MEMORY}").performScrollTo()
-        screenshot("normal-memory")
-        compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").performScrollTo()
-        screenshot("normal-management")
     }
 
-    @Test fun smallScreenLargeTextKeepsAllRowsVisibleAfterScrolling() {
-        val visited = mutableListOf<String>()
+    @Test fun smallScreenLargeTextKeepsHomeAndEveryCategoryRowReachable() {
+        var category by mutableStateOf<MoreCategory?>(null)
         compose.setContent {
             Theme(scale = 1.6f, dark = true) {
-                Box(
-                    Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp)
-                        .fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
-                        .testTag("more-test-root").background(MaterialTheme.colorScheme.background)
-                ) { Home(AppMode.LOCAL, visited::add) }
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing).testTag("more-test-root")
+                    .background(MaterialTheme.colorScheme.background)) {
+                    category?.let { MoreCategoryContent(it, AppMode.LOCAL, {}, {}) }
+                        ?: MoreHomeContent({})
+                }
             }
         }
-        val root = compose.onNodeWithTag("more-test-root").getUnclippedBoundsInRoot()
-        localRoutes.forEach { route ->
+        fun check(route: String) {
             val row = compose.onNodeWithTag("more-home-$route").performScrollTo()
                 .assertIsDisplayed().assertHeightIsAtLeast(48.dp)
             val bounds = row.getUnclippedBoundsInRoot()
-            assertTrue("$route is clipped", bounds.top >= root.top && bounds.bottom <= root.bottom)
-            row.performClick()
-            if (route == Routes.SETTINGS) screenshot("large-dark-common")
-            if (route == Routes.AGENT_MEMORY) screenshot("large-dark-memory")
+            val viewport = compose.onNodeWithTag("more-test-root").getUnclippedBoundsInRoot()
+            assertTrue("$route is clipped", bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
         }
-        assertEquals(localRoutes, visited)
-        screenshot("large-dark-management")
+        homeRoutes.forEach(::check)
+        screenshot("large-dark-home-bottom")
+        compose.onNodeWithTag("more-home-${Routes.GLOBAL_SEARCH}").performScrollTo()
+        screenshot("large-dark-home-top")
+        MoreCategory.entries.filter { it != MoreCategory.APP }.forEach { current ->
+            compose.runOnIdle { category = current }
+            destinations(current, AppMode.LOCAL).forEach(::check)
+            screenshot("large-dark-${current.name.lowercase()}")
+        }
     }
 
-    @Test fun destinationBackRestoresScrollAndAllowsRepeatedEntry() {
+    @Test fun largeEnglishLabelsWrapWithinTheSmallViewport() {
+        compose.setContent {
+            Theme(scale = 1.6f, locale = Locale.ENGLISH) {
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing).testTag("more-test-root")) {
+                    MoreHomeContent({})
+                }
+            }
+        }
+        homeRoutes.forEach { route ->
+            val bounds = compose.onNodeWithTag("more-home-$route").performScrollTo()
+                .assertIsDisplayed().getUnclippedBoundsInRoot()
+            val viewport = compose.onNodeWithTag("more-test-root").getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= viewport.left && bounds.right <= viewport.right)
+            assertTrue(bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+        }
+        screenshot("large-english-home")
+    }
+
+    @Test fun destinationAndCategoryBackRestoreBothScrollPositionsAndAllowReentry() {
         val visited = mutableListOf<String>()
         compose.setContent {
             Theme {
-                Box(Modifier.testTag("more-test-root")) {
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("more-test-root")) {
                     val nav = rememberNavController()
-                    NavHost(nav, "synthetic-more") {
-                        composable("synthetic-more") {
-                            Home(AppMode.LOCAL, onNavigate = {
-                                visited += it
-                                nav.navigate("synthetic-destination")
-                            })
+                    NavHost(nav, Routes.MORE) {
+                        composable(Routes.MORE) { MoreHomeContent(rememberMoreNavigateOnce({ nav.navigate(it) })) }
+                        composable(Routes.MORE_MAINTENANCE) {
+                            MoreCategoryContent(MoreCategory.MAINTENANCE, AppMode.LOCAL,
+                                rememberMoreNavigateOnce({ visited += it; nav.navigate("synthetic-destination") }),
+                                { nav.popBackStack() })
                         }
                         composable("synthetic-destination") {
                             Column {
-                                Text("Synthetic destination")
-                                Button(
-                                    onClick = { nav.popBackStack() },
-                                    modifier = Modifier.testTag("more-test-return")
-                                ) { Text("Back") }
+                                Text("合成测试目的页")
+                                Button(onClick = { nav.popBackStack() }, modifier = Modifier.testTag("more-test-return")) { Text("返回") }
                             }
                         }
                     }
                 }
             }
         }
-        fun homeScroll() = compose.onNodeWithTag("more-home-scroll").fetchSemanticsNode()
+        fun scroll(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode()
             .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onNodeWithTag("more-home-${Routes.MORE_MAINTENANCE}").performScrollTo()
+        val homeBefore = scroll("more-home-scroll")
+        assertTrue(homeBefore > 0f)
+        compose.onNodeWithTag("more-home-${Routes.MORE_MAINTENANCE}").performClick()
         compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").performScrollTo()
-        val before = homeScroll()
-        assertTrue(before > 0f)
-        compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").performClick()
-        compose.onNodeWithTag("more-test-return").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").assertIsDisplayed()
-        assertEquals(before, homeScroll(), 1f)
-        compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").performClick()
-        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").assertIsDisplayed()
+        val categoryBefore = scroll("more-category-scroll")
+        assertTrue(categoryBefore > 0f)
+        repeat(2) {
+            compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").performClick()
+            compose.onNodeWithTag("more-test-return").performClick()
+            compose.onNodeWithTag("more-home-${Routes.DB_PROFILE}").assertIsDisplayed()
+            assertEquals(categoryBefore, scroll("more-category-scroll"), 1f)
+        }
         assertEquals(listOf(Routes.DB_PROFILE, Routes.DB_PROFILE), visited)
-        assertEquals(before, homeScroll(), 1f)
+        compose.onNodeWithTag("more-category-back").performClick()
+        compose.onNodeWithTag("more-home-${Routes.MORE_MAINTENANCE}").assertIsDisplayed()
+        assertEquals(homeBefore, scroll("more-home-scroll"), 1f)
+        compose.onNodeWithTag("more-home-${Routes.MORE_MAINTENANCE}").performClick()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("more-home-${Routes.MORE_MAINTENANCE}").assertIsDisplayed()
     }
 
     @Test fun rapidRepeatedNavigationWaitsForThePageToResume() {
@@ -270,16 +300,8 @@ class MoreHomeScreenTest {
                 lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
             }
         }
-        compose.setContent {
-            Theme {
-                Home(AppMode.LOCAL, rememberMoreNavigateOnce(visited::add, owner))
-            }
-        }
-        compose.onNodeWithTag("more-home-${Routes.SETTINGS}").performTouchInput {
-            click()
-            advanceEventTime(1)
-            click()
-        }
+        compose.setContent { Theme { MoreHomeContent(rememberMoreNavigateOnce(visited::add, owner)) } }
+        compose.onNodeWithTag("more-home-${Routes.SETTINGS}").performScrollTo().performTouchInput { click(); advanceEventTime(1); click() }
         assertEquals(listOf(Routes.SETTINGS), visited)
         compose.runOnIdle { owner.lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE) }
         compose.onNodeWithTag("more-home-${Routes.SETTINGS}").performClick()

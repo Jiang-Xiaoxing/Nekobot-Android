@@ -280,9 +280,6 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
     val appLockState = remember { mutableStateOf(ServiceContainer.prefs.appLockEnabled) }
     var appLockEnabled by appLockState
     val pendingAppLockState = remember { mutableStateOf<Boolean?>(null) }
-    var imagePromptOptimizeEnabled by remember {
-        mutableStateOf(ServiceContainer.prefs.messageImagePromptOptimizeEnabled)
-    }
     val activity = remember(context) { context.findFragmentActivity() }
     val appLockPrompt = remember(activity) {
         activity?.let { host ->
@@ -379,7 +376,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(if (connectionVisible) R.string.settings_home_connection else R.string.settings_title))
+                    Text(stringResource(if (connectionVisible) R.string.settings_home_connection else R.string.more_category_app))
                 },
                 navigationIcon = {
                     IconButton(
@@ -442,14 +439,9 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                     recentSessionsIncludeArchived = recentSessionsIncludeArchived,
                     appLockEnabled = appLockEnabled,
                     appLockAvailable = pendingAppLockState.value == null,
-                    imagePromptOptimizeEnabled = imagePromptOptimizeEnabled,
                     onOpenLatestSessionChange = { ServiceContainer.prefs.openLatestSessionOnLaunch = it },
                     onIncludeArchivedChange = { ServiceContainer.prefs.recentSessionsIncludeArchived = it },
                     onAppLockChange = ::requestAppLockChange,
-                    onImagePromptOptimizeChange = { enabled ->
-                        imagePromptOptimizeEnabled = enabled
-                        ServiceContainer.prefs.messageImagePromptOptimizeEnabled = enabled
-                    },
                     onLanguageClick = { showLanguagePicker = true },
                     onConnectionClick = { connectionVisible = true },
                     onNavigate = ::navigateOnce,

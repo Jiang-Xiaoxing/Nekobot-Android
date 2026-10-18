@@ -67,6 +67,8 @@ import com.nekobot.app.ui.screens.memory.MemoryScreen
 import com.nekobot.app.ui.screens.memory.ExperienceArchiveScreen
 import com.nekobot.app.ui.screens.memory.ExperienceSourceScreen
 import com.nekobot.app.ui.screens.memory.ChatLocationScreen
+import com.nekobot.app.ui.screens.more.MoreCategory
+import com.nekobot.app.ui.screens.more.MoreCategoryScreen
 import com.nekobot.app.ui.screens.more.MoreScreen
 import com.nekobot.app.ui.screens.search.GlobalSearchScreen
 import com.nekobot.app.ui.screens.sessions.SessionsScreen
@@ -478,14 +480,7 @@ fun NekobotNavGraph() {
                                     onNavigate = { route -> navController.navigate(route) }
                                 )
 
-                                Routes.MORE -> MoreScreen(
-                                    onNavigate = { route -> navController.navigate(route) },
-                                    onLogout = {
-                                        ServiceContainer.socket.disconnect()
-                                        ServiceContainer.repository.logoutLocal()
-                                        ServiceContainer.notifyLoginState(false)
-                                    }
-                                )
+                                Routes.MORE -> MoreScreen(onNavigate = { route -> navController.navigate(route) })
                             }
                     }
                 }
@@ -624,14 +619,15 @@ fun NekobotNavGraph() {
             }
             composable(Routes.MORE) {
                 Box(modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance)) {
-                    MoreScreen(
+                    MoreScreen(onNavigate = { route -> navController.navigate(route) })
+                }
+            }
+            MoreCategory.entries.filter { it != MoreCategory.APP }.forEach { category ->
+                composable(category.route) {
+                    MoreCategoryScreen(
+                        category = category,
                         onNavigate = { route -> navController.navigate(route) },
-                        onLogout = {
-                            // 清除本地 token 并断开 socket，广播登录态变化（LaunchedEffect 会自动导航）
-                            ServiceContainer.socket.disconnect()
-                            ServiceContainer.repository.logoutLocal()
-                            ServiceContainer.notifyLoginState(false)
-                        }
+                        onBack = { navController.popBackStack() }
                     )
                 }
             }

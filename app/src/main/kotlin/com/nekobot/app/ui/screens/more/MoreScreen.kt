@@ -18,20 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bookmarks
-import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Landscape
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,7 +37,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -63,24 +49,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nekobot.app.R
-import com.nekobot.app.ServiceContainer
-import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.ui.navigation.Routes
 
 @Composable
-fun MoreScreen(
-    onNavigate: (String) -> Unit,
-    onLogout: () -> Unit
-) {
-    val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
-    MoreHomeContent(
-        appMode = appMode,
-        username = if (appMode != AppMode.LOCAL) ServiceContainer.prefs.username else "",
-        onNavigate = rememberMoreNavigateOnce(onNavigate),
-        onLogout = onLogout
-    )
+fun MoreScreen(onNavigate: (String) -> Unit) {
+    MoreHomeContent(onNavigate = rememberMoreNavigateOnce(onNavigate))
 }
 
 /** Lock navigation during a transition, then allow a fresh entry when this page resumes. */
@@ -112,10 +86,7 @@ internal fun rememberMoreNavigateOnce(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MoreHomeContent(
-    appMode: AppMode,
-    username: String,
     onNavigate: (String) -> Unit,
-    onLogout: () -> Unit,
     modifier: Modifier = Modifier,
     scrollState: ScrollState = rememberScrollState()
 ) {
@@ -147,132 +118,23 @@ internal fun MoreHomeContent(
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 110.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            MoreHomeGroup(stringResource(R.string.more_home_common)) {
+            MoreHomeGroup {
                 MoreHomeRow(
-                    icon = Icons.Filled.AutoAwesome,
-                    title = stringResource(R.string.more_ai_config_center),
-                    subtitle = stringResource(
-                        if (appMode == AppMode.LOCAL) R.string.more_ai_config_desc_local
-                        else R.string.more_ai_config_desc_server
-                    ),
-                    route = Routes.AI_CONFIG_CENTER,
-                    onNavigate = onNavigate
-                )
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.Filled.Search,
+                    icon = Icons.Outlined.Search,
                     title = stringResource(R.string.global_search_title),
                     route = Routes.GLOBAL_SEARCH,
                     onNavigate = onNavigate
                 )
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.Filled.Settings,
-                    title = stringResource(R.string.more_settings),
-                    route = Routes.SETTINGS,
-                    onNavigate = onNavigate
-                )
             }
-
-            MoreHomeGroup(stringResource(R.string.more_home_memory)) {
-                MoreHomeRow(
-                    icon = Icons.Filled.Psychology,
-                    title = stringResource(R.string.more_role_memory),
-                    subtitle = stringResource(R.string.more_home_role_memory_scope),
-                    route = Routes.MEMORY,
-                    onNavigate = onNavigate
-                )
-                if (appMode == AppMode.LOCAL) {
-                    MoreHomeDivider()
+            MoreHomeGroup {
+                MoreCategory.entries.forEachIndexed { index, category ->
+                    if (index > 0) MoreHomeDivider()
                     MoreHomeRow(
-                        icon = Icons.Outlined.Book,
-                        title = stringResource(R.string.agent_character_memory_title),
-                        subtitle = stringResource(R.string.more_home_session_memory_scope),
-                        route = Routes.AGENT_CHARACTER_MEMORY,
+                        icon = category.icon,
+                        title = stringResource(category.title),
+                        subtitle = stringResource(category.summary),
+                        route = category.route,
                         onNavigate = onNavigate
-                    )
-                }
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.Filled.Bookmarks,
-                    title = stringResource(R.string.more_global_agent_memory),
-                    subtitle = stringResource(R.string.more_home_global_memory_scope),
-                    route = Routes.AGENT_MEMORY,
-                    onNavigate = onNavigate
-                )
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.AutoMirrored.Filled.ShowChart,
-                    title = stringResource(R.string.more_state_history),
-                    route = Routes.STATE_HISTORY,
-                    onNavigate = onNavigate
-                )
-            }
-
-            MoreHomeGroup(stringResource(R.string.more_home_appearance_chat)) {
-                MoreHomeRow(
-                    icon = Icons.Filled.Palette,
-                    title = stringResource(R.string.more_style_settings),
-                    route = Routes.STYLE_SETTINGS,
-                    onNavigate = onNavigate
-                )
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.Filled.Landscape,
-                    title = stringResource(R.string.single_role_relationship_page_skins),
-                    route = Routes.RELATIONSHIP_BACKGROUND,
-                    onNavigate = onNavigate
-                )
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.Filled.EmojiEmotions,
-                    title = stringResource(R.string.more_stickers),
-                    route = Routes.STICKERS,
-                    onNavigate = onNavigate
-                )
-            }
-
-            MoreHomeGroup(stringResource(R.string.more_home_extensions_management)) {
-                MoreHomeRow(
-                    icon = Icons.Filled.Extension,
-                    title = stringResource(R.string.more_extensions),
-                    route = Routes.EXTENSIONS,
-                    onNavigate = onNavigate
-                )
-                MoreHomeDivider()
-                MoreHomeRow(
-                    icon = Icons.Filled.Security,
-                    title = stringResource(R.string.more_system_operations),
-                    route = Routes.SYSTEM_OPERATIONS,
-                    onNavigate = onNavigate
-                )
-                if (appMode == AppMode.LOCAL) {
-                    MoreHomeDivider()
-                    MoreHomeRow(
-                        icon = Icons.Filled.Storage,
-                        title = stringResource(R.string.more_db_management),
-                        route = Routes.DB_PROFILE,
-                        onNavigate = onNavigate
-                    )
-                }
-            }
-
-            if (appMode != AppMode.LOCAL) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ) {
-                    MoreHomeActionRow(
-                        icon = Icons.AutoMirrored.Filled.Logout,
-                        title = stringResource(R.string.more_logout),
-                        subtitle = stringResource(
-                            R.string.more_current_user,
-                            username.ifBlank { stringResource(R.string.common_not_logged_in) }
-                        ),
-                        tag = "more-home-logout",
-                        tint = MaterialTheme.colorScheme.error,
-                        onClick = onLogout
                     )
                 }
             }
@@ -281,9 +143,9 @@ internal fun MoreHomeContent(
 }
 
 @Composable
-private fun MoreHomeGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun MoreHomeGroup(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
+        if (title != null) Text(
             text = title,
             modifier = Modifier.padding(horizontal = 16.dp).semantics { heading() },
             style = MaterialTheme.typography.labelLarge,
@@ -301,7 +163,7 @@ private fun MoreHomeGroup(title: String, content: @Composable ColumnScope.() -> 
 }
 
 @Composable
-private fun MoreHomeDivider() {
+internal fun MoreHomeDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(start = 48.dp, end = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
@@ -309,7 +171,7 @@ private fun MoreHomeDivider() {
 }
 
 @Composable
-private fun MoreHomeRow(
+internal fun MoreHomeRow(
     icon: ImageVector,
     title: String,
     route: String,
@@ -331,8 +193,7 @@ private fun MoreHomeActionRow(
     title: String,
     subtitle: String?,
     tag: String,
-    onClick: () -> Unit,
-    tint: Color = MaterialTheme.colorScheme.primary
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -343,7 +204,7 @@ private fun MoreHomeActionRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
