@@ -148,7 +148,7 @@ class PortableImportPlainLanguageTest {
         compose.onNodeWithText("合成记忆 686").assertExists()
         compose.onNodeWithText("合成记忆 0").assertDoesNotExist()
         compose.onNodeWithTag("safe-difference-memory-0-keep").performScrollTo().assertIsNotSelected()
-        compose.onNodeWithText(compose.activity.getString(R.string.import_difference_save)).assertIsNotEnabled()
+        compose.onNodeWithText(compose.activity.getString(R.string.portability_ui_next)).assertIsNotEnabled()
         assertTrue(vm.state.value.choices.fields.isEmpty()); assertEquals(0, commits.get())
         screenshot("related")
     }
@@ -156,7 +156,7 @@ class PortableImportPlainLanguageTest {
         start()
         openRelated()
         compose.onNodeWithTag("safe-difference-bulk-record-keep").performScrollTo().performClick(); awaitReady()
-        compose.onNodeWithText(compose.activity.getString(R.string.import_difference_save)).performClick(); awaitReady()
+        compose.onNodeWithText(compose.activity.getString(R.string.portability_ui_next)).performClick(); awaitReady()
         compose.onNodeWithText(compose.activity.getString(R.string.import_review_skipped_sources, 1)).performScrollTo().assertIsDisplayed()
         assertTrue(vm.state.value.plan!!.issues.isEmpty())
         assertEquals(50, vm.state.value.plan!!.rows.differences.size)
@@ -168,7 +168,7 @@ class PortableImportPlainLanguageTest {
         start()
         openRelated()
         compose.onNodeWithTag("safe-difference-memory-0-replace").performScrollTo().performClick()
-        compose.onNodeWithText(compose.activity.getString(R.string.import_difference_save)).performClick(); awaitReady()
+        compose.onNodeWithText(compose.activity.getString(R.string.portability_ui_next)).performClick(); awaitReady()
         assertEquals(setOf("row-686"), vm.state.value.choices.fields.keys)
         assertEquals(1, vm.state.value.plan!!.rows.counts.updated)
         assertEquals(50, vm.state.value.plan!!.rows.differences.size)
@@ -212,7 +212,7 @@ class PortableImportPlainLanguageTest {
         assertTrue("Choice must have a visible touch target after scrolling", visibleBounds.height >= 48f * compose.activity.resources.displayMetrics.density - 1f)
         screenshot("small-large-text")
         compose.onNodeWithTag("safe-difference-memory-0-keep").performScrollTo().performClick()
-        compose.onNodeWithText(compose.activity.getString(R.string.import_difference_save)).assertIsDisplayed().performClick(); awaitReady()
+        compose.onNodeWithText(compose.activity.getString(R.string.portability_ui_next)).assertIsDisplayed().performClick(); awaitReady()
         assertEquals(0, commits.get())
     }
 }

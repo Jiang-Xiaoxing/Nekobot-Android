@@ -59,12 +59,11 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
     var showDifferences by remember { mutableStateOf(false) }
     var reviewRowKeys by remember { mutableStateOf<Set<String>?>(null) }
     var showIssues by remember { mutableStateOf(false) }
-    var confirm by remember { mutableStateOf(false) }
     var storyConfirm by remember { mutableStateOf(false) }
     var formatDetails by remember { mutableStateOf(false) }
     var archiveInfo by remember { mutableStateOf(false) }
     val scroll = rememberLazyListState()
-    LaunchedEffect(state.step) { scroll.scrollToItem(0) }
+    LaunchedEffect(state.step, showDifferences) { if (!showDifferences) scroll.scrollToItem(0) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { selected ->
         vm.pickerClosed()
         if (selected != null) vm.inspect(context, selected, "")
@@ -179,8 +178,8 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                 }
                 SafeImportStep.CONFIRM -> state.plan?.let { plan ->
                     item {
-                        Text(stringResource(R.string.portability_ui_confirm_import), style = MaterialTheme.typography.titleLarge)
-                        Text(stringResource(R.string.portability_ui_confirm_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.import_review_preview), style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.import_review_preview_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (state.planValid) item {
                         PortableImportChangeSummary(plan)
@@ -238,7 +237,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                     !state.planValid -> vm.preview(context)
                     sourceDecisionOnly -> reviewSources()
                     state.plan?.issues?.isNotEmpty() == true -> showIssues = true
-                    else -> confirm = true
+                    else -> vm.commit(context)
                 }
             }, enabled = state.busy || ready,
                 modifier = Modifier.widthIn(min = 160.dp, max = 200.dp).heightIn(min = 48.dp)
@@ -254,7 +253,7 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
                     !state.planValid -> R.string.safe_import_refresh
                     sourceDecisionOnly -> R.string.import_review_compare
                     state.plan?.issues?.isNotEmpty() == true -> R.string.portability_ui_resolve
-                    else -> R.string.portability_ui_confirm_import
+                    else -> R.string.import_review_start
                 }), textAlign = TextAlign.Center)
             }
         }
@@ -284,17 +283,15 @@ internal fun SafePortableImportPanel(onNavigate: (String) -> Unit = {}, external
         PortableImportDifferences(plan, state.choices, state.busy, onDismiss = { vm.discardDifferenceReview(); showDifferences = false },
             onSave = { choices -> if (vm.saveDifferenceReview(context, choices)) showDifferences = false },
             onMore = { choices -> vm.choices(choices); vm.preview(context, more = true) },
-            onBulkRecords = { choices, useIncoming -> vm.chooseAllRecordFields(context, choices, useIncoming, reviewRowKeys) },
-            reviewRowKeys = reviewRowKeys)
+            onBulkRecords = { choices, useIncoming, individualRows -> vm.chooseAllRecordFields(context, choices, useIncoming,
+                reviewRowKeys, individualRows, completeReview = true, onComplete = { showDifferences = false }) },
+            reviewRowKeys = reviewRowKeys, error = state.error)
     }
     if (showIssues) state.plan?.let { plan ->
         PortableImportIssueDialog(plan, state.choices, state.busy, onDismiss = { showIssues = false },
             onBack = { showIssues = false; vm.backToContents() }, onReview = reviewSources,
             onChoices = { vm.choices(it) }, onSelect = { option, selected -> vm.select(option.category, setOf(option.detail.key), selected) })
     }
-    if (confirm) NekoDialog(onDismiss = { confirm = false }, title = stringResource(R.string.safe_import_execute),
-        message = stringResource(R.string.safe_import_confirm), confirmText = stringResource(R.string.safe_import_execute),
-        onConfirm = { confirm = false; vm.commit(context) }, onCancel = { confirm = false })
     if (storyConfirm) NekoDialog(onDismiss = { storyConfirm = false }, title = stringResource(R.string.safe_import_story_confirm_title),
         message = stringResource(R.string.safe_import_story_confirm_message), confirmText = stringResource(R.string.common_confirm),
         onConfirm = { storyConfirm = false; vm.choices(state.choices.copy(files = state.choices.files + "plot_story")) },

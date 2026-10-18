@@ -155,13 +155,14 @@ class SafePortableImportViewModel internal constructor(private val operations: S
     }
     /** Publish a bulk draft only after both reads succeed; cancellation leaves the old review intact. */
     internal fun chooseAllRecordFields(context: Context, draft: PortableImportChoices, useIncoming: Boolean,
-                                       rowKeys: Set<String>? = null) {
+                                       rowKeys: Set<String>? = null, individualRows: Set<String> = emptySet(),
+                                       completeReview: Boolean = false, onComplete: () -> Unit = {}) {
         val snapshot = state.value
         val prepared = snapshot.prepared ?: return
         val previousPlan = snapshot.plan ?: return
         if (snapshot.busy || cleared || previousPlan.rows.counts.different == 0) return
         val token = ++request
-        val requestedLimit = limit
+        val requestedLimit = if (completeReview) differenceReviewBaseline?.limit ?: limit else limit
         val selected = snapshot.selected.mapValues { it.value.toSet() }
         val originalDraft = draft.normalized()
         bulkRecordBaseline = snapshot
@@ -170,22 +171,26 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         work = viewModelScope.launch {
             try {
                 val (choices, plan) = withContext(Dispatchers.IO) {
-                    val complete = operations.preview(context, prepared, selected, originalDraft, Int.MAX_VALUE)
+                    val complete = operations.preview(context, prepared, selected, snapshot.choices.normalized(), Int.MAX_VALUE)
                     ensureActive()
                     require(complete.rows.counts.different == previousPlan.rows.counts.different &&
                         complete.rows.differences.size == complete.rows.counts.different) {
                         context.getString(R.string.import_bulk_record_changed)
                     }
                     var next = originalDraft
-                    complete.rows.differences.filter { rowKeys == null || it.key in rowKeys }.forEach { row ->
+                    complete.rows.differences.filter { (rowKeys == null || it.key in rowKeys) && it.key !in individualRows }.forEach { row ->
                         ensureActive()
                         next = next.withRecordChoice(row, useIncoming, complete.rows.sourceFieldChoices[row.memoryId].orEmpty())
                     }
                     next to operations.preview(context, prepared, selected, next, requestedLimit)
                 }
                 ensureActive()
-                if (token == request && !cleared) state.value = state.value.copy(plan = plan, choices = choices,
-                    planValid = true, step = SafeImportStep.CONFIRM)
+                if (token == request && !cleared) {
+                    if (completeReview) { differenceReviewBaseline = null; limit = requestedLimit }
+                    state.value = state.value.copy(plan = plan, choices = choices,
+                        planValid = true, step = SafeImportStep.CONFIRM)
+                    onComplete()
+                }
             } catch (_: CancellationException) {
                 if (token == request && !cleared) state.value = snapshot
             } catch (error: Exception) {

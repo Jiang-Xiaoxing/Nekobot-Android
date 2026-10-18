@@ -28,7 +28,12 @@
     <string name="import_review_details">查看具体原因</string>
     <string name="import_review_hide_details">收起具体原因</string>
     <string name="import_review_no_write">目前尚未导入，软件里的原有内容没有改变。</string>
-    <string name="import_review_memory_choice_hint">每条记忆只需选择更新或保留。更新会一起采用文件中的记忆和配套出处；保留则不导入这条记忆的新出处。保存选择后，还会再次显示变更预览。</string>
+    <string name="import_review_memory_choice_hint">选择用文件内容覆盖，或保留软件当前内容，也可逐条调整。点“下一步”查看导入结果预览；此时不会修改软件里的内容。</string>
+    <string name="import_review_use_file">用文件内容覆盖</string>
+    <string name="import_review_keep_current">保留软件当前内容</string>
+    <string name="import_review_preview">导入结果预览</string>
+    <string name="import_review_preview_hint">请核对将新增、更新和保留的内容。点“开始导入”后才会写入软件。</string>
+    <string name="import_review_start">开始导入</string>
     <string name="import_review_related_scope">只处理这 %1$d 条记忆，其他资料的选择保持。</string>
     <string name="import_review_update_related">这部分全部更新</string>
     <string name="import_review_keep_related">这部分全部保留</string>

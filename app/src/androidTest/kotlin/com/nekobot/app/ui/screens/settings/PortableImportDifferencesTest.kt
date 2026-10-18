@@ -134,20 +134,16 @@ class PortableImportDifferencesTest {
         openDifferences()
         compose.onNodeWithTag("safe-difference-row-0-name-replace").performScrollTo().performClick()
         compose.onNodeWithTag("safe-difference-row-0-name-keep").performScrollTo().performClick()
-        dialogAction(R.string.import_difference_save).performClick()
+        dialogAction(R.string.portability_ui_next).performClick()
         assertSame(before, vm.state.value.plan); assertTrue(vm.state.value.planValid); unchanged()
     }
     @Test fun cancellingTheWindowAfterCompletedBulkRestoresTheOpeningSelectionAndPreview() {
         launch()
         val before = vm.state.value
-        val openingPlan = requireNotNull(before.plan)
         openDifferences()
         compose.onNodeWithTag("safe-difference-bulk-record-incoming").performScrollTo().performClick()
-        compose.onNodeWithText(compose.activity.getString(R.string.import_bulk_record_confirm,
-            openingPlan.rows.counts.different)).assertExists()
-        dialogAction(R.string.common_confirm).performClick(); awaitPreview()
-        assertEquals(openingPlan.rows.counts.different, vm.state.value.plan!!.rows.counts.updated)
-        assertTrue(vm.state.value.choices.fields.isNotEmpty()); unchanged()
+        assertEquals(0, vm.state.value.plan!!.rows.counts.updated)
+        assertTrue(vm.state.value.choices.fields.isEmpty()); unchanged()
         dialogAction(R.string.common_cancel).performClick()
         assertEquals(before.choices, vm.state.value.choices); assertSame(before.plan, vm.state.value.plan)
         assertTrue(vm.state.value.planValid); unchanged()
@@ -168,17 +164,15 @@ class PortableImportDifferencesTest {
         assertNotEquals(difference.currentHash, difference.incomingHash)
         compose.onNodeWithTag("safe-difference-file-0-replace").performScrollTo().performClick()
         screenshot("file-comparison")
-        dialogAction(R.string.import_difference_save).performClick(); awaitPreview()
+        dialogAction(R.string.portability_ui_next).performClick(); awaitPreview()
         assertEquals(1, vm.state.value.plan!!.fileCounts.updated); assertEquals(0, vm.state.value.plan!!.rows.counts.updated)
         unchanged()
         compose.onNodeWithTag("portability-back").performClick()
         compose.onNodeWithTag("safe-import-execute").performClick(); awaitPreview()
         assertEquals(setOf(difference.key), vm.state.value.choices.files)
         screenshot("valid-summary")
+        unchanged()
         compose.onNodeWithTag("safe-import-execute").performClick()
-        dialogAction(R.string.common_cancel).performClick(); unchanged()
-        compose.onNodeWithTag("safe-import-execute").performClick()
-        dialogAction(R.string.safe_import_execute).performClick()
         compose.waitUntil(30000) { vm.state.value.result != null || vm.state.value.error != null }
         assertNull(vm.state.value.error)
         assertEquals(incomingText, attachment.readText())
@@ -189,7 +183,6 @@ class PortableImportDifferencesTest {
     @Test fun defaultKeepDoesNotReplaceTheConflictingFileOrTheLaterCharacterName() {
         launch()
         compose.onNodeWithTag("safe-import-execute").performClick()
-        dialogAction(R.string.safe_import_execute).performClick()
         compose.waitUntil(30000) { vm.state.value.result != null || vm.state.value.error != null }
         assertNull(vm.state.value.error); unchanged()
         assertEquals(0, vm.state.value.result!!.importedFiles); assertEquals(0, vm.state.value.result!!.updatedRows)
@@ -200,7 +193,7 @@ class PortableImportDifferencesTest {
         compose.onNodeWithTag("safe-difference-file-0-keep").performScrollTo().assertHeightIsAtLeast(48.dp).assertIsDisplayed().assertIsSelected()
         compose.onNodeWithTag("safe-difference-file-0-replace").performScrollTo().assertHeightIsAtLeast(48.dp).assertIsDisplayed().performClick()
         screenshot("small-large-text")
-        dialogAction(R.string.import_difference_save).assertIsDisplayed().performClick(); awaitPreview()
+        dialogAction(R.string.portability_ui_next).assertIsDisplayed().performClick(); awaitPreview()
         unchanged()
     }
     @Test fun recalculationHidesTheOldCountersAndFailureCannotOpenFinalConfirmation() {
