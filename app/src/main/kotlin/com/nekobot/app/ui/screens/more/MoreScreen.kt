@@ -1,19 +1,15 @@
 package com.nekobot.app.ui.screens.more
 
-import androidx.compose.ui.platform.LocalResources
-
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
-import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,64 +17,119 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Landscape
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
-import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.navigation.Routes
-import com.nekobot.app.ui.theme.accentSecondary
-import com.nekobot.app.ui.theme.accentSuccess
-import com.nekobot.app.ui.theme.accentTertiary
-import com.nekobot.app.ui.theme.accentWarning
 
-/**
- * 「更多」页：放置其他功能入口（角色记忆、状态历程、AI 配置/模型、设置、退出登录等）。
- * 设置入口置于底部。
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoreScreen(
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit
 ) {
-    val textResources = LocalResources.current
-    // 订阅全局 appMode Flow，模式切换时自动重组
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
+    MoreHomeContent(
+        appMode = appMode,
+        username = if (appMode != AppMode.LOCAL) ServiceContainer.prefs.username else "",
+        onNavigate = rememberMoreNavigateOnce(onNavigate),
+        onLogout = onLogout
+    )
+}
+
+/** Lock navigation during a transition, then allow a fresh entry when this page resumes. */
+@Composable
+internal fun rememberMoreNavigateOnce(
+    onNavigate: (String) -> Unit,
+    lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current
+): (String) -> Unit {
+    var navigationInFlight by remember(lifecycleOwner) { mutableStateOf(false) }
+    val currentOnNavigate by rememberUpdatedState(onNavigate)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) navigationInFlight = false
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return remember(lifecycleOwner) {
+        { route ->
+            if (!navigationInFlight && lifecycleOwner.lifecycle.currentState == Lifecycle.State.RESUMED) {
+                navigationInFlight = true
+                currentOnNavigate(route)
+            }
+        }
+    }
+}
+
+/** The index only reads display parameters; destinations keep their existing behavior. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MoreHomeContent(
+    appMode: AppMode,
+    username: String,
+    onNavigate: (String) -> Unit,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState = rememberScrollState()
+) {
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.more_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        stringResource(R.string.more_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
@@ -86,156 +137,141 @@ fun MoreScreen(
             )
         },
         containerColor = MaterialTheme.colorScheme.background
-        ) { padding ->
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .testTag("more-home-scroll")
+                .verticalScroll(scrollState)
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 110.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // -------------------- 外观 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_appearance)
-            ) {
-                MoreRow(
-                    icon = Icons.Filled.Palette,
-                    tint = accentWarning(),
-                    title = stringResource(R.string.more_style_settings),
-                    desc = stringResource(R.string.more_style_settings_desc),
-                    onClick = { onNavigate("style_settings") }
-                )
-                Spacer(Modifier.height(4.dp))
-                MoreRow(
-                    icon = Icons.Filled.Landscape,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = textResources.getString(R.string.single_role_relationship_page_skins),
-                    desc = textResources.getString(R.string.single_role_seven_sets_of_backgrounds_buttons_and_icons_independent_of_theme),
-                    onClick = { onNavigate(Routes.RELATIONSHIP_BACKGROUND) }
-                )
-            }
-
-            // -------------------- AI 能力 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_ai)
-            ) {
-                MoreRow(
+            MoreHomeGroup(stringResource(R.string.more_home_common)) {
+                MoreHomeRow(
                     icon = Icons.Filled.AutoAwesome,
-                    tint = accentTertiary(),
                     title = stringResource(R.string.more_ai_config_center),
-                    desc = if (appMode == AppMode.LOCAL) stringResource(R.string.more_ai_config_desc_local) else stringResource(R.string.more_ai_config_desc_server),
-                    onClick = { onNavigate("ai_config_center") }
+                    subtitle = stringResource(
+                        if (appMode == AppMode.LOCAL) R.string.more_ai_config_desc_local
+                        else R.string.more_ai_config_desc_server
+                    ),
+                    route = Routes.AI_CONFIG_CENTER,
+                    onNavigate = onNavigate
                 )
-                Spacer(Modifier.height(4.dp))
-                MoreRow(
-                    icon = Icons.Filled.Psychology,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = stringResource(R.string.more_role_memory),
-                    desc = stringResource(R.string.more_role_memory_desc),
-                    onClick = { onNavigate("memory") }
-                )
-                if (appMode == AppMode.LOCAL) {
-                    Spacer(Modifier.height(4.dp))
-                    MoreRow(
-                        icon = Icons.Outlined.Book,
-                        tint = accentTertiary(),
-                        title = stringResource(R.string.agent_character_memory_title),
-                        desc = stringResource(R.string.agent_character_memory_desc),
-                        onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) }
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                MoreRow(
-                    icon = Icons.Filled.Bookmarks,
-                    tint = accentSecondary(),
-                    title = stringResource(R.string.more_global_agent_memory),
-                    desc = stringResource(R.string.more_global_agent_memory_desc),
-                    onClick = { onNavigate("agent_memory") }
-                )
-            }
-
-            // -------------------- 功能 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_features)
-            ) {
-                MoreRow(
+                MoreHomeDivider()
+                MoreHomeRow(
                     icon = Icons.Filled.Search,
-                    tint = accentSecondary(),
                     title = stringResource(R.string.global_search_title),
-                    desc = stringResource(R.string.more_global_search_desc),
-                    onClick = { onNavigate("global_search") }
+                    route = Routes.GLOBAL_SEARCH,
+                    onNavigate = onNavigate
                 )
-                Spacer(Modifier.height(4.dp))
-                MoreRow(
-                    icon = Icons.AutoMirrored.Filled.ShowChart,
-                    tint = accentSuccess(),
-                    title = stringResource(R.string.more_state_history),
-                    desc = stringResource(R.string.more_state_history_desc),
-                    onClick = { onNavigate("state_history") }
-                )
-                Spacer(Modifier.height(4.dp))
-                MoreRow(
-                    icon = Icons.Filled.Extension,
-                    tint = accentTertiary(),
-                    title = stringResource(R.string.more_extensions),
-                    desc = if (appMode != AppMode.LOCAL) stringResource(R.string.more_extensions_desc_server) else stringResource(R.string.more_extensions_desc_local),
-                    onClick = { onNavigate("extensions") }
-                )
-                Spacer(Modifier.height(4.dp))
-                // 自定义表情包：导入图片后聊天中 `[名称]` 直接显示原图，AI 也能发送
-                MoreRow(
-                    icon = Icons.Filled.EmojiEmotions,
-                    tint = accentWarning(),
-                    title = stringResource(R.string.more_stickers),
-                    desc = stringResource(R.string.more_stickers_desc),
-                    onClick = { onNavigate("stickers") }
+                MoreHomeDivider()
+                MoreHomeRow(
+                    icon = Icons.Filled.Settings,
+                    title = stringResource(R.string.more_settings),
+                    route = Routes.SETTINGS,
+                    onNavigate = onNavigate
                 )
             }
 
-            // -------------------- 系统 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_system)
-            ) {
-                MoreRow(
-                    icon = Icons.Filled.Security,
-                    tint = accentSecondary(),
-                    title = stringResource(R.string.more_system_operations),
-                    desc = stringResource(R.string.more_system_operations_desc),
-                    onClick = { onNavigate("system_operations") }
+            MoreHomeGroup(stringResource(R.string.more_home_memory)) {
+                MoreHomeRow(
+                    icon = Icons.Filled.Psychology,
+                    title = stringResource(R.string.more_role_memory),
+                    subtitle = stringResource(R.string.more_home_role_memory_scope),
+                    route = Routes.MEMORY,
+                    onNavigate = onNavigate
                 )
                 if (appMode == AppMode.LOCAL) {
-                    // 本地模式：DB Profile 管理（从远程导入 nbotcfg / 切换 / 删除）
-                    Spacer(Modifier.height(4.dp))
-                    MoreRow(
+                    MoreHomeDivider()
+                    MoreHomeRow(
+                        icon = Icons.Outlined.Book,
+                        title = stringResource(R.string.agent_character_memory_title),
+                        subtitle = stringResource(R.string.more_home_session_memory_scope),
+                        route = Routes.AGENT_CHARACTER_MEMORY,
+                        onNavigate = onNavigate
+                    )
+                }
+                MoreHomeDivider()
+                MoreHomeRow(
+                    icon = Icons.Filled.Bookmarks,
+                    title = stringResource(R.string.more_global_agent_memory),
+                    subtitle = stringResource(R.string.more_home_global_memory_scope),
+                    route = Routes.AGENT_MEMORY,
+                    onNavigate = onNavigate
+                )
+                MoreHomeDivider()
+                MoreHomeRow(
+                    icon = Icons.AutoMirrored.Filled.ShowChart,
+                    title = stringResource(R.string.more_state_history),
+                    route = Routes.STATE_HISTORY,
+                    onNavigate = onNavigate
+                )
+            }
+
+            MoreHomeGroup(stringResource(R.string.more_home_appearance_chat)) {
+                MoreHomeRow(
+                    icon = Icons.Filled.Palette,
+                    title = stringResource(R.string.more_style_settings),
+                    route = Routes.STYLE_SETTINGS,
+                    onNavigate = onNavigate
+                )
+                MoreHomeDivider()
+                MoreHomeRow(
+                    icon = Icons.Filled.Landscape,
+                    title = stringResource(R.string.single_role_relationship_page_skins),
+                    route = Routes.RELATIONSHIP_BACKGROUND,
+                    onNavigate = onNavigate
+                )
+                MoreHomeDivider()
+                MoreHomeRow(
+                    icon = Icons.Filled.EmojiEmotions,
+                    title = stringResource(R.string.more_stickers),
+                    route = Routes.STICKERS,
+                    onNavigate = onNavigate
+                )
+            }
+
+            MoreHomeGroup(stringResource(R.string.more_home_extensions_management)) {
+                MoreHomeRow(
+                    icon = Icons.Filled.Extension,
+                    title = stringResource(R.string.more_extensions),
+                    route = Routes.EXTENSIONS,
+                    onNavigate = onNavigate
+                )
+                MoreHomeDivider()
+                MoreHomeRow(
+                    icon = Icons.Filled.Security,
+                    title = stringResource(R.string.more_system_operations),
+                    route = Routes.SYSTEM_OPERATIONS,
+                    onNavigate = onNavigate
+                )
+                if (appMode == AppMode.LOCAL) {
+                    MoreHomeDivider()
+                    MoreHomeRow(
                         icon = Icons.Filled.Storage,
-                        tint = accentTertiary(),
                         title = stringResource(R.string.more_db_management),
-                        desc = stringResource(R.string.more_db_management_desc),
-                        onClick = { onNavigate("db_profile") }
+                        route = Routes.DB_PROFILE,
+                        onNavigate = onNavigate
                     )
                 }
             }
 
-            // 设置置于底部
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                MoreRow(
-                    icon = Icons.Filled.Settings,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = stringResource(R.string.more_settings),
-                    desc = stringResource(R.string.more_settings_desc),
-                    onClick = { onNavigate("settings") }
-                )
-            }
-
-            // 退出登录（仅服务器模式，本地模式无需登录）
             if (appMode != AppMode.LOCAL) {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    MoreRow(
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ) {
+                    MoreHomeActionRow(
                         icon = Icons.AutoMirrored.Filled.Logout,
-                        tint = MaterialTheme.colorScheme.error,
                         title = stringResource(R.string.more_logout),
-                        desc = stringResource(R.string.more_current_user, ServiceContainer.prefs.username.ifBlank { stringResource(R.string.common_not_logged_in) }),
+                        subtitle = stringResource(
+                            R.string.more_current_user,
+                            username.ifBlank { stringResource(R.string.common_not_logged_in) }
+                        ),
+                        tag = "more-home-logout",
+                        tint = MaterialTheme.colorScheme.error,
                         onClick = onLogout
                     )
                 }
@@ -244,67 +280,92 @@ fun MoreScreen(
     }
 }
 
-/** 分组卡片：顶部小标题 + 组内入口。 */
 @Composable
-private fun MoreGroupCard(
-    groupTitle: String,
-    content: @Composable () -> Unit
-) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
+private fun MoreHomeGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = groupTitle,
+            text = title,
+            modifier = Modifier.padding(horizontal = 16.dp).semantics { heading() },
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 6.dp, start = 2.dp)
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        content()
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        ) {
+            Column(content = content)
+        }
     }
 }
 
-/** 更多页单行：彩色图标底座 + 标题 + 描述，可点击。 */
 @Composable
-private fun MoreRow(
-    icon: ImageVector,
-    tint: Color,
-    title: String,
-    desc: String,
-    onClick: () -> Unit
-) {
-    MoreRow(title = title, desc = desc, onClick = onClick, leadingIcon = {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(tint.copy(alpha = 0.16f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-        }
-    })
+private fun MoreHomeDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 48.dp, end = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    )
 }
 
-/** 自定义彩色图标与普通单色图标共用同一行布局和点击区域。 */
 @Composable
-private fun MoreRow(
+private fun MoreHomeRow(
+    icon: ImageVector,
     title: String,
-    desc: String,
+    route: String,
+    onNavigate: (String) -> Unit,
+    subtitle: String? = null
+) {
+    MoreHomeActionRow(
+        icon = icon,
+        title = title,
+        subtitle = subtitle,
+        tag = "more-home-$route",
+        onClick = { onNavigate(route) }
+    )
+}
+
+@Composable
+private fun MoreHomeActionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String?,
+    tag: String,
     onClick: () -> Unit,
-    leadingIcon: @Composable () -> Unit
+    tint: Color = MaterialTheme.colorScheme.primary
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .testTag(tag)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        leadingIcon()
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
+        Spacer(Modifier.width(12.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
