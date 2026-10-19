@@ -66,16 +66,17 @@ Native Android client · Server / Local dual mode · Dark glassmorphism UI
 
 - **Immersive Chat** — Socket.IO streaming replies, optimistic updates, multi-candidate replies (swipes), in-place reply editing, regenerate / stop, edit & resend, message queuing with priority sending during generation, message forking and multi-select, generation speed in tok/s
 - **Character Cards** — Full field editing (description / personality / greeting / scenario / rules / avatar) with SillyTavern import support (embedded PNG, v2 / v3 JSON)
-- **Character Runtime** — Six-dimension relationship system, state evaluation, memory extraction, world book injection, PromptStack composition
+- **Single-Session Characters** — Dedicated chats with independent and core memories, experience archives, and original-message references; local chats can be backed up and migrated with preview, resumable processing, and recovery
+- **Character Runtime** — Six-dimension relationship evaluation, seven relationship-screen styles, memory extraction, world book injection, PromptStack composition
 - **World Books** — Entry CRUD (keywords / always-on / selective / position / priority), book metadata editing, multi-character binding, hit debugging
 - **Story Graph** — Canvas tree layout for plot branches; supports branch selection, rollback and regeneration with local persistence
 - **State History** — Visual timeline of how a character's state evolves over time
-- **Memory Management** — View and edit character memories and Agent long-term memory (isolated per database profile, retrieval-based injection)
-- **Agent Mode** — Multi-turn tool calling, expandable real-time progress cards, subagent delegation, task lists and structured Q&A, character ability inheritance, native browser, Android device control, Linux sandbox, PTY terminal and file handling
+- **Memory Management** — View and edit character memories and Agent long-term memory (isolated per database profile, retrieval-based injection), with core memories, source references and memory-history diffs
+- **Agent Mode** — Multi-turn tool calling, expandable real-time progress cards, subagent delegation, task lists and structured Q&A, character ability inheritance, native browser, Android device control, a Linux sandbox with configurable environment variables, PTY terminal and file handling
 
 ### Personalization & Tools
 
-- **AI Config Center** — Edit model / temperature / max_tokens / top_p / penalty parameters and stop strings, failure transfer queue, one-click connection test
+- **AI Config Center** — Edit model / temperature / max_tokens / top_p / penalty parameters and stop strings, failover queues and one-click connection tests; local sessions can select a P0 model and custom reasoning parameters
 - **AI Model Management** — Model CRUD, apply / enable / disable / clone, fetch available model list, local AI model config
 - **Token Usage** — Today / this week / this month / all-time / cost statistics, CSV export, daily grouping, session / model / user ranking, performance metrics
 - **Voice & TTS** — Record and transcribe to text (server mode), TTS preview
@@ -83,7 +84,7 @@ Native Android client · Server / Local dual mode · Dark glassmorphism UI
 - **Workspace** — File reference, Markdown preview, true full-screen viewing, encoding detection (UTF-8 / GBK) and download
 - **Plugin System** — Local mode supports built-in modules and ZIP JavaScript plugins that can provide in-app pages (theme-aware, native dialogs, multi-page switching, host APIs and progress cards); 12 permissions follow a "manifest declaration ∧ user grant" dual condition, and the Agent can install, enable/disable, uninstall and self-check plugins via the `plugin_use` tool; see the [Plugin Development Guide](docs/plugin-development.md)
 - **15+ Extensions** — API Keys, plugins, channels, hooks, knowledge base, skills, task center, tools, workflows, MCP servers, message filters, login tokens, achievements, TTS / image generation playgrounds
-- **System Settings** — Server URL switching, settings JSON editor, feature switches, data maintenance, config migration, WebDAV backup
+- **System Settings** — Server URL switching, settings JSON editor, feature switches, data maintenance, config migration and WebDAV backup; the log viewer supports filtering, search and full UTF-8 export
 
 ### Design
 
@@ -112,7 +113,7 @@ Agent mode runs in local mode, allowing models that support Function Calling / T
 | **Files & Images**            | Read, write, edit precisely, list, parse and send workspace files; can call vision models to understand local images. File changes are surfaced as a git summary card with per-file diffs.                                                                                        |
 | **Skills & MCP**              | Agent can read enabled local Skills and call tools provided by connected MCP servers.                                                                                                                        |
 | **Execution Guard**           | High-risk commands require confirmation; authorizations are remembered by fingerprint (approving `git status` does not allow `git push`), while interpreter and installer commands cannot be remembered; tool parameters are fixed and validated before execution; repeated, no-progress calls are auto-stopped; the maximum number of tool calls is configurable (150 by default).                                                             |
-| **Agent Settings**            | Tool-call limit, output and progress-preview truncation, browser User-Agent / viewport / JavaScript / tab limit, sandbox mirrors and rootfs reset, default toolset for new sessions, automatic long-term memory and automatic Skill distillation. |
+| **Agent Settings**            | Tool-call limit, output and progress-preview truncation, browser User-Agent / viewport / JavaScript / tab limit, sandbox mirrors and rootfs reset, global and per-session sandbox environment variables, default toolset for new sessions, automatic long-term memory and automatic Skill distillation. |
 | **Background Execution**      | Foreground service and persistent notification are enabled during Agent work, reducing the chance of Android killing tasks when going to the background.                                                     |
 
 ### Sandbox Data & Session Isolation
@@ -190,7 +191,7 @@ Agent mode runs in local mode, allowing models that support Function Calling / T
 ## Build from Source
 
 <details>
-<summary><b>Expand build guide</b> (JDK 17+ / Android SDK 35)</summary>
+<summary><b>Expand build guide</b> (JDK 21 / Android SDK 35)</summary>
 
 <br>
 
@@ -204,20 +205,28 @@ sdk.dir=/path/to/Android/Sdk
 
 **2. Compile**
 
-```bash
-# Windows
-gradlew.bat assembleDebug
+```powershell
+# Windows PowerShell
+.\gradlew.bat --no-daemon --console=plain '-Pkotlin.incremental=false' assembleDebug; exit $LASTEXITCODE
+```
 
+```bash
 # Linux / macOS
-./gradlew assembleDebug
+./gradlew --no-daemon --console=plain -Pkotlin.incremental=false assembleDebug
 ```
 
 Output: `app/build/outputs/apk/debug/app-debug.apk`
 
 **3. Release build**
 
+```powershell
+# Windows PowerShell
+.\gradlew.bat --no-daemon --console=plain '-Pkotlin.incremental=false' assembleRelease; exit $LASTEXITCODE
+```
+
 ```bash
-gradlew.bat assembleRelease
+# Linux / macOS
+./gradlew --no-daemon --console=plain -Pkotlin.incremental=false assembleRelease
 ```
 
 Output: `app/build/outputs/apk/release/app-release.apk`

@@ -66,16 +66,17 @@
 
 - **沉浸式对话** — Socket.IO 流式回复、乐观更新、多候选回复切换（swipes）、回复就地编辑、重新生成 / 停止生成、编辑并重新发送、生成期间消息排队与加急发送、消息分叉与多选操作、生成速度 tok/s
 - **角色卡系统** — 完整字段编辑（描述 / 人格 / 首条消息 / 场景 / 规则 / 立绘），支持导入 SillyTavern 酒馆卡（PNG 嵌入式、v2 / v3 JSON）
-- **角色运行时** — 六维关系系统、状态评估、记忆抽取、世界书注入、PromptStack 合成
+- **单会话角色** — 固定角色的独立聊天窗口，配备专属记忆、核心记忆与经历档案，支持来源原话回查；可将本地会话备份并迁入，迁移过程支持预览、续传与恢复
+- **角色运行时** — 六维关系评估、七套关系页外观、记忆抽取、世界书注入、PromptStack 合成
 - **世界书** — 条目 CRUD（关键词 / 常驻 / 选择 / 位置 / 优先级）、书信息编辑、多角色绑定、命中调试
 - **故事图** — Canvas 树状布局呈现剧情分支，支持分支选择、回滚与重生，本地持久化
 - **状态历程** — 角色状态随时间变化的可视化时间线
-- **记忆管理** — 角色记忆与 Agent 长期记忆（按数据库档案隔离、检索化注入）的查看与编辑
-- **Agent 模式** — 多轮工具调用、可展开的实时进度卡片、子代理委派、任务列表与结构化问答、角色能力继承、原生浏览器、Android 设备操作、Linux 沙箱、PTY 终端与文件处理
+- **记忆管理** — 角色记忆与 Agent 长期记忆（按数据库档案隔离、检索化注入）的查看与编辑；支持核心记忆、经历来源回查及长期记忆历史差异对比
+- **Agent 模式** — 多轮工具调用、可展开的实时进度卡片、子代理委派、任务列表与结构化问答、角色能力继承、原生浏览器、Android 设备操作、可配置环境变量的 Linux 沙箱、PTY 终端与文件处理
 
 ### 个性化与工具
 
-- **AI 配置中心** — 模型 / 温度 / max_tokens / top_p / 惩罚参数与停止字符串编辑、故障转移队列、一键测试连接
+- **AI 配置中心** — 模型 / 温度 / max_tokens / top_p / 惩罚参数与停止字符串编辑、故障转移队列、一键测试连接；本地会话可单独选择 P0 模型并设置自定义思考参数
 - **AI 模型管理** — 模型 CRUD、应用 / 启用 / 停用 / 克隆、拉取可用模型列表、本地 AI 模型配置
 - **Token 用量** — 今日 / 本周 / 本月 / 累计 / 费用统计、CSV 导出、日期分组、会话 / 模型 / 用户排行、性能指标
 - **语音与 TTS** — 录音转写为文字（服务器模式）、TTS 试听
@@ -83,7 +84,7 @@
 - **工作区** — 文件引用、Markdown 预览、真全屏查看、编码自适应（UTF-8 / GBK）与下载
 - **插件系统** — 本地模式支持内置模块与 ZIP JavaScript 插件，可在应用内提供插件页面（主题跟随、原生弹窗、多页面切换、宿主 API 与进度卡片），12 项权限按「清单声明 ∧ 用户授权」双条件生效，Agent 可通过 `plugin_use` 工具安装、启停、卸载与自检插件；开发方式见[插件开发指南](docs/plugin-development.md)
 - **15+ 扩展功能** — API Keys、插件、频道、钩子、知识库、技能、任务中心、工具、工作流、MCP 服务器、消息过滤、登录令牌、成就、TTS / 生图实验室
-- **系统设置** — 服务器地址切换、设置 JSON 编辑器、功能开关、数据维护、配置迁移、WebDAV 备份
+- **系统设置** — 服务器地址切换、设置 JSON 编辑器、功能开关、数据维护、配置迁移、WebDAV 备份；日志页支持筛选、搜索和完整 UTF-8 导出
 
 ### 设计
 
@@ -112,7 +113,7 @@ Agent 模式运行在本地模式中，让支持 Function Calling / Tool Use 的
 | **文件与图片工具**      | 支持读取、写入、精确编辑、列出、解析和发送工作区文件，也可调用视觉模型理解本地图片；文件变更以 git 摘要卡片与逐文件 diff 展示                                                              |
 | **Skills 与 MCP** | Agent 可读取已启用的本地 Skills，并调用已连接 MCP 服务提供的工具                                                                                         |
 | **运行保护**         | 高风险命令需要确认，命令授权按指纹记忆（批准 `git status` 不会放行 `git push`），解释器与安装类命令不可记忆；工具参数会在执行前修复和校验，连续重复且无进展的调用会自动停止，最大工具调用次数可配置（默认 150）            |
-| **Agent 设置**     | 工具调用上限、输出与进度预览截断、浏览器 User-Agent / 视口 / JavaScript / 标签页上限、沙箱镜像源与 rootfs 重置、新会话默认工具集、自动长期记忆与自动 Skill 沉淀                            |
+| **Agent 设置**     | 工具调用上限、输出与进度预览截断、浏览器 User-Agent / 视口 / JavaScript / 标签页上限、沙箱镜像源与 rootfs 重置、全局及会话级沙箱环境变量、新会话默认工具集、自动长期记忆与自动 Skill 沉淀 |
 | **后台执行**         | Agent 工作期间启用前台服务和常驻通知，降低切到后台后任务被 Android 提前终止的概率                                                                                  |
 
 ### 沙箱数据与会话隔离
@@ -190,7 +191,7 @@ Agent 模式运行在本地模式中，让支持 Function Calling / Tool Use 的
 ## 从源码构建
 
 <details>
-<summary><b>展开构建指南</b>（JDK 17+ / Android SDK 35）</summary>
+<summary><b>展开构建指南</b>（JDK 21 / Android SDK 35）</summary>
 
 <br>
 
@@ -204,20 +205,26 @@ sdk.dir=/path/to/Android/Sdk
 
 **2. 编译**
 
-```bash
-# Windows
-gradlew.bat assembleDebug
+```powershell
+# Windows PowerShell
+.\gradlew.bat --no-daemon --console=plain '-Pkotlin.incremental=false' assembleDebug; exit $LASTEXITCODE
+```
 
+```bash
 # Linux / macOS
-./gradlew assembleDebug
+./gradlew --no-daemon --console=plain -Pkotlin.incremental=false assembleDebug
 ```
 
 产物：`app/build/outputs/apk/debug/app-debug.apk`
 
 **3. Release 构建**
 
+```powershell
+.\gradlew.bat --no-daemon --console=plain '-Pkotlin.incremental=false' assembleRelease; exit $LASTEXITCODE
+```
+
 ```bash
-gradlew.bat assembleRelease
+./gradlew --no-daemon --console=plain -Pkotlin.incremental=false assembleRelease
 ```
 
 产物：`app/build/outputs/apk/release/app-release.apk`
