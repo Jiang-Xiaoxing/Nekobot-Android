@@ -104,6 +104,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocalWorkspaceStorage
 import com.nekobot.app.data.local.ai.LocalBrowserConfig
+import com.nekobot.app.data.local.ai.LocalBrowserHttpPolicy
 import com.nekobot.app.ui.components.GlassBackdrop
 import com.nekobot.app.ui.components.glassDialogTint
 import com.nekobot.app.ui.components.liquidGlassMenuSurface
@@ -113,7 +114,7 @@ import java.io.File
 
 /** 内置浏览器可加载的目标。 */
 internal sealed interface BrowserTarget {
-    /** 远程页面：https，或本机回环的明文 http。 */
+    /** 远程页面：https，或白名单主机的明文 http。 */
     data class Remote(val url: String) : BrowserTarget
 
     /** 本地 HTML 文件（工作区或磁盘上的 .html/.htm）。 */
@@ -123,7 +124,7 @@ internal sealed interface BrowserTarget {
 /**
  * 内置浏览器的地址解析。
  *
- * 与 browser_use 的导航白名单保持一致：https、本机回环 http、本地 .html 文件。
+ * 与 browser_use 的导航白名单保持一致：https、白名单主机 http、本地 .html 文件。
  * 无协议的输入先按工作区相对路径找 HTML，找不到再当作域名补 https。
  */
 internal object BuiltinBrowserTargets {
@@ -165,12 +166,12 @@ internal object BuiltinBrowserTargets {
 
         // 剩下的一律当域名：主机段必须像主机（含点或就是 localhost），否则视为无法识别
         if (!looksLikeHost(value.substringBefore('/'))) return null
-        val scheme = if (isLoopbackHost(value)) "http" else "https"
+        val scheme = if (LocalBrowserHttpPolicy.isAllowedHttpHost(value)) "http" else "https"
         return BrowserTarget.Remote("$scheme://$value")
     }
 
     /**
-     * 导航白名单：https、本机回环 http、本地 .html/.htm 文件。
+     * 导航白名单：https、白名单主机 http、本地 .html/.htm 文件。
      *
      * 页面内跳转与地址栏共用同一份判断，避免内置浏览器被页面当作跳板
      * 转到明文 http、自定义协议或非 HTML 的本地文件。
@@ -179,7 +180,7 @@ internal object BuiltinBrowserTargets {
         val scheme = url.substringBefore("://").lowercase()
         return when (scheme) {
             "https" -> true
-            "http" -> isLoopbackHost(url.substringAfter("://"))
+            "http" -> LocalBrowserHttpPolicy.isAllowedHttpHost(url)
             "file" -> isHtmlName(url.substringAfterLast('/'))
             else -> false
         }
@@ -215,23 +216,6 @@ internal object BuiltinBrowserTargets {
         return '.' in host || host.equals("localhost", ignoreCase = true)
     }
 
-    /** 主机名（或含端口/路径的地址）是否为回环地址。 */
-    private fun isLoopbackHost(value: String): Boolean {
-        val authority = value
-            .substringAfter("://")
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-            .substringAfterLast('@')
-        val host = if (authority.startsWith("[")) {
-            authority.substringAfter('[').substringBefore(']')
-        } else {
-            authority.substringBefore(':')
-        }
-        return host.equals("localhost", ignoreCase = true) ||
-            host == "::1" ||
-            host.startsWith("127.")
-    }
 }
 
 // ── 布局常量 ────────────────────────────────────────────────────────────
