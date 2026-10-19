@@ -140,7 +140,15 @@ internal data class CompanionMarkdownPart(val sourceIndex: Int, val text: String
 
 internal fun companionBubbleMarkdownBlocks(text: String, showInnerMonologue: Boolean, isStreaming: Boolean): List<MdBlock> =
     if (companionMonologueBlocks(text, isStreaming)?.isEmpty() == true) emptyList()
-    else visibleMarkdownBlocks(text, true, showInnerMonologue, isStreaming)
+    else visibleMarkdownBlocks(text, true, showInnerMonologue, isStreaming).let { blocks ->
+        // 内心独白在气泡里固定收在正文之后：模型偶尔把（内心：…）写在正文前面，
+        // 按原文顺序渲染就会出现在气泡顶部。这里只调整显示顺序，原文和数据库不变。
+        if (blocks.any { it is MdBlock.InnerMonologue }) {
+            blocks.filterNot { it is MdBlock.InnerMonologue } + blocks.filterIsInstance<MdBlock.InnerMonologue>()
+        } else {
+            blocks
+        }
+    }
 
 /** 仅供单会话角色的文字气泡调用；各源段分别解析，避免拼接改变 Markdown 结构。 */
 @Composable

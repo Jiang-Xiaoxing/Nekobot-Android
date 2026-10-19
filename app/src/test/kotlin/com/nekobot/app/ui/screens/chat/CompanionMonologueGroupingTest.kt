@@ -191,4 +191,25 @@ class CompanionMonologueGroupingTest {
         assertFalse(usesCompanionMonologueFooter(true, false, true))
         assertTrue(usesCompanionMonologueFooter(true, false, false))
     }
+
+    // 用户反馈：模型把（内心：…）写在正文前面时，独白块会显示在气泡顶部；
+    // 单会话气泡应固定把独白收在正文之后（只调整显示顺序，原文不变）。
+    @Test fun monologueWrittenBeforeBodyStillRendersAfterBodyBlocks() {
+        val text = "（内心：先想到的）\n\n正文在这里"
+        val blocks = companionBubbleMarkdownBlocks(text, true, false)
+        assertEquals(1, blocks.count { it is MdBlock.InnerMonologue })
+        assertTrue(blocks.last() is MdBlock.InnerMonologue)
+        assertTrue(blocks.dropLast(1).none { it is MdBlock.InnerMonologue })
+    }
+
+    @Test fun monologueOrderAlreadyAtTailStaysUnchanged() {
+        val text = "正文在这里\n\n（内心：最后才想到的）"
+        val blocks = companionBubbleMarkdownBlocks(text, true, false)
+        assertEquals(1, blocks.count { it is MdBlock.InnerMonologue })
+        assertTrue(blocks.last() is MdBlock.InnerMonologue)
+    }
+
+    @Test fun pureMonologueBubbleKeepsSingleBlock() {
+        assertEquals(listOf(MdBlock.InnerMonologue("想和你一起去")), companionBubbleMarkdownBlocks(thought, true, false))
+    }
 }
