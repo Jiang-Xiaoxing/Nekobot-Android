@@ -2,6 +2,60 @@
 
 本文件记录 Nekobot Android 应用的版本变更。
 
+## v0.8.6-rc1 - 2026-10-19
+
+### 新增
+
+- 新增单会话角色模式：角色绑定固定聊天窗口，配备独立记忆、核心记忆、经历档案及来源原话回查。
+- 支持将本地会话复制迁入单会话角色，并按公开规则重建记忆；提供备份、预览、进度、断点恢复及脱敏错误报告，保留原始资料。
+- 单会话角色支持独立聊天主备模型队列与关系评估模型，展示六维关系分数、角色自述、心情、情绪强度和精力，并支持原话核对与事实纠错。
+- 记忆设置支持语义对照、向量模型、近期原话预算、整理阈值及回查次数、总额度和单次上限。
+- 本地聊天支持会话级 P0 模型选择；思考强度新增自定义参数，并提供角色视角思考与自定义提示词 Beta 设置。
+- Agent 支持全局及会话级沙箱环境变量，并提供环境变量填写工具。
+- 日志页支持导出完整 UTF-8 日志。
+
+### 修复
+
+- 修复旧数据库升级与大型资料包导入，完善迁入恢复、来源映射和导入数据隔离。
+- 修复角色内心想法与正文的流式显示、空格换行及分段解析，并过滤普通历史中的旧思考内容与签名。
+- 修复关系评估触发、请求预算、超时处理和无效来源引用；应用回到前台可恢复被中断的评估。
+- 修复小上下文下的记忆预算、超容量原话保留、核心与锁定记忆优先级及混合检索排序。
+- 修复会话改名同步、创建资格筛选与二级页面返回后的聊天位置保留。
+- 修复 Agent AI 气泡正文限宽、内心独白折叠与纯表情显示；表情面板支持独立发送并保留输入草稿。
+- 统一液态玻璃弹窗底色，改善弹窗切换时的背景采样交接；自定义工具集编辑关闭后返回模式列表。
+- 补齐新增界面的英语、繁体中文、日语与韩语翻译，改善深色主题、大字体和底部安全区适配。
+
+### 优化
+
+- 整理会话列表、聊天设置与角色记忆页面；消息配色与主题色独立，支持分别设置用户与 AI 气泡颜色及可选动态效果。
+- 关系状态页提供七套独立皮肤、分层状态卡片与六维分数条。
+- 长按消息使用气泡旁悬浮工具条，支持窄屏操作折叠；消息详情和用量页展示模型、Token、缓存及生成统计。
+- 高级设置分层折叠，展示提示词占比与实时注入栈；思考设置入口统一为设置行和弹窗。
+- 全局 Agent 记忆修改记录支持差异对比、片段高亮及全文查看。
+
+### English
+
+- Added single-session characters with a dedicated chat, independent and core memories, experience archives, and original-message references.
+- Local chats can be copied into single-session characters and have memories rebuilt using public rules, with backups, previews, progress, resumable processing, and redacted error reports while preserving the originals.
+- Single-session characters support independent primary/fallback chat models and a relationship-evaluation model, with six relationship scores, character descriptions, mood, emotional intensity, energy, source verification, and factual corrections.
+- Memory settings include semantic matching, embedding models, recent-message budgets, consolidation thresholds, and recall limits per reply and per call.
+- Local chats support session-level P0 model selection; reasoning settings add custom parameters, character-perspective thinking, and custom prompt controls in Beta.
+- Agents support global and session-level sandbox environment variables, plus a tool for entering their values.
+- The log screen can export complete UTF-8 logs.
+- Fixed upgrades from older databases and large archive imports, with improved migration recovery, source mapping, and isolation of imported data.
+- Fixed streaming and parsing of character thoughts and replies, preserving spaces and line breaks while filtering old reasoning content and signatures from ordinary chat history.
+- Fixed relationship-evaluation triggers, request budgets, timeout handling, and invalid source references; interrupted evaluations can resume when the app returns to the foreground.
+- Fixed small-context memory budgets, preservation of oversized pending messages, core and locked memory priorities, and hybrid retrieval ranking.
+- Fixed session-name synchronization, character eligibility filtering, and restoration of chat position after returning from secondary screens.
+- Fixed Agent reply width, inner-monologue folding, and standalone sticker rendering; stickers can be sent independently without clearing the input draft.
+- Unified liquid-glass dialog tint and improved background-capture handoff between dialogs; closing a custom tool-set editor returns to the mode list.
+- Completed English, Traditional Chinese, Japanese, and Korean translations for new screens, with improved dark-mode, large-text, and bottom-inset support.
+- Refined session lists, chat settings, and character-memory screens; message colors are independent of the theme, with separate user/AI bubble colors and optional animations.
+- Relationship screens offer seven independent skins, layered status cards, and six-dimensional score bars.
+- Long-press actions use a floating message toolbar with compact layouts; message details and usage screens show models, tokens, cache usage, and generation statistics.
+- Advanced settings use collapsible sections with prompt-budget breakdowns and a live injection stack; reasoning controls use consistent settings rows and dialogs.
+- Global Agent memory history supports diffs, inline change highlighting, and full-text views.
+
 ## v0.8.5 - 2026-10-14
 
 ### 新增
