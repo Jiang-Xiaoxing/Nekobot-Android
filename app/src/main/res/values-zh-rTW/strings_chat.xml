@@ -706,6 +706,10 @@
     <string name="chat_browser_invalid_url">無法識別該位址</string>
     <string name="chat_browser_restricted">不支援的位址：%1$s</string>
     <string name="chat_browser_reload">重新整理</string>
+    <string name="chat_browser_zoom_in">放大頁面</string>
+    <string name="chat_browser_zoom_out">縮小頁面</string>
+    <string name="chat_browser_zoom">頁面縮放</string>
+    <string name="chat_browser_zoom_reset">還原 100%</string>
     <string name="chat_browser_back">上一頁</string>
     <string name="chat_browser_close">關閉瀏覽器</string>
     <string name="chat_browser_load_failed">載入失敗：%1$s</string>

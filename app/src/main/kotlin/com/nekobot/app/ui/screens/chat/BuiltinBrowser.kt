@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import com.nekobot.app.ui.components.GlassDropdownMenu as DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -111,6 +113,10 @@ import com.nekobot.app.ui.components.liquidGlassMenuSurface
 import com.nekobot.app.ui.components.rememberLiquidGlassAvailable
 import com.nekobot.app.ui.components.rememberWindowGlassBackdrop
 import java.io.File
+
+private const val MIN_BROWSER_ZOOM_PERCENT = 50
+private const val MAX_BROWSER_ZOOM_PERCENT = 200
+private const val BROWSER_ZOOM_STEP_PERCENT = 10
 
 /** 内置浏览器可加载的目标。 */
 internal sealed interface BrowserTarget {
@@ -331,6 +337,7 @@ private fun BuiltinBrowserScreen(
     // 已经为某个标签页发起过的地址：避免加载失败后无限重试
     val attemptedUrls = remember(sessionId) { mutableMapOf<String, String>() }
     var showTabManager by remember { mutableStateOf(false) }
+    var showZoomDialog by remember { mutableStateOf(false) }
 
     var showWorkspaceHtmlDialog by remember { mutableStateOf(false) }
     val glassAvailable = rememberLiquidGlassAvailable()
@@ -350,6 +357,19 @@ private fun BuiltinBrowserScreen(
 
     fun toast(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    fun changeZoom(deltaPercent: Int) {
+        val tab = selectedTab ?: return
+        val view = webViews[tab.id] ?: return
+        if (deltaPercent < 0 && !view.canZoomOut()) return
+        if (deltaPercent > 0 && !view.canZoomIn()) return
+        val nextPercent = (tab.zoomPercent + deltaPercent)
+            .coerceIn(MIN_BROWSER_ZOOM_PERCENT, MAX_BROWSER_ZOOM_PERCENT)
+        if (nextPercent == tab.zoomPercent) return
+
+        view.zoomBy(nextPercent.toFloat() / tab.zoomPercent)
+        viewModel.updateTab(tab.id) { it.copy(zoomPercent = nextPercent) }
     }
 
     /** 地址栏与工作区入口的统一入口：解析失败只提示，不改变当前页面。 */
@@ -422,6 +442,7 @@ private fun BuiltinBrowserScreen(
                     onNewTab = { viewModel.newTab() },
                     onReload = { selectedTab?.let { webViews[it.id]?.reload() } },
                     onBack = { selectedTab?.let { webViews[it.id]?.goBack() } },
+                    onOpenZoom = { showZoomDialog = true },
                     onCopyUrl = {
                         val url = selectedTab?.url.orEmpty()
                         if (url.isNotBlank()) {
@@ -501,6 +522,19 @@ private fun BuiltinBrowserScreen(
                 )
             }
 
+            if (showZoomDialog) {
+                BrowserZoomPopup(
+                    zoomPercent = selectedTab?.zoomPercent ?: 100,
+                    zoomEnabled = selectedTab?.let { it.url.isNotBlank() && it.id in webViews } == true,
+                    canZoomIn = selectedTab?.let { webViews[it.id]?.canZoomIn() } == true,
+                    canZoomOut = selectedTab?.let { webViews[it.id]?.canZoomOut() } == true,
+                    onZoomIn = { changeZoom(BROWSER_ZOOM_STEP_PERCENT) },
+                    onZoomOut = { changeZoom(-BROWSER_ZOOM_STEP_PERCENT) },
+                    onReset = { changeZoom(100 - (selectedTab?.zoomPercent ?: 100)) },
+                    onDismiss = { showZoomDialog = false },
+                )
+            }
+
             if (showTabManager) {
                 BrowserTabManager(
                     tabs = tabs,
@@ -551,6 +585,7 @@ private fun BrowserTopBar(
     onNewTab: () -> Unit,
     onReload: () -> Unit,
     onBack: () -> Unit,
+    onOpenZoom: () -> Unit,
     onCopyUrl: () -> Unit,
     onOpenSettings: () -> Unit,
     onClose: () -> Unit,
@@ -700,6 +735,15 @@ private fun BrowserTopBar(
                         onReload()
                     },
                 )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.chat_browser_zoom)) },
+                    leadingIcon = { Icon(Icons.Filled.ZoomIn, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onOpenZoom()
+                    },
+                )
                 if (hasWorkspacePages) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_browser_workspace_html)) },
@@ -741,6 +785,86 @@ private fun BrowserTopBar(
                         onClose()
                     },
                 )
+            }
+        }
+    }
+}
+
+/** 页面缩放弹窗：百分比以当前页面默认比例为 100%。 */
+@Composable
+private fun BrowserZoomPopup(
+    zoomPercent: Int,
+    zoomEnabled: Boolean,
+    canZoomIn: Boolean,
+    canZoomOut: Boolean,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(min = 280.dp, max = 360.dp)
+                .padding(horizontal = 24.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_browser_zoom),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = onZoomOut,
+                        enabled = zoomEnabled && canZoomOut && zoomPercent > MIN_BROWSER_ZOOM_PERCENT,
+                    ) {
+                        Icon(
+                            Icons.Filled.ZoomOut,
+                            contentDescription = stringResource(R.string.chat_browser_zoom_out),
+                        )
+                    }
+                    Text(
+                        text = "$zoomPercent%",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    IconButton(
+                        onClick = onZoomIn,
+                        enabled = zoomEnabled && canZoomIn && zoomPercent < MAX_BROWSER_ZOOM_PERCENT,
+                    ) {
+                        Icon(
+                            Icons.Filled.ZoomIn,
+                            contentDescription = stringResource(R.string.chat_browser_zoom_in),
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    TextButton(onClick = onReset, enabled = zoomEnabled && zoomPercent != 100) {
+                        Text(stringResource(R.string.chat_browser_zoom_reset))
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.common_done))
+                    }
+                }
             }
         }
     }

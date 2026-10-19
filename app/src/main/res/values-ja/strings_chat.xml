@@ -701,6 +701,10 @@
     <string name="chat_browser_invalid_url">認識できないアドレスです</string>
     <string name="chat_browser_restricted">対応していないアドレス：%1$s</string>
     <string name="chat_browser_reload">再読み込み</string>
+    <string name="chat_browser_zoom_in">拡大</string>
+    <string name="chat_browser_zoom_out">縮小</string>
+    <string name="chat_browser_zoom">ページの拡大率</string>
+    <string name="chat_browser_zoom_reset">100%に戻す</string>
     <string name="chat_browser_back">戻る</string>
     <string name="chat_browser_close">ブラウザを閉じる</string>
     <string name="chat_browser_load_failed">読み込みに失敗しました：%1$s</string>

@@ -26,6 +26,8 @@ internal data class BrowserTabState(
     val followAgent: Boolean = false,
     val loading: Boolean = false,
     val canGoBack: Boolean = false,
+    /** 当前标签页相对默认页面比例的缩放百分比。 */
+    val zoomPercent: Int = 100,
 ) {
     /** 标签卡片上展示的域名；本地文件没有域名，显示文件名。 */
     val domain: String
