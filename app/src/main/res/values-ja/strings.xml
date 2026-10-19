@@ -353,6 +353,7 @@
     <string name="companion_examples_selecting">会話の例を選んでいます…</string>
     <string name="companion_examples_failed">適切な例を選べませんでした。キャラクターカードで追加できます。</string>
     <string name="companion_examples_disabled_notice">会話の履歴が十分に増えました。%1$sは最近の会話を直接参考にします。話し方が固定されないよう、会話の例は停止しました。</string>
+    <string name="companion_examples_notice_dismiss">今後表示しない</string>
     <!-- Session page V2 -->
     <string name="sessions_page_character">キャラ</string>
     <string name="sessions_page_agent">Agent</string>

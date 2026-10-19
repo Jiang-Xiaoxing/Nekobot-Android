@@ -1463,6 +1463,14 @@ class PrefsManager(context: Context) {
         prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", show).apply()
     }
 
+    /** “对话示例已停用”提示只显示一次；用户点“不再提示”后永久隐藏。 */
+    internal fun companionExamplesNoticeDismissed(profile: String, sessionId: String): Boolean =
+        prefs.getBoolean(companionRecallKey(profile, sessionId) + ":examples_notice_dismissed", false)
+
+    internal fun setCompanionExamplesNoticeDismissed(profile: String, sessionId: String, dismissed: Boolean) {
+        prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":examples_notice_dismissed", dismissed).apply()
+    }
+
     internal fun companionRelationshipNoticeToken(profile: String, sessionId: String): String? =
         prefs.getString(companionRecallKey(profile, sessionId) + ":relationship_notice", null)
 

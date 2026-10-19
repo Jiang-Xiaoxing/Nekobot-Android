@@ -342,6 +342,15 @@ class ChatViewModel : BaseViewModel() {
 
     internal val companionExamples = MutableStateFlow<com.nekobot.app.data.local.db.CompanionExamplesEntity?>(null)
     private var companionExamplesJob: kotlinx.coroutines.Job? = null
+    /** “对话示例已停用”提示是否已被用户永久关闭（仅界面偏好，不改数据库与提示词）。 */
+    internal val companionExamplesNoticeDismissed = MutableStateFlow(false)
+
+    fun dismissCompanionExamplesNotice() {
+        val id = currentSessionId
+        if (id.isBlank() || !isLocalMode) return
+        companionExamplesNoticeDismissed.value = true
+        ServiceContainer.localRepository.setCompanionExamplesNoticeDismissed(id, true)
+    }
 
     fun declineCompanionExamples() {
         val id = currentSessionId
@@ -748,6 +757,9 @@ class ChatViewModel : BaseViewModel() {
         currentSessionId = sessionId
         companionExamplesJob?.cancel()
         companionExamples.value = null
+        companionExamplesNoticeDismissed.value = if (isLocalMode) {
+            ServiceContainer.localRepository.companionExamplesNoticeDismissed(sessionId)
+        } else false
         if (isLocalMode) companionExamplesJob = viewModelScope.launch {
             ServiceContainer.localRepository.observeCompanionExamples(sessionId).collect {
                 if (currentSessionId == sessionId) companionExamples.value = it

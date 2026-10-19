@@ -54,10 +54,20 @@ internal fun CompanionExamplesOffer(viewModel: ChatViewModel) {
 }
 
 @Composable
-internal fun CompanionExamplesDisabledNotice(name: String) {
-    Text(stringResource(R.string.companion_examples_disabled_notice, name),
+internal fun CompanionExamplesDisabledNotice(name: String, onDismiss: (() -> Unit)? = null) {
+    Column(
         Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 12.dp),
-        color = Color(0xFF8A8590), textAlign = TextAlign.Center, fontSize = 12.sp, lineHeight = 19.sp)
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(stringResource(R.string.companion_examples_disabled_notice, name),
+            color = Color(0xFF8A8590), textAlign = TextAlign.Center, fontSize = 12.sp, lineHeight = 19.sp)
+        if (onDismiss != null) {
+            TextButton(onClick = onDismiss, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 32.dp)) {
+                Text(stringResource(R.string.companion_examples_notice_dismiss), fontSize = 12.sp, color = Color(0xFF8A8590))
+            }
+        }
+    }
 }
 
 @Composable

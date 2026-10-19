@@ -1777,6 +1777,12 @@ class LocalRepository(
     internal fun setCompanionShowReasoning(sessionId: String, show: Boolean) =
         ServiceContainer.prefs.setCompanionShowReasoning(db.dbName, sessionId, show)
 
+    /** “对话示例已停用”提示：显示一次后可由用户永久关闭（仅界面偏好）。 */
+    internal fun companionExamplesNoticeDismissed(sessionId: String) =
+        ServiceContainer.prefs.companionExamplesNoticeDismissed(db.dbName, sessionId)
+    internal fun setCompanionExamplesNoticeDismissed(sessionId: String, dismissed: Boolean) =
+        ServiceContainer.prefs.setCompanionExamplesNoticeDismissed(db.dbName, sessionId, dismissed)
+
     internal suspend fun companionConversionModels(): List<CompanionConversionModel> = aiModelDao.listAll()
         .filter { it.enabled && it.purpose in setOf("chat", "compression") }.map { model ->
             CompanionConversionModel(model.id, model.name, model.provider?.takeIf { it.isNotBlank() }

@@ -329,6 +329,7 @@ fun ChatScreen(
     // Agent 会话开启「继承完整角色能力」后按角色会话渲染：显示角色头像，气泡不再占满整宽。
     val inheritsCharacter = session?.sessionMode == "agent" && session?.inheritCharacter == true
     val companionExamples by viewModel.companionExamples.collectAsStateWithLifecycle()
+    val companionExamplesNoticeDismissed by viewModel.companionExamplesNoticeDismissed.collectAsStateWithLifecycle()
     val companionChat = session?.companionMode == true
     val companionName = companionChatTitle(session)
     val companionPortrait = companionPhotoPath(session?.portrait, session?.characterAvatar)
@@ -375,6 +376,27 @@ fun ChatScreen(
         }
     }
     val motionKeys = messageMotionKeys(renderMessages)
+    // “对话示例已停用”提示：整段会话只显示一次，锚定在停用发生时的那条回复后面；
+    // 用户点“不再提示”后永久隐藏。锚点消息被删或缺失时退回列表末尾，同样只出现一次。
+    val examplesNoticeAfterIndex = remember(
+        renderMessages,
+        companionExamples?.noticeAfterId,
+        companionExamples?.state,
+        companionExamplesNoticeDismissed,
+        companionChat
+    ) {
+        when {
+            !companionChat -> null
+            companionExamplesNoticeDismissed -> null
+            companionExamples?.state != "disabled" -> null
+            renderMessages.isEmpty() -> null
+            else -> {
+                val anchor = companionExamples?.noticeAfterId?.takeIf { it.isNotBlank() }
+                val anchorIndex = anchor?.let { id -> renderMessages.indexOfFirst { it.id == id } } ?: -1
+                if (anchorIndex >= 0) anchorIndex else renderMessages.lastIndex
+            }
+        }
+    }
     // 统一内联提示的锚点：下标 → 提示列表；锚点失效（消息被删/归档或没有锚点）的提示
     // 回退到列表末尾渲染，避免提示整个消失。
     val inlineNoticesByAnchorIndex = LinkedHashMap<Int, MutableList<ChatInlineNotice>>()
@@ -1355,8 +1377,15 @@ fun ChatScreen(
                         // 注意：LazyColumn 单个 item 内的多个平级节点会像 Box 一样叠放，
                         // 因此日期分隔条与气泡必须包在 Column 里纵向排布
                         Column {
-                            if (companionChat && index > 0 && renderMessages[index - 1].id == companionExamples?.noticeAfterId) {
-                                CompanionExamplesDisabledNotice(companionName)
+                            if (
+                                examplesNoticeAfterIndex != null &&
+                                examplesNoticeAfterIndex < renderMessages.lastIndex &&
+                                index == examplesNoticeAfterIndex + 1
+                            ) {
+                                CompanionExamplesDisabledNotice(
+                                    companionName,
+                                    onDismiss = viewModel::dismissCompanionExamplesNotice
+                                )
                             }
                             // 跨天消息之间插入日期分隔条
                             val day = dayKey(msg.timestamp)
@@ -1543,6 +1572,14 @@ fun ChatScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                    if (examplesNoticeAfterIndex != null && examplesNoticeAfterIndex >= renderMessages.lastIndex) {
+                        item(key = "companion_examples_notice_tail", contentType = "companion_examples_notice_tail") {
+                            CompanionExamplesDisabledNotice(
+                                companionName,
+                                onDismiss = viewModel::dismissCompanionExamplesNotice
+                            )
                         }
                     }
                     // AI 处理进度卡片已移除：流式占位消息由 StreamStart 事件创建

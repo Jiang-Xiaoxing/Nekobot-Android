@@ -378,6 +378,7 @@
     <string name="companion_examples_selecting">正在挑選對話範例…</string>
     <string name="companion_examples_failed">未能挑選到合適的範例，可以在角色卡手動新增。</string>
     <string name="companion_examples_disabled_notice">你們的聊天紀錄已經夠多了，%1$s會直接參考最近的聊天。對話範例已停用，免得語氣被定死。</string>
+    <string name="companion_examples_notice_dismiss">不再提示</string>
     <!-- Session page V2 -->
     <string name="sessions_page_character">角色</string>
     <string name="sessions_page_agent">Agent</string>

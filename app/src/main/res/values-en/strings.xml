@@ -353,6 +353,7 @@
     <string name="companion_examples_selecting">Picking dialogue examples…</string>
     <string name="companion_examples_failed">No suitable examples were selected. You can add them in the character card.</string>
     <string name="companion_examples_disabled_notice">You have enough chat history now. %1$s will refer to your recent chats. Dialogue examples have stopped so her voice can keep evolving.</string>
+    <string name="companion_examples_notice_dismiss">Don’t show again</string>
     <!-- Session page V2 -->
     <string name="sessions_page_character">Characters</string>
     <string name="sessions_page_agent">Agent</string>
