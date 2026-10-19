@@ -30,9 +30,10 @@ class FusedCompanionAndroidTest {
                 CompanionSourceEntity("bad",source.id,"bad fingerprint","我喝茶",null,"user"),
                 CompanionSourceEntity("good",source.id,CompanionMemoryPolicy.fingerprint(source),"我喝茶",null,"user")))
             val result=store.fusedRecall(session,"喝茶",FusedCompanionPolicy.budgets(14000)).first
-            val ids=JsonParser.parseString(result.substringAfter("本轮相关记忆：\n")).asJsonArray.map { it.asJsonObject["id"].asString }
-            assertFalse("Invalid high-ranking evidence must never reach the model", "bad" in ids)
-            assertTrue("The next valid fact must still be considered", "good" in ids)
+            // 回查区已改为纯文本人话，直接核对内容是否被证据校验挡住。
+            val recall=result.substringAfter("本轮相关记忆：\n")
+            assertFalse("Invalid high-ranking evidence must never reach the model", recall.contains("喝茶喝茶喝茶加糖"))
+            assertTrue("The next valid fact must still be considered", recall.contains("喝茶不加糖"))
             db.messageDao().upsert(source.copy(content="我现在改成喝白水"))
             assertFalse(store.fusedRecall(session,"喝茶",FusedCompanionPolicy.budgets(14000)).first.contains("不加糖"))
         } finally { db.close() }
@@ -167,23 +168,28 @@ class FusedCompanionAndroidTest {
             val history=db.messageDao().listBySession("s").filter { it.id!=next.id }
             val b=FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusMinutes(2))
-            assertEquals(a,b.take(a.size))
-            assertEquals("晚上好", b.single { it["role"]=="assistant" }["content"])
-            assertTrue(b[1]["content"].toString().contains("发送日期：2026-10-08"))
-            assertEquals("你好", a.last()["content"])
-            assertTrue(b[b.size-2]["content"].toString().contains("本轮请求开始时间：2026-10-08 20:02（Asia/Shanghai，UTC+08:00）"))
+            // 复用上一轮缓存：系统提示与辅助资料前缀保持原样，原话按时间顺序排在后面。
+            assertEquals(a.first(), b.first())
+            assertEquals(a[1], b[1])
+            assertEquals("你好", b[2]["content"])
+            assertEquals("晚上好", b[3]["content"])
+            assertTrue(b.last()["content"].toString().contains("再聊一会"))
+            // 本轮时钟只出现在当前轮，且不进入旧轮缓存。
+            assertTrue(b[b.size-2]["content"].toString().contains("2026年10月8日 星期四"))
+            assertTrue(b[b.size-2]["content"].toString().contains("晚上8:02"))
             val store=CompanionMemoryStore(db)
             store.editFused(s,"diet","用户怕辣","user_profile",emptyList(),true,false)
             val c=FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusMinutes(3))
-            assertTrue(c[c.size-2]["content"].toString().contains("用户怕辣"))
-            assertEquals(1,c.count { it["content"].toString().contains("<message_metadata>") })
+            assertTrue(c.any { it["content"].toString().contains("用户怕辣") })
             assertEquals(3,db.messageDao().listBySession("s").size) // Auxiliary text never becomes chat evidence.
             assertEquals(1,db.companionMemoryDao().contextMaterials(store.ensureScope(s).id).size)
             val utc = now.plusMinutes(4).withZoneSameInstant(java.time.ZoneId.of("UTC"))
             val d = FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,utc)
-            assertTrue(d[d.size-2]["content"].toString().contains("2026-10-08 12:04（UTC，UTC+00:00）"))
+            val clock=d[d.size-2]["content"].toString()
+            assertTrue(clock.contains("2026年10月8日 星期四"))
+            assertTrue(clock.contains("下午12:04"))
             assertEquals("晚上好",d.single { it["role"]=="assistant" }["content"])
         } finally { db.close() }
     }
@@ -198,9 +204,10 @@ class FusedCompanionAndroidTest {
             val history=db.messageDao().listBySession("s").filter { it.id!=current.id }
             val payload=FusedCompanionContext(db).build(s,current.id,history,"ROLE",emptyList(),
                 mapOf("role" to "user","content" to current.content),"",32000,4000)
-            val index=payload.indexOfFirst { it["role"]=="assistant" }
-            assertTrue(payload[index-1]["content"].toString().contains("发送日期为 未知"))
-            assertEquals(unknown.content,payload[index]["content"])
+            // 回查原话按原文发送：不改写、不补日期、不套包装。
+            val assistant=payload.filter { it["role"]=="assistant" }
+            assertEquals(listOf(unknown.content), assistant.map { it["content"] })
+            assertTrue(payload.any { it["content"]=="旧日原话" })
             assertEquals(unknown,db.messageDao().getById(unknown.id))
         } finally { db.close() }
     }
@@ -231,20 +238,27 @@ class FusedCompanionAndroidTest {
         } finally { db.close() }
     }
 
-    @Test fun tinyContextKeepsRawAndCoreOverflowIsRejectedBeforeSaving() = runBlocking<Unit> {
+    @Test fun tinyContextDropsOversizedRawAndCoreOverflowIsOnlyAdvisory() = runBlocking<Unit> {
         val db=db(); try {
             val s=setup(db); say(db,"old","原话".repeat(5000)); say(db,"a","回复","assistant")
             val current=say(db,"now","接着说")
-            fails { FusedCompanionContext(db).build(s,current.id,db.messageDao().listBySession("s").dropLast(1),
-                "ROLE",emptyList(),mapOf("role" to "user","content" to "接着说"),"",2000,800) }
+            // 超容量原话不会被截断后悄悄发送，而是留给整理；本轮请求仍能正常组装。
+            val payload=FusedCompanionContext(db).build(s,current.id,db.messageDao().listBySession("s").dropLast(1),
+                "ROLE",emptyList(),mapOf("role" to "user","content" to "接着说"),"",2000,800)
+            assertFalse(gson.toJson(payload).contains("原话原话"))
             assertEquals(3,db.messageDao().listBySession("s").size)
             val store=CompanionMemoryStore(db)
             store.editFused(s,"p","原来的内容","user_profile",emptyList(),true,false)
-            fails { store.editFused(s,"p","常驻内容".repeat(350),"user_profile",emptyList(),true,false) }
+            // 核心约1000 Token 只是维护建议：超额核心仍可保存，由用户决定是否精简。
+            val oversized="常驻内容".repeat(350)
+            store.editFused(s,"p",oversized,"user_profile",emptyList(),true,false)
             val saved=store.validatedMemories(store.ensureScope(s)).single { it.current }
-            assertEquals("原来的内容",saved.content)
+            assertEquals(oversized,saved.content)
             assertTrue(saved.alwaysProvide)
-            assertTrue(store.fusedRecall(s,"不相关的话题",FusedCompanionPolicy.budgets(14000)).first.contains("原来的内容"))
+            // 真实容量上限仍有效：核心必须完整发送，装不下时明确失败而不是静默裁剪。
+            fails { FusedCompanionContext(db).build(s,current.id,emptyList(),"ROLE",emptyList(),
+                mapOf("role" to "user","content" to "接着说"),"",2000,800) }
+            assertTrue(store.fusedRecall(s,"不相关的话题",FusedCompanionPolicy.budgets(14000)).first.contains(oversized))
         } finally { db.close() }
     }
 

@@ -120,15 +120,18 @@ class PortableDataArchiveManagerTest {
         manager.export(setOf(PortableDataCategory.CONVERSATIONS),"",output,"test")
         db.sessionDao().deleteById(row.id)
         manager.import(ByteArrayInputStream(output.toByteArray()),"",setOf(PortableDataCategory.CONVERSATIONS))
-        val restored=requireNotNull(db.sessionDao().getById(row.id))
+        // Committing an import rebuilds the active Room instance. Read through the new connection.
+        val reopenedDb=NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
+        val reopenedStore=com.nekobot.app.data.local.ai.CompanionMemoryStore(reopenedDb)
+        val restored=requireNotNull(reopenedDb.sessionDao().getById(row.id))
         assertTrue(restored.companionMode)
-        assertEquals(row.id,db.companionMemoryDao().owner(characterId)?.sessionId)
-        val restoredScope=store.ensureScope(restored)
-        val fact=store.validatedMemories(restoredScope).single { it.current }
+        assertEquals(row.id,reopenedDb.companionMemoryDao().owner(characterId)?.sessionId)
+        val restoredScope=reopenedStore.ensureScope(restored)
+        val fact=reopenedStore.validatedMemories(restoredScope).single { it.current }
         assertEquals("用户怕辣",fact.content)
-        assertEquals(source.id,db.companionMemoryDao().sources(fact.id).single().messageId)
-        assertTrue(db.companionMemoryDao().pending(restoredScope.id).isEmpty())
-        assertTrue(db.companionMemoryDao().contextMaterials(restoredScope.id).isEmpty())
+        assertEquals(source.id,reopenedDb.companionMemoryDao().sources(fact.id).single().messageId)
+        assertTrue(reopenedDb.companionMemoryDao().pending(restoredScope.id).isEmpty())
+        assertTrue(reopenedDb.companionMemoryDao().contextMaterials(restoredScope.id).isEmpty())
     }
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     private lateinit var manager: PortableDataArchiveManager
@@ -137,9 +140,16 @@ class PortableDataArchiveManagerTest {
     private var originalMemory: ByteArray? = null
     private var originalRecentSessionsIncludeArchived: Boolean = false
     private lateinit var mergeSessionId: String
+    private lateinit var previousProfile: String
+    private lateinit var testProfile: String
 
     @Before
     fun setUp() {
+        // Export includes all conversations in the active profile. Isolate every case so a
+        // previous interrupted test cannot become part of this case's archive.
+        previousProfile = com.nekobot.app.ServiceContainer.prefs.activeDbName
+        testProfile = "portable-archive-test-${UUID.randomUUID()}"
+        com.nekobot.app.ServiceContainer.switchLocalDb(testProfile)
         manager = PortableDataArchiveManager(context)
         memoryFile = com.nekobot.app.data.local.ai.GlobalAgentMemoryStore.memoryFileFor(
             context,
@@ -156,14 +166,15 @@ class PortableDataArchiveManagerTest {
 
     @After
     fun tearDown() {
-        workspaceRoot.deleteRecursively()
-        originalMemory?.let(memoryFile::writeBytes) ?: memoryFile.delete()
-        com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived =
-            originalRecentSessionsIncludeArchived
-        runBlocking {
-            NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
-                .sessionDao()
-                .deleteById(mergeSessionId)
+        try {
+            workspaceRoot.deleteRecursively()
+            originalMemory?.let(memoryFile::writeBytes) ?: memoryFile.delete()
+            com.nekobot.app.ServiceContainer.prefs.recentSessionsIncludeArchived =
+                originalRecentSessionsIncludeArchived
+        } finally {
+            com.nekobot.app.ServiceContainer.switchLocalDb(previousProfile)
+            com.nekobot.app.ServiceContainer.prefs.removeDbProfile(testProfile)
+            NekobotDatabase.deleteProfileFile(context, testProfile)
         }
     }
 
