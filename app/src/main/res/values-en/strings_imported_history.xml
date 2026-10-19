@@ -12,6 +12,6 @@
     <string name="imported_history_read_full">Read full content</string>
     <string name="imported_history_back_to_snapshots">Back to snapshots</string>
     <string name="imported_history_image_description">Original prompt and description</string>
-    <string name="imported_history_partial_sources_title">Some original messages are available</string>
-    <string name="imported_history_partial_sources_message">These messages do not verify the entire memory. Check them in context.</string>
+    <string name="imported_history_partial_sources_title">Original messages linked · Some content needs verification</string>
+    <string name="imported_history_partial_sources_message">These messages support part of the memory. Other details still need verification.</string>
 </resources>

@@ -303,7 +303,7 @@
     <string name="single_role_these_memories_are_included_in_every_chat_use_the_top_right_menu">這裡的內容每次聊天都會提供給模型。點記憶右上角可移出核心，正文仍保留。模型整理舊聊天時會挑選與更新，你的手動選擇優先。</string>
     <string name="single_role_review_and_adjust_important_names_relationships_and_habits_at_any">重要的稱呼、關係與相處習慣，隨時查看和調整。</string>
     <string name="single_role_about_1_s_tokens_does_not_use_recall_quota">約 %1$d Token · 不扣主動回查額度</string>
-    <string name="single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i">現有核心超過精簡目標，仍會完整提供。建議縮短正文或移出部分項目；新增核心前需騰出空間。</string>
+    <string name="single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i">建議約 1000 Token，可繼續保留或新增。是否精簡、刪哪些由你決定；實際傳送仍受模型上下文上限約束。</string>
     <string name="single_role_memories_temporarily_unavailable">記憶暫時無法讀取</string>
     <string name="single_role_this_action_did_not_complete">這次操作未完成</string>
     <string name="single_role_no_core_memories_yet_return_to_all_memories_and_choose_set_as_cor">尚無核心記憶。返回全部記憶，點項目右上角的「設為核心記憶」；也可由模型在後續聊天整理時挑選。</string>

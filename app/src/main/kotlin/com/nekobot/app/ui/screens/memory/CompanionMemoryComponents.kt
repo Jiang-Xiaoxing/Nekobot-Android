@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -193,13 +194,16 @@ internal fun CompanionMemoryFilters(
 internal fun CompanionMemoryCard(
     memory: CompanionMemoryEntity, enabled: Boolean,
     onSource: () -> Unit, onEdit: () -> Unit, onVersions: () -> Unit, onDelete: () -> Unit,
-    onCoreChange: (() -> Unit)? = null
+    onCoreChange: (() -> Unit)? = null, hasSources: Boolean = false
 ) {
     val textResources = LocalResources.current
     val accent = memoryCategoryColor(memory.category)
     var menu by remember(memory.id) { mutableStateOf(false) }
-    val tags = remember(memory.tagsJson) { MemoryTags.fromJson(memory.tagsJson) }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+    val imported = !memory.manual && memory.provenance in setOf(CompanionImportPolicy.IMPORTED_UNVERIFIED, CompanionImportPolicy.IMPORTED_VERIFIED)
+    val tags = remember(memory.tagsJson, imported) { MemoryTags.fromJson(memory.tagsJson).filterNot {
+        imported && it in setOf("爱语原有记忆", "原话来源未验证", "原话来源已核验", "原话来源已验证")
+    } }
+    Surface(Modifier.fillMaxWidth().testTag("companion-memory-${memory.id}"), shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, accent.copy(alpha = 0.10f))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -207,7 +211,10 @@ internal fun CompanionMemoryCard(
                 Spacer(Modifier.width(7.dp))
                 Text(memoryCategoryNames[memory.category] ?: memory.category, Modifier.weight(1f),
                     style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = accent)
-                MemoryStatusLabel(memory.status)
+                if (imported && memory.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED && memory.status == "active") {
+                    Text(textResources.getString(if (hasSources) R.string.memory_review_partial else R.string.memory_review_unlinked),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else MemoryStatusLabel(memory.status)
                 Box {
                     IconButton(onClick = { menu = true }, enabled = enabled) { Icon(Icons.Filled.MoreHoriz, textResources.getString(R.string.single_role_more_memory_actions)) }
                     DropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }) {
@@ -248,8 +255,8 @@ internal fun CompanionMemoryCard(
                 }
                 if (memory.manual) MemoryBadge(textResources.getString(R.string.single_role_manual_memory)) { EditMemoryIcon(Modifier.size(16.dp)) }
             }
-            if (memory.provenance == CompanionImportPolicy.IMPORTED_UNVERIFIED && !memory.manual) {
-                Text(textResources.getString(R.string.single_role_imported_memory_original_sources_unverified), color = MaterialTheme.colorScheme.error,
+            if (imported) {
+                Text(textResources.getString(R.string.memory_review_imported_origin), color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelMedium)
             }
             memory.expiresAt?.let { Text(textResources.getString(R.string.single_role_valid_until_1_s, it), style = MaterialTheme.typography.labelMedium,

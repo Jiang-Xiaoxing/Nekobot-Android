@@ -41,7 +41,7 @@ class PreparedPortableImport internal constructor(
     var result: PortableImportResult? = null
         internal set
     internal var recoveryPending = false
-    override fun close() { if (!closed) { closed = true; archive.cleanup(); staging.deleteRecursively() } }
+    @Synchronized override fun close() { if (!closed) { closed = true; archive.cleanup(); staging.deleteRecursively() } }
 }
 
 data class PortableImportFileDifference(val key: String, val label: String,

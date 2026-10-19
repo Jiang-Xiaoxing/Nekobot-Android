@@ -303,7 +303,7 @@
     <string name="single_role_these_memories_are_included_in_every_chat_use_the_top_right_menu">매 대화에 제공되는 기억입니다. 각 기억의 오른쪽 위 메뉴에서 핵심에서 제외할 수 있으며 내용은 남습니다. 모델이 이전 대화를 정리하며 선택하고 갱신하지만 직접 선택한 내용이 우선합니다.</string>
     <string name="single_role_review_and_adjust_important_names_relationships_and_habits_at_any">중요한 호칭, 관계, 함께하는 습관을 언제든 확인하고 조정하세요.</string>
     <string name="single_role_about_1_s_tokens_does_not_use_recall_quota">약 %1$d Token · 능동 회상 한도 미차감</string>
-    <string name="single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i">핵심 기억이 목표 크기를 초과해도 전체가 제공됩니다. 추가하려면 내용을 줄이거나 일부를 핵심에서 제외하세요.</string>
+    <string name="single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i">약 1000 Token은 권장량입니다. 그대로 유지하거나 추가할 수 있고, 줄일 내용도 직접 정할 수 있습니다. 전송에는 모델의 문맥 한도가 적용됩니다.</string>
     <string name="single_role_memories_temporarily_unavailable">일시적으로 기억을 불러올 수 없습니다</string>
     <string name="single_role_this_action_did_not_complete">작업이 완료되지 않았습니다</string>
     <string name="single_role_no_core_memories_yet_return_to_all_memories_and_choose_set_as_cor">아직 핵심 기억이 없습니다. 전체 기억으로 돌아가 항목 오른쪽 위에서 ‘핵심 기억으로 설정’을 선택하거나 이후 정리 과정에서 모델이 선택하도록 할 수 있습니다.</string>

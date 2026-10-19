@@ -48,6 +48,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var records by remember { mutableStateOf(emptyList<CompanionMemoryEntity>()) }
+    var linkedMemoryIds by remember { mutableStateOf(emptySet<String>()) }
     var overview by remember { mutableStateOf<CompanionMemoryOverview?>(null) }
     var ownerName by remember { mutableStateOf("") }
     var ownerAvatar by remember { mutableStateOf<String?>(null) }
@@ -73,6 +74,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val categories = memoryCategoryNames
     LaunchedEffect(sessionId, dataSourceRevision, appMode) {
         records = emptyList()
+        linkedMemoryIds = emptySet()
         overview = null
         ownerName = ""
         ownerAvatar = null
@@ -96,10 +98,12 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             val session = repo.getSession(sessionId)
             check(session?.companionMode == true) { textResources.getString(R.string.single_role_this_page_only_manages_independent_memories_for_the_current_singl) }
             val loadedRecords = repo.listCompanionMemories(sessionId)
+            val loadedSourceIds = repo.companionMemoriesWithSources(sessionId)
             val loadedOverview = repo.companionMemoryOverview(sessionId)
             val loadedEmbedding = repo.companionEmbeddingSettings(sessionId)
             check(repo === ServiceContainer.localRepository && ServiceContainer.prefs.isLocalMode) { textResources.getString(R.string.single_role_the_data_profile_changed_reopen_the_memory_page) }
             records = loadedRecords
+            linkedMemoryIds = loadedSourceIds
             overview = loadedOverview
             embeddingSettings = loadedEmbedding
             ownerName = com.nekobot.app.data.model.sessionTitle(session.listTitleOverride, session.characterName?.takeIf { it.isNotBlank() } ?: session.name.orEmpty())
@@ -108,7 +112,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             ready = true
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            records = emptyList(); overview = null; ownerName = ""
+            records = emptyList(); linkedMemoryIds = emptySet(); overview = null; ownerName = ""
             error = failure.message ?: textResources.getString(R.string.single_role_memories_cannot_be_loaded_right_now_please_try_again)
         }
     }
@@ -193,7 +197,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                         if (coreOnly) Text(textResources.getString(R.string.single_role_about_1_s_tokens_does_not_use_recall_quota, coreTokens), style = MaterialTheme.typography.labelMedium)
                         if (coreTokens > CompanionCoreMemory.maintenanceTokens) Text(
                             textResources.getString(R.string.single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i),
-                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -216,7 +220,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                 else CompanionMemoryEmpty(query.isNotBlank() || category.isNotBlank())
             }
             items(shown, key = { it.id }) { memory ->
-                CompanionMemoryCard(memory, enabled = editable,
+                CompanionMemoryCard(memory, enabled = editable, hasSources = memory.id in linkedMemoryIds,
                     onSource = { action { sources = repo.fusedMemorySources(sessionId, memory.id); sourceMemory = memory } },
                     onEdit = { selected = memory; actionError = null; editor = true },
                     onVersions = { action { versions = repo.fusedMemoryVersions(sessionId, memory.factKey) } },

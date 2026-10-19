@@ -12,6 +12,6 @@
     <string name="imported_history_read_full">阅读全文</string>
     <string name="imported_history_back_to_snapshots">返回快照</string>
     <string name="imported_history_image_description">原始提示与说明</string>
-    <string name="imported_history_partial_sources_title">部分原话可查</string>
-    <string name="imported_history_partial_sources_message">这些原话不代表整条记忆已核验，请结合上下文核对。</string>
+    <string name="imported_history_partial_sources_title">已关联原话 · 部分内容待核实</string>
+    <string name="imported_history_partial_sources_message">以下原话支持记忆中的部分内容，其他细节仍待核实。</string>
 </resources>

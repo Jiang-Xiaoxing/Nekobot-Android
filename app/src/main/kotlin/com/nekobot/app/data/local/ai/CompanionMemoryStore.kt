@@ -500,9 +500,6 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             eventDate = old?.eventDate.takeIf { content.trim() == old?.content },
             annualMonthDay = old?.annualMonthDay.takeIf { content.trim() == old?.content },
             expiresAt = old?.expiresAt)
-        // retire 在同一事务内；失败会回滚正文及归属。旧超量核心允许缩短，不强制丢弃。
-        val existing = validatedMemories(scope).filter { it.factKey != factKey }
-        requireCoreRoom(existing, old, edited)
         dao.saveMemory(edited)
         old?.let { previous -> dao.saveSources(dao.sources(previous.id).map { it.copy(memoryId = newId) }) }
         // 人工编辑保留修改记录；物理替换仅由后台已确认的记忆变化执行。
@@ -516,17 +513,8 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         val old = requireNotNull(rows.firstOrNull { it.current && it.factKey == key }) { "记忆已变化，请刷新后重试" }
         require(old.status in setOf("active", "completed")) { "请先核对这条记忆，再设为核心" }
         val updated = old.copy(alwaysProvide = enabled, coreExcluded = !enabled)
-        requireCoreRoom(rows.filter { it.factKey != key }, old, updated)
         dao.saveMemory(updated)
         dao.saveScope(scope.copy(revision = scope.revision + 1, updatedAt = Instant.now().toString()))
-    }
-
-    private fun requireCoreRoom(other: List<CompanionMemoryEntity>, old: CompanionMemoryEntity?, changed: CompanionMemoryEntity) {
-        val before = CompanionCoreMemory.tokens(CompanionCoreMemory.rows(other + listOfNotNull(old)))
-        val after = CompanionCoreMemory.tokens(CompanionCoreMemory.rows(other + changed))
-        require(after <= maxOf(CompanionCoreMemory.maintenanceTokens, before)) {
-            "核心记忆约 $after Token，已超过精简目标 ${CompanionCoreMemory.maintenanceTokens}。请缩短正文或先把其他条目移出核心；原记忆没有删除。"
-        }
     }
 
     private fun parse(raw: String): List<CompanionDraft> {
@@ -681,7 +669,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         val now = Instant.now().toString()
         val previousConflict = pending?.let { p -> memories.firstOrNull { it.id == p.memoryId } }
         val nextVersion = previousConflict?.version.takeIf { isConflict } ?: ((versions.maxOfOrNull { it.version } ?: 0) + 1)
-        var memory = CompanionMemoryEntity(
+        val memory = CompanionMemoryEntity(
             id = if (isConflict) CompanionMemoryPolicy.digest("${scope.id}:clarify:$target")
                 else CompanionMemoryPolicy.digest("${scope.id}:$target:$nextVersion:${CompanionMemoryPolicy.fingerprint(source)}"),
             scopeId = scope.id, factKey = target, version = nextVersion, kind = nextKind,
@@ -697,12 +685,6 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             createdAt = previousConflict?.createdAt.takeIf { isConflict } ?: now, updatedAt = now,
             expiresAt = old?.expiresAt
         )
-        if (fused && CompanionCoreMemory.contains(memory) && old?.let { CompanionCoreMemory.contains(it) } != true) {
-            val projected = CompanionCoreMemory.rows(memories.filter { it.factKey != target } + memory)
-            if (CompanionCoreMemory.tokens(projected) > CompanionCoreMemory.maintenanceTokens && !memory.alwaysProvide) {
-                memory = memory.copy(kind = if (memory.category == "episode") "episode" else "fact")
-            }
-        }
         if (!isConflict) {
             dao.retire(scope.id, target)
             clearClarification(scope, target)

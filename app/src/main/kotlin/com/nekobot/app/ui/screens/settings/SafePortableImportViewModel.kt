@@ -79,14 +79,15 @@ class SafePortableImportViewModel internal constructor(private val operations: S
         val token = ++request
         differenceReviewBaseline = null
         limit = 50
-        state.value.prepared?.close()
+        val previous = state.value.prepared
         state.value = SafeImportUiState(busy = true, sourceUri = uri, fileName = uri.lastPathSegment.orEmpty().substringAfterLast('/'), passwordInput = password)
         work = viewModelScope.launch {
             try {
+                closePrepared(previous)
                 val name = withContext(Dispatchers.IO) { runCatching { portableArchiveDisplayName(context, uri) }.getOrNull() }
                 if (token == request && !name.isNullOrBlank()) state.value = state.value.copy(fileName = name)
                 val prepared = operations.prepare(context, uri, password)
-                if (token != request || cleared) { prepared.close(); return@launch }
+                if (token != request || cleared) { closePrepared(prepared); return@launch }
                 val selected = prepared.preview.categories.associate { summary -> summary.category to
                     if (summary.category == PortableDataCategory.CREDENTIALS) emptySet() else summary.details
                         .filter { it.key != "plot_story" }.mapTo(linkedSetOf()) { it.key } }
@@ -100,7 +101,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
                         passwordNeeded = route == null && error.message?.contains("加密") == true,
                         error = if (route != null) context.getString(R.string.safe_import_dedicated) else error.message ?: context.getString(R.string.safe_import_failed))
                 }
-            } finally { if (token == request) state.value = state.value.copy(busy = false); if (cleared) state.value.prepared?.close() }
+            } finally { if (token == request) state.value = state.value.copy(busy = false); if (cleared) closePrepared(state.value.prepared) }
         }
     }
     internal fun select(category: PortableDataCategory, keys: Set<String>, checked: Boolean) {
@@ -198,7 +199,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
                     error = error.message ?: context.getString(R.string.safe_import_failed))
             } finally {
                 if (token == request) { bulkRecordBaseline = null; state.value = state.value.copy(busy = false) }
-                if (cleared) prepared.close()
+                if (cleared) closePrepared(prepared)
             }
         }
     }
@@ -220,7 +221,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
                 if (token == request) state.value = state.value.copy(error = context.getString(R.string.safe_import_cancelled), planValid = false)
             } catch (error: Exception) {
                 if (token == request) state.value = state.value.copy(error = error.message ?: context.getString(R.string.safe_import_failed), planValid = false)
-            } finally { if (token == request) state.value = state.value.copy(busy = false); if (cleared) prepared.close() }
+            } finally { if (token == request) state.value = state.value.copy(busy = false); if (cleared) closePrepared(prepared) }
         }
     }
     fun commit(context: Context) {
@@ -242,7 +243,7 @@ class SafePortableImportViewModel internal constructor(private val operations: S
             } catch (error: Exception) {
                 if (token == request) state.value = state.value.copy(result = prepared.result, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
                     error = if (prepared.result != null) context.getString(R.string.safe_import_reload_failed) else error.message ?: context.getString(R.string.safe_import_failed))
-            } finally { committing = false; if (token == request) state.value = state.value.copy(busy = false); if (cleared) prepared.close() }
+            } finally { committing = false; if (token == request) state.value = state.value.copy(busy = false); if (cleared) closePrepared(prepared) }
         }
     }
     fun cancel() {
@@ -255,6 +256,16 @@ class SafePortableImportViewModel internal constructor(private val operations: S
             bulkRecordBaseline = null
         }
     }
-    override fun onCleared() { cleared = true; work?.cancel(); if (work?.isCompleted != false) state.value.prepared?.close() }
+    private suspend fun closePrepared(prepared: PreparedPortableImport?) = withContext(NonCancellable + Dispatchers.IO) {
+        prepared?.close()
+    }
+    override fun onCleared() {
+        cleared = true
+        work?.cancel()
+        if (work?.isCompleted != false) {
+            val prepared = state.value.prepared
+            // viewModelScope is cancelled here; this bounded cleanup must finish independently.
+            CoroutineScope(Dispatchers.IO).launch { closePrepared(prepared) }
+        }
+    }
 }
-

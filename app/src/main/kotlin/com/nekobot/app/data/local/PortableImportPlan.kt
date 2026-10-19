@@ -422,7 +422,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             else -> emptySet()
         }
         private fun ownershipColumns(table: String): Set<String> = when (table) {
-            "companion_scopes" -> setOf("sessionId", "characterId")
+            "companion_scopes", "companion_relationship_state" -> setOf("sessionId", "characterId")
             "companion_owners" -> setOf("sessionId")
             "companion_memories", "companion_clarifications" -> setOf("scopeId")
             else -> emptySet()

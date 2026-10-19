@@ -11832,6 +11832,13 @@ ${AiOutputLanguage.directive()}
             store.validatedMemories(store.ensureScope(session))
         }
 
+    suspend fun companionMemoriesWithSources(sessionId: String): Set<String> = withContext(Dispatchers.IO) {
+        val session = sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() }
+            ?: return@withContext emptySet()
+        val scope = CompanionMemoryStore(db).ensureScope(session)
+        db.companionMemoryDao().memoriesWithSources(scope.id).toSet()
+    }
+
     suspend fun companionMemoryError(sessionId: String): String? = withContext(Dispatchers.IO) {
         val session = sessionDao.getById(sessionId)?.takeIf { it.usesCompanionMemory() } ?: return@withContext null
         val scope = CompanionMemoryStore(db).ensureScope(session)

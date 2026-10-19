@@ -51,8 +51,8 @@ class ImportedPartialMemorySourcesTest {
                 }
             }
         }
-        val title = "部分原话可查"
-        val message = "这些原话不代表整条记忆已核验，请结合上下文核对。"
+        val title = "已关联原话 · 部分内容待核实"
+        val message = "以下原话支持记忆中的部分内容，其他细节仍待核实。"
         reveal(title)
         reveal(message)
         capture("$suffix-warning")

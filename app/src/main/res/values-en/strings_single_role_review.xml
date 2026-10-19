@@ -303,7 +303,7 @@
     <string name="single_role_these_memories_are_included_in_every_chat_use_the_top_right_menu">These memories are included in every chat. Use the top-right menu on a memory to remove it from core without deleting it. The model selects and updates them while organizing older chats; your manual choices take priority.</string>
     <string name="single_role_review_and_adjust_important_names_relationships_and_habits_at_any">Review and adjust important names, relationships, and habits at any time.</string>
     <string name="single_role_about_1_s_tokens_does_not_use_recall_quota">About %1$d tokens · Does not use recall quota</string>
-    <string name="single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i">Core memories exceed the target size and will still be included in full. Shorten or remove some before adding more.</string>
+    <string name="single_role_core_memories_exceed_the_target_size_and_will_still_be_included_i">About 1000 tokens is a suggestion. You can keep or add memories and decide what to trim. Sending still depends on the model context limit.</string>
     <string name="single_role_memories_temporarily_unavailable">Memories temporarily unavailable</string>
     <string name="single_role_this_action_did_not_complete">This action did not complete</string>
     <string name="single_role_no_core_memories_yet_return_to_all_memories_and_choose_set_as_cor">No core memories yet. Return to all memories and choose Set as core memory from an item’s menu, or let the model select them during future organization.</string>

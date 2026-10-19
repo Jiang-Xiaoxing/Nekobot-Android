@@ -244,6 +244,18 @@ class PortableImportPlannerTest {
         try { planner.apply(source, defaults); fail() } catch (_: IllegalArgumentException) { }
         assertEquals("first", sql.query("SELECT * FROM companion_memories").single()["scopeId"].asString)
     }
+    @Test fun existingRelationshipStateCannotBeReassignedToAnotherCharacter() {
+        sql.execute("CREATE TABLE companion_relationship_state(sessionId TEXT PRIMARY KEY, characterId TEXT NOT NULL, narrativeJson TEXT)")
+        sql.execute("INSERT INTO companion_relationship_state VALUES ('s','original-role','local')")
+        val source = rows(row("companion_relationship_state", """{"sessionId":"s","characterId":"other-role","narrativeJson":"incoming"}"""))
+        val preview = planner.preview(source, defaults)
+        val overwrite = defaults.copy(fields = mapOf(preview.differences.single().key to setOf("characterId", "narrativeJson")))
+        assertTrue(preview.issues.any { it.contains("归属") })
+        assertFalse(preview.differences.single().fields.any { it.column == "characterId" })
+        try { planner.apply(source, overwrite); fail() } catch (_: IllegalArgumentException) { }
+        assertEquals("original-role", sql.query("SELECT * FROM companion_relationship_state").single()["characterId"].asString)
+        assertEquals("local", sql.query("SELECT * FROM companion_relationship_state").single()["narrativeJson"].asString)
+    }
     @Test(expected = IllegalArgumentException::class) fun fractionalIntegerIsRejectedInsteadOfTruncated() {
         planner.preview(rows(row("companion_memories", """{"id":"m","scopeId":"s","alwaysProvide":1.2}""")), defaults)
     }
