@@ -1010,7 +1010,6 @@ private fun SearchEntryBar(
             .padding(vertical = 4.dp)
             .height(52.dp)
             .clip(shape)
-            .background(colors.primaryContainer.copy(alpha = if (hasActiveFilter) 0.40f else 0.23f))
             .materialBorder(
                 width = 1.dp,
                 color = if (hasActiveFilter) accent.copy(alpha = 0.34f)
