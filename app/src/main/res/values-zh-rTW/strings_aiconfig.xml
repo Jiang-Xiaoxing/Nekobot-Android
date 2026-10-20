@@ -165,6 +165,7 @@
     <string name="localai_new_model">新建 AI 模型</string>
     <string name="localai_edit_model">編輯 AI 模型</string>
     <string name="localai_protocol">協議</string>
+    <string name="localai_base_url_http_hint">支援本機和區域網路 HTTP 服務，例如 http://192.168.1.20:1234/v1</string>
     <string name="localai_provider">Provider</string>
     <string name="localai_provider_placeholder">留空 / openai / openai_compatible / xiaomi / mimo</string>
     <string name="localai_model_name">模型名</string>
