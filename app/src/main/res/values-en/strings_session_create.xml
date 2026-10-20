@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_create_title">New character chat</string>
+    <string name="session_create_search">Search characters</string>
+    <string name="session_create_search_hint">Name, tags or description</string>
+    <string name="session_create_character_count">%1$d characters</string>
+    <string name="session_create_no_results">No matching characters</string>
+    <string name="session_create_without_character">Continue without a character</string>
+    <string name="session_create_change_character">Change character</string>
+    <string name="session_create_greeting">Opening message</string>
+    <string name="session_create_restore_greeting">Restore character opening</string>
+    <string name="session_create_no_greeting">No opening message. Tap above to add one.</string>
+    <string name="session_create_selected">Selected</string>
+    <string name="session_create_collapse">Collapse</string>
+    <string name="session_create_expand">Expand</string>
+    <string name="session_create_creating">Creating…</string>
+</resources>

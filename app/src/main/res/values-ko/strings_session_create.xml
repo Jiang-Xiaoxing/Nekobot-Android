@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_create_title">캐릭터 대화 만들기</string>
+    <string name="session_create_search">캐릭터 검색</string>
+    <string name="session_create_search_hint">이름, 태그 또는 소개</string>
+    <string name="session_create_character_count">캐릭터 %1$d명</string>
+    <string name="session_create_no_results">일치하는 캐릭터가 없습니다</string>
+    <string name="session_create_without_character">캐릭터 없이 계속</string>
+    <string name="session_create_change_character">캐릭터 변경</string>
+    <string name="session_create_greeting">첫 메시지</string>
+    <string name="session_create_restore_greeting">캐릭터 첫 메시지 복원</string>
+    <string name="session_create_no_greeting">첫 메시지가 없습니다. 위를 눌러 추가하세요.</string>
+    <string name="session_create_selected">선택됨</string>
+    <string name="session_create_collapse">접기</string>
+    <string name="session_create_expand">펼치기</string>
+    <string name="session_create_creating">생성 중…</string>
+</resources>

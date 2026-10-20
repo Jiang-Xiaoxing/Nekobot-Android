@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border as materialBorder
 import com.nekobot.app.ui.components.withoutBorder as border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -110,7 +111,6 @@ import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.model.CharacterPreset
 import com.nekobot.app.data.model.CreateSessionRequest
 import com.nekobot.app.data.model.RandomCharacterIdea
-import com.nekobot.app.data.model.RELATIONSHIP_STATE_SOURCE_INHERIT
 import com.nekobot.app.data.model.Session
 import com.nekobot.app.data.model.TokenRankings
 import com.nekobot.app.data.model.TokenStats
@@ -124,7 +124,6 @@ import com.nekobot.app.ui.navigation.rememberLiquidGlassBottomBarClearance
 import com.nekobot.app.ui.components.ErrorBanner
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
-import com.nekobot.app.ui.components.RelationshipStateSourceSelector
 import com.nekobot.app.ui.components.resolveAvatarUrl
 import com.nekobot.app.ui.adaptive.listItemSemantics
 import com.nekobot.app.ui.adaptive.rememberShouldUseTwoPane
@@ -401,7 +400,7 @@ fun SessionsScreen(
     val sessionRows by viewModel.displayedSessionRows.collectAsStateWithLifecycle()
     val overview by viewModel.overview.collectAsStateWithLifecycle()
     val characters by viewModel.characters.collectAsStateWithLifecycle()
-    val sessionCreationCharacters by viewModel.sessionCreationCharacters.collectAsStateWithLifecycle()
+    val sessionCreationState by viewModel.sessionCreationState.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val toast by viewModel.toast.collectAsStateWithLifecycle()
@@ -871,16 +870,23 @@ fun SessionsScreen(
 
     // 新建会话弹窗
     createConfigMode?.let { sessionMode ->
-        CreateSessionDialog(
-            initialSessionMode = sessionMode,
-            characters = sessionCreationCharacters,
-            isLocalMode = appMode == AppMode.LOCAL,
-            onDismiss = { createConfigMode = null },
-            onCreate = { req ->
-                viewModel.createSession(req) { createConfigMode = null }
-            },
-            onLoadCharacters = { viewModel.loadSessionCreationCharacters() }
-        )
+        if (sessionMode == "group") {
+            CreateGroupSessionDialog(
+                characters = sessionCreationState.characters,
+                onDismiss = { createConfigMode = null },
+                onCreate = { req -> viewModel.createSession(req) { createConfigMode = null } },
+                onLoadCharacters = { viewModel.loadSessionCreationCharacters() }
+            )
+        } else {
+            CreateCharacterSessionDialog(
+                state = sessionCreationState,
+                isLocalMode = appMode == AppMode.LOCAL,
+                userId = ServiceContainer.prefs.username.takeIf { it.isNotBlank() },
+                onDismiss = { createConfigMode = null },
+                onCreate = { req -> viewModel.createSession(req) { createConfigMode = null } },
+                onLoadCharacters = { viewModel.loadSessionCreationCharacters() }
+            )
+        }
     }
 
     // 重命名弹窗
@@ -993,29 +999,44 @@ private fun SearchEntryBar(
     val channelLabel = availableChannels.firstOrNull { it.value == channelFilterValue }?.label
     val hasActiveFilter = filter != SessionFilter.ALL || channelFilterValue != null || searchQuery.isNotBlank()
 
-    val accent = MaterialTheme.colorScheme.primary
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(18.dp)
+    val accent = colors.primary
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .height(48.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .clickable { onClick() }
-            .padding(horizontal = 14.dp)
+            .height(52.dp)
+            .clip(shape)
+            .background(colors.primaryContainer.copy(alpha = if (hasActiveFilter) 0.40f else 0.23f))
+            .materialBorder(
+                width = 1.dp,
+                color = if (hasActiveFilter) accent.copy(alpha = 0.34f)
+                else colors.outlineVariant.copy(alpha = 0.72f),
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp)
     ) {
-        Icon(
-            Icons.Filled.Search,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = if (hasActiveFilter) accent else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Box(
+            modifier = Modifier.size(34.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(colors.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = colors.onPrimaryContainer
+            )
+        }
         if (searchQuery.isNotBlank()) {
             Text(
                 searchQuery,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors.onSurface,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1024,7 +1045,7 @@ private fun SearchEntryBar(
         } else {
             Text(
                 searchHint,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f)
             )
@@ -1245,21 +1266,16 @@ private fun SelectableChip(
     }
 }
 
-/** 新建会话配置弹窗：根据入口指定角色或群聊模式。 */
+/** 群聊沿用独立的多角色与发言策略配置。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateSessionDialog(
-    initialSessionMode: String,
+private fun CreateGroupSessionDialog(
     characters: List<CharacterPreset>,
-    isLocalMode: Boolean,
     onDismiss: () -> Unit,
     onCreate: (CreateSessionRequest) -> Unit,
     onLoadCharacters: () -> Unit
 ) {
-    // 提取本地化字符串
-    val newSessionDefault = stringResource(R.string.sessions_new_default)
-    val newSessionTitle = stringResource(R.string.sessions_new)
-    val createText = stringResource(R.string.common_create)
+    val stringDefaultName = stringResource(R.string.sessions_new_default)
     val groupChatName = stringResource(R.string.sessions_group_chat)
     val nameOptional = stringResource(R.string.sessions_name_optional)
     val strategyLabel = stringResource(R.string.sessions_strategy)
@@ -1270,367 +1286,141 @@ private fun CreateSessionDialog(
     val strategyWorldEngine = stringResource(R.string.sessions_strategy_world_engine)
     val selectCharactersLabel = stringResource(R.string.sessions_select_characters)
     val noCharactersText = stringResource(R.string.sessions_no_characters)
-    val selectedCharacterFmt = stringResource(R.string.sessions_selected_character)
-    val characterNameLabel = stringResource(R.string.sessions_character_name)
-    val characterInputHint = stringResource(R.string.sessions_character_input_hint)
-    val selectButtonText = stringResource(R.string.sessions_select_button)
-    val noneSelectText = stringResource(R.string.sessions_none_select)
-    val firstMessageOptional = stringResource(R.string.sessions_first_message_optional)
-
-    val sessionMode = initialSessionMode
-    var name by rememberSaveable { mutableStateOf(newSessionDefault) }
-    var characterName by rememberSaveable { mutableStateOf("") }
-    var firstMessage by rememberSaveable { mutableStateOf("") }
-    var dropdownExpanded by remember { mutableStateOf(false) }
-    /** 选中的角色对象（来自下拉或 ID 输入匹配） */
-    var selectedCharacter by remember { mutableStateOf<CharacterPreset?>(null) }
-    var relationshipStateSource by rememberSaveable { mutableStateOf(RELATIONSHIP_STATE_SOURCE_INHERIT) }
-    /** 标记用户是否手动编辑过会话名 / 首条消息，避免被角色切换覆盖。 */
-    var nameEditedByUser by rememberSaveable { mutableStateOf(false) }
-    var firstMessageEditedByUser by rememberSaveable { mutableStateOf(false) }
-    val firstMessageScrollState = rememberScrollState()
-
-    // 群聊模式：选中的角色 ID 列表 + 发言策略
+    var name by rememberSaveable { mutableStateOf(stringDefaultName) }
     var selectedGroupCharacterIds by remember { mutableStateOf(emptyList<String>()) }
     var speechStrategy by rememberSaveable { mutableStateOf("round_robin") }
     var speechStrategyExpanded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        onLoadCharacters()
-    }
-
+    LaunchedEffect(Unit) { onLoadCharacters() }
     LaunchedEffect(characters) {
         val availableIds = characters.mapNotNull { it.id }.toSet()
         selectedGroupCharacterIds = selectedGroupCharacterIds.filter { it in availableIds }
     }
-
-    /** 切换到指定角色时同步首条消息（仅覆盖未被手动编辑过的字段）。会话名保持默认不覆盖。 */
-    fun applyCharacter(c: CharacterPreset?) {
-        selectedCharacter = c
-        if (c == null) return
-        if (!firstMessageEditedByUser) firstMessage = c.firstMessage.orEmpty()
-    }
-
-    // 当角色名输入框变化时，尝试在已加载角色列表里按名称匹配；命中则自动填充对应字段
-    LaunchedEffect(characterName, characters) {
-        val input = characterName.trim()
-        if (input.isEmpty()) {
-            // 名字清空时也清空已选角色（保留手动输入的 firstMessage）
-            selectedCharacter = null
-            return@LaunchedEffect
-        }
-        val match = characters.firstOrNull { it.displayName == input }
-        if (match != null && match != selectedCharacter) {
-            applyCharacter(match)
-        } else if (match == null) {
-            // 输入了不在列表中的名字，视为未匹配
-            selectedCharacter = null
-        }
-    }
-
     NekoDialog(
         onDismiss = onDismiss,
-        title = newSessionTitle,
-        confirmText = createText,
+        title = stringResource(R.string.sessions_new),
+        confirmText = stringResource(R.string.common_create),
+        contentScrollable = true,
         onConfirm = {
-            val char = selectedCharacter
-            val req = if (sessionMode == "group") {
-                CreateSessionRequest(
-                    name = name.ifBlank { groupChatName },
-                    sessionMode = "group",
-                    characterIds = selectedGroupCharacterIds,
-                    senderName = groupChatName,
-                    userId = ServiceContainer.prefs.username.takeIf { it.isNotBlank() },
-                    groupConfig = com.google.gson.JsonObject().apply {
-                        addProperty("speaker_strategy", speechStrategy)
-                    }
-                )
-            } else {
-                CreateSessionRequest(
-                    name = name.ifBlank { newSessionDefault },
-                    sessionMode = "character",
-                    characterId = char?.id,
-                    systemPrompt = char?.systemPrompt?.takeIf { it.isNotBlank() },
-                    firstMessage = firstMessage.ifBlank { char?.firstMessage },
-                    scenario = char?.scenario?.takeIf { it.isNotBlank() },
-                    senderName = char?.displayName,
-                    senderAvatar = char?.avatar,
-                    senderPortrait = char?.portrait,
-                    userId = ServiceContainer.prefs.username.takeIf { it.isNotBlank() },
-                    relationshipStateSource = relationshipStateSource
-                )
-            }
-            onCreate(req)
+            onCreate(CreateSessionRequest(
+                name = name.ifBlank { groupChatName },
+                sessionMode = "group",
+                characterIds = selectedGroupCharacterIds,
+                senderName = groupChatName,
+                userId = ServiceContainer.prefs.username.takeIf { it.isNotBlank() },
+                groupConfig = com.google.gson.JsonObject().apply {
+                    addProperty("speaker_strategy", speechStrategy)
+                }
+            ))
         },
         content = {
-            when (sessionMode) {
-                "group" -> {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = {
-                            name = it
-                            nameEditedByUser = it.isNotBlank()
-                        },
-                        label = { Text(nameOptional) },
-                        placeholder = { Text(groupChatName, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                },
+                label = { Text(nameOptional) },
+                placeholder = { Text(groupChatName, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
 
-                    // 发言策略下拉选择
-                    val strategies = listOf(
-                        "round_robin" to strategyRoundRobin,
-                        "mention" to strategyMention,
-                        "relevance" to strategyRelevance,
-                        "random" to strategyRandom,
-                        "world_engine" to strategyWorldEngine
-                    )
-                    val currentStrategyLabel = strategies.firstOrNull { it.first == speechStrategy }?.second ?: speechStrategy
-                    androidx.compose.material3.ExposedDropdownMenuBox(
-                        expanded = speechStrategyExpanded,
-                        onExpandedChange = { speechStrategyExpanded = !speechStrategyExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = currentStrategyLabel,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text(strategyLabel) },
-                            singleLine = true,
-                            modifier = Modifier
-                                .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable)
-                                .fillMaxWidth(),
-                            trailingIcon = {
-                                androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = speechStrategyExpanded)
+            // 发言策略下拉选择
+            val strategies = listOf(
+                "round_robin" to strategyRoundRobin,
+                "mention" to strategyMention,
+                "relevance" to strategyRelevance,
+                "random" to strategyRandom,
+                "world_engine" to strategyWorldEngine
+            )
+            val currentStrategyLabel = strategies.firstOrNull { it.first == speechStrategy }?.second ?: speechStrategy
+            androidx.compose.material3.ExposedDropdownMenuBox(
+                expanded = speechStrategyExpanded,
+                onExpandedChange = { speechStrategyExpanded = !speechStrategyExpanded }
+            ) {
+                OutlinedTextField(
+                    value = currentStrategyLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text(strategyLabel) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                    trailingIcon = {
+                        androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = speechStrategyExpanded)
+                    }
+                )
+                DropdownMenu(
+                    expanded = speechStrategyExpanded,
+                    onDismissRequest = { speechStrategyExpanded = false },
+                    modifier = Modifier.exposedDropdownSize()
+                ) {
+                    strategies.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label, color = MaterialTheme.colorScheme.onSurface) },
+                            onClick = {
+                                speechStrategy = value
+                                speechStrategyExpanded = false
                             }
                         )
-                        DropdownMenu(
-                            expanded = speechStrategyExpanded,
-                            onDismissRequest = { speechStrategyExpanded = false },
-                            modifier = Modifier.exposedDropdownSize()
-                        ) {
-                            strategies.forEach { (value, label) ->
-                                DropdownMenuItem(
-                                    text = { Text(label, color = MaterialTheme.colorScheme.onSurface) },
-                                    onClick = {
-                                        speechStrategy = value
-                                        speechStrategyExpanded = false
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            // 角色多选列表
+            Text(selectCharactersLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            if (characters.isEmpty()) {
+                Text(noCharactersText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 200.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    characters.forEach { c ->
+                        val id = c.id
+                        if (id != null) {
+                            val selected = selectedGroupCharacterIds.contains(id)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                                    .clickable {
+                                        selectedGroupCharacterIds = if (selected) {
+                                            selectedGroupCharacterIds - id
+                                        } else {
+                                            selectedGroupCharacterIds + id
+                                        }
                                     }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (selected) {
+                                        Text("✓", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                Spacer(Modifier.size(8.dp))
+                                Text(
+                                    c.displayName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-
-                    // 角色多选列表
-                    Text(selectCharactersLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(4.dp))
-                    if (characters.isEmpty()) {
-                        Text(noCharactersText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 200.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            characters.forEach { c ->
-                                val id = c.id
-                                if (id != null) {
-                                    val selected = selectedGroupCharacterIds.contains(id)
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
-                                            .clickable {
-                                                selectedGroupCharacterIds = if (selected) {
-                                                    selectedGroupCharacterIds - id
-                                                } else {
-                                                    selectedGroupCharacterIds + id
-                                                }
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (selected) {
-                                                Text("✓", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
-                                            }
-                                        }
-                                        Spacer(Modifier.size(8.dp))
-                                        Text(
-                                            c.displayName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else -> {
-                    // 角色模式（原有逻辑）
-                    // 当前选中的角色预览
-                    val previewChar = selectedCharacter
-                    if (previewChar != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 4.dp)
-                        ) {
-                            Text(
-                                selectedCharacterFmt.format(previewChar.displayName),
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = {
-                            name = it
-                            nameEditedByUser = it.isNotBlank()
-                        },
-                        label = { Text(nameOptional) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(12.dp))
-
-                    // 角色名输入 + 选择按钮（按钮高度对齐 OutlinedTextField）
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = characterName,
-                            onValueChange = { characterName = it },
-                            label = { Text(characterNameLabel) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text(characterInputHint, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        Box(
-                            modifier = Modifier.height(56.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            GlassCard(
-                                modifier = Modifier
-                                    .height(56.dp)
-                                    .clickable { dropdownExpanded = !dropdownExpanded },
-                                cornerRadius = 12,
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 12.dp)
-                                ) {
-                                    Text(selectButtonText, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
-                                    Spacer(Modifier.size(2.dp))
-                                    Icon(
-                                        if (dropdownExpanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 内联角色选择列表：点击「选择」按钮展开/收起，可滚动，不受下拉菜单高度限制
-                    if (dropdownExpanded) {
-                        Spacer(Modifier.height(8.dp))
-                        if (characters.isEmpty()) {
-                            Text(
-                                noCharactersText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 240.dp)
-                                    .verticalScroll(rememberScrollState())
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            dropdownExpanded = false
-                                            characterName = ""
-                                            selectedCharacter = null
-                                        }
-                                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                                ) {
-                                    Text(
-                                        noneSelectText,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
-                                characters.forEach { c ->
-                                    val selected = c.id == selectedCharacter?.id
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
-                                            .clickable {
-                                                dropdownExpanded = false
-                                                // 切换角色时同步角色名 + 首条消息（除非用户已手动编辑）
-                                                characterName = c.displayName
-                                                applyCharacter(c)
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                                    ) {
-                                        Text(
-                                            c.displayName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (isLocalMode && selectedCharacter != null) {
-                        Spacer(Modifier.height(12.dp))
-                        RelationshipStateSourceSelector(
-                            selectedSource = relationshipStateSource,
-                            onSourceSelected = { relationshipStateSource = it },
-                            initialState = selectedCharacter?.state
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    // 首条消息：固定高度的滚动窗口，避免长内容撑爆弹窗
-                    OutlinedTextField(
-                        value = firstMessage,
-                        onValueChange = {
-                            firstMessage = it
-                            firstMessageEditedByUser = it.isNotBlank()
-                        },
-                        label = { Text(firstMessageOptional) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 96.dp, max = 160.dp)
-                            .verticalScroll(firstMessageScrollState)
-                    )
                 }
             }
         }
@@ -1865,11 +1655,11 @@ class SessionsViewModel : BaseViewModel() {
     private val _dashboardLoading = MutableStateFlow(false)
     private var dataSourceVersion = 0L
     private val _characters = MutableStateFlow<List<CharacterPreset>>(emptyList())
-    private val _sessionCreationCharacters = MutableStateFlow<List<CharacterPreset>>(emptyList())
+    private val _sessionCreationState = MutableStateFlow(SessionCreationUiState())
     private val _webDavStatus = MutableStateFlow<DashboardWebDavStatus?>(null)
     private val _localLogPreview = MutableStateFlow<List<DashboardLogEntry>>(emptyList())
     val characters: StateFlow<List<CharacterPreset>> = _characters.asStateFlow()
-    val sessionCreationCharacters: StateFlow<List<CharacterPreset>> = _sessionCreationCharacters.asStateFlow()
+    internal val sessionCreationState: StateFlow<SessionCreationUiState> = _sessionCreationState.asStateFlow()
     val dashboardLoading: StateFlow<Boolean> = _dashboardLoading.asStateFlow()
 
     val dashboardData: StateFlow<SessionStatsDashboardData> = combine(
@@ -2081,7 +1871,7 @@ class SessionsViewModel : BaseViewModel() {
         listScrollState.requestScrollToItem(0)
         _sessions.value = emptyList()
         _characters.value = emptyList()
-        _sessionCreationCharacters.value = emptyList()
+        _sessionCreationState.value = SessionCreationUiState()
         _dashboardTokenStats.value = null
         _dashboardRankings.value = null
         _dashboardHighAffectionCharacterCount.value = 0
@@ -2274,26 +2064,59 @@ class SessionsViewModel : BaseViewModel() {
 
     /** 每次打开新建弹窗时刷新可选角色，避免使用旧归属快照。 */
     fun loadSessionCreationCharacters(expectedDataSourceVersion: Long? = null) {
+        if (_sessionCreationState.value.loading) return
         val version = expectedDataSourceVersion ?: dataSourceVersion
-        _sessionCreationCharacters.value = emptyList()
+        _sessionCreationState.value = _sessionCreationState.value.copy(characters = emptyList(), loading = true, error = null)
         launchResult(
-            block = { unified.listCharactersForSessionCreation() },
+            block = {
+                try {
+                    unified.listCharactersForSessionCreation()
+                } finally {
+                    if (version == dataSourceVersion) {
+                        _sessionCreationState.value = _sessionCreationState.value.copy(loading = false)
+                    }
+                }
+            },
             onSuccess = { list ->
                 if (version == dataSourceVersion) {
-                    _sessionCreationCharacters.value = list ?: emptyList()
+                    _sessionCreationState.value = _sessionCreationState.value.copy(characters = list ?: emptyList())
+                }
+            },
+            onError = { message ->
+                if (version == dataSourceVersion) {
+                    _sessionCreationState.value = _sessionCreationState.value.copy(error = message)
                 }
             }
         )
     }
 
-    /** 新建会话，成功后刷新并回调新会话。 */
+    /** 新建会话，提交期间阻止重复创建，失败后保留弹窗里的输入。 */
     fun createSession(req: CreateSessionRequest, onSuccess: (Session) -> Unit = {}) {
+        if (_sessionCreationState.value.creating) return
+        val version = dataSourceVersion
+        _sessionCreationState.value = _sessionCreationState.value.copy(creating = true, error = null)
         launchResult(
-            block = { unified.createSession(req) },
+            block = {
+                try {
+                    unified.createSession(req)
+                } finally {
+                    if (version == dataSourceVersion) {
+                        _sessionCreationState.value = _sessionCreationState.value.copy(creating = false)
+                    }
+                }
+            },
             onSuccess = { session ->
-                showToast(string(R.string.sessions_created_toast))
-                loadSessions()
-                onSuccess(session)
+                if (version == dataSourceVersion) {
+                    showToast(string(R.string.sessions_created_toast))
+                    loadSessions()
+                    onSuccess(session)
+                }
+            },
+            onError = { message ->
+                if (version == dataSourceVersion) {
+                    _sessionCreationState.value = _sessionCreationState.value.copy(error = message)
+                    showError(message)
+                }
             }
         )
     }
