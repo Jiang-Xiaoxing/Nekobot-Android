@@ -33,7 +33,8 @@ internal data class CompanionRecallRequest(
 /** 按返回资料估算用量；可见正文每次重建，累计用量持续保留，异常中断保留预留额度。 */
 internal class CompanionRecallBudget(
     private val settings: () -> CompanionRecallSettings,
-    private val load: () -> String?, private val save: (String) -> Unit
+    private val load: () -> String?, private val save: (String) -> Unit,
+    private val diagnostic: (String, Map<String, Any?>) -> Unit = { _, _ -> }
 ) {
     private data class Span(val key: String, val start: Int, val text: String)
     private data class Request(val id: String, val visible: MutableList<Span>, var room: Int, val limit: Int)
@@ -95,6 +96,15 @@ internal class CompanionRecallBudget(
         }
         // 查询原则已通过 PromptStack 合并到顶部系统提示词。这里仅执行额度控制，
         // 不在玩家消息/工具结果后追加提示，也不把动态计数混入聊天上下文。
+        observe("recall_prepare", mapOf("rounds" to state.rounds, "max_rounds" to state.settings.rounds,
+            "tokens" to state.tokens, "max_tokens" to state.settings.tokens, "per_call" to state.settings.effectivePerCall,
+            "limit" to limit, "room" to room, "max_context" to maxContext, "output_reserve" to outputReserve,
+            "exhausted" to exhausted, "must_answer" to finishRecall, "reason" to when {
+                state.rounds >= state.settings.rounds -> "rounds"
+                limit - state.tokens < MIN_RESULT_TOKENS -> "tokens"
+                room < MIN_RESULT_TOKENS -> "context"
+                else -> "none"
+            }))
         CompanionRecallRequest(outbound, available, finishRecall)
     }
 
@@ -112,7 +122,10 @@ internal class CompanionRecallBudget(
         // 先保留额度再读取。进程被杀时不会把尚未确认完成的调用当成免费重试。
         state.tokens += allowance
         save(gson.toJson(state))
-        val raw = try { fetch() } catch (cancelled: CancellationException) { throw cancelled }
+        val raw = try { fetch() } catch (cancelled: CancellationException) {
+            observe("recall_result", mapOf("status" to "cancelled", "reason" to "interrupted", "rounds" to state.rounds, "tokens" to state.tokens))
+            throw cancelled
+        }
         catch (failure: Exception) {
             state.tokens = previouslyUsed
             save(gson.toJson(state))
@@ -126,7 +139,7 @@ internal class CompanionRecallBudget(
         request.room -= charged
         // 同批并行调用串行通过此处，重叠片段也不会被重复传出。
         rows(fitted).forEach { (_, row) -> span(row)?.let(request.visible::add) }
-        withStatus(fitted, state, request)
+        withStatus(fitted, state, request, mapOf("candidates" to rows(raw).size, "charged" to charged))
     }
 
     private fun stopped(reason: String, status: String = "quota_exhausted", state: CompanionRecallUsage? = null,
@@ -136,15 +149,22 @@ internal class CompanionRecallBudget(
     }
 
     /** 结果附带真实状态与剩余份额，由模型按角色自行组织回答。 */
-    private fun withStatus(result: Map<String, Any>, state: CompanionRecallUsage, request: Request): Map<String, Any> {
+    private fun withStatus(result: Map<String, Any>, state: CompanionRecallUsage, request: Request,
+                           extra: Map<String, Any?> = emptyMap()): Map<String, Any> {
         val output = result.toMutableMap()
         val status = recallStatus(result, rows(result).map { it.second })
         output["status"] = status
         output["rounds_left"] = (state.settings.rounds - state.rounds).coerceAtLeast(0)
         output["tokens_left"] = (request.limit - state.tokens).coerceAtLeast(0)
         if (status == "empty") output["note"] = EMPTY_NOTE
+        observe("recall_result", extra + mapOf("status" to status, "rounds" to state.rounds,
+            "tokens" to state.tokens, "max_rounds" to state.settings.rounds, "limit" to request.limit,
+            "room" to request.room, "returned" to rows(result).size,
+            "duplicates" to (result["visible_duplicates"] as? Number ?: 0), "truncated" to (status == "truncated")))
         return output
     }
+
+    private fun observe(kind: String, values: Map<String, Any?>) { runCatching { diagnostic(kind, values) } }
 
     private fun markMemoryBodies(result: Map<String, Any>): Map<String, Any> = result.toMutableMap().apply {
         for ((field, entries) in rows(result).groupBy({ it.first }, { it.second })) {

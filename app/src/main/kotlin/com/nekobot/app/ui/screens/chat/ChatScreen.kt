@@ -1,4 +1,5 @@
 package com.nekobot.app.ui.screens.chat
+import androidx.compose.material.icons.filled.BugReport
 
 import androidx.compose.ui.platform.LocalResources
 
@@ -331,6 +332,7 @@ fun ChatScreen(
     val companionExamples by viewModel.companionExamples.collectAsStateWithLifecycle()
     val companionExamplesNoticeDismissed by viewModel.companionExamplesNoticeDismissed.collectAsStateWithLifecycle()
     val companionChat = session?.companionMode == true
+    var problemDiagnosticReply by remember(sessionId) { mutableStateOf<String?>(null) }
     val companionName = companionChatTitle(session)
     val companionPortrait = companionPhotoPath(session?.portrait, session?.characterAvatar)
     val showAiAvatar = companionChat || session?.sessionMode != "agent" || inheritsCharacter
@@ -1738,7 +1740,17 @@ fun ChatScreen(
                 }
             }
         }
-        MessageActionPopup(anchor = messageActionAnchor, actions = actions, moreActions = moreActions, onDismiss = dismissMenu)
+        val diagnosticAction = if (!target.isUser && targetId != null && ServiceContainer.prefs.isLocalMode)
+            listOf(MessageMenuAction(stringResource(R.string.problem_diag_export), Icons.Filled.BugReport,
+                testTag = "message-action-diagnostic") { dismissMenu(); problemDiagnosticReply = targetId }) else emptyList()
+        MessageActionPopup(anchor = messageActionAnchor, actions = actions, moreActions = moreActions + diagnosticAction, onDismiss = dismissMenu)
+    }
+
+    problemDiagnosticReply?.let { replyId ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { problemDiagnosticReply = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            com.nekobot.app.ui.screens.settings.ProblemDiagnosticScreen(sessionId, replyId, onBack = { problemDiagnosticReply = null })
+        }
     }
 
     messageDetailsTarget?.let { target ->
@@ -3097,6 +3109,10 @@ private fun MessageBubble(
                     val contentSegments = parsedSegments[idx]
                     val segHasMultimedia = contentSegments.any { it.type != SegmentType.TEXT }
                     val segHasUserImage = isUser && !standaloneSticker && contentSegments.any { it.isImageContent() }
+                    // 助手表情包：从文字气泡里拆出来，单独一个无底色气泡（文字留在气泡里，表情不套绿底）。
+                    val assistantStickerSegments = contentSegments.filter { it.type == SegmentType.STICKER }
+                    val assistantStickerSplit = !isUser && !useSafePlainText && assistantStickerSegments.isNotEmpty()
+                    val assistantNonStickerSegments = contentSegments.filter { it.type != SegmentType.STICKER }
                     // 气泡形状：主圆角 20dp，连续多段时中间段一侧收小形成连贯“气泡链”
                     val segShape = if (companionChat) RoundedCornerShape(16.dp) else chatBubbleShape(isUser, isLast)
                     val segmentKey = messageMenuAnchorKey(
@@ -3118,6 +3134,7 @@ private fun MessageBubble(
                             .then(
                                 when {
                                     standaloneSticker -> Modifier
+                                    assistantStickerSplit -> Modifier
                                     companionChat && !isUser -> Modifier.background(
                                         color = companionAssistantStyle.background,
                                         shape = segShape
@@ -3135,7 +3152,7 @@ private fun MessageBubble(
                             .then(
                                 when {
                                     isSelected -> Modifier.border(2.dp, MaterialTheme.colorScheme.primary, segShape)
-                                    !standaloneSticker && !isUser -> Modifier.border(1.dp, aiBorder, segShape)
+                                    !standaloneSticker && !isUser && !assistantStickerSplit -> Modifier.border(1.dp, aiBorder, segShape)
                                     else -> Modifier
                                 }
                             )
@@ -3155,7 +3172,7 @@ private fun MessageBubble(
                                 }
                             )
                             .then(
-                                if (standaloneSticker || segHasUserImage) Modifier
+                                if (standaloneSticker || segHasUserImage || assistantStickerSplit) Modifier
                                 else Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
                             )
                     ) {
@@ -3209,17 +3226,81 @@ private fun MessageBubble(
                                 }
                             }
                         } else if (segHasMultimedia) {
-                            // 多媒体内容：用渲染器渲染，宽度可超出普通文本宽度
-                            RenderContentSegments(
-                                segments = contentSegments,
-                                textColor = textColor,
-                                modifier = multimediaContentModifier,
-                                sessionId = sessionId,
-                                chatMode = true,
-                                processParens = !isUser,
-                                isStreaming = isStreamingPlaceholder,
-                                linkColor = linkColor
-                            )
+                            if (assistantStickerSplit) {
+                                // 文字留在气泡里（带内心独白页脚），表情包单独一个无底色气泡。
+                                Column(
+                                    modifier = Modifier.widthIn(max = maxBubbleWidth),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (assistantNonStickerSegments.isNotEmpty()) {
+                                        Box(
+                                            Modifier
+                                                .then(if (companionChat) Modifier.background(companionAssistantStyle.background, segShape)
+                                                    else Modifier.background(brush = userBrush, shape = segShape))
+                                                .padding(horizontal = 14.dp, vertical = 9.dp)
+                                        ) {
+                                            AssistantSegmentContent(
+                                                sourceIndex = idx,
+                                                segments = assistantNonStickerSegments,
+                                                textColor = textColor,
+                                                maxBubbleWidth = maxBubbleWidth,
+                                                sessionId = sessionId,
+                                                isStreaming = isStreamingPlaceholder,
+                                                linkColor = linkColor,
+                                                monologueFooter = companionMonologueFooter,
+                                                selectionMode = selectionMode,
+                                                onToggleSelection = onToggleSelection,
+                                                onLongClick = {
+                                                    onLongPressAnchor(segmentKey, segBounds[0])
+                                                    onLongClick()
+                                                }
+                                            )
+                                        }
+                                    }
+                                    RenderContentSegments(
+                                        segments = assistantStickerSegments,
+                                        textColor = textColor,
+                                        modifier = Modifier.widthIn(max = 200.dp),
+                                        sessionId = sessionId,
+                                        chatMode = true,
+                                        processParens = !isUser,
+                                        isStreaming = isStreamingPlaceholder,
+                                        linkColor = linkColor
+                                    )
+                                }
+                            } else if (!isUser && companionMonologueFooter &&
+                                contentSegments.any { it.type == SegmentType.TEXT }
+                            ) {
+                                // 混合多媒体：文字段走内心独白页脚，其余段原样渲染。
+                                AssistantSegmentContent(
+                                    sourceIndex = idx,
+                                    segments = contentSegments,
+                                    textColor = textColor,
+                                    maxBubbleWidth = maxBubbleWidth,
+                                    sessionId = sessionId,
+                                    isStreaming = isStreamingPlaceholder,
+                                    linkColor = linkColor,
+                                    monologueFooter = true,
+                                    selectionMode = selectionMode,
+                                    onToggleSelection = onToggleSelection,
+                                    onLongClick = {
+                                        onLongPressAnchor(segmentKey, segBounds[0])
+                                        onLongClick()
+                                    }
+                                )
+                            } else {
+                                // 多媒体内容：用渲染器渲染，宽度可超出普通文本宽度
+                                RenderContentSegments(
+                                    segments = contentSegments,
+                                    textColor = textColor,
+                                    modifier = multimediaContentModifier,
+                                    sessionId = sessionId,
+                                    chatMode = true,
+                                    processParens = !isUser,
+                                    isStreaming = isStreamingPlaceholder,
+                                    linkColor = linkColor
+                                )
+                            }
                         } else if (commandStyle != null && isUser) {
                             // 命令消息（/goal、/spec）：彩色胶囊 + 其余参数文本
                             Row(
@@ -7401,3 +7482,69 @@ data class PlotChoice(
     val selected: Boolean = false,
     val level: String = "normal"
 )
+
+/**
+ * 助手气泡内容：文字段与多媒段分开渲染。
+ * 文字段在启用 [monologueFooter] 时走内心独白页脚（正文之后、分隔线 + 可折叠横条）；
+ * 其余段（链接、文件、图片等）按原多媒体渲染器输出。
+ */
+@Composable
+private fun AssistantSegmentContent(
+    sourceIndex: Int,
+    segments: List<ContentSegment>,
+    textColor: androidx.compose.ui.graphics.Color,
+    maxBubbleWidth: androidx.compose.ui.unit.Dp,
+    sessionId: String,
+    isStreaming: Boolean,
+    linkColor: androidx.compose.ui.graphics.Color,
+    monologueFooter: Boolean,
+    selectionMode: Boolean,
+    onToggleSelection: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val textSegments = segments.filter { it.type == SegmentType.TEXT }
+    val otherSegments = segments.filter { it.type != SegmentType.TEXT }
+    Column {
+        if (textSegments.isNotEmpty()) {
+            if (monologueFooter) {
+                com.nekobot.app.ui.components.CompanionBubbleMarkdownText(
+                    parts = textSegments.map {
+                        com.nekobot.app.ui.components.CompanionMarkdownPart(sourceIndex, it.text)
+                    },
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyMedium,
+                    isStreaming = isStreaming,
+                    selectionMode = selectionMode,
+                    onToggleSelection = onToggleSelection,
+                    onLongClick = onLongClick,
+                    modifier = Modifier.widthIn(max = maxBubbleWidth)
+                )
+            } else {
+                textSegments.forEachIndexed { index, segment ->
+                    if (index > 0) Spacer(Modifier.height(6.dp))
+                    MarkdownText(
+                        text = segment.text,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyMedium,
+                        chatMode = true,
+                        processParens = true,
+                        isStreaming = isStreaming,
+                        modifier = Modifier.widthIn(max = maxBubbleWidth)
+                    )
+                }
+            }
+        }
+        if (otherSegments.isNotEmpty()) {
+            if (textSegments.isNotEmpty()) Spacer(Modifier.height(6.dp))
+            RenderContentSegments(
+                segments = otherSegments,
+                textColor = textColor,
+                sessionId = sessionId,
+                chatMode = true,
+                processParens = true,
+                isStreaming = isStreaming,
+                linkColor = linkColor
+            )
+        }
+    }
+}

@@ -49,7 +49,7 @@ class CharacterThinkingDebugTest {
         job.cancel()
 
         assertEquals(listOf(true, false, true, true, false, true), observed.map { rows -> rows.any { it.key == CHARACTER_THINKING_STYLE_KEY } })
-        assertEquals("我想起林小满的约定。\n\n对对方说什么呢？\n" + CHARACTER_THINKING_FORMAT_PROMPT, observed.last().first().content)
+        assertEquals("我想起林小满的约定。\n\n对对方说什么呢？", observed.last().first().content)
         observed.forEach { assertSame(other, it.last()) }
         assertEquals(listOf(other, old), recorded)
         assertEquals(false, saved["show_reasoning"])
@@ -59,7 +59,7 @@ class CharacterThinkingDebugTest {
     fun noPriorChatStillShowsEnabledCurrentDefaultAndHidesItImmediatelyWhenOff() {
         val active = liveCharacterThinkingDebugItems(emptyList(), session, CharacterThinkingSettings(), ReasoningEffort.HIGH, "林小满")
         assertEquals(1, active.size)
-        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "林小满").replace("{{user}}", "对方") + "\n" + CHARACTER_THINKING_FORMAT_PROMPT, active.single().content)
+        assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT.replace("{{char}}", "林小满").replace("{{user}}", "对方"), active.single().content)
         assertEquals("system", active.single().role)
         assertEquals("session", active.single().scope)
         assertEquals(PromptStack.Priority.BEHAVIOR + 1, active.single().priority)

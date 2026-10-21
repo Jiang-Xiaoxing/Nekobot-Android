@@ -30,7 +30,7 @@ fun buildCharacterInjections(
     // 气泡分隔提示词
     stack.add(
         "output.bubble_split",
-        if (companionMode) "想分成几条短消息时，用<||>隔开；按聊天的节奏自然分开就好。" else """
+        if (companionMode) CompanionPromptLanguage.bubbleRule else """
         当你想把回复拆成多条独立消息（气泡）时，请在各段之间使用特殊分隔符 `<||>`。
         `<||>` 分隔的每一段都会显示为一个独立气泡。
         格式示例：
@@ -56,7 +56,7 @@ fun buildCharacterInjections(
     stack.add(
         "output.inner_monologue",
         if (companionMode) "$monologueIntroduction$monologueDisclosure" +
-            "只有心情和表面表现有意味的反差时，才在话末写一两句，不必每次都写。" else """
+            "只有心情和表面表现有意味的反差时，才在对应那条话末写一两句（内心：...），放在<||>之前，不必每次都写。" else """
         $monologueIntroduction
         把它放在气泡末尾，接在可见内容之后。
         规则：

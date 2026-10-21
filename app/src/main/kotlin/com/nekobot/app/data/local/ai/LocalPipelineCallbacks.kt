@@ -193,6 +193,26 @@ internal class LocalPipelineCallbacks(
     private var companionQuestion: String? = null
     private var fusedHistory: List<LocalMessageEntity> = emptyList()
     private val recallGuards = java.util.concurrent.ConcurrentHashMap<String, CompanionRecallBudget>()
+    private val diagnosticAttempt = java.util.UUID.randomUUID().toString()
+    private val diagnosticTrace by lazy {
+        com.nekobot.app.data.local.diagnostics.ProblemDiagnostics.trace(
+            "$diagnosticAttempt:${parentMessageId.orEmpty()}", db.dbName, session.id, parentMessageId.orEmpty())
+    }
+    private fun tracePreparation(ctx: PipelineContext, messages: List<Map<String, Any>>, extra: Map<String, Any?>) {
+        diagnosticTrace.record("pipeline_prepared", mapOf(
+            "session_mode" to session.sessionMode, "companion_mode" to session.companionMode,
+            "character_thinking_enabled" to ctx.usesCharacterThinking(), "reasoning_effort" to reasoningEffort.name,
+            "character_thinking_settings" to getCharacterThinkingSettings(ctx),
+            "show_reasoning" to com.nekobot.app.ServiceContainer.prefs.companionShowReasoning(db.dbName, session.id),
+            "show_inner_monologue" to com.nekobot.app.ServiceContainer.prefs.companionShowInnerMonologue(db.dbName, session.id),
+            "prompt_stack" to ctx.promptStack.getItems(), "messages" to messages, "parameters" to extra,
+            "body_only_thinking" to session.companionMode
+        ), modelQueueFor(ctx).map { it.apiKey })
+    }
+    private fun diagnostic(kind: String, values: Map<String, Any?>, turn: String? = parentMessageId) {
+        com.nekobot.app.data.local.diagnostics.ProblemDiagnostics.record("$diagnosticAttempt:${turn.orEmpty()}", db.dbName,
+            session.id, turn.orEmpty(), "reply", kind, values)
+    }
 
     private fun recallGuard(ownerTaskId: String? = null): CompanionRecallBudget? {
         if (!session.usesFusedCompanionMemory()) return null
@@ -204,7 +224,8 @@ internal class LocalPipelineCallbacks(
             CompanionRecallBudget(
                 settings = { prefs.companionRecallSettings(db.dbName, session.id) },
                 load = { prefs.companionRecallUsage(db.dbName, session.id, turn) },
-                save = { prefs.saveCompanionRecallUsage(db.dbName, session.id, turn, it) })
+                save = { prefs.saveCompanionRecallUsage(db.dbName, session.id, turn, it) },
+                diagnostic = { kind, values -> diagnostic(kind, values, turn) })
         }
     }
 
@@ -218,6 +239,11 @@ internal class LocalPipelineCallbacks(
             messages.filter { it["role"] == "system" }.joinToString("\n\n") { it["content"].toString() },
             tools, messages.last { it["role"] == "user" }, listOf(dynamic, relationshipContext.first).filter(String::isNotBlank).joinToString("\n"),
             activeModel.maxContextLength ?: 32_000, activeModel.maxTokens ?: 4_000, stateKey = relationshipContext.second)
+        runCatching { db.companionMemoryDao().diagnosticContext(db.dbName, session.id, requireNotNull(parentMessageId))?.let { material ->
+            diagnostic("recall_context", mapOf("context_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(material.content),
+                "question_ref" to db.messageDao().getById(requireNotNull(parentMessageId))?.content?.let {
+                    com.nekobot.app.data.local.diagnostics.diagnosticRef(it) }))
+        } }
         ctx.metadata["companion_retrieval"] = builder.lastRetrieval
         companionQuestion = CompanionMemoryStore(db).questionForReply(session)
         return attachDurableAgentToolHistory(result, loadDurableAgentToolHistory(true))
@@ -835,6 +861,7 @@ internal class LocalPipelineCallbacks(
     override fun saveAssistantMessage(ctx: PipelineContext, message: Map<String, Any>) {
         requireCurrentCompanionMaterial()
         var content = (message["content"] as? String) ?: ""
+        if (session.companionMode) CompanionReplyGuard.validate(content)
         if (content.isNotBlank() && ctx.error == null && !ctx.stoppedPrematurely && variantTargetMessageId == null) {
             companionQuestion?.let { question ->
                 if (!content.contains(question)) {
@@ -963,6 +990,21 @@ internal class LocalPipelineCallbacks(
             }
 
             persistPendingGeneratedImages(messageId)
+
+            val diagnosticReply = runCatching { messageDao.getById(variantTargetMessageId ?: messageId) }.getOrNull()
+            diagnosticReply?.let { reply -> diagnostic("reply_saved", mapOf(
+                "reply_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(reply.id),
+                "body_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(reply.content),
+                "history_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(toolCallHistoryJson.orEmpty()),
+                "variant" to reply.variantIndex,
+                "status" to if (ctx.error != null) "error" else if (ctx.stoppedPrematurely) "cancelled" else "completed")) }
+            diagnosticReply?.let { reply -> diagnosticTrace.record("saved_reply", mapOf(
+                "reply_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(reply.id),
+                "variant" to reply.variantIndex, "content" to reply.content,
+                "reasoning_content" to reply.reasoningContent, "tool_history" to toolCallHistoryJson,
+                "status" to if (ctx.error != null) "error" else if (ctx.stoppedPrematurely) "cancelled" else "completed",
+                "error" to ctx.error
+            ), modelQueue.map { it.apiKey }) }
 
             // 更新会话元信息
             val now = com.nekobot.app.data.local.LocalRepository.nowIsoStatic()
@@ -1126,15 +1168,25 @@ internal class LocalPipelineCallbacks(
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
             val characterThinking = ctx.usesCharacterThinking()
-            val thinkingMessages = withCharacterThinkingRequest(messages,
-                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content, companionMode = session.companionMode)
+            // 思考提示词不再放顶部，改为发送时放到请求最末尾（用户消息末尾 + 最后一条 system）。
+            val thinkingPrompt = ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content
+            val thinkingMessages = messages
             val recallRequest = recallGuard()?.let { guard -> kotlinx.coroutines.runBlocking {
                 guard.prepare("main", thinkingMessages, tools, activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
             } }
-            val accountingMessages = recallRequest?.messages ?: thinkingMessages
-            val requestMessages = characterThinkingMessages(accountingMessages, characterThinking).map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) }
+            val accountingMessages = (recallRequest?.messages ?: thinkingMessages).let {
+                if (recallRequest?.mustAnswer == true) CompanionRecallFinal.finalMessages(it) else it
+            }
+            val requestMessages = withCharacterThinkingRule(
+                characterThinkingMessages(accountingMessages, characterThinking).map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) },
+                prompt = thinkingPrompt,
+                enabled = characterThinking
+            )
             val requestStartedAt = System.currentTimeMillis()
             val requestTools = recallRequest?.tools ?: tools
+            diagnostic("model_start", mapOf("status" to "started", "max_context" to (activeModel.maxContextLength ?: 32000),
+                "output_reserve" to (activeModel.maxTokens ?: 4000), "tools" to requestTools.size,
+                "model_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(activeModel.id)))
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
                 activeModel.maxTokens?.let { put("max_tokens", it) }
@@ -1142,6 +1194,7 @@ internal class LocalPipelineCallbacks(
                 if (requestTools.isNotEmpty()) put("tools", requestTools)
                 putReasoningParams(this, reasoningEffort, characterThinking) { customReasoning }
             }
+            tracePreparation(ctx, requestMessages, extra)
             val streamRelay = if (shouldRelayModelCall(session.sessionMode, characterThinking)) {
                 createStreamEventCoalescer(ctx)
             } else null
@@ -1155,14 +1208,16 @@ internal class LocalPipelineCallbacks(
                             relay.onReasoningChunk(chunk)
                         }
                     }
-                ), nativeOnly = session.companionMode)
+                ), bodyOnly = session.companionMode, allowNativeDisplay = session.companionMode)
             }
-            val streamCallbacks = thinkingStream?.callbacks
+            val replyGuard = if (session.companionMode) CompanionReplyGuard(thinkingStream?.callbacks,
+                hold = recallRequest?.mustAnswer == true) else null
+            val streamCallbacks = thinkingStream?.callbacks?.let { replyGuard?.callbacks ?: it }
 
             // 优先走 coordinator（持久化健康状态 + token 限额 + 超时）；为空时回退到内存版
             val rawResult = try {
                 if (coordinator != null) {
-                    kotlinx.coroutines.runBlocking {
+                    kotlinx.coroutines.runBlocking(diagnosticTrace.context("model")) {
                         try {
                             val exec = coordinator.execute(
                                 models = modelQueueFor(ctx),
@@ -1188,7 +1243,7 @@ internal class LocalPipelineCallbacks(
                         }
                     }
                 } else {
-                    kotlinx.coroutines.runBlocking {
+                    kotlinx.coroutines.runBlocking(diagnosticTrace.context("model")) {
                         aiClient.chatOnceWithFailover(
                             modelQueueFor(ctx),
                             requestMessages,
@@ -1200,21 +1255,43 @@ internal class LocalPipelineCallbacks(
                         )
                     }
                 }
-            } finally {
+            } catch (failure: Exception) {
                 thinkingStream?.finish()
+                diagnostic("model_result", mapOf("status" to if (failure is kotlinx.coroutines.CancellationException) "cancelled" else "error",
+                    "reason" to "exception", "duration_ms" to (System.currentTimeMillis() - requestStartedAt)))
+                throw failure
+            } finally {
                 streamRelay?.flush()
             }
 
             if (rawResult.error != null) {
+                thinkingStream?.finish()
+                diagnostic("model_result", mapOf("status" to "error", "reason" to "exception",
+                    "duration_ms" to (System.currentTimeMillis() - requestStartedAt),
+                    "http_status" to Regex("(?i)(?:http(?:\\s+status)?|status[_ ]?code|状态码)\\s*[:=]?\\s*(4[0-9]{2}|5[0-9]{2})\\b")
+                        .find(rawResult.error)?.groupValues?.get(1)?.toIntOrNull()))
                 throw RuntimeException(rawResult.error)
             }
-            val resolvedResult = kotlinx.coroutines.runBlocking {
+            val diagnosticModel = modelQueueFor(ctx).firstOrNull { it.id == rawResult.usedModelId } ?: activeModel
+            diagnostic("model_result", mapOf("status" to "completed", "finish_reason" to rawResult.finishReason,
+                "duration_ms" to (System.currentTimeMillis() - requestStartedAt),
+                "max_context" to (diagnosticModel.maxContextLength ?: 32000), "output_reserve" to (diagnosticModel.maxTokens ?: 4000),
+                "model_ref" to com.nekobot.app.data.local.diagnostics.diagnosticRef(rawResult.usedModelId ?: activeModel.id)))
+            val resolvedResult = kotlinx.coroutines.runBlocking(diagnosticTrace.context("tool_free_final")) {
                 CompanionRecallFinal.resolve(rawResult, recallRequest?.mustAnswer == true) {
                     callWithoutTools(modelQueueFor(ctx), CompanionRecallFinal.finalMessages(requestMessages), extra) { generationController.isStopped }
                 }
             }
+            replyGuard?.finish(resolvedResult)
+            thinkingStream?.finish()
+            streamRelay?.flush()
             val result = if (resolvedResult === rawResult && thinkingStream != null) thinkingStream.resolve(resolvedResult)
-                else characterThinkingResult(resolvedResult, characterThinking, nativeOnly = session.companionMode)
+                else characterThinkingResult(resolvedResult, characterThinking, bodyOnly = session.companionMode,
+                    allowNativeDisplay = session.companionMode)
+            diagnosticTrace.record("parsed_reply", mapOf("raw" to resolvedResult,
+                "content" to result.content, "thinking_content" to result.thinkingContent,
+                "character_thinking_enabled" to characterThinking, "body_only" to session.companionMode),
+                modelQueueFor(ctx).map { it.apiKey })
 
             if (session.companionMode && db.isOpen) {
                 val used = modelQueue.firstOrNull { it.id == result.usedModelId } ?: activeModel
@@ -1262,9 +1339,14 @@ internal class LocalPipelineCallbacks(
         return { messages, stopped ->
             requireCurrentCompanionMaterial()
             val characterThinking = ctx.usesCharacterThinking()
-            val thinkingMessages = withCharacterThinkingRequest(messages,
-                ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content, companionMode = session.companionMode)
-            val requestMessages = characterThinkingMessages(thinkingMessages, characterThinking).map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) }
+            // 思考提示词不再放顶部，改为发送时放到请求最末尾（用户消息末尾 + 最后一条 system）。
+            val thinkingPrompt = ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content
+            val thinkingMessages = messages
+            val requestMessages = withCharacterThinkingRule(
+                characterThinkingMessages(thinkingMessages, characterThinking).map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) },
+                prompt = thinkingPrompt,
+                enabled = characterThinking
+            )
             val requestStartedAt = System.currentTimeMillis()
             val extra = buildMap<String, Any?> {
                 activeModel.temperature?.let { put("temperature", it) }
@@ -1272,6 +1354,7 @@ internal class LocalPipelineCallbacks(
                 activeModel.topP?.let { put("top_p", it) }
                 putReasoningParams(this, reasoningEffort, characterThinking) { customReasoning }
             }
+            tracePreparation(ctx, requestMessages, extra)
 
             val fullContent = StringBuilder()
             val fullReasoning = StringBuilder()
@@ -1290,12 +1373,14 @@ internal class LocalPipelineCallbacks(
                         streamRelay.onReasoningChunk(it)
                     }
                 }
-            ), nativeOnly = session.companionMode)
+            ), bodyOnly = session.companionMode, allowNativeDisplay = session.companionMode)
+            val replyGuard = if (session.companionMode) CompanionReplyGuard(thinkingStream.callbacks) else null
+            val streamCallbacks = replyGuard?.callbacks ?: thinkingStream.callbacks
 
             // UI 事件在网络读取时合并转发；Pipeline 只接收最终正文/思考各一个聚合块，
             // 避免长回复产生“每 token 一个 Map”的内存放大。
             try {
-                kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.runBlocking(diagnosticTrace.context("direct_stream")) {
                     aiClient.chatStreamWithFailover(
                         models = modelQueueFor(ctx),
                         roleQueueCoordinator = coordinator.takeIf { strictCharacterQueue },
@@ -1309,17 +1394,17 @@ internal class LocalPipelineCallbacks(
                         }
                         when (event) {
                             is RealtimeEvent.StreamStart -> {
-                                if (strictCharacterQueue || characterThinking) {
+                                if (strictCharacterQueue || characterThinking || session.companionMode) {
                                     fullContent.setLength(0)
                                     fullReasoning.setLength(0)
                                 }
-                                thinkingStream.callbacks.onStart()
+                                streamCallbacks.onStart()
                             }
                             is RealtimeEvent.ReasoningChunk -> {
-                                thinkingStream.callbacks.onThinkingChunk(event.chunk)
+                                streamCallbacks.onThinkingChunk(event.chunk)
                             }
                             is RealtimeEvent.StreamChunk -> {
-                                thinkingStream.callbacks.onContentChunk(event.chunk)
+                                streamCallbacks.onContentChunk(event.chunk)
                             }
                             is RealtimeEvent.Usage -> {
                                 usedModelId = event.modelId
@@ -1339,11 +1424,19 @@ internal class LocalPipelineCallbacks(
                         }
                     }
                 }
-            } finally {
+            } catch (failure: Exception) {
                 thinkingStream.finish()
+                throw failure
+            } finally {
                 streamRelay.flush()
             }
             streamError?.let { throw RuntimeException(it) }
+            replyGuard?.finish(LocalAiResult(fullContent.toString()))
+            thinkingStream.finish()
+            streamRelay.flush()
+            diagnosticTrace.record("parsed_reply", mapOf("content" to fullContent.toString(),
+                "thinking_content" to fullReasoning.toString(), "body_only" to session.companionMode,
+                "character_thinking_enabled" to characterThinking), modelQueueFor(ctx).map { it.apiKey })
             if (session.companionMode && db.isOpen) {
                 val used = modelQueue.firstOrNull { it.id == usedModelId } ?: modelQueue.firstOrNull { it.model == usedActualModel } ?: activeModel
                 com.nekobot.app.ServiceContainer.prefs.saveCompanionRequestSnapshot(db.dbName, session.id,
@@ -1418,6 +1511,7 @@ internal class LocalPipelineCallbacks(
     // ---- 输出 / 回复 ----
 
     override fun sendResponse(ctx: PipelineContext, message: Map<String, Any>) {
+        if (session.companionMode) CompanionReplyGuard.validate(message["content"] as? String ?: "")
         // 非流式（如 agent 工具循环结束）：构造完整消息推送 AiResponse，
         // 触发 UI 移除流式占位 + 追加新消息，避免"AI 回复不显示，需重进会话"问题。
         // 用量与耗时必须一并带上：这条消息会直接进 UI 列表，缺字段时气泡下方的
@@ -2943,8 +3037,13 @@ internal class LocalPipelineCallbacks(
                 guard.prepare(ownerTaskId ?: "main", messages, toolDefinitions,
                     activeModel.maxContextLength ?: 32000, activeModel.maxTokens ?: 4000)
             } }
-            val requestMessages = recallRequest?.messages ?: messages
+            val requestMessages = (recallRequest?.messages ?: messages).let {
+                if (recallRequest?.mustAnswer == true) CompanionRecallFinal.finalMessages(it) else it
+            }.map { if (session.companionMode) CompanionPromptLanguage.message(it) else CompanionRequestUsage.clean(it) }
             val requestTools = recallRequest?.tools ?: toolDefinitions
+            val replyGuard = if (session.companionMode) CompanionReplyGuard(outputtingCallbacks,
+                hold = recallRequest?.mustAnswer == true) else null
+            val subagentStream = outputtingCallbacks?.let { replyGuard?.callbacks ?: it }
             if (stopped || subagentShouldStop() || (respectParentStop && generationController.isStopped)) {
                 throw kotlinx.coroutines.CancellationException("子代理已停止")
             }
@@ -2964,7 +3063,7 @@ internal class LocalPipelineCallbacks(
                                 models = modelQueue,
                                 purpose = "agent",
                                 requiredContextTokens = estimateLocalMessagesTokens(requestMessages)
-                            ) { model -> chatOnceForGeneration(model, requestMessages, extra, outputtingCallbacks) }
+                            ) { model -> chatOnceForGeneration(model, requestMessages, extra, subagentStream) }
                             exec.value.copy(
                                 usedModelId = exec.model.id,
                                 usedModelName = exec.model.name,
@@ -2979,7 +3078,7 @@ internal class LocalPipelineCallbacks(
                         extra,
                         requestTag = session.id,
                         shouldStop = { generationController.isStopped || subagentShouldStop() },
-                        streamCallbacks = outputtingCallbacks,
+                        streamCallbacks = subagentStream,
                         requiredContextTokens = estimateLocalMessagesTokens(requestMessages)
                     )
                 }
@@ -2996,6 +3095,7 @@ internal class LocalPipelineCallbacks(
                     }
                 }
             }
+            replyGuard?.finish(result)
             recordSubagentModelUsage(requestMessages, result, (System.currentTimeMillis() - startedAt).toDouble())
             buildMap<String, Any> {
                 val forcedFinal = false

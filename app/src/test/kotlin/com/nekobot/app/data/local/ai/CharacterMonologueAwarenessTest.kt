@@ -21,7 +21,7 @@ class CharacterMonologueAwarenessTest {
         val inner = requireNotNull(stack.get("output.inner_monologue"))
         for (text in listOf(
             "你知道玩家能看到你写出的内心独白", "不要把它当成对方看不到的秘密",
-            "有意让对方看见", "半有意半无意地流露", "话末写一两句", "不必每次都写"
+            "有意让对方看见", "半有意半无意地流露", "话末写一两句", "不必每次都写", "放在<||>之前"
         )) assertTrue(text, inner.content.contains(text))
         assertFalse(inner.content.contains("角色隐藏的想法"))
         assertEquals(PromptStack.Priority.BUBBLE_SPLIT + 1, inner.priority)

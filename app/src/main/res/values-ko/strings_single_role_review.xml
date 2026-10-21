@@ -2,8 +2,8 @@
 <resources>
     <string name="single_role_character_perspective_thinking_beta">캐릭터 시점 사고 Beta(테스트 버전)</string>
     <string name="single_role_think_in_chinese_in_the_character_s_first_person_voice">중국어로 캐릭터 자신의 일인칭 시점에서 생각합니다.</string>
-    <string name="single_role_custom_thinking_prompt_beta">사용자 지정 사고 프롬프트 Beta(테스트 버전)</string>
-    <string name="single_role_leave_blank_to_use_the_default">비워 두면 기본값을 사용합니다.</string>
+    <string name="single_role_custom_thinking_prompt_beta">사고 프롬프트</string>
+    <string name="single_role_leave_blank_to_use_the_default">이 문구는 매 요청의 맨 끝에 전송되며 캐릭터가 1인칭·간체 중국어로 생각하도록 지정합니다. 비워 두면 기본값을 사용합니다.</string>
     <string name="single_role_thinking_prompt">사고 프롬프트</string>
     <string name="single_role_manage_providers_and_models_here_characters_can_select_and_reorde">여기서 제공업체와 모델을 관리합니다. 캐릭터의 ‘채팅 모델’에서 선택하고 정렬할 수 있습니다. 개별 설정이 없으면 기본 대기열을 사용합니다.</string>
     <string name="single_role_primary_model_in_default_queue">기본 대기열의 주 모델</string>

@@ -85,16 +85,60 @@ class CompanionNaturalPromptTest {
         assertEquals(listOf("character.runtime_state", "output.inner_monologue"), stack.keys)
     }
 
-    @Test fun companionThinkingUsesExistingParenthesisParserAndNoTechnicalInstructions() {
+    @Test fun companionThinkingExtractsChineseBodyThoughtAndKeepsMonologueSeparate() {
         val prompt = characterThinkingPrompt(CharacterThinkingSettings(), "小满", "小舟", companionMode = true)
-        for (word in listOf("token", "上下文", "模型", "系统", "工具", "<think>", "output.")) assertFalse(word, prompt.contains(word, true))
-        assertTrue(prompt.contains("小满")); assertTrue(prompt.contains("小舟"))
+        for (word in listOf("token", "上下文", "模型", "系统", "output.")) assertFalse(word, prompt.contains(word, true))
+        // 默认文案不点名、不带占位符，任何角色通用；姓名替换由自定义文案覆盖。
+        assertFalse(prompt.contains("{{")); assertTrue(prompt.contains("角色本人"))
+        // 伪思考已移除：不再要求正文 <think>，原生思考由底部规则强制中文后直接显示。
+        assertFalse(prompt.contains("<think>"))
+        assertTrue(prompt.contains("（内心：…）"))
+        assertTrue(prompt.contains("这些念头只在心里过"))
+        assertFalse(prompt.contains("先在开头用一对中文圆括号"))
         val thinking = StringBuilder(); val spoken = StringBuilder()
-        val parser = CharacterThinkingParser(spoken::append, thinking::append)
-        listOf("（我", "有点想他", "。）早", "上好。<||>吃饭了吗？").forEach(parser::append)
-        parser.finish()
+        val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(onContentChunk = spoken::append,
+            onThinkingChunk = thinking::append), bodyOnly = true)
+        stream.callbacks.onThinkingChunk("Let me consider the response.")
+        listOf("<think>我", "有点想他", "。</think>", "早上好。", "（内心：见到他真开心。）", "<||>吃饭了吗？").forEach(stream.callbacks.onContentChunk)
+        stream.finish()
         assertEquals("我有点想他。", thinking.toString())
-        assertEquals("早上好。<||>吃饭了吗？", spoken.toString())
+        assertEquals("早上好。（内心：见到他真开心。）<||>吃饭了吗？", spoken.toString())
+    }
+
+    @Test fun companionCustomThoughtGoesToRequestTailOnEveryToolAndClosingRequest() {
+        val prompt = characterThinkingPrompt(CharacterThinkingSettings(customPrompt = "我是{{char}}，想到{{user}}就开心。"),
+            "小满", "小舟", companionMode = true)
+        val user = mapOf<String,Any>("role" to "user", "content" to "我现在喜欢什么茶？")
+        var messages = listOf(mapOf<String,Any>("role" to "system", "content" to "角色设定"), user)
+        repeat(3) { turn ->
+            messages = messages + mapOf("role" to "assistant", "content" to "", "tool_calls" to emptyList<Any>()) +
+                mapOf("role" to "tool", "name" to "agent_history_search", "tool_call_id" to "call-$turn", "content" to "原话")
+            val request = withCharacterThinkingRule(messages, prompt, enabled = true)
+            // 顶部 system 不含提示词；提示词放在最后一条用户消息末尾与请求最末 system。
+            assertFalse(request.first()["content"].toString().contains("我是小满，想到小舟就开心。"))
+            val lastUser = request.last { it["role"] == "user" }
+            assertTrue(lastUser["content"].toString().endsWith(prompt))
+            assertEquals("system", request.last()["role"])
+            assertEquals(prompt, request.last()["content"])
+            assertEquals(1, request.count { it["role"] == "system" && it["content"] == prompt })
+        }
+        val final = CompanionRecallFinal.finalMessages(messages)
+        assertEquals(CompanionRecallFinal.FINAL_NOTE, final.last()["content"])
+    }
+
+    @Test fun companionUsesOneBubbleRuleAndLabeledMonologueFollowsItsOwnSpeech() {
+        val stack = PromptStack().apply { buildCharacterInjections(this, CharacterProfile(), companionMode = true) }
+        val split = requireNotNull(stack.get("output.bubble_split")).content
+        assertEquals(CompanionPromptLanguage.bubbleRule, split)
+        assertTrue(CompanionPromptLanguage.styleReminder.contains(split))
+        assertTrue(split.contains("内容多时用<||>分成几条短消息"))
+        assertTrue(split.contains("一句简短回应可以只发一条"))
+        assertFalse(split.contains("想分成"))
+        val inner = requireNotNull(stack.get("output.inner_monologue")).content
+        assertTrue(inner.contains("（内心：...）"))
+        assertTrue(inner.contains("对应那条话末"))
+        assertTrue(inner.contains("放在<||>之前"))
+        assertTrue(inner.contains("不必每次都写"))
     }
 
     @Test fun companionThinkingRequestsAreIdempotentAndKeepOrdinaryFormat() {
@@ -180,7 +224,7 @@ class CompanionNaturalPromptTest {
         val system = ctx.messages.first()["content"].toString()
         assertFalse(system.contains("叫我小舟，我是设计师。"))
         assertFalse(system.contains("## ")); assertFalse(system.contains("user.persona")); assertFalse(system.contains("output.thinking_style"))
-        assertTrue(system.contains("小满自己的心里话"))
+        assertFalse(system.contains("小满本人的心里话"))
         assertEquals(0, promptSectionCounts(ctx.messages)[PromptSection.PLAYER] ?: 0)
         assertFalse(CompanionRequestUsage.clean(ctx.messages.first()).containsKey(CompanionRequestUsage.SYSTEM_SECTIONS))
     }

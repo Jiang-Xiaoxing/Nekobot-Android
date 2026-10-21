@@ -994,7 +994,11 @@ fun NekobotNavGraph() {
                 DbProfileScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.DIAGNOSTIC_CENTER) {
-                DiagnosticCenterScreen(onBack = { navController.popBackStack() })
+                DiagnosticCenterScreen(onBack = { navController.popBackStack() },
+                    onExportProblem = { navController.navigate(Routes.PROBLEM_DIAGNOSTIC) })
+            }
+            composable(Routes.PROBLEM_DIAGNOSTIC) {
+                com.nekobot.app.ui.screens.settings.ProblemDiagnosticScreen(onBack = { navController.popBackStack() })
             }
             // 日志查看（等级筛选 + 关键词搜索）
             composable(Routes.LOGS) {

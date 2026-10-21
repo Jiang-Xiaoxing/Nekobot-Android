@@ -210,6 +210,12 @@ interface MessageDao {
     @Query("SELECT * FROM local_messages WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): LocalMessageEntity?
 
+    @Query("SELECT * FROM local_messages WHERE deleted = 0 AND role = 'assistant' AND (:sessionId IS NULL OR session_id = :sessionId) ORDER BY rowid DESC LIMIT 30")
+    suspend fun diagnosticReplies(sessionId: String?): List<LocalMessageEntity>
+
+    @Query("SELECT * FROM local_messages WHERE session_id = :sessionId AND deleted = 0 AND role = 'user' AND rowid < (SELECT rowid FROM local_messages WHERE id = :replyId AND session_id = :sessionId) ORDER BY rowid DESC LIMIT 1")
+    suspend fun diagnosticParent(sessionId: String, replyId: String): LocalMessageEntity?
+
     @Query(
         "SELECT * FROM local_messages " +
             "WHERE deleted = 0 AND (instr(lower(content), lower(:query)) > 0 OR instr(lower(reasoning_content), lower(:query)) > 0) " +

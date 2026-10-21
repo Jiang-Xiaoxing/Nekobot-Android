@@ -2,8 +2,8 @@
 <resources>
     <string name="single_role_character_perspective_thinking_beta">角色視角思考 Beta（測試版）</string>
     <string name="single_role_think_in_chinese_in_the_character_s_first_person_voice">思考使用中文、以角色「我」的口吻。</string>
-    <string name="single_role_custom_thinking_prompt_beta">自訂思考提示詞 Beta（測試版）</string>
-    <string name="single_role_leave_blank_to_use_the_default">留空則使用預設值。</string>
+    <string name="single_role_custom_thinking_prompt_beta">思考提示詞</string>
+    <string name="single_role_leave_blank_to_use_the_default">這段會放在每次請求最末尾，控制角色用第一人稱、簡體中文來想事情。留空則使用預設值。</string>
     <string name="single_role_thinking_prompt">思考提示詞</string>
     <string name="single_role_manage_providers_and_models_here_characters_can_select_and_reorde">在這裡管理服務商與模型。角色可在「聊天模型」中選擇並排序；未個別設定的角色使用預設佇列。</string>
     <string name="single_role_primary_model_in_default_queue">預設佇列主要模型</string>

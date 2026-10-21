@@ -9,11 +9,13 @@ internal data class ChatBubbleDisplayGroup(val sourceIndices: List<Int>) {
     val sourceIndex: Int get() = sourceIndices.first()
 }
 
+/** 普通角色与单会话共用：助手文字气泡的内心独白统一收在气泡下方，带分隔线、可折叠。 */
+@Suppress("UNUSED_PARAMETER")
 internal fun usesCompanionMonologueFooter(
     companionMode: Boolean,
     isUser: Boolean,
     useSafePlainText: Boolean
-): Boolean = companionMode && !isUser && !useSafePlainText
+): Boolean = !isUser && !useSafePlainText
 
 /** 只接收同一条消息的显示段；普通/群聊和用户消息直接返回原分段。 */
 internal fun groupCompanionMonologueSegments(
@@ -33,17 +35,21 @@ internal fun groupCompanionMonologueSegments(
     fun isMonologue(index: Int): Boolean = isText(index) &&
         companionMonologueBlocks(segments[index], isStreaming) != null
 
-    var tailStart = segments.size
-    while (tailStart > 0 && isMonologue(tailStart - 1)) tailStart--
-    val bodyIndex = tailStart - 1
-    val bodyBlocks = if (bodyIndex >= 0 && isText(bodyIndex)) {
-        visibleMarkdownBlocks(segments[bodyIndex], true, false, isStreaming)
-    } else emptyList()
-    val canAttach = tailStart < segments.size && bodyIndex >= 0 && isText(bodyIndex) &&
-        bodyBlocks.isNotEmpty() && bodyBlocks.none { it is MdBlock.Image }
-    val groups = if (canAttach) {
-        original.take(bodyIndex) + ChatBubbleDisplayGroup((bodyIndex..segments.lastIndex).toList())
-    } else original
+    val groups = mutableListOf<ChatBubbleDisplayGroup>()
+    for (index in segments.indices) {
+        val previous = groups.lastOrNull()
+        val bodyIndex = previous?.sourceIndex
+        val bodyBlocks = if (bodyIndex != null && isText(bodyIndex)) {
+            visibleMarkdownBlocks(segments[bodyIndex], true, false, isStreaming)
+        } else emptyList()
+        // 分条中间的独白也跟随紧邻的那条正文；不跨过媒体或其他消息找归属。
+        val canAttach = isMonologue(index) && bodyBlocks.isNotEmpty() && bodyBlocks.none { it is MdBlock.Image }
+        if (canAttach) {
+            groups[groups.lastIndex] = ChatBubbleDisplayGroup(requireNotNull(previous).sourceIndices + index)
+        } else {
+            groups += ChatBubbleDisplayGroup(listOf(index))
+        }
+    }
 
     // 关闭独白时连同外层空泡一起跳过；流式纯独白尚未闭合时先不建立新气泡。
     return groups.filterNot { group ->

@@ -50,6 +50,10 @@ class SafePortableImportViewModel internal constructor(private val operations: S
     private var limit = 50
     private var request = 0L
     private var committing = false
+    private var diagnosticImportId = java.util.UUID.randomUUID().toString()
+    private fun importDiagnostic(id: String, profile: String, kind: String, values: Map<String, Any?>) {
+        com.nekobot.app.data.local.diagnostics.ProblemDiagnostics.record(id, profile, "", "", "import", kind, values)
+    }
     private var bulkRecordBaseline: SafeImportUiState? = null
     private data class DifferenceReviewBaseline(val state: SafeImportUiState, val limit: Int)
     private var differenceReviewBaseline: DifferenceReviewBaseline? = null
@@ -76,6 +80,9 @@ class SafePortableImportViewModel internal constructor(private val operations: S
     }
     fun inspect(context: Context, uri: Uri, password: String) {
         if (state.value.busy) return
+        val diagnosticId = java.util.UUID.randomUUID().toString().also { diagnosticImportId = it }
+        val diagnosticProfile = runCatching { com.nekobot.app.ServiceContainer.prefs.activeDbName }.getOrDefault("")
+        importDiagnostic(diagnosticId, diagnosticProfile, "import_start", mapOf("stage" to "inspect", "status" to "started"))
         val token = ++request
         differenceReviewBaseline = null
         limit = 50
@@ -87,14 +94,18 @@ class SafePortableImportViewModel internal constructor(private val operations: S
                 val name = withContext(Dispatchers.IO) { runCatching { portableArchiveDisplayName(context, uri) }.getOrNull() }
                 if (token == request && !name.isNullOrBlank()) state.value = state.value.copy(fileName = name)
                 val prepared = operations.prepare(context, uri, password)
+                importDiagnostic(diagnosticId, diagnosticProfile, "import_result", mapOf("stage" to "inspect",
+                    "status" to "completed", "categories" to prepared.preview.categories.size))
                 if (token != request || cleared) { closePrepared(prepared); return@launch }
                 val selected = prepared.preview.categories.associate { summary -> summary.category to
                     if (summary.category == PortableDataCategory.CREDENTIALS) emptySet() else summary.details
                         .filter { it.key != "plot_story" }.mapTo(linkedSetOf()) { it.key } }
                 state.value = state.value.copy(prepared = prepared, selected = selected, step = SafeImportStep.CONTENTS)
             } catch (_: CancellationException) {
+                importDiagnostic(diagnosticId, diagnosticProfile, "import_end", mapOf("stage" to "inspect", "status" to "cancelled"))
                 if (token == request) state.value = state.value.copy(error = context.getString(R.string.safe_import_cancelled))
             } catch (error: Exception) {
+                importDiagnostic(diagnosticId, diagnosticProfile, "import_end", mapOf("stage" to "inspect", "status" to "error", "reason" to "exception"))
                 if (token == request) {
                     val route = withContext(Dispatchers.IO) { recognizeDedicatedImport(context, uri) }
                     if (token == request) state.value = state.value.copy(route = route,
@@ -232,18 +243,34 @@ class SafePortableImportViewModel internal constructor(private val operations: S
             plan.choices.normalized() != snapshot.choices.normalized() || plan.selected.filterValues { it.isNotEmpty() } != snapshot.selected.filterValues { it.isNotEmpty() }) return
         val token = ++request
         committing = true
+        val diagnosticId = diagnosticImportId
+        importDiagnostic(diagnosticId, prepared.profile, "import_start", mapOf("stage" to "commit", "status" to "started",
+            "new_rows" to plan.rows.counts.added, "updated_rows" to plan.rows.counts.updated,
+            "kept" to plan.rows.counts.kept, "same" to plan.rows.counts.same, "categories" to plan.selected.size,
+            "selected_records" to plan.choices.fields.size, "selected_fields" to plan.choices.fields.values.sumOf { it.size },
+            "source_choices" to plan.choices.keepMemorySources.size))
         state.value = snapshot.copy(busy = true, planValid = false, error = null)
         work = viewModelScope.launch {
             try {
                 val result = operations.commit(context, prepared, plan) { message -> if (token == request) state.value = state.value.copy(progress = message) }
+                importDiagnostic(diagnosticId, prepared.profile, "import_result", mapOf("stage" to "commit", "status" to "completed",
+                    "committed" to true, "new_rows" to result.newRows, "updated_rows" to result.updatedRows,
+                    "kept" to result.keptItems, "same" to result.sameItems, "files" to result.importedFiles))
                 if (token == request) state.value = state.value.copy(result = result, step = SafeImportStep.RESULT)
             } catch (_: CancellationException) {
+                importDiagnostic(diagnosticId, prepared.profile, "import_result", mapOf("stage" to "commit", "status" to "cancelled", "committed" to (prepared.result != null)))
                 if (token == request) state.value = state.value.copy(result = prepared.result, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
                     error = if (prepared.result == null) context.getString(R.string.safe_import_cancelled) else null)
             } catch (error: Exception) {
+                importDiagnostic(diagnosticId, prepared.profile, "import_result", mapOf("stage" to "commit", "status" to "error",
+                    "reason" to if (prepared.result == null) "exception" else "refresh", "committed" to (prepared.result != null)))
                 if (token == request) state.value = state.value.copy(result = prepared.result, step = if (prepared.result != null) SafeImportStep.RESULT else state.value.step,
                     error = if (prepared.result != null) context.getString(R.string.safe_import_reload_failed) else error.message ?: context.getString(R.string.safe_import_failed))
-            } finally { committing = false; if (token == request) state.value = state.value.copy(busy = false); if (cleared) closePrepared(prepared) }
+            } finally {
+                importDiagnostic(diagnosticId, prepared.profile, "import_end", mapOf("stage" to "commit",
+                    "committed" to (prepared.result != null), "recovery_pending" to prepared.recoveryPending))
+                committing = false; if (token == request) state.value = state.value.copy(busy = false); if (cleared) closePrepared(prepared)
+            }
         }
     }
     fun cancel() {

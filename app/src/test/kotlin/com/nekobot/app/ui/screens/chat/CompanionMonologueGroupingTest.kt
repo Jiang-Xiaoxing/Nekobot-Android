@@ -42,9 +42,25 @@ class CompanionMonologueGroupingTest {
         assertEquals(listOf(listOf(0), listOf(1, 2)), indices(group("第一句<||>正文$thought<||>(心里:再想一句)")))
     }
 
-    @Test fun onlyTrailingPureSegmentsMerge() {
-        assertEquals(listOf(listOf(0), listOf(1), listOf(2)), indices(group("正文<||>$thought<||>继续说话")))
+    @Test fun monologueBetweenTwoBubblesFollowsOnlyItsPreviousSpeech() {
+        assertEquals(listOf(listOf(0, 1), listOf(2)), indices(group("正文<||>$thought<||>继续说话")))
         assertEquals(listOf(listOf(0), listOf(1)), indices(group("正文<||>$thought 后面还有正文")))
+    }
+
+    @Test fun eachShortSpeechKeepsItsOwnMonologueAndOriginalAnchor() {
+        val text = "第一条<||>（内心：第一条的独白）<||>第二条<||>（内心：第二条的独白）<||>第三条"
+        val groups = group(text)
+        assertEquals(listOf(listOf(0,1),listOf(2,3),listOf(4)),indices(groups))
+        assertEquals(listOf(0,2,4),groups.map { it.sourceIndex })
+        assertEquals(text.split("<||>"),groups.flatMap { it.sourceIndices }.map(text.split("<||>")::get))
+        assertEquals(indices(groups),indices(group(text,show=false)))
+    }
+
+    @Test fun streamingMiddleMonologueKeepsThePreviousBubbleThroughClosure() {
+        for (prefix in listOf("（", "（内心：", "（内心：悄悄开心", "（内心：悄悄开心）")) {
+            assertEquals(prefix,listOf(listOf(0,1)),indices(group("第一条<||>$prefix",streaming=true)))
+        }
+        assertEquals(listOf(listOf(0,1),listOf(2)),indices(group("第一条<||>（内心：悄悄开心）<||>第二条",streaming=true)))
     }
 
     @Test fun monologueAloneOrWithoutBodyKeepsStandaloneBubbles() {
@@ -147,20 +163,19 @@ class CompanionMonologueGroupingTest {
         assertTrue(groups.all { messageMenuAnchorKey("message-1", "fallback", it.last().sourceIndex) == anchor })
     }
 
-    @Test fun ordinaryAndGroupModesKeepExactOldSegmentsForEveryDisplayState() {
-        // 普通会话与群聊均不提供 companionMode；两者共用原 MarkdownText 路径。
-        val modeMessages = mapOf("普通" to "正文<||>$thought", "群聊" to "甲说话<||>乙说话<||>$thought")
-        for ((mode, text) in modeMessages) {
-            val expected = text.split("<||>").indices.map { listOf(it) }
+    @Test fun ordinaryAndGroupModesUseSameMonologueFooterAsCompanion() {
+        // 普通角色与单会话共用气泡独白页脚：同一段内容在两种模式下分组一致。
+        for (text in listOf("正文<||>$thought", "甲说话<||>乙说话<||>$thought")) {
             for (show in listOf(true, false)) for (streaming in listOf(true, false)) {
-                assertEquals("$mode show=$show streaming=$streaming", expected,
+                assertEquals("$text show=$show streaming=$streaming",
+                    indices(group(text, show = show, streaming = streaming)),
                     indices(group(text, companion = false, show = show, streaming = streaming)))
-                assertFalse(usesCompanionMonologueFooter(false, false, false))
+                assertTrue(usesCompanionMonologueFooter(false, false, false))
             }
         }
     }
 
-    @Test fun actualSessionModesEnableOnlyTheSingleSessionRole() {
+    @Test fun everySessionModeEnablesTheMonologueFooterAndGroupsTheSameWay() {
         val sessions = listOf(
             Session(id = "ordinary", type = "chat", companionMode = false, characterName = "林小满"),
             Session(id = "group", type = "group", groupId = "group-1", characterIds = listOf("a", "b")),
@@ -169,18 +184,22 @@ class CompanionMonologueGroupingTest {
             Session(id = "single-role", sessionMode = "agent", companionMode = true)
         )
         for (session in sessions) {
-            val companion = session.companionMode == true
-            assertEquals(session.id, session.id == "single-role", usesCompanionMonologueFooter(companion, false, false))
-            val expected = if (session.id == "single-role") listOf(listOf(0, 1)) else listOf(listOf(0), listOf(1))
-            assertEquals(session.id, expected, indices(group("正文<||>$thought", companion = companion)))
+            assertTrue(session.id, usesCompanionMonologueFooter(session.companionMode == true, false, false))
+            assertEquals(session.id, indices(group("正文<||>$thought")),
+                indices(group("正文<||>$thought", companion = session.companionMode == true)))
         }
     }
 
-    @Test fun ordinaryAndGroupPendingOrOnlyMonologueBubblesAreUnchanged() {
-        for (text in listOf(thought, "（内心：未完", "正文<||>（内心：未完")) {
-            val expected = text.split("<||>").indices.map { listOf(it) }
-            assertEquals(expected, indices(group(text, companion = false, show = false, streaming = true)))
+    @Test fun pendingOrOnlyMonologueBubblesUseTheSameFooterRulesInAllModes() {
+        val cases = listOf(thought, "（内心：未完", "正文<||>（内心：未完")
+        for (text in cases) {
+            assertEquals(text, indices(group(text, show = false, streaming = true)),
+                indices(group(text, companion = false, show = false, streaming = true)))
         }
+        // 收起的纯独白不留空泡；正文仍保留。
+        assertEquals(emptyList<List<Int>>(), indices(group(thought, show = false, streaming = true)))
+        assertEquals(emptyList<List<Int>>(), indices(group("（内心：未完", show = false, streaming = true)))
+        assertEquals(listOf(listOf(0, 1)), indices(group("正文<||>（内心：未完", show = false, streaming = true)))
     }
 
     @Test fun userAndSafePlainTextPathsStayUnchanged() {

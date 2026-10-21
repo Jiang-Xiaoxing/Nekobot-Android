@@ -102,6 +102,8 @@ interface CompanionMemoryDao {
     suspend fun sourceAnchorIds(memoryId: String): List<String>
     @Query("SELECT * FROM companion_context_materials WHERE scopeId = :scopeId ORDER BY sequence")
     suspend fun contextMaterials(scopeId: String): List<CompanionContextMaterialEntity>
+    @Query("SELECT * FROM companion_context_materials WHERE messageId = :messageId AND scopeId IN (SELECT id FROM companion_scopes WHERE profile = :profile AND sessionId = :sessionId) LIMIT 1")
+    suspend fun diagnosticContext(profile: String, sessionId: String, messageId: String): CompanionContextMaterialEntity?
     @Upsert suspend fun saveContextMaterial(row: CompanionContextMaterialEntity)
     @Query("DELETE FROM companion_context_materials WHERE scopeId = :scopeId")
     suspend fun eraseContextMaterials(scopeId: String)

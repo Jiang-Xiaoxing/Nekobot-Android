@@ -2,8 +2,8 @@
 <resources>
     <string name="single_role_character_perspective_thinking_beta">Character-perspective thinking Beta</string>
     <string name="single_role_think_in_chinese_in_the_character_s_first_person_voice">Think in Chinese, in the character’s first-person voice.</string>
-    <string name="single_role_custom_thinking_prompt_beta">Custom thinking prompt Beta</string>
-    <string name="single_role_leave_blank_to_use_the_default">Leave blank to use the default.</string>
+    <string name="single_role_custom_thinking_prompt_beta">Thinking prompt</string>
+    <string name="single_role_leave_blank_to_use_the_default">This text is sent at the very end of every request and controls how the character thinks in first person, in Simplified Chinese. Leave blank to use the default.</string>
     <string name="single_role_thinking_prompt">Thinking prompt</string>
     <string name="single_role_manage_providers_and_models_here_characters_can_select_and_reorde">Manage providers and models here. Characters can select and reorder them under Chat models; otherwise, they use the default queue.</string>
     <string name="single_role_primary_model_in_default_queue">Primary model in default queue</string>

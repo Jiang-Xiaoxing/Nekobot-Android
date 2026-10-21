@@ -409,6 +409,8 @@ class LocalRepository(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
     )
     private val gson = Gson()
+    internal fun problemDiagnosticCollector() = com.nekobot.app.data.local.diagnostics.ProblemDiagnosticCollector(
+        db, requireNotNull(appContext) { "诊断导出需要本机应用环境" })
     private val workspaceRepository = LocalWorkspaceRepository(appContext)
     /** 每个仓库实例唯一；同名 profile 覆盖重建后，旧协程也无法通过 active 检查。 */
     private val plotStoryOwner = Any()

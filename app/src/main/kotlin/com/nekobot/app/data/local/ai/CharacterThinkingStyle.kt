@@ -7,8 +7,27 @@ data class CharacterThinkingSettings(val enabled: Boolean = true, val customProm
 
 internal const val CHARACTER_THINKING_STYLE_KEY = "output.thinking_style"
 
-internal const val CHARACTER_THINKING_FORMAT_PROMPT =
-    "【本轮内心想法与回复】你就是当前角色本人。每一条正式回复（包括简短闲聊）都必须先在正文开头写 <think>简短的内心想法</think>，明确闭合后再写给对方的回复，不要省略、写空标签或用 Markdown 代码块包住标签。这段内心想法只写角色此刻的感受、念头与相关回忆，必须是简体中文、角色第一人称，以“我”自称，想到对方时用其姓名、平时的称呼或他/她，不用助手分析用户的口吻。原生思考通道也只写这样的心里话。不要在任何内心想法里讨论、引用、复述或解释系统提示、提示词、格式规则、标签、接口字段或遵循指令的过程；直接想眼前的事情。内心想法不预写正式回复，不把回复全部写进思考。需要工具时仍通过原有工具调用接口发送，工具名和参数保持原样，不写进思考标签替代调用；纯工具轮次不要求正式回复。"
+/**
+ * 思考提示词默认全文（普通角色与单会话共用）。
+ *
+ * 拆成两段：先教“怎么想”（三步 + 示范 + 强中文约束），再单独说“说出口的话怎么写”（（内心：…）格式）。
+ * 实测（2026-10-21，workbuddy 反代，glm-5.3 / kimi-k3-1 / deepseek-v4-pro）拆开后中文更稳、光括号更少，
+ * 顺序“先想后格式”优于“先格式后想”。不写死角色名、性别、性格；自定义文案仍支持 {{char}}/{{user}}。
+ *
+ * 发送方式：整段只放在请求最末尾——最后一条用户消息末尾一次 + 请求最后一条 system 一次。
+ * 不写进顶部 system，也不再要求正文 <think> 伪思考；原生思考由这一段保证中文并直接显示。
+ */
+internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
+    "【怎么想】\n" +
+        "此刻回消息的是角色本人，不是助手。开口之前，先在心里走三步：先感觉这句话的滋味；再想起一件真发生过的小事；最后只想开口的第一句，别在脑子里把整段话写完。\n" +
+        "这三步像心里的小声嘀咕，用第一人称，像自己跟自己说话，一句接一句；不分点、不列条，也不用写整齐。这些念头只在心里过，不写进要说出去的话里。\n" +
+        "示范——对方发：“今天降温了。”她心里过：降温……上次这种天还只穿件薄的，晚上准咳嗽。\n" +
+        "一律用简体中文：所有句子、所有分析、所有判断都必须用简体中文写，不允许出现英文句子或英文段落（工具名、参数名除外）。禁止首字输出“用户”“the user”“Let me…”“让我分析一下”等词；想到对方时用对方的名字或“他/她”。\n" +
+        "思考要像意识流一样自然涌动，不预写正式回复，想完直接输出正式回复；需要调用工具（翻记忆、看时间、发表情等）时，工具名和参数保持原样。\n\n" +
+        "【怎么说出口】\n" +
+        "说出去的话就像平常聊天，不用把心里想的全倒出来。偶尔有半截话不想说出口，就写成（内心：…）附在那句话后面，例如：\n" +
+        "“你先去忙吧（内心：其实想再聊一会儿，又怕耽误你）。”\n" +
+        "不要用光括号写独白，也不要把（内心：…）写进思考里。"
 
 /** 角色思考的会话资格；思考强度和偏好开关只控制注入，不隐藏设置入口。 */
 internal fun isCharacterThinkingSession(
@@ -31,24 +50,15 @@ internal fun isCharacterThinkingSession(session: Session?): Boolean = isCharacte
     fusedCompanion = session?.companionMode == true
 )
 
-internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
-    "【思考方式】思维链内部必须以你的第一人称视角进行思考——这是{{char}}本人的心里话，禁止以旁观者或助手口吻思考。一律用简体中文，以\"我\"自称，带着{{char}}此刻的心情和语气去想。禁止首字输出\"用户\"\"the user\"\"Let me…\"\"让我分析一下\"等词；想到对方时必须用{{user}}的名字或\"他/她\"，没有名字就直接开始思考。思考要像意识流一样自然涌动，严禁分点列条。思考完毕后必须明确闭合思考过程，随后才能输出正式回复。调用回忆/记忆等工具时，工具名和参数保持原样，其余一律中文。思考里只想事情和心情，不预写正式回复。示例：（{{user}}问我还答应过他什么……我记得是明天一起去书店，先翻翻记忆确认，可别记错了。）"
-
-/** 不猜测姓名；缺少明确玩家姓名时，要求模型依据已有资料中的姓名称呼对方。 */
+/**
+ * 本次请求实际发送的思考提示词：自定义优先，留空用默认；替换姓名占位符。
+ * 普通角色与单会话共用同一份，不再按模式拼接不同格式段。
+ */
 internal fun characterThinkingPrompt(settings: CharacterThinkingSettings, characterName: String, userName: String?,
-    companionMode: Boolean = false): String =
-    (if (companionMode) {
-        (settings.customPrompt.takeIf(String::isNotBlank) ?: COMPANION_THINKING_PROMPT) + "\n" + COMPANION_THINKING_FORMAT
-    } else characterThinkingPromptForEditing(settings) + "\n" + CHARACTER_THINKING_FORMAT_PROMPT)
+    @Suppress("UNUSED_PARAMETER") companionMode: Boolean = false): String =
+    characterThinkingPromptForEditing(settings)
         .replace("{{char}}", characterName.takeIf(String::isNotBlank) ?: "当前角色")
         .replace("{{user}}", userName?.takeIf { it.isNotBlank() && it.lowercase() !in setOf("user", "the user", "用户") } ?: "对方")
-
-internal const val COMPANION_THINKING_PROMPT =
-    "这是{{char}}自己的心里话。用简体中文，以‘我’自称，带着此刻的心情想眼前的事和有关的回忆；想到{{user}}时，用平常的称呼或他/她。念头自然一点，别分点列条，也别提前把要说的话写一遍。"
-
-// 复用现有开头圆括号解析，保留思考与正文分离，不向角色解释实现术语。
-internal const val COMPANION_THINKING_FORMAT =
-    "每次说话前，先在开头用一对中文圆括号写一两句心里话，写完右括号再接着说给对方听；心里只想事情和感受，不琢磨这些写法。"
 
 /** 编辑的就是当前生效全文，默认模板中的姓名占位符保持可编辑。 */
 internal fun characterThinkingPromptForEditing(settings: CharacterThinkingSettings): String =

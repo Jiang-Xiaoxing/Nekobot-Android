@@ -415,7 +415,9 @@ class AIPipeline {
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
-        val composedSystem = (baseParts + pipelineExtraItems.filterNot { it in dynamicItems }.map { PromptStack.renderItem(it, fused) })
+        val composedSystem = (baseParts + pipelineExtraItems
+            .filterNot { it in dynamicItems || it.key == CHARACTER_THINKING_STYLE_KEY }
+            .map { PromptStack.renderItem(it, fused) })
             .joinToString("\n\n")
         ctx.metadata["composed_system_prompt"] = composedSystem
 
@@ -453,12 +455,12 @@ class AIPipeline {
         val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty() else emptyList())
             .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { if (fused) it.content.trim() else "${it.key}: ${it.content}" }
         messagesForAi = callbacks.finalizeContext(ctx, messagesForAi, tools, dynamic)
-        messagesForAi = withCharacterThinkingRequest(messagesForAi,
-            ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content, companionMode = fused)
+        // 思考提示词不放顶部 system；发送时由 withCharacterThinkingRule 放到请求最末尾。
         if (fused) {
             val firstSystem = messagesForAi.indexOfFirst { it["role"] == "system" }
             messagesForAi = messagesForAi.mapIndexed { index, message ->
-                if (index == firstSystem) markCompanionSystem(message, pipelineExtraItems.filterNot { it in dynamicItems }) else message
+                if (index == firstSystem) markCompanionSystem(message,
+                    pipelineExtraItems.filterNot { it in dynamicItems || it.key == CHARACTER_THINKING_STYLE_KEY }) else message
             }
         }
         ctx.metadata["composed_system_prompt"] = messagesForAi.filter { it["role"] == "system" }

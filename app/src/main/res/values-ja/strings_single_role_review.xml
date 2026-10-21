@@ -2,8 +2,8 @@
 <resources>
     <string name="single_role_character_perspective_thinking_beta">キャラクター視点の思考 Beta（テスト版）</string>
     <string name="single_role_think_in_chinese_in_the_character_s_first_person_voice">中国語で、キャラクター自身の「私」の口調で考えます。</string>
-    <string name="single_role_custom_thinking_prompt_beta">思考プロンプトのカスタマイズ Beta（テスト版）</string>
-    <string name="single_role_leave_blank_to_use_the_default">空欄の場合は初期設定を使います。</string>
+    <string name="single_role_custom_thinking_prompt_beta">思考プロンプト</string>
+    <string name="single_role_leave_blank_to_use_the_default">この文言は毎回のリクエストの最後に送られ、キャラクターが一人称・簡体中国語で考えるよう指示します。空欄の場合は初期設定を使います。</string>
     <string name="single_role_thinking_prompt">思考プロンプト</string>
     <string name="single_role_manage_providers_and_models_here_characters_can_select_and_reorde">ここでプロバイダーとモデルを管理します。キャラクターの「チャットモデル」で選択と並べ替えができます。個別設定がない場合は既定のキューを使います。</string>
     <string name="single_role_primary_model_in_default_queue">既定キューのメインモデル</string>
