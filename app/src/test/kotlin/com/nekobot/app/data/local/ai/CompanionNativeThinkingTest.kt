@@ -16,16 +16,14 @@ class CompanionNativeThinkingTest {
     )
 
     @Test
-    fun promptIsInjectedTwiceWithoutChangingOtherMessages() {
+    fun promptIsInjectedOnceWithoutChangingPlayerMessages() {
         val result = withCharacterThinkingRule(messages(), prompt, enabled = true)
         assertEquals(5, result.size)
         // 最后一条 system 是提示词
         assertEquals("system", result.last()["role"])
         assertEquals(prompt, result.last()["content"])
-        // 最后一条 user 末尾带提示词，正文仍在最前
         assertEquals("user", result[3]["role"])
-        assertTrue((result[3]["content"] as String).startsWith("今天累不累"))
-        assertTrue((result[3]["content"] as String).endsWith(prompt))
+        assertEquals(messages()[3], result[3])
         // 其他消息不变
         assertEquals(listOf(messages()[0], messages()[1], messages()[2]), result.take(3))
     }
@@ -62,8 +60,7 @@ class CompanionNativeThinkingTest {
             mapOf("role" to "tool", "content" to "结果")
         )
         val result = withCharacterThinkingRule(toolTurn, prompt, enabled = true)
-        assertTrue((result[1]["content"] as String).startsWith("在吗"))
-        assertTrue((result[1]["content"] as String).endsWith(prompt))
+        assertEquals("在吗", result[1]["content"])
         assertEquals("system", result.last()["role"])
         assertEquals(prompt, result.last()["content"])
     }
@@ -73,7 +70,8 @@ class CompanionNativeThinkingTest {
     fun defaultPromptKeepsChineseRequirementAndDropsPseudoThinking() {
         assertTrue(DEFAULT_CHARACTER_THINKING_PROMPT.contains("简体中文"))
         assertTrue(DEFAULT_CHARACTER_THINKING_PROMPT.contains("第一人称"))
-        assertTrue(DEFAULT_CHARACTER_THINKING_PROMPT.contains("（内心：…）"))
+        assertTrue(!DEFAULT_CHARACTER_THINKING_PROMPT.contains("（内心：…）"))
+        assertTrue(!DEFAULT_CHARACTER_THINKING_PROMPT.contains("<||>"))
         assertTrue(!DEFAULT_CHARACTER_THINKING_PROMPT.contains("<think>"))
     }
 

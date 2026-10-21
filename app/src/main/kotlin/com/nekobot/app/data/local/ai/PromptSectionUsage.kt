@@ -28,7 +28,11 @@ internal fun promptSectionCounts(messages: List<Map<String, Any>>): Map<PromptSe
     }
     for (message in messages) {
         val text = message["content"] as? String ?: continue
-        if (message["role"] == "system") {
+        if (message.containsKey(CHARACTER_TURN_CONTEXT) || message[CHARACTER_THINKING_RULE] == true) {
+            add(PromptSection.OTHER, estimateLocalTextTokens(text))
+            continue
+        }
+        if (message["role"] == "system" && !message.containsKey(CompanionRequestUsage.META)) {
             val localSections = message[CompanionRequestUsage.SYSTEM_SECTIONS] as? Map<*, *>
             if (localSections != null) {
                 PromptSection.entries.forEach { add(it, (localSections[it.name] as? Number)?.toInt() ?: 0) }
@@ -53,8 +57,11 @@ internal fun promptSectionCounts(messages: List<Map<String, Any>>): Map<PromptSe
             val total = estimateLocalTextTokens(text)
             val core = (((mark["core"] as? Map<*, *>)?.get("tokens") as? Number)?.toInt() ?: 0).coerceIn(0, total)
             // 关系段位于软件辅助资料的状态区，最后追加；不在原话或记忆 JSON 里找标题。
-            val dynamic = text.substringAfter("当前角色状态、任务和参考设定（世界书属于设定，不能当作已发生经历）：\n", "")
+            val dynamic = text.substringAfter("当前角色状态、任务和参考设定：\n", "").ifBlank {
+                text.substringAfter("当前角色状态、任务和参考设定（世界书属于设定，不能当作已发生经历）：\n", "")
+            }
             val relationshipText = dynamic.substringAfter("【关系状态参考】", "").substringBefore("</software_context>")
+                .substringBefore("\n\n有一项需要自然核对")
             val relationship = if (relationshipText.isBlank()) 0 else
                 estimateLocalTextTokens("【关系状态参考】$relationshipText").coerceIn(0, total - core)
             add(PromptSection.CORE_MEMORY, core)

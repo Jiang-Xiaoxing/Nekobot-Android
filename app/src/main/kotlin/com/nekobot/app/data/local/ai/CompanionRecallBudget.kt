@@ -37,7 +37,8 @@ internal class CompanionRecallBudget(
     private val diagnostic: (String, Map<String, Any?>) -> Unit = { _, _ -> }
 ) {
     private data class Span(val key: String, val start: Int, val text: String)
-    private data class Request(val id: String, val visible: MutableList<Span>, var room: Int, val limit: Int)
+    private data class Request(val id: String, val visible: MutableList<Span>, var room: Int, val limit: Int,
+        val providedMemoryIds: Set<String>)
     private val requests = mutableMapOf<String, Request>()
     private val gson = Gson()
 
@@ -80,7 +81,7 @@ internal class CompanionRecallBudget(
             estimateLocalTextTokens(gson.toJson(tools)) - 512).coerceAtLeast(0)
         // 总份额同时受设置和模型上下文的一小部分限制，避免一次回忆挤占正常对话。
         val limit = totalLimit(state.settings.tokens, maxContext)
-        requests[actor] = Request(UUID.randomUUID().toString(), visible, room, limit)
+        requests[actor] = Request(UUID.randomUUID().toString(), visible, room, limit, CompanionReferences.visibleIds(messages))
         val exhausted = state.rounds >= state.settings.rounds || limit - state.tokens < MIN_RESULT_TOKENS || room < MIN_RESULT_TOKENS
         // 额度到达后保留其他工作工具；移除记忆回查工具，明确不能把资料不足当成事实。
         val lastCalls = (messages.lastOrNull { it["role"] == "assistant" && it["tool_calls"] is List<*> }
@@ -131,7 +132,7 @@ internal class CompanionRecallBudget(
             save(gson.toJson(state))
             return@withLock withStatus(mapOf("success" to false, "error" to (failure.message ?: "查找失败")), state, request)
         }
-        val filtered = deduplicate(markMemoryBodies(raw), request.visible)
+        val filtered = deduplicate(markMemoryBodies(raw), request.visible, request.providedMemoryIds)
         val fitted = fit(filtered, allowance - 16)
         val charged = (estimateLocalTextTokens(gson.toJson(fitted)) + 16).coerceAtMost(allowance)
         state.tokens = previouslyUsed + charged
@@ -196,11 +197,15 @@ internal class CompanionRecallBudget(
             (row["text_offset"] as? Number)?.toInt() ?: 0, body)
     }
 
-    private fun deduplicate(result: Map<String, Any>, visible: List<Span>): Map<String, Any> {
+    private fun deduplicate(result: Map<String, Any>, visible: List<Span>, providedMemoryIds: Set<String>): Map<String, Any> {
         val output = result.toMutableMap()
         var skipped = 0
         for ((field, entries) in rows(result).groupBy({ it.first }, { it.second })) {
             output[field] = entries.flatMap { row ->
+                if (row["message_id"] == null && row["id"] in providedMemoryIds) {
+                    skipped++
+                    return@flatMap emptyList()
+                }
                 val source = span(row)
                 if (source == null) listOf(row) else {
                     var ranges = listOf(source.start until source.start + source.text.length)

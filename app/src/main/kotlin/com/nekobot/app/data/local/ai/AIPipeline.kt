@@ -410,12 +410,14 @@ class AIPipeline {
         val fused = ctx.metadata[META_FUSED_COMPANION] == true
         val dynamicKeys = setOf("knowledge.rag", "agent.todos", "agent.goal", "agent.spec")
         val dynamicItems = if (fused) pipelineExtraItems.filter { it.key in dynamicKeys || it.scope == "turn" } else emptyList()
+        val characterFixedItems = if (fused) ctx.characterTurn?.promptStackItems.orEmpty()
+            .filter { it.key in characterOutputPromptKeys && it.key != CHARACTER_THINKING_STYLE_KEY && it.enabled } else emptyList()
         val baseParts = listOf(characterBasePrompt, basePrompt)
             .map { PromptStack.stripSection(it, CHARACTER_THINKING_STYLE_KEY) }
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
-        val composedSystem = (baseParts + pipelineExtraItems
+        val composedSystem = (baseParts + (pipelineExtraItems + characterFixedItems)
             .filterNot { it in dynamicItems || it.key == CHARACTER_THINKING_STYLE_KEY }
             .map { PromptStack.renderItem(it, fused) })
             .joinToString("\n\n")
@@ -452,7 +454,8 @@ class AIPipeline {
         )
 
         messagesForAi = listOf(mapOf("role" to "system", "content" to composedSystem)) + depthInjectedHistory
-        val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty() else emptyList())
+        val dynamic = (dynamicItems + if (fused) ctx.characterTurn?.promptStackItems.orEmpty()
+            .filterNot { it.key in characterOutputPromptKeys } else emptyList())
             .filter { it.enabled && it.content.isNotBlank() }.joinToString("\n\n") { if (fused) it.content.trim() else "${it.key}: ${it.content}" }
         messagesForAi = callbacks.finalizeContext(ctx, messagesForAi, tools, dynamic)
         // 思考提示词不放顶部 system；发送时由 withCharacterThinkingRule 放到请求最末尾。
@@ -460,7 +463,7 @@ class AIPipeline {
             val firstSystem = messagesForAi.indexOfFirst { it["role"] == "system" }
             messagesForAi = messagesForAi.mapIndexed { index, message ->
                 if (index == firstSystem) markCompanionSystem(message,
-                    pipelineExtraItems.filterNot { it in dynamicItems || it.key == CHARACTER_THINKING_STYLE_KEY }) else message
+                    (pipelineExtraItems + characterFixedItems).filterNot { it in dynamicItems || it.key == CHARACTER_THINKING_STYLE_KEY }) else message
             }
         }
         ctx.metadata["composed_system_prompt"] = messagesForAi.filter { it["role"] == "system" }

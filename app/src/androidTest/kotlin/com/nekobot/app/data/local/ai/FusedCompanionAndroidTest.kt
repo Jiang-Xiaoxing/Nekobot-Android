@@ -158,7 +158,7 @@ class FusedCompanionAndroidTest {
         } finally { db.close() }
     }
 
-    @Test fun consecutiveRequestsKeepPrefixAndManualEditInvalidatesAuxiliaryCache() = runBlocking<Unit> {
+    @Test fun consecutiveRequestsKeepOpeningAndManualEditInvalidatesReferenceCache() = runBlocking<Unit> {
         val db=db(); try {
             val s=setup(db); val now=ZonedDateTime.parse("2026-10-08T20:00:00+08:00[Asia/Shanghai]")
             val first=say(db,"u1","你好")
@@ -168,15 +168,12 @@ class FusedCompanionAndroidTest {
             val history=db.messageDao().listBySession("s").filter { it.id!=next.id }
             val b=FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,now.plusMinutes(2))
-            // 复用上一轮缓存：系统提示与辅助资料前缀保持原样，原话按时间顺序排在后面。
             assertEquals(a.first(), b.first())
-            assertEquals(a[1], b[1])
-            assertEquals("你好", b[2]["content"])
-            assertEquals("晚上好", b[3]["content"])
-            assertTrue(b.last()["content"].toString().contains("再聊一会"))
-            // 本轮时钟只出现在当前轮，且不进入旧轮缓存。
-            assertTrue(b[b.size-2]["content"].toString().contains("2026年10月8日 星期四"))
-            assertTrue(b[b.size-2]["content"].toString().contains("晚上8:02"))
+            assertEquals("你好", b[1]["content"])
+            assertEquals("晚上好", b[2]["content"])
+            assertEquals("再聊一会", b[b.size-2]["content"])
+            assertTrue(b.last()["content"].toString().contains("2026年10月8日 星期四"))
+            assertTrue(b.last()["content"].toString().contains("晚上8:02"))
             val store=CompanionMemoryStore(db)
             store.editFused(s,"diet","用户怕辣","user_profile",emptyList(),true,false)
             val c=FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
@@ -187,7 +184,7 @@ class FusedCompanionAndroidTest {
             val utc = now.plusMinutes(4).withZoneSameInstant(java.time.ZoneId.of("UTC"))
             val d = FusedCompanionContext(db).build(s,next.id,history,"STABLE ROLE",emptyList(),
                 mapOf("role" to "user","content" to next.content),"",32000,4000,utc)
-            val clock=d[d.size-2]["content"].toString()
+            val clock=d.last()["content"].toString()
             assertTrue(clock.contains("2026年10月8日 星期四"))
             assertTrue(clock.contains("下午12:04"))
             assertEquals("晚上好",d.single { it["role"]=="assistant" }["content"])

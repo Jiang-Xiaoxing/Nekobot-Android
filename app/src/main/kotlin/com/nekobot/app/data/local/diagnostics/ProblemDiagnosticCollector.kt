@@ -116,7 +116,10 @@ internal class ProblemDiagnosticCollector(private val db: NekobotDatabase, priva
                 val contextMatches = parentMatches && material != null && operation?.events?.any {
                     it.kind == "recall_context" && it.values["context_ref"] == diagnosticRef(material.content)
                 } == true
-                root.addProperty("context_material_verified", contextMatches)
+                val referenceIdsOnly = com.nekobot.app.data.local.ai.CompanionReferences.ids(material?.content.orEmpty()) != null
+                root.addProperty("context_material_verified", contextMatches && !referenceIdsOnly)
+                root.addProperty("context_reference_verified", contextMatches && referenceIdsOnly)
+                if (referenceIdsOnly) missing += "本地辅助缓存仅保存本轮新召回编号，不是完整统一资料正文；实际发送内容以完整请求记录为准。"
                 if (!contextMatches) missing += "未能核对当时自动提供的记忆材料；未用当前记忆库代替历史输入。"
                 if (includeText) {
                     val trace = operation?.let { op -> runCatching {
@@ -168,7 +171,10 @@ internal class ProblemDiagnosticCollector(private val db: NekobotDatabase, priva
                         appendLine("\n【所选回复】\n${DiagnosticTraceText.clean(reply.content)}")
                         appendLine("\n【保存的内心想法】\n${DiagnosticTraceText.clean(reply.reasoningContent.orEmpty())}")
                         if (history.isNotEmpty()) appendLine("\n【已保存的工具轨迹，可能不完整】\n${gson.toJson(DiagnosticTraceText.json(history))}")
-                        if (contextMatches) appendLine("\n【核对一致的自动记忆材料】\n${DiagnosticTraceText.clean(material!!.content)}")
+                        if (contextMatches) {
+                            val label = if (referenceIdsOnly) "核对一致的本轮新召回编号（不是完整发送资料）" else "核对一致的自动记忆材料"
+                            appendLine("\n【$label】\n${DiagnosticTraceText.clean(material!!.content)}")
+                        }
                     }
                 }
             }

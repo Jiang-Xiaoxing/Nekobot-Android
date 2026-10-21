@@ -30,7 +30,7 @@ fun buildCharacterInjections(
     // 气泡分隔提示词
     stack.add(
         "output.bubble_split",
-        if (companionMode) CompanionPromptLanguage.bubbleRule else """
+        if (companionMode) CompanionPromptLanguage.styleReminder else """
         当你想把回复拆成多条独立消息（气泡）时，请在各段之间使用特殊分隔符 `<||>`。
         `<||>` 分隔的每一段都会显示为一个独立气泡。
         格式示例：

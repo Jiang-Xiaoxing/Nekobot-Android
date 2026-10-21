@@ -9,6 +9,7 @@ import com.nekobot.app.data.local.ai.CompanionMemoryPolicy
 import com.nekobot.app.data.local.ai.CompanionHybridSearch
 import com.nekobot.app.data.local.ai.FusedCompanionTools
 import com.nekobot.app.data.local.ai.CompanionPromptLanguage
+import com.nekobot.app.data.local.ai.CompanionReferences
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import com.nekobot.app.data.local.ai.usesCompanionMemory
 import com.nekobot.app.data.local.db.NekobotDatabase
@@ -39,9 +40,8 @@ internal class LocalAgentRecallReader(private val db: NekobotDatabase) : AgentRe
         val store = CompanionMemoryStore(db)
         val scope = store.ensureScope(session)
         val forgotten = db.companionMemoryDao().forgotten(scope.id).toSet()
-        val facts = store.validatedMemories(scope).let { facts ->
-            if (session.companionMode) facts.sortedByDescending { it.current } else facts
-        }
+        val candidatesToValidate = if (session.companionMode) CompanionReferences.current(db.companionMemoryDao().memories(scope.id)) else null
+        val facts = store.validatedMemories(scope, candidatesToValidate)
         for (query in queries) {
             if (session.usesCompanionMemory()) {
                 facts.filter { CompanionMemoryPolicy.score(query, it.content + it.factKey + it.tagsJson + it.eventDate) > 0.04f }

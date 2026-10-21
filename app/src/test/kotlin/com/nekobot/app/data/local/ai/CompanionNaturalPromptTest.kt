@@ -92,7 +92,7 @@ class CompanionNaturalPromptTest {
         assertFalse(prompt.contains("{{")); assertTrue(prompt.contains("角色本人"))
         // 伪思考已移除：不再要求正文 <think>，原生思考由底部规则强制中文后直接显示。
         assertFalse(prompt.contains("<think>"))
-        assertTrue(prompt.contains("（内心：…）"))
+        assertFalse(prompt.contains("（内心：…）"))
         assertTrue(prompt.contains("这些念头只在心里过"))
         assertFalse(prompt.contains("先在开头用一对中文圆括号"))
         val thinking = StringBuilder(); val spoken = StringBuilder()
@@ -114,10 +114,9 @@ class CompanionNaturalPromptTest {
             messages = messages + mapOf("role" to "assistant", "content" to "", "tool_calls" to emptyList<Any>()) +
                 mapOf("role" to "tool", "name" to "agent_history_search", "tool_call_id" to "call-$turn", "content" to "原话")
             val request = withCharacterThinkingRule(messages, prompt, enabled = true)
-            // 顶部 system 不含提示词；提示词放在最后一条用户消息末尾与请求最末 system。
             assertFalse(request.first()["content"].toString().contains("我是小满，想到小舟就开心。"))
             val lastUser = request.last { it["role"] == "user" }
-            assertTrue(lastUser["content"].toString().endsWith(prompt))
+            assertEquals(user, lastUser)
             assertEquals("system", request.last()["role"])
             assertEquals(prompt, request.last()["content"])
             assertEquals(1, request.count { it["role"] == "system" && it["content"] == prompt })
@@ -129,7 +128,7 @@ class CompanionNaturalPromptTest {
     @Test fun companionUsesOneBubbleRuleAndLabeledMonologueFollowsItsOwnSpeech() {
         val stack = PromptStack().apply { buildCharacterInjections(this, CharacterProfile(), companionMode = true) }
         val split = requireNotNull(stack.get("output.bubble_split")).content
-        assertEquals(CompanionPromptLanguage.bubbleRule, split)
+        assertEquals(CompanionPromptLanguage.styleReminder, split)
         assertTrue(CompanionPromptLanguage.styleReminder.contains(split))
         assertTrue(split.contains("内容多时用<||>分成几条短消息"))
         assertTrue(split.contains("一句简短回应可以只发一条"))
@@ -186,20 +185,22 @@ class CompanionNaturalPromptTest {
         assertEquals(source, CompanionRequestUsage.clean(source))
     }
 
-    @Test fun currentClockAndStyleFollowHistoryAndOldCachedAuxiliaryRemainsIdentical() {
+    @Test fun unifiedReferencesFollowHistoryAndClockFollowsUnchangedPlayerMessage() {
         val previous = row()
         val current = row("current", "回来啦", now.toOffsetDateTime().toString())
         val cached = CompanionContextMaterialEntity("s", previous.id, 1, 1, "stable", previous.id,
             "旧轮参考", "old-time-key", 0, "关键词", Gson().toJson(mapOf("role" to "user", "content" to previous.content)))
-        fun build(time: ZonedDateTime) = FusedCompanionContext.assembleMessages("角色设定", listOf(previous), listOf(cached), "本轮参考",
-            CompanionPromptLanguage.clock(time, previous) + "\n" + CompanionPromptLanguage.styleReminder,
+        fun build(time: ZonedDateTime) = FusedCompanionContext.assembleMessages("角色设定\n" + CompanionPromptLanguage.styleReminder, listOf(previous), listOf(cached), "本轮参考",
+            CompanionPromptLanguage.clock(time, previous),
             mapOf("role" to "user", "content" to current.content), current)
         val first = build(now); val second = build(now.plusMinutes(1))
         assertEquals(first.dropLast(2), second.dropLast(2))
-        assertEquals("早安", first[2]["content"])
-        assertEquals("旧轮参考", first[1]["content"])
-        assertTrue(first[first.lastIndex - 1]["content"].toString().contains(CompanionPromptLanguage.styleReminder))
-        assertEquals("回来啦", first.last()["content"])
+        assertEquals("早安", first[1]["content"])
+        assertEquals("本轮参考", first[2]["content"])
+        assertEquals("system", first[2]["role"])
+        assertTrue(first.first()["content"].toString().contains(CompanionPromptLanguage.styleReminder))
+        assertEquals("回来啦", first[first.lastIndex - 1]["content"])
+        assertFalse(first.any { it["content"] == "旧轮参考" })
         val text = first.joinToString("\n") { it["content"].toString() }
         assertEquals(1, Regex("现在是").findAll(text).count())
         assertFalse(text.contains("software_context")); assertFalse(text.contains("message_metadata")); assertFalse(text.contains("历史消息日期"))
