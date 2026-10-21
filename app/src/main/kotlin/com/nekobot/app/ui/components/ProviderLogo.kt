@@ -50,6 +50,7 @@ private val PROVIDER_LOGO_MAP = mapOf(
     "grok" to "xai.svg",
     "xai" to "xai.svg",
     "qwen" to "qwen.svg",
+    "stepfun" to "stepfun.svg",
     "dashscope" to "qwen.svg",
     "tongyi" to "qwen.svg",
     "xiaomi" to "xiaomi.svg",
@@ -60,6 +61,7 @@ private val PROVIDER_LOGO_MAP = mapOf(
 /** baseUrl 包含的关键字 → Logo 文件名（provider 字段缺失时兜底） */
 private val BASE_URL_HINTS = listOf(
     "openai.com" to "openai.svg",
+    "stepfun.com" to "stepfun.svg",
     "opencode.ai/zen/go" to "opencode-go.svg",
     "opencode.ai" to "opencode.svg",
     "deepseek" to "deepseek.svg",
@@ -80,6 +82,8 @@ private val BASE_URL_HINTS = listOf(
 
 /** 模型名包含的关键字 → Logo 文件名（最后兜底） */
 private val MODEL_NAME_HINTS = listOf(
+    "stepaudio" to "stepfun.svg",
+    "step-" to "stepfun.svg",
     "gpt" to "openai.svg",
     "openai" to "openai.svg",
     "deepseek" to "deepseek.svg",

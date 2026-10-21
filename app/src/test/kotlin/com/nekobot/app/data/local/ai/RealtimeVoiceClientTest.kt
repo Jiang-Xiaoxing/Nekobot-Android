@@ -143,6 +143,69 @@ class RealtimeVoiceClientTest {
     }
 
     @Test
+    fun stepfunUsesTheOriginalOpenAiSessionAndResponseContract() {
+        val config = RealtimeModelConfig(
+            id = "stepfun", name = "StepAudio Live", apiKey = "test",
+            baseUrl = REALTIME_STEPFUN_DEFAULT_BASE_URL,
+            model = REALTIME_STEPFUN_DEFAULT_MODEL,
+            voice = "marin", transcriptionModel = "", provider = "stepfun"
+        )
+        // 固定原有 OpenAI 路径的完整事件，不能再仅验证新实现自己的假设。
+        val expected = com.google.gson.JsonParser.parseString("""
+            {"type":"session.update","session":{
+                "type":"realtime","instructions":"角色设定","output_modalities":["audio"],
+                "max_output_tokens":4096,"audio":{
+                    "input":{"format":{"type":"audio/pcm","rate":24000},
+                        "transcription":{"model":"gpt-4o-mini-transcribe","language":"zh"},
+                        "turn_detection":null},
+                    "output":{"format":{"type":"audio/pcm","rate":24000},"voice":"marin"}
+                }
+            }}
+        """)
+        val expectedResponse = com.google.gson.JsonParser.parseString(
+            """{"type":"response.create","response":{"output_modalities":["audio"]}}"""
+        )
+        listOf("stepfun", "stepfun-ai", "step", null, "openai").forEach { provider ->
+            val candidate = config.copy(provider = provider)
+            assertEquals(expected, buildRealtimeSessionUpdate(candidate, "角色设定"))
+            assertEquals(expectedResponse, buildRealtimeResponseCreate(candidate))
+        }
+        assertTrue(config.isStepfunRealtime)
+        assertFalse(config.copy(provider = "openai").isStepfunRealtime)
+        assertTrue(config.copy(provider = null).isStepfunRealtime)
+        assertEquals(
+            "wss://api.stepfun.com/v1/realtime?model=$REALTIME_STEPFUN_DEFAULT_MODEL",
+            buildRealtimeWebSocketUrl("", true, "", stepfunRealtime = true)
+        )
+    }
+
+    @Test
+    fun stepfunRealtimeToolsKeepFunctionEnvelopeAndDoNotMutateTheSessionCatalog() {
+        val schema = mapOf("type" to "object", "required" to listOf("city"),
+            "properties" to mapOf("city" to mapOf("type" to "string")))
+        val definition = mapOf("name" to "weather", "description" to "查询天气", "parameters" to schema)
+        val nested = mapOf("type" to "function", "function" to definition)
+        val flat = definition + ("type" to "function")
+        val config = RealtimeModelConfig(
+            "stepfun", "StepAudio Live", "test", REALTIME_STEPFUN_DEFAULT_BASE_URL,
+            REALTIME_STEPFUN_DEFAULT_MODEL, provider = "stepfun"
+        )
+        // 服务端按 session.tools[i].function.name 校验，两种输入都必须带 function 外层。
+        listOf(nested, flat).forEach { tool ->
+            val session = buildRealtimeSessionUpdate(config, "role", tools = listOf(tool))
+                .getAsJsonObject("session")
+            val registered = session.getAsJsonArray("tools").single().asJsonObject
+            assertEquals("function", registered.get("type").asString)
+            assertEquals("weather", registered.getAsJsonObject("function").get("name").asString)
+            assertEquals("city", registered.getAsJsonObject("function")
+                .getAsJsonObject("parameters").getAsJsonArray("required").single().asString)
+        }
+        assertEquals(definition, nested["function"])
+        val output = buildRealtimeFunctionCallOutput("call-1", mapOf("ok" to true))
+        assertEquals("call-1", output.getAsJsonObject("item").get("call_id").asString)
+    }
+
+    @Test
     fun sessionUpdateFallsBackToQwenVoiceAndTranscriptionWhenBlank() {
         val event = buildRealtimeSessionUpdate(
             config = RealtimeModelConfig(

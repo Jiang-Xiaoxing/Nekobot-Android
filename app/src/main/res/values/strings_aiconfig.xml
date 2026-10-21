@@ -225,6 +225,7 @@
     <string name="aimodel_editor_provider_qwen">通义千问</string>
     <string name="aimodel_editor_provider_xiaomi">小米 MiMo</string>
     <string name="aimodel_editor_provider_doubao">豆包 Seed</string>
+    <string name="aimodel_editor_provider_stepfun">阶跃星辰 StepFun</string>
     <string name="aimodel_editor_provider_azure">Azure OpenAI</string>
     <string name="aimodel_editor_provider_siliconflow">SiliconFlow</string>
     <string name="aimodel_editor_provider_custom">自定义</string>
@@ -311,6 +312,7 @@
     <string name="aimodel_editor_live_qwen_hint">检测到 Qwen Realtime：默认音色 Tina（Qwen3.5-Omni 不再支持 Cherry 等旧音色，会自动纠正），转写模型默认 paraformer-realtime-v2。请将 Base URL 配为 https://dashscope.aliyuncs.com/api-ws/v1 并启用「自动拼接路径」。</string>
     <string name="aimodel_editor_live_seed_hint">检测到 SeedRealtime：默认模型 doubao-seed-1.6-flash-realtime，默认音色 zh_female_shuangkuaisisi_moon_bigtts，转写模型默认 doubao-1.5-asr-pro。请将 Base URL 配为 https://ark.cn-beijing.volces.com/api/v3 并启用「自动拼接路径」。</string>
     <string name="aimodel_editor_live_glm_hint">检测到 GLM-Realtime：默认模型 glm-realtime，默认音色 tongtong，转写模型默认 glm-asr。请将 Base URL 配为 https://open.bigmodel.cn/api/paas/v4 并启用「自动拼接路径」。</string>
+    <string name="aimodel_editor_live_stepfun_hint">StepAudio 3 Realtime 默认模型为 stepaudio-3-realtime-preview。Base URL 设为 https://api.stepfun.com/v1 并启用「自动拼接路径」；语音识别为内置功能。</string>
     <string name="aimodel_editor_tts_provider">TTS 提供商</string>
     <string name="aimodel_editor_tts_provider_openai">OpenAI 兼容</string>
     <string name="aimodel_editor_tts_provider_xiaomi">小米 MiMo</string>

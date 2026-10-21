@@ -71,6 +71,10 @@ import com.nekobot.app.data.local.ai.REALTIME_SEED_DEFAULT_MODEL
 import com.nekobot.app.data.local.ai.REALTIME_SEED_DEFAULT_TRANSCRIPTION_MODEL
 import com.nekobot.app.data.local.ai.REALTIME_SEED_DEFAULT_VOICE
 import com.nekobot.app.data.local.ai.REALTIME_SEED_VOICES
+import com.nekobot.app.data.local.ai.REALTIME_STEPFUN_DEFAULT_BASE_URL
+import com.nekobot.app.data.local.ai.REALTIME_STEPFUN_DEFAULT_MODEL
+import com.nekobot.app.data.local.ai.REALTIME_STEPFUN_DEFAULT_VOICE
+import com.nekobot.app.data.local.ai.REALTIME_STEPFUN_VOICES
 import com.nekobot.app.data.local.db.LocalAiModelEntity
 import com.nekobot.app.data.model.AiModel
 import com.nekobot.app.data.model.AiModelRequest
@@ -156,6 +160,7 @@ private data class ProviderPreset(
 
 private val LIVE_SEED_PROVIDERS = setOf("doubao", "seed", "volcengine", "bytedance", "ark", "volces")
 private val LIVE_GLM_PROVIDERS = setOf("glm", "zhipu", "bigmodel")
+private val LIVE_STEPFUN_PROVIDERS = setOf("stepfun", "stepfun-ai", "step")
 
 private data class LiveRealtimeDefaults(
     val provider: String,
@@ -195,6 +200,13 @@ private fun liveRealtimeDefaults(provider: String): LiveRealtimeDefaults = when 
         voice = REALTIME_GLM_DEFAULT_VOICE,
         transcriptionModel = REALTIME_GLM_DEFAULT_TRANSCRIPTION_MODEL
     )
+    in LIVE_STEPFUN_PROVIDERS -> LiveRealtimeDefaults(
+        provider = provider,
+        model = REALTIME_STEPFUN_DEFAULT_MODEL,
+        baseUrl = REALTIME_STEPFUN_DEFAULT_BASE_URL,
+        voice = REALTIME_STEPFUN_DEFAULT_VOICE,
+        transcriptionModel = ""
+    )
     else -> LiveRealtimeDefaults(
         provider = "openai",
         model = "gpt-realtime",
@@ -226,6 +238,17 @@ private val providerPresets = listOf(
         purpose = "image_generation"
     ),
     ProviderPreset("Mimo", "xiaomi", "mimo-v2.5", "https://api.xiaomimimo.com/v1", "1048576", "131072", "", ""),
+    ProviderPreset(
+        label = "StepFun",
+        provider = "stepfun",
+        model = "step-5-preview",
+        baseUrl = "https://api.stepfun.com/v1",
+        maxContextLength = "1000000",
+        maxTokens = "",
+        inputPrice = "",
+        outputPrice = "",
+        labelRes = R.string.aimodel_editor_provider_stepfun
+    ),
     ProviderPreset("豆包 Seed", "doubao", "doubao-seedream-4-0-250828", "https://ark.cn-beijing.volces.com/api/v3", "", "", "", "")
 )
 
@@ -253,6 +276,7 @@ private fun rememberProviderLabels(): LinkedHashMap<String, String> = linkedMapO
     "qwen" to stringResource(R.string.aimodel_editor_provider_qwen),
     "xiaomi" to stringResource(R.string.aimodel_editor_provider_xiaomi),
     "doubao" to stringResource(R.string.aimodel_editor_provider_doubao),
+    "stepfun" to stringResource(R.string.aimodel_editor_provider_stepfun),
     "azure" to stringResource(R.string.aimodel_editor_provider_azure),
     "siliconflow" to stringResource(R.string.aimodel_editor_provider_siliconflow),
     "elevenlabs" to stringResource(R.string.aimodel_editor_provider_elevenlabs),
@@ -700,12 +724,17 @@ fun AiModelEditorDialog(
                     val isGlmRealtime = state.provider.lowercase() in LIVE_GLM_PROVIDERS ||
                         state.model.contains("glm", ignoreCase = true) &&
                             state.model.contains("realtime", ignoreCase = true)
+                    val isStepfunRealtime = state.provider.lowercase() in LIVE_STEPFUN_PROVIDERS ||
+                        state.model.startsWith("stepaudio-", ignoreCase = true) ||
+                        state.model.startsWith("step-audio-", ignoreCase = true) ||
+                        state.model.startsWith("step-1o-audio", ignoreCase = true)
                     val liveVoiceOptions = when {
                         state.provider.lowercase() in setOf("google", "gemini", "google_gemini") -> com.nekobot.app.data.local.ai.REALTIME_GEMINI_VOICES
                         state.provider.lowercase() in setOf("grok", "xai") -> com.nekobot.app.data.local.ai.REALTIME_GROK_VOICES
                         isQwenRealtime -> REALTIME_QWEN_VOICES
                         isSeedRealtime -> REALTIME_SEED_VOICES
                         isGlmRealtime -> REALTIME_GLM_VOICES
+                        isStepfunRealtime -> REALTIME_STEPFUN_VOICES
                         else -> REALTIME_OPENAI_VOICES
                     }
                     val liveTranscriptionPlaceholder = when {
@@ -729,7 +758,7 @@ fun AiModelEditorDialog(
                         options = liveVoiceOptions,
                         onSelect = { state = state.copy(ttsVoice = it) }
                     )
-                    if (state.provider.lowercase() !in setOf("google", "gemini", "google_gemini", "grok", "xai")) EditorTextField(
+                    if (!isStepfunRealtime && state.provider.lowercase() !in setOf("google", "gemini", "google_gemini", "grok", "xai")) EditorTextField(
                         label = stringResource(R.string.aimodel_editor_live_transcription_model),
                         value = state.sttModel,
                         placeholder = liveTranscriptionPlaceholder
@@ -755,6 +784,12 @@ fun AiModelEditorDialog(
                     } else if (isGlmRealtime) {
                         Text(
                             text = stringResource(R.string.aimodel_editor_live_glm_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (isStepfunRealtime) {
+                        Text(
+                            text = stringResource(R.string.aimodel_editor_live_stepfun_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1162,7 +1197,9 @@ private fun AiModelEditorState.applyPreset(
         supportsTools = targetPurpose == "chat" && preset.provider != "google",
         supportsReasoning = targetPurpose == "chat" && preset.provider !in setOf("google", "minimax"),
         supportsStream = targetPurpose in setOf("chat", "vision", "video", "live"),
-        supportsVision = if (targetPurpose == "chat") supportsVision else false,
+        supportsVision = if (targetPurpose == "chat") {
+            supportsVision || (preset.provider == "stepfun" && preset.model == "step-5-preview")
+        } else false,
         ttsProvider = if (targetPurpose == "tts") nativeProvider else ttsProvider,
         ttsModel = if (targetPurpose == "tts") preset.model else ttsModel,
         ttsVoice = liveDefaults?.voice ?: preset.voice ?: ttsVoice,

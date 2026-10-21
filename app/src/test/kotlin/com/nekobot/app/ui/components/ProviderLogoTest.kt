@@ -15,6 +15,13 @@ class ProviderLogoTest {
     }
 
     @Test
+    fun `stepfun logos resolve from provider url and chat models`() {
+        assertTrue(providerLogoAsset("stepfun", null, "step-5-preview").endsWith("/stepfun.svg"))
+        assertTrue(providerLogoAsset(null, "https://api.stepfun.com/v1", null).endsWith("/stepfun.svg"))
+        assertTrue(providerLogoAsset(null, null, "stepaudio-3-realtime-preview").endsWith("/stepfun.svg"))
+    }
+
+    @Test
     fun `doubao uses the same asset in every theme`() {
         assertTrue(
             providerLogoAsset("doubao", null, null).endsWith("/doubao-dark.svg")

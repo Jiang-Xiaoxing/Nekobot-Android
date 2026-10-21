@@ -2141,7 +2141,7 @@ class ChatViewModel : BaseViewModel() {
                 }
                 val toolRuntime = if (
                     currentSession?.sessionMode.equals("agent", ignoreCase = true) &&
-                    config.isQwenRealtime
+                    config.supportsRealtimeFunctionCalling
                 ) {
                     unified.createRealtimeAgentToolRuntime(sessionId)
                 } else {
