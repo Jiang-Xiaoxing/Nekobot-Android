@@ -63,7 +63,7 @@ import com.nekobot.app.data.model.LoginToken
 import com.nekobot.app.data.model.LoginTokenRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -210,10 +210,7 @@ fun LoginTokensScreen(onBack: () -> Unit) {
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                vm.clearError()
-                                vm.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { vm.clearError() })
                         }
                     }
                     items(tokens, key = { it.tokenHash }) { token ->

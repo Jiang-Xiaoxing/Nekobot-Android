@@ -31,7 +31,7 @@ import com.nekobot.app.data.model.TtsPreviewRequest
 import com.nekobot.app.data.model.TtsVoice
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.screens.chat.AudioRenderer
 import kotlinx.coroutines.Dispatchers
@@ -171,7 +171,7 @@ fun TtsPlaygroundScreen(onBack: () -> Unit, onConfigureModels: () -> Unit) {
         onBack, { vm.refresh() }, { vm.preview(text, voice, speed, pitch, volume) }, vm::cancel, onConfigureModels) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), state = listState, contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            error?.let { message -> item { ErrorBanner(message, onRetry = { vm.clearError(); vm.refresh() }) } }
+            error?.let { message -> item { ErrorToast(message = message, onShown = { vm.clearError() }) } }
             item {
                 PlaygroundSection(stringResource(R.string.playground_input), trailing = {
                     TextButton(onClick = { text = defaultText }, enabled = !busy) { Text(stringResource(R.string.playground_sample)) }

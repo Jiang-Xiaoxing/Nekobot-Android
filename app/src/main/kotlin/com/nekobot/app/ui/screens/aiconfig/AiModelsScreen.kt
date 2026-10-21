@@ -69,7 +69,7 @@ import com.nekobot.app.data.model.ApiKey
 import com.nekobot.app.data.model.FetchModelsRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.ModelCardDivider
 import com.nekobot.app.ui.components.ModelCardFrame
@@ -400,10 +400,7 @@ fun AiModelsScreen(onBack: () -> Unit) {
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                vm.clearError()
-                                vm.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { vm.clearError() })
                         }
                     }
                     items(models, key = { it.id ?: it.name ?: it.hashCode().toString() }) { model ->

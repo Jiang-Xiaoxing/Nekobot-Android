@@ -88,7 +88,7 @@ import com.nekobot.app.data.model.PlotRollbackRequest
 import com.nekobot.app.data.model.PlotSwitchRequest
 import com.google.gson.JsonElement
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.theme.OnSurfaceVariant
@@ -391,21 +391,7 @@ fun StoryGraphScreen(
                     )
                 }
 
-                error?.let {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(16.dp)
-                    ) {
-                        ErrorBanner(
-                            message = it,
-                            onRetry = {
-                                vm.clearError()
-                                vm.loadGraph(sessionId)
-                            }
-                        )
-                    }
-                }
+                ErrorToast(message = error, onShown = { vm.clearError() })
             }
         }
     }

@@ -23,7 +23,7 @@ import com.nekobot.app.R
 import com.nekobot.app.data.local.ai.SandboxEnvironment
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EnvironmentVariableInputs
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,7 +122,7 @@ fun SandboxEnvironmentScreen(sessionId: String? = null, onBack: () -> Unit) {
                 Text(stringResource(R.string.env_apply_hint), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            error?.let { message -> item { ErrorBanner(message, onRetry = { vm.load(scopeId) }) } }
+            error?.let { message -> item { ErrorToast(message = message, onShown = { vm.clearError() }) } }
             if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             if (!loading && values.isEmpty()) item {
                 Text(stringResource(R.string.env_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)

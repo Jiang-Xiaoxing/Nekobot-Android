@@ -110,7 +110,7 @@ import com.nekobot.app.data.model.TokenStats
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.data.repository.Resource
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.GlassDropdownMenu
 import com.nekobot.app.ui.components.LoadingOverlay
@@ -513,10 +513,7 @@ fun TokensScreen(onNavigate: (String) -> Unit = {}) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 error?.let {
-                    ErrorBanner(message = it, onRetry = {
-                        vm.clearError()
-                        vm.load()
-                    })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                 }
 
                 // 切换栏固定在列表上方，不参与内容过渡：否则新旧两份切换栏会同时半透明叠加，

@@ -121,7 +121,7 @@ import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
 import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.ui.navigation.rememberLiquidGlassBottomBarClearance
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.resolveAvatarUrl
@@ -820,20 +820,8 @@ fun SessionsScreen(
                     }
                 }
 
-                // 错误提示
-                val errorMsg = error
-                if (!errorMsg.isNullOrBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(16.dp)
-                    ) {
-                        ErrorBanner(
-                            message = errorMsg,
-                            onDismiss = { viewModel.clearError() }
-                        )
-                    }
-                }
+                // 错误提示统一走系统 Toast（屏幕下方横条）
+                ErrorToast(message = error, onShown = { viewModel.clearError() })
             }
                 }
             }

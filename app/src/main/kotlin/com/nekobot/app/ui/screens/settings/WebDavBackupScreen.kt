@@ -95,7 +95,7 @@ import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.BorderlessOutlinedButton as OutlinedButton
 import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.SectionHeader
@@ -632,7 +632,7 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 error?.let {
-                    ErrorBanner(message = it, onRetry = { vm.clearError() })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                 }
                 if (page != WebDavPage.Settings && (!configured || hasChanges)) {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {

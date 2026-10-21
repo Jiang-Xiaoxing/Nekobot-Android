@@ -48,7 +48,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.model.AiConfig
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -200,10 +200,7 @@ fun AiConfigScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 error?.let {
-                    ErrorBanner(message = it, onRetry = {
-                        vm.clearError()
-                        vm.load()
-                    })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                 }
 
                 // 模型参数

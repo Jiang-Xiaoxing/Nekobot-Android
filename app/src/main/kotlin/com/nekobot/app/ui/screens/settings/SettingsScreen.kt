@@ -92,7 +92,7 @@ import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.local.PrefsManager
 import com.nekobot.app.update.UpdateChecker
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.MarkdownText
@@ -423,7 +423,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 error?.let {
-                    ErrorBanner(message = it, onRetry = { vm.clearError() })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                 }
 
                 // 0. 运行模式切换

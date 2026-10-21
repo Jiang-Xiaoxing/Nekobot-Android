@@ -76,7 +76,7 @@ import com.nekobot.app.data.model.SkillZipExport
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.GlassDropdownMenu
 import com.nekobot.app.ui.components.LoadingOverlay
@@ -448,10 +448,7 @@ fun SkillsScreen(onBack: () -> Unit, onOpenStorage: (Skill) -> Unit = {}) {
                 item { SkillInfoCard() }
                 error?.let { message ->
                     item {
-                        ErrorBanner(message = message, onRetry = {
-                            vm.clearError()
-                            vm.load()
-                        })
+                        ErrorToast(message = message, onShown = { vm.clearError() })
                     }
                 }
                 if (list.isEmpty() && !loading) {
@@ -1038,10 +1035,7 @@ fun SkillStorageScreen(skillName: String, onBack: () -> Unit) {
                     }
                     error?.let { message ->
                         item {
-                            ErrorBanner(message = message, onRetry = {
-                                vm.clearError()
-                                vm.loadDetail(Skill(name = skillName, hasStorage = true)) { skill = it }
-                            })
+                            ErrorToast(message = message, onShown = { vm.clearError() })
                         }
                     }
                     // 按文件类型分组展示

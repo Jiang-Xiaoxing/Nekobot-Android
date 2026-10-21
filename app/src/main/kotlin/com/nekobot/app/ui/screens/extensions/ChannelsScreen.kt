@@ -63,7 +63,7 @@ import com.nekobot.app.data.model.ChannelPreset
 import com.nekobot.app.data.model.ChannelRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -229,10 +229,7 @@ fun ChannelsScreen(onBack: () -> Unit, viewModel: ChannelsViewModel = viewModel(
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                viewModel.clearError()
-                                viewModel.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                         }
                     }
                     items(list, key = { it.id ?: it.name ?: it.hashCode().toString() }) { channel ->

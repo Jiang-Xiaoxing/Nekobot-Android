@@ -62,7 +62,7 @@ import com.nekobot.app.data.local.plugin.PluginManifestValidator
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -195,7 +195,7 @@ fun PluginsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
             ) {
                 item { PluginInfoCard(appMode = appMode) }
                 error?.let { message ->
-                    item { ErrorBanner(message = message, onRetry = vm::clearError) }
+                    item { ErrorToast(message = message, onShown = { vm.clearError() }) }
                 }
                 if (plugins.isEmpty() && !loading) {
                     item {

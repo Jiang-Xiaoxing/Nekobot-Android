@@ -1,5 +1,6 @@
 package com.nekobot.app.ui.components
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,6 +21,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -27,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -434,26 +438,21 @@ fun EmptyState(title: String, hint: String? = null, icon: @Composable (() -> Uni
     }
 }
 
+/**
+ * 统一错误提示：一律以系统 Toast（屏幕下方横条）呈现，不再在页面内嵌红色错误卡片。
+ *
+ * @param message 错误文案；为空时不提示。
+ * @param onShown 提示发出后的回调，通常用于清除 ViewModel 的 error 状态，
+ *                以便同样的错误下次仍能再次弹出。
+ */
 @Composable
-fun ErrorBanner(message: String, onRetry: (() -> Unit)? = null, onDismiss: (() -> Unit)? = null) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 16,
-        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            if (onRetry != null) {
-                TextButton(onClick = onRetry) { Text(stringResource(R.string.common_retry), color = MaterialTheme.colorScheme.primary) }
-            }
-            if (onDismiss != null) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
-            }
+fun ErrorToast(message: String?, onShown: (() -> Unit)? = null) {
+    val context = LocalContext.current
+    val onShownState = rememberUpdatedState(onShown)
+    LaunchedEffect(message) {
+        if (!message.isNullOrBlank()) {
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            onShownState.value?.invoke()
         }
     }
 }

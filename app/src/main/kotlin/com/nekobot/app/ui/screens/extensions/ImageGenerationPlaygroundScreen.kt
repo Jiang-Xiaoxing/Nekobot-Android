@@ -43,7 +43,7 @@ import com.nekobot.app.data.local.ai.ImageGenerationReference
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
 import com.nekobot.app.ui.components.BorderlessFilterChip as FilterChip
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -148,7 +148,7 @@ fun ImageGenerationPlaygroundScreen(onBack: () -> Unit, onConfigureModels: () ->
         onBack, { vm.refresh() }, { vm.generate(prompt, resolvedSize, count) }, vm::cancel, onConfigureModels) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            error?.let { message -> item { ErrorBanner(message, onRetry = { vm.clearError(); vm.generate(prompt, resolvedSize, count) }) } }
+            error?.let { message -> item { ErrorToast(message = message, onShown = { vm.clearError() }) } }
             item {
                 PlaygroundSection(stringResource(R.string.playground_input), trailing = {
                     TextButton(onClick = { prompt = samplePrompt }, enabled = !busy) { Text(stringResource(R.string.playground_sample)) }

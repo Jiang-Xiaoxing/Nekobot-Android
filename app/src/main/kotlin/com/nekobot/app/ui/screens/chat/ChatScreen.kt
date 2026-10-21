@@ -260,7 +260,7 @@ import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.adaptive.liveRegion
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.aiBubbleBorderColor
 import com.nekobot.app.ui.components.aiBubbleContainerColor
 import com.nekobot.app.ui.components.chatBubbleAppearance
@@ -1541,21 +1541,8 @@ fun ChatScreen(
                 }
             }
 
-            val errorMsg = error
-            if (!errorMsg.isNullOrBlank()) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                ) {
-                    ErrorBanner(
-                        message = errorMsg,
-                        // Clearing an error is not a retry. Companion recovery uses the saved-run action.
-                        onRetry = if (companionChat) null else ({ viewModel.clearError() }),
-                        onDismiss = if (companionChat) ({ viewModel.clearError() }) else null
-                    )
-                }
-            }
+            // 错误提示统一走系统 Toast（屏幕下方横条），不再在聊天页底部叠一层错误卡片
+            ErrorToast(message = error, onShown = { viewModel.clearError() })
 
             // Hook 触发通知：顶部居中叠加成就式弹窗（磨砂玻璃 + 琥珀描边）
             if (hookNotifications.isNotEmpty()) {

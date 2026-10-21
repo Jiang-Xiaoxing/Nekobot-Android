@@ -115,7 +115,7 @@ import com.nekobot.app.ui.screens.chat.MIN_DELAY_REPLY_SECONDS
 import com.nekobot.app.ui.screens.chat.ChatSessionManager
 import com.nekobot.app.ui.screens.chat.normalizeDelayReplySeconds
 import kotlin.math.roundToInt
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.SectionHeader
@@ -1990,10 +1990,7 @@ fun SessionDetailScreen(
                         }
 
                         error?.let {
-                            ErrorBanner(message = it, onRetry = {
-                                vm.clearError()
-                                vm.load(sessionId)
-                            })
+                            ErrorToast(message = it, onShown = { vm.clearError() })
                         }
                     }
                 }

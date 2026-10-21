@@ -63,7 +63,7 @@ import com.nekobot.app.data.model.Workflow
 import com.nekobot.app.data.model.WorkflowRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -210,10 +210,7 @@ fun WorkflowsScreen(onBack: () -> Unit, viewModel: WorkflowsViewModel = viewMode
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                viewModel.clearError()
-                                viewModel.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                         }
                     }
                     items(list, key = { it.id ?: it.name ?: it.hashCode().toString() }) { workflow ->
