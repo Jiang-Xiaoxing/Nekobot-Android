@@ -488,6 +488,9 @@ internal fun toolDescResId(id: String): Int = when (id) {
     "subagent_resume" -> R.string.tool_desc_subagent_resume
     "subagent_retry" -> R.string.tool_desc_subagent_retry
     "subagent_pause" -> R.string.tool_desc_subagent_pause
+    "subagent_list" -> R.string.tool_desc_subagent_list
+    "subagent_get" -> R.string.tool_desc_subagent_get
+    "subagent_kill" -> R.string.tool_desc_subagent_kill
     "get_session_thinking_history" -> R.string.tool_desc_get_session_thinking_history
     "send_message" -> R.string.tool_desc_send_message
     "skill_list" -> R.string.tool_desc_skill_list
@@ -703,11 +706,15 @@ internal data class ToolParameterEntry(val name: String, val required: Boolean)
  *
  * 覆盖内置工具、Agent 工具、Skill 工具、数据库工具与子代理工具；新增本地工具只要
  * 并入这里就能在「工具详情 / 进度卡片步骤详情」中展示说明与输入参数。
+ *
+ * 每个构建器单独兜底：某类工具定义构建失败时只丢这一类，不能让整个详情弹窗打不开。
  */
-internal fun allLocalToolDefinitions(): List<Map<String, Any>> =
-    buildLocalAgentToolDefinitions(recallEnabled = true) +
-        buildLocalSkillToolDefinitions() + buildLocalDbToolDefinitions() +
-        buildSubagentToolDefinitions()
+internal fun allLocalToolDefinitions(): List<Map<String, Any>> = buildList {
+    addAll(runCatching { buildLocalAgentToolDefinitions(recallEnabled = true) }.getOrDefault(emptyList()))
+    addAll(runCatching { buildLocalSkillToolDefinitions() }.getOrDefault(emptyList()))
+    addAll(runCatching { buildLocalDbToolDefinitions() }.getOrDefault(emptyList()))
+    addAll(runCatching { buildSubagentToolDefinitions() }.getOrDefault(emptyList()))
+}
 
 /** 从一份 function-calling 定义中取出 function 节点。 */
 private fun functionNode(definition: Map<String, Any>): Map<String, Any>? {
@@ -733,8 +740,19 @@ internal fun localToolDefinitionDescription(name: String): String? =
  *
  * 数据来源与 Agent 实际注入给模型的定义一致（见 [allLocalToolDefinitions]）；
  * 非本地定义的动态工具（MCP 等）返回空列表。
+ *
+ * 结果按工具 id 缓存：参数名与必填标记不随用户设置变化，而构建全量定义（子代理 / Skill /
+ * 数据库工具都不在 `BuiltinTools` 里，每次都要走全量构建）在详情弹窗里会被反复触发。
  */
-internal fun builtinToolParameterEntries(toolId: String): List<ToolParameterEntry> {
+internal fun builtinToolParameterEntries(toolId: String): List<ToolParameterEntry> =
+    toolParameterEntryCache.getOrPut(toolId) {
+        runCatching { computeToolParameterEntries(toolId) }.getOrDefault(emptyList())
+    }
+
+private val toolParameterEntryCache =
+    java.util.concurrent.ConcurrentHashMap<String, List<ToolParameterEntry>>()
+
+private fun computeToolParameterEntries(toolId: String): List<ToolParameterEntry> {
     val parametersJson = BuiltinTools.all.firstOrNull { it.id == toolId }?.parametersJson
     val schema: Map<*, *> = if (parametersJson != null) {
         runCatching {

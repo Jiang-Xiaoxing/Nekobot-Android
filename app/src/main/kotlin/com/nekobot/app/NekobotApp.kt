@@ -519,6 +519,8 @@ object ServiceContainer {
 class NekobotApp : Application(), coil.ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
+        // 最先安装：启动阶段（含 localRepository 初始化）的崩溃同样能被记录下来
+        CrashRecorder.install(this)
         recoverPendingLocalWebDavRestore(this)
         PDFBoxResourceLoader.init(this)
         ServiceContainer.init(this)

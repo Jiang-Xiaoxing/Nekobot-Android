@@ -188,6 +188,9 @@
     <string name="tool_desc_subagent_resume">基于已保存的对话和检查点继续子代理任务。</string>
     <string name="tool_desc_subagent_pause">暂停后台子代理并保存上下文，之后可继续。</string>
     <string name="tool_desc_subagent_retry">使用原始指令重试失败或已终止的任务，并保留来源关系。</string>
+    <string name="tool_desc_subagent_list">列出当前会话的子代理任务与状态。</string>
+    <string name="tool_desc_subagent_get">按任务 id 查询子代理的进度或结果。</string>
+    <string name="tool_desc_subagent_kill">终止指定的后台子代理任务。</string>
     <string name="tool_desc_get_session_thinking_history">获取当前会话中模型的思考过程历史记录。</string>
     <string name="tool_desc_send_message">向指定会话或频道发送消息。</string>
     <string name="tool_desc_skill_list">列出当前已启用的 Skills 及其文件数量。</string>

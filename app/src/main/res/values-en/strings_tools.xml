@@ -188,6 +188,9 @@
     <string name="tool_desc_subagent_resume">Continue a subagent task from its saved conversation and checkpoint.</string>
     <string name="tool_desc_subagent_pause">Pause a background subagent and save its context for later.</string>
     <string name="tool_desc_subagent_retry">Retry a failed or killed task with its original prompt and keep the source link.</string>
+    <string name="tool_desc_subagent_list">List subagent tasks and their status in this session.</string>
+    <string name="tool_desc_subagent_get">Query subagent progress or result by task id.</string>
+    <string name="tool_desc_subagent_kill">Kill the specified background subagent task.</string>
     <string name="tool_desc_get_session_thinking_history">Read the model reasoning history of the current session.</string>
     <string name="tool_desc_send_message">Send a message to a session or channel.</string>
     <string name="tool_desc_skill_list">List the currently enabled skills and their file counts.</string>
