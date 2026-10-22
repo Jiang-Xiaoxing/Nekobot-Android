@@ -41,33 +41,26 @@ fun buildCharacterInjections(
         priority = PromptStack.Priority.BUBBLE_SPLIT
     )
 
-    // 内心独白格式约定
-    val monologueIntroduction = if (companionMode) {
-        "内心独白格式：当心里的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。" +
-            "你知道玩家能看到你写出的内心独白，不要把它当成对方看不到的秘密。"
+    // 内心独白格式约定：按作者原版放回角色设定，正文里（内心：…）的写法只在这里说明。
+    // 末尾的思考提示词只管思维链与说话方式，不再混入独白规则。
+    val monologueAwareness = if (companionMode) {
+        "你知道玩家能看到你写出的内心独白，不要把它当成对方看不到的秘密。"
     } else {
-        "内心独白格式：当角色隐藏的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。"
-    }
-    val monologueDisclosure = if (companionMode) {
-        "写出没有直接说出口的真实念头；可以有意让对方看见，也可以半有意半无意地流露，与表面表现形成反差。"
-    } else {
-        "揭示角色真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。"
+        ""
     }
     stack.add(
         "output.inner_monologue",
-        if (companionMode) "$monologueIntroduction$monologueDisclosure" +
-            "只有心情和表面表现有意味的反差时，才在对应那条话末写一两句（内心：...），放在<||>之前，不必每次都写。" else """
-        $monologueIntroduction
-        把它放在气泡末尾，接在可见内容之后。
+        """
+        内心独白格式：当角色有隐藏的想法或感受、与表面表现不同时，可以用（内心：...）写在正文里。
+        $monologueAwareness
+        把它放在那条话的末尾，接在说出口的内容之后；分段回复时放在 <||> 之前。
         规则：
         - 克制使用：只有隐藏情绪形成有意义的反差或张力时才写，不要每次回复都加内心独白。
         - 保持简短（1—2句），表达一闪而过的念头，不要写成长段。
-        - $monologueDisclosure
+        - 写出真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
         - 不要借内心独白解释规则或脱离角色。
         - 示例：'嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
-        前端会把（内心：...）渲染为颜色较淡、斜体且可折叠的区域。
-        不支持这种渲染时，会退回普通斜体文本。
-        始终按淡色、可折叠的渲染已生效来写。
+        前台会把（内心：...）渲染为颜色较淡、可折叠的区域，按渲染已生效来写。
         """.trimIndent(),
         priority = PromptStack.Priority.BUBBLE_SPLIT + 1
     )

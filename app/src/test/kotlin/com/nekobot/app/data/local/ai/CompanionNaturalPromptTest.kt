@@ -135,9 +135,9 @@ class CompanionNaturalPromptTest {
         assertFalse(split.contains("想分成"))
         val inner = requireNotNull(stack.get("output.inner_monologue")).content
         assertTrue(inner.contains("（内心：...）"))
-        assertTrue(inner.contains("对应那条话末"))
-        assertTrue(inner.contains("放在<||>之前"))
-        assertTrue(inner.contains("不必每次都写"))
+        assertTrue(inner.contains("那条话的末尾"))
+        assertTrue(inner.contains("放在 <||> 之前"))
+        assertTrue(inner.contains("不要每次回复都加"))
     }
 
     @Test fun companionThinkingRequestsAreIdempotentAndKeepOrdinaryFormat() {

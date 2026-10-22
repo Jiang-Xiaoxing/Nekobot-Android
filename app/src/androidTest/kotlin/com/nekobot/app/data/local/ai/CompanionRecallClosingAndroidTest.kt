@@ -359,9 +359,13 @@ class CompanionRecallClosingAndroidTest {
                     }
                     assertTrue(all.contains(CompanionPromptLanguage.bubbleRule))
                     assertTrue(all.contains("放在<||>之前"))
+                    // 写独白的规则回到角色设定（PromptStack 注入项），不再混在末尾思考提示词里。
+                    val monologueRule = f.ctx.characterTurn?.promptStackItems
+                        ?.firstOrNull { it.key == "output.inner_monologue" }
+                    assertTrue(monologueRule != null && monologueRule.content.contains("内心独白格式"))
                     // 思考提示词出现在请求末尾（最后一条用户消息 + 最后一条 system）。
                     assertTrue(all.contains("【思考方式】"))
-                    assertTrue(all.contains("（内心：…）"))
+                    assertFalse(all.contains("（内心：…）"))
                     if(i==0) tool("agent_history_search",mapOf("query" to "红茶"))
                     else answer("<think>$thought</think>$body") + ("reasoning_content" to native)
                 }
@@ -386,11 +390,12 @@ class CompanionRecallClosingAndroidTest {
                 compose.onNodeWithText(secondMonologue).assertDoesNotExist()
                 screenshot("two-bubbles-collapsed.png")
                 val firstBounds=compose.onNodeWithText(first,useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-                val footerBounds=compose.onAllNodesWithText(label,useUnmergedTree=true)[0].fetchSemanticsNode().boundsInRoot
+                val inlineBounds=compose.onAllNodesWithText(label,useUnmergedTree=true)[0].fetchSemanticsNode().boundsInRoot
                 val secondBounds=compose.onNodeWithText(second,useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-                record("reply-geometry",mapOf("first" to firstBounds.toString(),"footer" to footerBounds.toString(),"second" to secondBounds.toString()))
-                assertTrue(firstBounds.bottom<=footerBounds.top)
-                assertTrue(footerBounds.bottom<secondBounds.top)
+                record("reply-geometry",mapOf("first" to firstBounds.toString(),"inline" to inlineBounds.toString(),"second" to secondBounds.toString()))
+                // 作者原版：独白在正文原位置显示，第一条的独白块落在第一条正文之后、第二条正文之前。
+                assertTrue(firstBounds.bottom<=inlineBounds.top)
+                assertTrue(inlineBounds.bottom<=secondBounds.top)
                 compose.onAllNodesWithText(label)[0].performClick()
                 compose.onNodeWithText(monologue).assertIsDisplayed()
                 compose.onNodeWithText(secondMonologue).assertDoesNotExist()
@@ -409,12 +414,12 @@ class CompanionRecallClosingAndroidTest {
                 compose.onNodeWithText(thought,substring=true).assertIsDisplayed()
                 record("reply-presentation",mapOf("real_pipeline_prompt" to true,"requests" to server.requests.size,
                     "native_protocol_separate" to true,"tagged_thought_extracted" to true,"two_body_bubbles" to true,
-                    "monologue_after_its_own_body" to true,"two_independent_monologues" to true,"external_model_calls" to 0))
+                    "monologue_inline_in_its_own_bubble" to true,"two_independent_monologues" to true,"external_model_calls" to 0))
             } finally { f.cleanup() }
         }
     }
 
-    @Test fun standaloneMiddleMonologueUsesThePreviousBubbleFooter() = runBlocking {
+    @Test fun standaloneMiddleMonologueKeepsItsOwnBubble() = runBlocking {
         Loopback().use { server ->
             val first="我们在星禾书店门口认识的。"
             val second="那枚银杏叶书签，我也记得。"
@@ -429,18 +434,16 @@ class CompanionRecallClosingAndroidTest {
                 compose.waitUntil(15000) { compose.onAllNodesWithText(second,substring=true).fetchSemanticsNodes().isNotEmpty() }
                 compose.waitUntil(15000) { compose.onAllNodesWithTag("companion_reasoning").fetchSemanticsNodes().isNotEmpty() }
                 val label=compose.activity.getString(com.nekobot.app.R.string.markdown_inner_monologue)
-                val groups=com.nekobot.app.ui.screens.chat.groupCompanionMonologueSegments(body.split("<||>"),
-                    body.split("<||>").map { com.nekobot.app.ui.screens.chat.parseContentSegments(it) },true,false,false,true,false)
-                assertEquals(listOf(listOf(0,1),listOf(2)),groups.map { it.sourceIndices })
                 screenshot("middle-monologue-collapsed.png")
-                val footer=compose.onNodeWithText(label,useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-                assertTrue(compose.onNodeWithText(first,useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.bottom<=footer.top)
-                assertTrue(footer.bottom<compose.onNodeWithText(second,useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.top)
+                // 作者原版：中间那条纯独白留在自己的气泡里，不再挂到上一条正文下面。
+                compose.onNodeWithText(first).assertIsDisplayed()
+                compose.onNodeWithText(second).assertIsDisplayed()
                 compose.onNodeWithText(monologue).assertDoesNotExist()
-                compose.onNodeWithText(label).performClick()
+                compose.onAllNodesWithText(label)[0].assertIsDisplayed()
+                compose.onAllNodesWithText(label)[0].performClick()
                 compose.onNodeWithText(monologue).assertIsDisplayed()
-                screenshot("middle-monologue-attached.png")
-                record("middle-monologue",mapOf("display_groups" to groups.map { it.sourceIndices },"correct_footer" to true,
+                screenshot("middle-monologue-inline.png")
+                record("middle-monologue",mapOf("separate_bubble" to true,
                     "raw_body_unchanged" to (db.messageDao().getById("${f.id}-reply")?.content==body)))
             } finally { f.cleanup() }
         }
