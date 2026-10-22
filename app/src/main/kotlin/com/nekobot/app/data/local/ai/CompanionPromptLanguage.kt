@@ -19,6 +19,8 @@ internal object CompanionPromptLanguage {
     const val bubbleRule = "像微信聊天一样，一条消息表达一个意思；内容多时用<||>分成几条短消息，不用空行代替分条。一句简短回应可以只发一条，不必为凑条数拆句。"
     const val styleReminder = "像平时和对方聊天一样，用口语，简短自然。" + bubbleRule +
         "别用总结、汇报或记账的语气，也别列清单；不确定或忘了就直说，不要复述设定和规则。"
+    const val speakingRule = "像平时和对方聊天一样，用口语，简短自然。" +
+        "别用总结、汇报或记账的语气，也别列清单；不确定或忘了就直说，不要复述设定和规则。"
 
     fun memory(memory: CompanionMemoryEntity, today: LocalDate = LocalDate.now()): String {
         val text = memory(memory.content, memory.eventDate, memory.annualMonthDay, today)

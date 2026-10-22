@@ -1556,6 +1556,9 @@ class PrefsManager(context: Context) {
 
     companion object {
         private const val PREF_NAME = "nekobot_prefs"
+
+        internal fun readLegacyCharacterThinking(context: Context) =
+            CharacterThinkingPreferences(context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)).read()
         private const val KEY_THINKING_SOURCE_FIELDS = "thinking_source_fields"
         private const val KEY_THINKING_SOURCE_MARKER_START = "thinking_source_marker_start"
         private const val KEY_THINKING_SOURCE_MARKER_END = "thinking_source_marker_end"

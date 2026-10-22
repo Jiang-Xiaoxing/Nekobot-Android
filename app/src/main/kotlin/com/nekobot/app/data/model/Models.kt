@@ -122,6 +122,9 @@ data class Session(
     val longConversationEnabled: Boolean? = null,
     @SerializedName(value = "companion_mode", alternate = ["companionMode"])
     val companionMode: Boolean? = null,
+    @SerializedName("companion_speaking_prompt") val companionSpeakingPrompt: String? = null,
+    @SerializedName("companion_thinking_prompt") val companionThinkingPrompt: String? = null,
+    @SerializedName("companion_thinking_enabled") val companionThinkingEnabled: Boolean? = null,
     /** 本地会话是否启用延迟回复。 */
     @SerializedName(value = "delay_reply_enabled", alternate = ["delayReplyEnabled"])
     val delayReplyEnabled: Boolean? = null,

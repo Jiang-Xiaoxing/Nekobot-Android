@@ -32,6 +32,21 @@ interface SessionDao {
     @Query("SELECT * FROM local_sessions WHERE id = :id")
     suspend fun getById(id: String): LocalSessionEntity?
 
+    @Query("SELECT * FROM local_sessions WHERE id = :id")
+    fun observeById(id: String): Flow<LocalSessionEntity?>
+
+    @Query("UPDATE local_sessions SET companion_speaking_prompt = COALESCE(companion_speaking_prompt, ''), companion_thinking_prompt = COALESCE(companion_thinking_prompt, :prompt), companion_thinking_enabled = COALESCE(companion_thinking_enabled, :enabled) WHERE companion_mode = 1 AND (companion_speaking_prompt IS NULL OR companion_thinking_prompt IS NULL OR companion_thinking_enabled IS NULL)")
+    suspend fun initializeCompanionPrompts(prompt: String, enabled: Boolean)
+
+    @Query("UPDATE local_sessions SET companion_speaking_prompt = :prompt WHERE id = :id AND companion_mode = 1")
+    suspend fun updateCompanionSpeakingPrompt(id: String, prompt: String): Int
+
+    @Query("UPDATE local_sessions SET companion_thinking_prompt = :prompt WHERE id = :id AND companion_mode = 1")
+    suspend fun updateCompanionThinkingPrompt(id: String, prompt: String): Int
+
+    @Query("UPDATE local_sessions SET companion_thinking_enabled = :enabled WHERE id = :id AND companion_mode = 1")
+    suspend fun updateCompanionThinkingEnabled(id: String, enabled: Boolean): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(session: LocalSessionEntity)
 

@@ -415,6 +415,9 @@ class LocalRepository(
     /** 每个仓库实例唯一；同名 profile 覆盖重建后，旧协程也无法通过 active 检查。 */
     private val plotStoryOwner = Any()
     private val sessionDao = db.sessionDao()
+    internal val companionPrompts by lazy {
+        CompanionPromptStore(db) { ServiceContainer.prefs.getCharacterThinkingSettings() }
+    }
     private val messageDao = db.messageDao()
     private val historyCopyMutationLock = Mutex()
     private val historyCopyExporter by lazy {
@@ -1912,6 +1915,9 @@ class LocalRepository(
             updatedAt = now,
             sessionMode = req.sessionMode,
             companionMode = req.companionMode,
+            companionSpeakingPrompt = if (req.companionMode) "" else null,
+            companionThinkingPrompt = if (req.companionMode) "" else null,
+            companionThinkingEnabled = if (req.companionMode) ServiceContainer.prefs.characterThinkingEnabled else null,
             inheritCharacter = req.companionMode,
             longConversationEnabled = req.companionMode,
             groupId = if (isGroup) "gc_${UUID.randomUUID().toString().replace("-", "").take(12)}" else null,
@@ -11556,6 +11562,9 @@ ${AiOutputLanguage.directive()}
         inheritCharacterGreeting = inheritCharacterGreeting,
         longConversationEnabled = longConversationEnabled,
         companionMode = companionMode,
+        companionSpeakingPrompt = companionSpeakingPrompt,
+        companionThinkingPrompt = companionThinkingPrompt,
+        companionThinkingEnabled = companionThinkingEnabled,
         delayReplyEnabled = delayReplyEnabled,
         delayReplyDelaySeconds = delayReplyDelaySeconds
     )

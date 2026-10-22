@@ -242,6 +242,7 @@ class AIPipeline {
         tools: List<Map<String, Any>>,
         maxContextChars: Int
     ) {
+        callbacks.prepareCharacterPromptSettings(ctx)
         // 加载消息历史
         val messagesRaw = callbacks.loadMessages(ctx)
         val isAgentHistory = ((ctx.metadata["session_mode"] ?: ctx.chatRequest.metadata["session_mode"]) as? String)
@@ -323,6 +324,17 @@ class AIPipeline {
 
         // 角色运行时 before_turn
         phaseCharacterRuntimeBeforeTurn(ctx, callbacks)
+
+        if (ctx.metadata[META_FUSED_COMPANION] == true) {
+            ctx.characterTurn?.let { turn ->
+                val settings = CompanionPromptSettings(speakingPrompt = callbacks.getCompanionSpeakingPrompt(ctx).orEmpty())
+                val speaking = settings.speakingForRequest(turn.profile.name,
+                    (ctx.metadata["user_name"] ?: ctx.chatRequest.metadata["user_name"]) as? String)
+                turn.promptStackItems = turn.promptStackItems.map { item ->
+                    if (item.key == COMPANION_SPEAKING_STYLE_KEY) item.copy(content = speaking) else item
+                }
+            }
+        }
 
         // 现实时间连续性 + 昼夜节律 + 离线剧情推进注入（对齐原仓库 _phase_real_time_prompt_fallback
         // 与 character/runtime._inject_real_time_context / _inject_circadian_state）

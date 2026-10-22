@@ -14,7 +14,7 @@ private const val MAX_PLAN_CHARS = 900
 
 /** 角色输出约定清单：均属动态段，持久化的基础提示词不得残留旧副本。 */
 internal val characterOutputPromptKeys = listOf(
-    "output.bubble_split", "output.inner_monologue", CHARACTER_THINKING_STYLE_KEY
+    "output.bubble_split", "output.inner_monologue", CHARACTER_THINKING_STYLE_KEY, COMPANION_SPEAKING_STYLE_KEY
 )
 
 /** 注册角色相关本轮注入到 PromptStack */
@@ -30,7 +30,7 @@ fun buildCharacterInjections(
     // 气泡分隔提示词
     stack.add(
         "output.bubble_split",
-        if (companionMode) CompanionPromptLanguage.styleReminder else """
+        if (companionMode) CompanionPromptLanguage.bubbleRule else """
         当你想把回复拆成多条独立消息（气泡）时，请在各段之间使用特殊分隔符 `<||>`。
         `<||>` 分隔的每一段都会显示为一个独立气泡。
         格式示例：
@@ -40,6 +40,9 @@ fun buildCharacterInjections(
         """.trimIndent(),
         priority = PromptStack.Priority.BUBBLE_SPLIT
     )
+
+    if (companionMode) stack.add(COMPANION_SPEAKING_STYLE_KEY, CompanionPromptLanguage.speakingRule,
+        priority = PromptStack.Priority.BUBBLE_SPLIT - 1)
 
     // 内心独白格式约定：按作者原版放回角色设定，正文里（内心：…）的写法只在这里说明。
     // 末尾的思考提示词只管思维链与说话方式，不再混入独白规则。

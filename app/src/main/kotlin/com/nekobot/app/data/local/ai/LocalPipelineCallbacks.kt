@@ -1967,8 +1967,20 @@ internal class LocalPipelineCallbacks(
 
     override fun getCharacterRuntime(ctx: PipelineContext): CharacterRuntime? = characterRuntime
 
+    private var preparedCompanionPrompts: CompanionPromptSettings? = null
+
+    override suspend fun prepareCharacterPromptSettings(ctx: PipelineContext) {
+        preparedCompanionPrompts = if (session.usesFusedCompanionMemory()) {
+            com.nekobot.app.data.local.CompanionPromptStore(db) {
+                com.nekobot.app.ServiceContainer.prefs.getCharacterThinkingSettings()
+            }.get(session.id)
+        } else null
+    }
+
+    override fun getCompanionSpeakingPrompt(ctx: PipelineContext) = preparedCompanionPrompts?.speakingPrompt
+
     override fun getCharacterThinkingSettings(ctx: PipelineContext) =
-        com.nekobot.app.ServiceContainer.prefs.getCharacterThinkingSettings()
+        preparedCompanionPrompts?.thinking ?: com.nekobot.app.ServiceContainer.prefs.getCharacterThinkingSettings()
 
     override fun getReasoningEffort(ctx: PipelineContext) = reasoningEffort
 

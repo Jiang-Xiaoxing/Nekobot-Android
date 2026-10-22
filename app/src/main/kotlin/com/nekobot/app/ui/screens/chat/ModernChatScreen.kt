@@ -293,7 +293,8 @@ fun ModernChatScreen(
         LocalStickerLookup provides stickerLookup,
         LocalCompanionChatName provides companionName,
         LocalCompanionAvatarFallback provides session?.portrait,
-        LocalCompanionShowReasoning provides companionThoughtsEnabled(companionShowReasoning, characterThinkingSettings.enabled),
+        LocalCompanionShowReasoning provides companionThoughtsEnabled(companionShowReasoning,
+            session?.companionThinkingEnabled ?: characterThinkingSettings.enabled),
         com.nekobot.app.ui.components.LocalShowInnerMonologue provides showInnerMonologue,
         com.nekobot.app.ui.components.LocalCompactInnerMonologue provides (companionName != null),
         LocalOpenCompanionMemory provides if (companionName != null) ({ onOpenCompanionMemory(sessionId) }) else null
@@ -397,6 +398,8 @@ fun ModernChatScreen(
     }
     if (companionName != null && companionSettingsOpen) {
         CompanionSettingsScreen(
+            sessionId = sessionId,
+            characterId = session?.characterId,
             characterName = companionName,
             portraitUrl = session?.avatarUrl,
             checked = companionShowReasoning,
@@ -1625,7 +1628,7 @@ private fun ModernChatComposer(
                         companionReasoningRepository?.setCompanionCustomReasoning(sessionId, it)
                             ?: reasoningPrefs.setCustomReasoning(isAgentSession, it)
                     },
-                    showCharacterThinkingSettings = isCharacterThinkingSession(session),
+                    showCharacterThinkingSettings = session?.companionMode != true && isCharacterThinkingSession(session),
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
                         if (companionChat) onDismissCompanionSettings()

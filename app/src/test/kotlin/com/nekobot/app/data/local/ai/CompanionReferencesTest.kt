@@ -119,10 +119,10 @@ class CompanionReferencesTest {
             override fun loadMessages(ctx: PipelineContext) = listOf(mapOf<String, Any>("role" to "user", "content" to "在吗"))
             override suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>, tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> {
                 val opening = messages.first()["content"].toString()
-                assertTrue(opening.contains(CompanionPromptLanguage.styleReminder))
+                assertTrue(opening.contains(CompanionPromptLanguage.speakingRule))
                 assertTrue(opening.contains("内心独白格式"))
                 assertEquals(1, opening.split(CompanionPromptLanguage.bubbleRule).size - 1)
-                assertFalse(dynamic.contains(CompanionPromptLanguage.styleReminder))
+                assertFalse(dynamic.contains(CompanionPromptLanguage.speakingRule))
                 assertFalse(dynamic.contains("内心独白格式"))
                 checked = true
                 return messages

@@ -327,6 +327,7 @@ internal class CompanionTransferService(
             characterAvatar = character.text("avatar"), portrait = character.text("portrait"),
             senderAvatar = sessionMedia.text("sender_avatar"),
             firstMessage = null, archiveSessionId = null, sessionMode = "agent", companionMode = true, userPersona = null,
+            companionSpeakingPrompt = "", companionThinkingPrompt = null, companionThinkingEnabled = null,
             inheritCharacter = true, inheritCharacterGreeting = false, longConversationEnabled = true,
             longConversationTailUntilId = null, groupId = null, characterIds = null, groupConfig = null,
             groupActiveSpeaker = null, groupTurnCount = 0,

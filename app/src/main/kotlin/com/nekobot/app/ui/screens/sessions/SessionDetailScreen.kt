@@ -883,7 +883,11 @@ fun SessionDetailScreen(
     }
     val singleSessionRole = session?.companionMode == true
     val advancedPage = singleSessionRole && advancedOpen
-    val thinkingSettings by ServiceContainer.prefs.characterThinkingSettings.collectAsStateWithLifecycle()
+    val globalThinkingSettings by ServiceContainer.prefs.characterThinkingSettings.collectAsStateWithLifecycle()
+    val thinkingSettings = if (singleSessionRole) com.nekobot.app.data.local.ai.CharacterThinkingSettings(
+        session?.companionThinkingEnabled ?: globalThinkingSettings.enabled,
+        session?.companionThinkingPrompt ?: globalThinkingSettings.customPrompt
+    ) else globalThinkingSettings
     val reasoningRevision by ServiceContainer.prefs.reasoningSettingsRevision.collectAsStateWithLifecycle()
     val effort = reasoningRevision.let {
         if (ServiceContainer.prefs.isLocalMode && session != null) {

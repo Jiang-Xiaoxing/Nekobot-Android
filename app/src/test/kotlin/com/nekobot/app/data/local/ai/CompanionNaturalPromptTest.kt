@@ -128,8 +128,8 @@ class CompanionNaturalPromptTest {
     @Test fun companionUsesOneBubbleRuleAndLabeledMonologueFollowsItsOwnSpeech() {
         val stack = PromptStack().apply { buildCharacterInjections(this, CharacterProfile(), companionMode = true) }
         val split = requireNotNull(stack.get("output.bubble_split")).content
-        assertEquals(CompanionPromptLanguage.styleReminder, split)
-        assertTrue(CompanionPromptLanguage.styleReminder.contains(split))
+        assertEquals(CompanionPromptLanguage.bubbleRule, split)
+        assertEquals(CompanionPromptLanguage.speakingRule, stack.get(COMPANION_SPEAKING_STYLE_KEY)?.content)
         assertTrue(split.contains("内容多时用<||>分成几条短消息"))
         assertTrue(split.contains("一句简短回应可以只发一条"))
         assertFalse(split.contains("想分成"))
