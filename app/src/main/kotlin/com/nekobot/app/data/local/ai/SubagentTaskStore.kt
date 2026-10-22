@@ -8,6 +8,7 @@ import com.nekobot.app.data.local.db.LocalSubagentMessageEntity
 import com.nekobot.app.data.local.db.LocalSubagentTaskEntity
 import com.nekobot.app.data.local.db.LocalSubagentToolCallEntity
 import com.nekobot.app.data.local.db.LocalAgentNoticeEntity
+import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.model.AgentTodo
 import com.nekobot.app.data.model.ThinkingStep
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +96,8 @@ data class SubagentTask(
  */
 object SubagentTaskStore {
 
+    private const val TAG = "SubagentTaskStore"
+
     private val gson = Gson()
     private val tasks = ConcurrentHashMap<String, SubagentTask>()
     private val lock = Any()
@@ -104,23 +107,42 @@ object SubagentTaskStore {
     fun bind(persistence: LocalSubagentTaskDao) = synchronized(lock) {
         dao = persistence
         tasks.clear()
-        runBlocking(Dispatchers.IO) { persistence.listAll() }.forEach { entity ->
-            var task = entity.toTask()
-            task = task.copy(
-                conversation = runBlocking(Dispatchers.IO) { persistence.listMessages(task.id) }.mapNotNull { message ->
-                    runCatching {
-                        @Suppress("UNCHECKED_CAST")
-                        gson.fromJson(message.payloadJson, Map::class.java) as? Map<String, Any>
-                    }.getOrNull()
+        // bind() 由 LocalRepository 初始化在启动（主线程）阶段调用，所有 Room 访问必须在同一次
+        // IO 调度内完成。此前中断态 upsert 直接跑在调用线程上，会触发 Room 的主线程校验并从
+        // Application.onCreate 抛出，只要库里存有未结束的子代理任务就会无限崩溃无法启动。
+        val restored = runCatching {
+            io {
+                val loaded = persistence.listAll().map { entity ->
+                    var task = entity.toTask()
+                    task = task.copy(
+                        conversation = persistence.listMessages(task.id).mapNotNull { message ->
+                            runCatching {
+                                @Suppress("UNCHECKED_CAST")
+                                gson.fromJson(message.payloadJson, Map::class.java) as? Map<String, Any>
+                            }.getOrNull()
+                        }
+                    )
+                    if (task.status == SubagentTaskStatus.RUNNING || task.status == SubagentTaskStatus.OUTPUTTING) {
+                        task = task.copy(status = SubagentTaskStatus.INTERRUPTED)
+                        // 单条写入失败只记日志：不能让档案恢复异常中断应用启动。
+                        runCatching { persistence.upsert(task.toEntity()) }.onFailure { error ->
+                            LocalLogger.w(
+                                TAG,
+                                "子代理任务中断态写入失败：${task.id}，${error.message}",
+                                error
+                            )
+                        }
+                    }
+                    task
                 }
-            )
-            if (task.status == SubagentTaskStatus.RUNNING || task.status == SubagentTaskStatus.OUTPUTTING) {
-                task = task.copy(status = SubagentTaskStatus.INTERRUPTED)
-                persistence.upsert(task.toEntity())
+                loaded to persistence.listPendingNotices()
             }
-            tasks[task.id] = task
+        }.getOrElse { error ->
+            LocalLogger.w(TAG, "子代理任务档案恢复失败，已跳过本次恢复：${error.message}", error)
+            emptyList<SubagentTask>() to emptyList<LocalAgentNoticeEntity>()
         }
-        runBlocking(Dispatchers.IO) { persistence.listPendingNotices() }.forEach { notice ->
+        restored.first.forEach { tasks[it.id] = it }
+        restored.second.forEach { notice ->
             val parent = notice.parentTaskId?.let(tasks::get)
             val alreadyPersistedInParent = parent?.conversation?.any { message ->
                 message["role"] == "user" && message["content"]?.toString() == notice.payload
@@ -131,7 +153,7 @@ object SubagentTaskStore {
                 SubagentTaskNoticeBus.publishPersisted(parent.id, notice.noticeId, notice.payload)
             } else {
                 if (notice.parentTaskId != null) {
-                    runBlocking(Dispatchers.IO) { persistence.retargetPendingNotice(notice.noticeId, null) }
+                    io { persistence.retargetPendingNotice(notice.noticeId, null) }
                 }
                 AgentNoticeBus.publishPersisted(notice.sessionId, notice.noticeId, notice.payload, wakeIfIdle = false)
             }
