@@ -14,8 +14,6 @@ class CharacterThinkingStyleTest {
 一律用简体中文：所有句子、所有分析、所有判断都必须用简体中文写，不允许出现英文句子或英文段落（工具名、参数名除外）。禁止首字输出“用户”“the user”“Let me…”“让我分析一下”等词；想到对方时用对方的名字或“他/她”。
 想完就把想说的都说出来，别只说一半；需要调用工具（翻记忆、看时间、发表情等）时，工具名和参数保持原样。
 
-说出口的话就像平常聊天，可以多说几句，把想说的说完；分成两三小段发出来，段与段之间写 <||>，像连着发几条消息。想说又没说出口的半截心事，就写成（内心：…）跟在那句话后面，像随口漏出来的一句：“那你早点睡吧（内心：其实还想再聊一会儿，又怕你嫌我烦）。”不要用光括号写独白，也不要把（内心：…）写进思考里。
-
 再记一遍：心里想的每一句都用简体中文，从第一个字到最后一个字；英文只出现在工具名和参数里。"""
 
     @Test
@@ -28,7 +26,8 @@ class CharacterThinkingStyleTest {
         val prompt = characterThinkingPrompt(CharacterThinkingSettings(), "林小满", "小星")
         assertTrue(prompt.contains("第一人称"))
         assertTrue(prompt.contains("简体中文"))
-        assertTrue(prompt.contains("（内心：…）"))
+        // 独白写法已按作者原版回到角色设定的 output.inner_monologue，不再混进思考提示。
+        assertFalse(prompt.contains("（内心：…）"))
         // 伪思考已移除：不再要求正文写 <think> 内心想法。
         assertFalse(prompt.contains("<think>"))
         assertFalse(prompt.contains("接口没有提供原生思考字段时"))

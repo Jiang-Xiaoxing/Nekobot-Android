@@ -17,7 +17,7 @@ import java.sql.DriverManager
 @RunWith(Parameterized::class)
 class UpstreamMigrationTest(private val version: Int) {
     companion object {
-        @JvmStatic @Parameterized.Parameters(name = "v{0} to v61")
+        @JvmStatic @Parameterized.Parameters(name = "v{0} to latest")
         fun versions() = (31..60).map { arrayOf(it) }
     }
 
@@ -88,6 +88,20 @@ class UpstreamMigrationTest(private val version: Int) {
             .asJsonObject.getAsJsonObject("database")
     }
 
+    /**
+     * 期望结构跟随导出的最新 schema，不在测试里写死版本号。
+     * 产品升版本并导出 schema 后，这里自动指向新结构；漏导出则会明确报错。
+     */
+    private fun latestSchemaVersion(): Int {
+        val directory = listOf(File("schemas"), File("app/schemas")).firstOrNull { it.isDirectory }
+            ?: error("找不到 schemas 导出目录，当前工作目录=${File(".").absolutePath}")
+        val schemas = File(directory, "com.nekobot.app.data.local.db.NekobotDatabase")
+        return schemas.listFiles { file -> file.extension == "json" }
+            ?.mapNotNull { it.nameWithoutExtension.toIntOrNull() }
+            ?.maxOrNull()
+            ?: error("$schemas 下没有可用的 schema 导出文件")
+    }
+
     private fun connect(file: File): Connection = DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").also {
         it.createStatement().use { statement -> statement.execute("PRAGMA foreign_keys=ON") }
     }
@@ -132,9 +146,11 @@ class UpstreamMigrationTest(private val version: Int) {
     private fun assertSchema(connection: Connection) {
         // Compare PRAGMA metadata with a freshly created current Room export. Triggers are
         // migration-only; defaults are checked whenever the Room entity declares one.
+        // 期望结构取自最新导出，因此新增的表（如 portable_import_commits）也会被核对。
+        val expected = schema(latestSchemaVersion())
         DriverManager.getConnection("jdbc:sqlite::memory:").use { fresh ->
-            createSchema(fresh, schema(61))
-            schema(61).getAsJsonArray("entities").forEach { entry ->
+            createSchema(fresh, expected)
+            expected.getAsJsonArray("entities").forEach { entry ->
                 val table = entry.asJsonObject["tableName"].asString
                 val expected = rows(fresh, "PRAGMA table_info(`$table`)").associateBy { it[1] }
                 val actual = rows(connection, "PRAGMA table_info(`$table`)").associateBy { it[1] }

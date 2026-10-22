@@ -12,7 +12,7 @@ class CharacterMonologueAwarenessTest {
     fun defaultModeRetainsOriginalMonologuePromptVerbatim() {
         val stack = PromptStack()
         buildCharacterInjections(stack, CharacterProfile())
-        assertEquals(legacyMonologue, stack.get("output.inner_monologue")?.content)
+        assertEquals(expectedMonologue(companionMode = false), stack.get("output.inner_monologue")?.content)
     }
 
     @Test
@@ -21,7 +21,7 @@ class CharacterMonologueAwarenessTest {
         val inner = requireNotNull(stack.get("output.inner_monologue"))
         for (text in listOf(
             "你知道玩家能看到你写出的内心独白", "不要把它当成对方看不到的秘密",
-            "有意让对方看见", "半有意半无意地流露", "话末写一两句", "不必每次都写", "放在<||>之前"
+            "接在说出口的内容之后", "放在 <||> 之前", "克制使用"
         )) assertTrue(text, inner.content.contains(text))
         assertFalse(inner.content.contains("角色隐藏的想法"))
         assertEquals(PromptStack.Priority.BUBBLE_SPLIT + 1, inner.priority)
@@ -42,18 +42,21 @@ class CharacterMonologueAwarenessTest {
     @Test
     fun ordinaryReactionPlanAndMonologueRemainVerbatim() {
         val stack = injections(false)
-        assertEquals(legacyMonologue, stack.get("output.inner_monologue")?.content)
+        assertEquals(expectedMonologue(companionMode = false), stack.get("output.inner_monologue")?.content)
         assertEquals(legacyPlan, stack.get("character.reaction_plan")?.content)
     }
 
     @Test
-    fun companionPipelinePassesAwareMonologueAsSoftwareContext() {
+    fun companionPipelineKeepsAwareMonologueInCharacterSystem() {
         val ctx = prepare(companionMode = true)
         val inner = requireNotNull(ctx.characterTurn).promptStackItems.single { it.key == "output.inner_monologue" }
         assertTrue(inner.content.contains("你知道玩家能看到你写出的内心独白"))
+        // ADR004：独白按作者原版回到角色设定层，随顶部 system 发送，不再作为辅助软件资料，
+        // 也不重复进辅助资料，避免两处文案不一致。
+        val systems = ctx.messages.filter { it["role"] == "system" }.joinToString("\n") { it["content"].toString() }
+        assertTrue(systems.contains(inner.content))
         val auxiliary = ctx.messages.single { it.containsKey(CompanionRequestUsage.META) }
-        assertTrue(auxiliary["content"].toString().contains(inner.content))
-        assertTrue(auxiliary["content"].toString().contains("半有意半无意地流露"))
+        assertFalse(auxiliary["content"].toString().contains(inner.content))
         assertFalse(auxiliary["content"].toString().contains("software_context"))
         assertEquals(listOf(userInput), playerMessages(ctx).map { it["content"] })
         // 单会话原本不注入反应计划，本次不为这条说明额外启用计划。
@@ -78,9 +81,9 @@ class CharacterMonologueAwarenessTest {
 
     private fun assertLegacyPipeline(ctx: PipelineContext) {
         val inner = requireNotNull(ctx.characterTurn).promptStackItems.single { it.key == "output.inner_monologue" }
-        assertEquals(legacyMonologue, inner.content)
+        assertEquals(expectedMonologue(companionMode = false), inner.content)
         val systems = ctx.messages.filter { it["role"] == "system" }.joinToString("\n") { it["content"].toString() }
-        assertTrue(systems.contains(legacyMonologue))
+        assertTrue(systems.contains(expectedMonologue(companionMode = false)))
         for (text in listOf("你知道玩家能看到", "有意让对方看见", "半有意半无意", "对方看不到的秘密")) {
             assertFalse(text, systems.contains(text))
         }
@@ -128,20 +131,26 @@ class CharacterMonologueAwarenessTest {
 
     private val userInput = "今天过得怎么样？"
 
-    // 固定改动前的完整文本，防止普通及群聊分支悄悄改变措辞或格式。
-    private val legacyMonologue = """
-        内心独白格式：当角色隐藏的想法或感受与表面表现不同时，可以用（内心：...）格式写在正文中。
-        把它放在气泡末尾，接在可见内容之后。
+    /**
+     * 锁定角色设定层的独白文案，防止普通/群聊分支悄悄改措辞。
+     * 与 CharacterPromptBuilder 的 output.inner_monologue 同源；改文案时两处一起改。
+     * 末尾思考提示词不再包含独白写法，这里覆盖的是正文里（内心：...）的唯一来源。
+     */
+    private fun expectedMonologue(companionMode: Boolean): String {
+        val awareness = if (companionMode) "你知道玩家能看到你写出的内心独白，不要把它当成对方看不到的秘密。" else ""
+        return """
+        内心独白格式：当角色有隐藏的想法或感受、与表面表现不同时，可以用（内心：...）写在正文里。
+        $awareness
+        把它放在那条话的末尾，接在说出口的内容之后；分段回复时放在 <||> 之前。
         规则：
         - 克制使用：只有隐藏情绪形成有意义的反差或张力时才写，不要每次回复都加内心独白。
         - 保持简短（1—2句），表达一闪而过的念头，不要写成长段。
-        - 揭示角色真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
+        - 写出真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
         - 不要借内心独白解释规则或脱离角色。
         - 示例：'嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
-        前端会把（内心：...）渲染为颜色较淡、斜体且可折叠的区域。
-        不支持这种渲染时，会退回普通斜体文本。
-        始终按淡色、可折叠的渲染已生效来写。
-    """.trimIndent()
+        前台会把（内心：...）渲染为颜色较淡、可折叠的区域，按渲染已生效来写。
+        """.trimIndent()
+    }
 
     private val legacyPlan = """
         本轮反应约定：
