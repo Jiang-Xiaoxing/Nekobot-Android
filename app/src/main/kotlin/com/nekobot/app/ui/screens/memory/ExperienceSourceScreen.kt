@@ -58,7 +58,7 @@ import com.nekobot.app.data.local.ExperienceSourceReader
 import com.nekobot.app.data.local.db.LocalMessageEntity
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.chatBubbleAppearance
@@ -413,7 +413,7 @@ fun ExperienceSourceScreen(
             LazyColumn(state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (!ownerCurrent) item("database-changed") {
                     Text(stringResource(R.string.experience_source_database_changed), color = MaterialTheme.colorScheme.error)
-                } else error?.let { message -> item("error") { ErrorBanner(message = message, onRetry = { viewModel.load(sessionId, archiveId) }) } }
+                } else error?.let { message -> item("error") { ErrorToast(message = message, onShown = { viewModel.clearError() }) } }
                 page?.let { current ->
                     item("source") {
                         var summaryExpanded by rememberSaveable(archiveId) { mutableStateOf(false) }
@@ -523,7 +523,7 @@ fun ChatLocationScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (!ownerCurrent) Text(stringResource(R.string.experience_source_database_changed),
                 modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
-            else error?.let { ErrorBanner(message = it, onRetry = { viewModel.load(sessionId, messageId, archiveId) }) }
+            else error?.let { ErrorToast(message = it, onShown = { viewModel.clearError() }) }
             window?.let { current ->
                 if (current.messages.none { it.id == current.anchorMessageId }) {
                     TextButton(onClick = { viewModel.load(sessionId, messageId, archiveId) }) {

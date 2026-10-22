@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  * Agent 模式的会话级原生浏览器工具。
  *
  * 模型通过单个工具选择动作，页面变化后自动回传当前页面文本、可交互元素与截图。
- * WebView 允许 http(s)、本地回环 http（localhost/127.0.0.1/::1）与本地 .html 文件，
+ * WebView 允许 HTTPS、本机回环 HTTP、题库 IP HTTP 与本地 .html 文件，
  * 文件产物固定写入会话工作区。
  *
  * Agent 工具循环运行在 Dispatchers.IO；Android WebView 的所有调用仍统一切回主线程。
@@ -1641,11 +1641,11 @@ internal class LocalBrowserTool(
             .getOrNull()
             ?: mapOf("value" to raw)
 
-    /** http(s) 地址（Cookie / fetch 用）；明文 http 仅限本地回环，由网络安全配置放行。 */
+    /** http(s) 地址（Cookie / fetch 用）；明文 HTTP 仅限本地回环与白名单主机。 */
     private fun normalizeWebUrl(raw: String): String? {
         val value = raw.trim()
         val normalized = if ("://" in value) value
-        else "${if (isLoopbackHost("http://${value.substringBefore('/')}")) "http" else "https"}://$value"
+        else "${if (LocalBrowserHttpPolicy.isAllowedHttpHost(value)) "http" else "https"}://$value"
         return normalized.takeIf(::isAllowedWebUrl)
     }
 
@@ -1655,7 +1655,7 @@ internal class LocalBrowserTool(
         val normalized = when {
             "://" in value -> value
             isBareLocalHtmlPath(value) -> Uri.fromFile(File(value)).toString()
-            else -> "${if (isLoopbackHost("http://${value.substringBefore('/')}")) "http" else "https"}://$value"
+            else -> "${if (LocalBrowserHttpPolicy.isAllowedHttpHost(value)) "http" else "https"}://$value"
         }
         return normalized.takeIf(::isNavigableUrl)
     }
@@ -1665,7 +1665,7 @@ internal class LocalBrowserTool(
 
     private fun isAllowedWebUrl(url: String): Boolean {
         val scheme = runCatching { Uri.parse(url).scheme?.lowercase() }.getOrNull()
-        return scheme == "https" || (scheme == "http" && isLoopbackHost(url))
+        return scheme == "https" || (scheme == "http" && LocalBrowserHttpPolicy.isAllowedHttpHost(url))
     }
 
     private fun isLocalHtmlFileUrl(url: String): Boolean {
@@ -1679,30 +1679,6 @@ internal class LocalBrowserTool(
         if (!value.startsWith("/") || value.contains("://")) return false
         val lower = value.lowercase()
         return lower.endsWith(".html") || lower.endsWith(".htm")
-    }
-
-    private fun isLoopbackHost(url: String): Boolean {
-        val host = hostOf(url) ?: return false
-        return host == "localhost" ||
-            host == "::1" ||
-            host == "0:0:0:0:0:0:0:1" ||
-            host.startsWith("127.")
-    }
-
-    /** 取主机名：去掉用户信息、端口与 IPv6 方括号，兼容 http://[::1]:8080 这类写法。 */
-    private fun hostOf(url: String): String? {
-        val authority = url.substringAfter("://", "")
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-            .substringAfterLast('@')
-        if (authority.isBlank()) return null
-        val host = when {
-            authority.startsWith("[") -> authority.substringAfter('[').substringBefore(']')
-            authority.startsWith(":") -> authority
-            else -> authority.substringBefore(':')
-        }
-        return host.lowercase().takeIf { it.isNotBlank() }
     }
 
     private fun requireWebView(): WebView =

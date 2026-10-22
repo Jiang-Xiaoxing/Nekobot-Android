@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_create_title">新增角色對話</string>
+    <string name="session_create_search">搜尋角色</string>
+    <string name="session_create_search_hint">名稱、標籤或簡介</string>
+    <string name="session_create_character_count">%1$d 個角色</string>
+    <string name="session_create_no_results">找不到相符的角色</string>
+    <string name="session_create_without_character">不使用角色</string>
+    <string name="session_create_change_character">更換角色</string>
+    <string name="session_create_greeting">開場白</string>
+    <string name="session_create_restore_greeting">還原角色開場白</string>
+    <string name="session_create_no_greeting">尚無開場白，點選上方可新增</string>
+    <string name="session_create_selected">已選取</string>
+    <string name="session_create_collapse">收合</string>
+    <string name="session_create_expand">展開</string>
+    <string name="session_create_creating">建立中…</string>
+</resources>

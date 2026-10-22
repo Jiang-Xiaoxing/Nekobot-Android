@@ -45,7 +45,7 @@ import com.nekobot.app.data.model.LegacyMemory
 import com.nekobot.app.data.model.LegacyMemoryRequest
 import com.nekobot.app.data.model.MemoryFile
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -637,10 +637,7 @@ fun MemoryScreen(
                     ) {
                         if (error != null) {
                             item {
-                                ErrorBanner(message = error!!, onRetry = {
-                                    viewModel.clearError()
-                                    viewModel.load()
-                                })
+                                ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                             }
                         }
 

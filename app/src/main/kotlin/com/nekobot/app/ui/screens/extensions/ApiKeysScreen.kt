@@ -65,7 +65,7 @@ import com.nekobot.app.data.model.ApiKey
 import com.nekobot.app.data.model.ApiKeyRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -221,10 +221,7 @@ fun ApiKeysScreen(onBack: () -> Unit) {
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                vm.clearError()
-                                vm.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { vm.clearError() })
                         }
                     }
                     items(keys, key = { it.id ?: it.name ?: it.hashCode().toString() }) { key ->

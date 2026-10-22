@@ -70,7 +70,7 @@ import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.data.remote.SocketState
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.SectionHeader
@@ -306,7 +306,7 @@ fun DiagnosticCenterScreen(onBack: () -> Unit, onExportProblem: () -> Unit = {})
             ) {
                 // 错误提示
                 error?.let {
-                    ErrorBanner(message = it, onRetry = { vm.clearError() })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                 }
 
                 // ==================== 本地状态区（所有模式可用） ====================

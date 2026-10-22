@@ -71,7 +71,7 @@ import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.local.PrefsManager
 import com.nekobot.app.update.UpdateChecker
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.NekoDialog
@@ -372,6 +372,8 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
         }
     }
 
+    ErrorToast(message = error, onShown = vm::clearError)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -403,9 +405,6 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            val errorContent: @Composable () -> Unit = {
-                error?.let { ErrorBanner(message = it, onRetry = { vm.clearError() }) }
-            }
             if (connectionVisible) {
                 SettingsConnectionContent(
                     scrollState = connectionScrollState,
@@ -417,8 +416,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                     onServerUrlChange = { serverUrlInput = it },
                     onSaveServerUrl = { vm.saveServerUrl(serverUrlInput) },
                     onReloadConfig = { vm.reloadConfig() },
-                    onLogout = { vm.logout() },
-                    errorContent = errorContent
+                    onLogout = { vm.logout() }
                 )
             } else {
                 SettingsHomeContent(
@@ -444,8 +442,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                     onAppLockChange = ::requestAppLockChange,
                     onLanguageClick = { showLanguagePicker = true },
                     onConnectionClick = { connectionVisible = true },
-                    onNavigate = ::navigateOnce,
-                    errorContent = errorContent
+                    onNavigate = ::navigateOnce
                 )
             }
 

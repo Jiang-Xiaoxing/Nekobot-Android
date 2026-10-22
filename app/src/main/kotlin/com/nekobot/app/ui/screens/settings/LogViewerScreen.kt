@@ -68,7 +68,7 @@ import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.local.LocalLogger
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -334,7 +334,7 @@ fun LogViewerScreen(onBack: () -> Unit) {
                     .padding(horizontal = 16.dp)
             ) {
                 error?.let {
-                    ErrorBanner(message = it, onRetry = { vm.clearError() })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                     Spacer(Modifier.height(8.dp))
                 }
 

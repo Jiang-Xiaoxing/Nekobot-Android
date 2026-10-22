@@ -71,7 +71,7 @@ import com.nekobot.app.data.local.ai.RoutingModelStats
 import com.nekobot.app.data.local.ai.RoutingScoreBreakdown
 import com.nekobot.app.data.local.db.RoutingDecisionLogEntity
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -174,10 +174,7 @@ fun RoutingHistoryScreen(onBack: () -> Unit) {
                     }
                     error?.let {
                         item(key = "error") {
-                            ErrorBanner(message = it, onRetry = {
-                                vm.clearError()
-                                vm.loadLogs()
-                            })
+                            ErrorToast(message = it, onShown = { vm.clearError() })
                         }
                     }
                     items(logs, key = { it.id }) { log ->

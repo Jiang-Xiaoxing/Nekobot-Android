@@ -39,7 +39,7 @@ import com.nekobot.app.data.model.WorldBookRequest
 import com.nekobot.app.ui.adaptive.listItemSemantics
 import com.nekobot.app.ui.adaptive.rememberShouldUseTwoPane
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -271,10 +271,7 @@ fun WorldBooksScreen(
                     ) {
                         if (error != null) {
                             item {
-                                ErrorBanner(message = error!!, onRetry = {
-                                    viewModel.clearError()
-                                    viewModel.load()
-                                })
+                                ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                             }
                         }
                         items(books, key = { it.id ?: it.name ?: it.hashCode().toString() }) { book ->
@@ -291,10 +288,7 @@ fun WorldBooksScreen(
                     ) {
                         if (error != null) {
                             item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                                ErrorBanner(message = error!!, onRetry = {
-                                    viewModel.clearError()
-                                    viewModel.load()
-                                })
+                                ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                             }
                         }
                         gridItems(books, key = { it.id ?: it.name ?: it.hashCode().toString() }) { book ->

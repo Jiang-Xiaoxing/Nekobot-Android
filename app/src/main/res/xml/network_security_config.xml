@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <!-- 本地回环地址允许明文 http，供 browser_use 调试本机网页服务 -->
+    <!-- 本地模式 AI 可连接本机和局域网内的 HTTP API。 -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">::1</domain>
+        <domain includeSubdomains="false">39.106.221.130</domain>
     </domain-config>
 </network-security-config>

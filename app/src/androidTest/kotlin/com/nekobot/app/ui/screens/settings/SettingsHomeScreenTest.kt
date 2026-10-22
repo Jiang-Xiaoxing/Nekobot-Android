@@ -43,6 +43,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -225,6 +226,28 @@ class SettingsHomeScreenTest {
         assertEquals(AppMode.LOCAL, mode)
         compose.onNodeWithTag("settings-connection-server-url").assertDoesNotExist()
         compose.onNodeWithTag("settings-connection-logout").assertDoesNotExist()
+    }
+
+    @Test fun errorsAreConsumedOnHomeConnectionAndReturnWithoutLosingNavigation() {
+        lateinit var screenModel: SettingsViewModel
+        compose.runOnUiThread { screenModel = ViewModelProvider(compose.activity)[SettingsViewModel::class.java] }
+        compose.setContent {
+            Theme {
+                Box(Modifier.fillMaxSize().testTag("settings-test-root")) {
+                    SettingsScreen({}, {}, {})
+                }
+            }
+        }
+        compose.runOnIdle { screenModel.showError("合成设置错误") }
+        compose.waitUntil(5_000) { screenModel.error.value == null }
+        compose.onNodeWithTag("settings-home-connection").performScrollTo().performClick()
+        compose.onNodeWithTag("settings-connection-mode").assertIsDisplayed()
+        compose.runOnIdle { screenModel.showError("合成设置错误") }
+        compose.waitUntil(5_000) { screenModel.error.value == null }
+        compose.onNodeWithTag("settings-home-back").performClick()
+        compose.onNodeWithTag("settings-home-connection").assertIsDisplayed()
+        compose.runOnIdle { screenModel.showError("合成设置错误") }
+        compose.waitUntil(5_000) { screenModel.error.value == null }
     }
 
     @Test fun connectionBackAndDestinationBackRestoreHomeScrollAndAllowReentry() {

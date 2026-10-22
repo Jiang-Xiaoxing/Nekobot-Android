@@ -60,7 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LoginRecord
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.theme.OnSurface
 import com.nekobot.app.ui.theme.OnSurfaceVariant
@@ -329,10 +329,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             val errorMsg = error
             if (!errorMsg.isNullOrBlank()) {
                 Spacer(Modifier.height(12.dp))
-                ErrorBanner(
-                    message = errorMsg,
-                    onRetry = { viewModel.clearError() }
-                )
+                ErrorToast(message = errorMsg, onShown = { viewModel.clearError() })
             }
         }
     }

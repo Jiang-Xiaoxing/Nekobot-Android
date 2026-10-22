@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_create_title">キャラクター会話を作成</string>
+    <string name="session_create_search">キャラクターを検索</string>
+    <string name="session_create_search_hint">名前・タグ・説明</string>
+    <string name="session_create_character_count">%1$d 人のキャラクター</string>
+    <string name="session_create_no_results">該当するキャラクターがいません</string>
+    <string name="session_create_without_character">キャラクターなしで続ける</string>
+    <string name="session_create_change_character">キャラクターを変更</string>
+    <string name="session_create_greeting">最初のメッセージ</string>
+    <string name="session_create_restore_greeting">元のメッセージに戻す</string>
+    <string name="session_create_no_greeting">メッセージはありません。上をタップして追加できます。</string>
+    <string name="session_create_selected">選択済み</string>
+    <string name="session_create_collapse">折りたたむ</string>
+    <string name="session_create_expand">展開する</string>
+    <string name="session_create_creating">作成中…</string>
+</resources>

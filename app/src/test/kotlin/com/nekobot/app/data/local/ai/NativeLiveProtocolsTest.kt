@@ -47,6 +47,74 @@ class NativeLiveProtocolsTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun stepfunRealtimeCompletesTurnUsingOriginalOpenAiEvents() = runBlocking {
+        val server = MockWebServer()
+        val received = mutableListOf<String>()
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onMessage(socket: WebSocket, text: String) {
+                received += text
+                val event = JsonParser.parseString(text).asJsonObject
+                when (event.get("type").asString) {
+                    "session.update" -> {
+                        val session = event.getAsJsonObject("session")
+                        assertEquals("realtime", session.get("type").asString)
+                        assertEquals("audio", session.getAsJsonArray("output_modalities").single().asString)
+                        assertFalse(session.has("modalities"))
+                        val audio = session.getAsJsonObject("audio")
+                        assertEquals(24000, audio.getAsJsonObject("input").getAsJsonObject("format").get("rate").asInt)
+                        assertTrue(audio.getAsJsonObject("input").get("turn_detection").isJsonNull)
+                        assertEquals(24000, audio.getAsJsonObject("output").getAsJsonObject("format").get("rate").asInt)
+                        socket.send("""{"type":"session.updated"}""")
+                    }
+                    "input_audio_buffer.commit" ->
+                        socket.send("""{"type":"input_audio_buffer.committed"}""")
+                    "response.create" -> {
+                        assertEquals("audio", event.getAsJsonObject("response").getAsJsonArray("output_modalities").single().asString)
+                        socket.send("""{"type":"conversation.item.input_audio_transcription.completed","transcript":"你好"}""")
+                        socket.send("""{"type":"response.text.delta","delta":"你好"}""")
+                        socket.send("""{"type":"response.audio_transcript.delta","delta":"你好"}""")
+                        socket.send("""{"type":"response.audio_transcript.done","transcript":"你好"}""")
+                        socket.send("""{"type":"response.audio.delta","delta":"AQI="}""")
+                        socket.send("""{"type":"response.done","response":{"status":"completed"}}""")
+                    }
+                }
+            }
+            override fun onClosing(socket: WebSocket, code: Int, reason: String) { socket.close(code, reason) }
+        }))
+        server.start()
+        try {
+            val config = config("stepfun").copy(baseUrl = server.url("/v1").toString())
+            val events = withTimeout(8_000) {
+                RealtimeVoiceClient().streamTurn(
+                    config,
+                    "角色设定",
+                    listOf(RealtimeContextMessage("user", "之前的对话"), RealtimeContextMessage("assistant", "历史回复")),
+                    byteArrayOf(1, 2, 3, 4)
+                ).toList()
+            }
+            val request = server.takeRequest()
+            assertEquals("/v1/realtime", request.requestUrl?.encodedPath)
+            assertEquals(REALTIME_STEPFUN_DEFAULT_MODEL, request.requestUrl?.queryParameter("model"))
+            assertEquals("Bearer test", request.getHeader("Authorization"))
+            val outgoing = received.map { JsonParser.parseString(it).asJsonObject }
+            assertEquals(listOf("session.update", "conversation.item.create", "conversation.item.create",
+                "input_audio_buffer.append", "input_audio_buffer.commit", "response.create"),
+                outgoing.map { it.get("type").asString })
+            assertEquals(outgoing.size, outgoing.map { it.get("event_id").asString }.distinct().size)
+            val history = outgoing.filter { it.get("type").asString == "conversation.item.create" }
+            assertEquals(buildRealtimeContextEvents(listOf(
+                RealtimeContextMessage("user", "之前的对话"), RealtimeContextMessage("assistant", "历史回复")
+            ), assistantContentType = "text"), history.map { it.deepCopy().apply { remove("event_id") } })
+            assertEquals("text", history.last().getAsJsonObject("item")
+                .getAsJsonArray("content")[0].asJsonObject.get("type").asString)
+            assertArrayEquals(resampleRealtimeInput(byteArrayOf(1, 2, 3, 4)),
+                Base64.getDecoder().decode(outgoing.first { it.has("audio") }.get("audio").asString))
+            assertEquals("你好", events.filterIsInstance<RealtimeVoiceEvent.Completed>().single().userTranscript)
+            assertEquals("你好", events.filterIsInstance<RealtimeVoiceEvent.Completed>().single().assistantTranscript)
+            assertArrayEquals(byteArrayOf(1, 2), events.filterIsInstance<RealtimeVoiceEvent.AudioDelta>().single().pcm16)
+        } finally { server.shutdown() }
+    }
+
     @Test fun geminiLiveCompletesNativeWebSocketRoundTrip() = runBlocking {
         val server = MockWebServer()
         val received = mutableListOf<String>()
@@ -119,6 +187,14 @@ class NativeLiveProtocolsTest {
         assertEquals(48_000, resampleRealtimeInput(ByteArray(32_000)).size)
         assertEquals(0, resampleRealtimeInput(byteArrayOf()).size)
         assertEquals(0, resampleRealtimeInput(byteArrayOf(1, 2)).size % 2)
+    }
+
+    @Test fun stepfunLiveEntityDefaultsToStepAudioRealtime() {
+        val config = config("stepfun")
+        assertEquals(REALTIME_STEPFUN_DEFAULT_MODEL, config.model)
+        assertEquals(REALTIME_STEPFUN_DEFAULT_BASE_URL, config.baseUrl)
+        assertEquals(REALTIME_STEPFUN_DEFAULT_VOICE, config.voice)
+        assertTrue(config.isStepfunRealtime)
     }
 
     private fun config(provider: String) = LocalAiModelEntity(

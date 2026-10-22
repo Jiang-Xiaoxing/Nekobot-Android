@@ -61,7 +61,7 @@ import com.nekobot.app.data.local.AchievementManager
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.AchievementBadge
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.achievementCategoryLabel
 import com.nekobot.app.ui.components.achievementDescription
@@ -218,7 +218,7 @@ fun AchievementsScreen(
             }
             error?.let { message ->
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    ErrorBanner(message = message, onRetry = viewModel::refresh)
+                    ErrorToast(message = message, onShown = { viewModel.clearError() })
                 }
             }
             if (visibleAchievements.isEmpty()) {

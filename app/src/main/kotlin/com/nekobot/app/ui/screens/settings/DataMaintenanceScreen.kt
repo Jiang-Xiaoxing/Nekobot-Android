@@ -66,7 +66,7 @@ import com.nekobot.app.data.local.PrefsManager
 import com.nekobot.app.data.local.db.NekobotDatabase
 import com.nekobot.app.ui.navigation.Routes
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -331,7 +331,7 @@ fun DataMaintenanceScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     error?.let {
-                        ErrorBanner(message = it, onRetry = { vm.clearError() })
+                        ErrorToast(message = it, onShown = { vm.clearError() })
                     }
 
                     // 1. 存储使用情况
@@ -449,7 +449,7 @@ fun DataMaintenanceScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {})
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     error?.let {
-                        ErrorBanner(message = it, onRetry = { vm.clearError() })
+                        ErrorToast(message = it, onShown = { vm.clearError() })
                     }
 
                     // 1. 存储使用情况

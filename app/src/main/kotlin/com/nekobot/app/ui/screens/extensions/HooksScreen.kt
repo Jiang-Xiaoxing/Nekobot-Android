@@ -68,7 +68,7 @@ import com.nekobot.app.data.model.HookExecutionLog
 import com.nekobot.app.data.model.HookRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -225,10 +225,7 @@ fun HooksScreen(onBack: () -> Unit, viewModel: HooksViewModel = viewModel()) {
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                viewModel.clearError()
-                                viewModel.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                         }
                     }
                     items(list, key = { it.id ?: it.name ?: it.hashCode().toString() }) { hook ->

@@ -52,7 +52,7 @@ import com.nekobot.app.ui.screens.sessions.SessionModeLabel
 import com.nekobot.app.ui.adaptive.WindowWidthClass
 import com.nekobot.app.ui.adaptive.rememberWindowWidthClass
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -303,10 +303,7 @@ fun CharactersScreen(
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                viewModel.clearError()
-                                viewModel.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                         }
                     }
                     items(characters, key = { it.id ?: it.name ?: it.hashCode().toString() }) { character ->
@@ -334,10 +331,7 @@ fun CharactersScreen(
                 ) {
                     if (error != null) {
                         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                            ErrorBanner(message = error!!, onRetry = {
-                                viewModel.clearError()
-                                viewModel.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                         }
                     }
                     items(characters, key = { it.id ?: it.name ?: it.hashCode().toString() }) { character ->

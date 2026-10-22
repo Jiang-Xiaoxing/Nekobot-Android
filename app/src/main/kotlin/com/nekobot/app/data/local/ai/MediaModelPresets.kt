@@ -49,7 +49,8 @@ internal fun mediaModelPresets(purpose: String): List<MediaModelPreset> = when (
         MediaModelPreset("google", REALTIME_GEMINI_DEFAULT_MODEL, "https://generativelanguage.googleapis.com/v1beta", "Kore"),
         MediaModelPreset("qwen", REALTIME_QWEN_DEFAULT_MODEL, REALTIME_QWEN_DEFAULT_BASE_URL, REALTIME_QWEN_DEFAULT_VOICE),
         MediaModelPreset("zhipu", REALTIME_GLM_DEFAULT_MODEL, REALTIME_GLM_DEFAULT_BASE_URL, REALTIME_GLM_DEFAULT_VOICE),
-        MediaModelPreset("grok", REALTIME_GROK_DEFAULT_MODEL, "https://api.x.ai/v1", "eve")
+        MediaModelPreset("grok", REALTIME_GROK_DEFAULT_MODEL, "https://api.x.ai/v1", "eve"),
+        MediaModelPreset("stepfun", REALTIME_STEPFUN_DEFAULT_MODEL, REALTIME_STEPFUN_DEFAULT_BASE_URL, REALTIME_STEPFUN_DEFAULT_VOICE)
     )
     else -> emptyList()
 }

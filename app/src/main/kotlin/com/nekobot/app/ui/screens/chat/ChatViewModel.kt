@@ -202,7 +202,6 @@ import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.adaptive.liveRegion
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
-import com.nekobot.app.ui.components.ErrorBanner
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.NekoDialog
@@ -2175,7 +2174,7 @@ class ChatViewModel : BaseViewModel() {
                 }
                 val toolRuntime = if (
                     currentSession?.sessionMode.equals("agent", ignoreCase = true) &&
-                    config.isQwenRealtime
+                    config.supportsRealtimeFunctionCalling
                 ) {
                     unified.createRealtimeAgentToolRuntime(sessionId)
                 } else {

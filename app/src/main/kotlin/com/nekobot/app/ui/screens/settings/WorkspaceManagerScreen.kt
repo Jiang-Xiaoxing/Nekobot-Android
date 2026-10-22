@@ -63,7 +63,7 @@ import com.nekobot.app.data.local.WORKSPACE_ENTRY_LIMIT
 import com.nekobot.app.data.local.WorkspaceItemEntry
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.BorderlessOutlinedButton as OutlinedButton
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -303,7 +303,7 @@ fun WorkspaceManagerScreen(onBack: () -> Unit) {
                     .padding(16.dp)
             ) {
                 error?.let {
-                    ErrorBanner(message = it, onRetry = { vm.clearError() })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                     Spacer(Modifier.height(12.dp))
                 }
                 val target = browsing

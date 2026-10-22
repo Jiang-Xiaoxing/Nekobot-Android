@@ -62,7 +62,7 @@ import com.nekobot.app.data.local.ai.LocalSandboxStatus
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.BorderlessFilterChip
 import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -215,7 +215,7 @@ fun SandboxManagementScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 error?.let {
-                    ErrorBanner(message = it, onRetry = { vm.clearError() })
+                    ErrorToast(message = it, onShown = { vm.clearError() })
                 }
 
                 // ==================== 状态 ====================

@@ -701,6 +701,10 @@
     <string name="chat_browser_invalid_url">인식할 수 없는 주소입니다</string>
     <string name="chat_browser_restricted">지원하지 않는 주소: %1$s</string>
     <string name="chat_browser_reload">새로 고침</string>
+    <string name="chat_browser_zoom_in">확대</string>
+    <string name="chat_browser_zoom_out">축소</string>
+    <string name="chat_browser_zoom">페이지 확대 비율</string>
+    <string name="chat_browser_zoom_reset">100%로 재설정</string>
     <string name="chat_browser_back">뒤로</string>
     <string name="chat_browser_close">브라우저 닫기</string>
     <string name="chat_browser_load_failed">불러오기 실패: %1$s</string>

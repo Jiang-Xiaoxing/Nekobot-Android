@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import com.nekobot.app.ui.components.GlassDropdownMenu as DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -104,6 +106,7 @@ import com.nekobot.app.R
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.LocalWorkspaceStorage
 import com.nekobot.app.data.local.ai.LocalBrowserConfig
+import com.nekobot.app.data.local.ai.LocalBrowserHttpPolicy
 import com.nekobot.app.ui.components.GlassBackdrop
 import com.nekobot.app.ui.components.glassDialogTint
 import com.nekobot.app.ui.components.liquidGlassMenuSurface
@@ -111,9 +114,13 @@ import com.nekobot.app.ui.components.rememberLiquidGlassAvailable
 import com.nekobot.app.ui.components.rememberWindowGlassBackdrop
 import java.io.File
 
+private const val MIN_BROWSER_ZOOM_PERCENT = 50
+private const val MAX_BROWSER_ZOOM_PERCENT = 200
+private const val BROWSER_ZOOM_STEP_PERCENT = 10
+
 /** 内置浏览器可加载的目标。 */
 internal sealed interface BrowserTarget {
-    /** 远程页面：https，或本机回环的明文 http。 */
+    /** 远程页面：https，或白名单主机的明文 http。 */
     data class Remote(val url: String) : BrowserTarget
 
     /** 本地 HTML 文件（工作区或磁盘上的 .html/.htm）。 */
@@ -123,7 +130,7 @@ internal sealed interface BrowserTarget {
 /**
  * 内置浏览器的地址解析。
  *
- * 与 browser_use 的导航白名单保持一致：https、本机回环 http、本地 .html 文件。
+ * 与 browser_use 的导航白名单保持一致：https、白名单主机 http、本地 .html 文件。
  * 无协议的输入先按工作区相对路径找 HTML，找不到再当作域名补 https。
  */
 internal object BuiltinBrowserTargets {
@@ -165,12 +172,12 @@ internal object BuiltinBrowserTargets {
 
         // 剩下的一律当域名：主机段必须像主机（含点或就是 localhost），否则视为无法识别
         if (!looksLikeHost(value.substringBefore('/'))) return null
-        val scheme = if (isLoopbackHost(value)) "http" else "https"
+        val scheme = if (LocalBrowserHttpPolicy.isAllowedHttpHost(value)) "http" else "https"
         return BrowserTarget.Remote("$scheme://$value")
     }
 
     /**
-     * 导航白名单：https、本机回环 http、本地 .html/.htm 文件。
+     * 导航白名单：https、白名单主机 http、本地 .html/.htm 文件。
      *
      * 页面内跳转与地址栏共用同一份判断，避免内置浏览器被页面当作跳板
      * 转到明文 http、自定义协议或非 HTML 的本地文件。
@@ -179,7 +186,7 @@ internal object BuiltinBrowserTargets {
         val scheme = url.substringBefore("://").lowercase()
         return when (scheme) {
             "https" -> true
-            "http" -> isLoopbackHost(url.substringAfter("://"))
+            "http" -> LocalBrowserHttpPolicy.isAllowedHttpHost(url)
             "file" -> isHtmlName(url.substringAfterLast('/'))
             else -> false
         }
@@ -215,23 +222,6 @@ internal object BuiltinBrowserTargets {
         return '.' in host || host.equals("localhost", ignoreCase = true)
     }
 
-    /** 主机名（或含端口/路径的地址）是否为回环地址。 */
-    private fun isLoopbackHost(value: String): Boolean {
-        val authority = value
-            .substringAfter("://")
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-            .substringAfterLast('@')
-        val host = if (authority.startsWith("[")) {
-            authority.substringAfter('[').substringBefore(']')
-        } else {
-            authority.substringBefore(':')
-        }
-        return host.equals("localhost", ignoreCase = true) ||
-            host == "::1" ||
-            host.startsWith("127.")
-    }
 }
 
 // ── 布局常量 ────────────────────────────────────────────────────────────
@@ -347,6 +337,7 @@ private fun BuiltinBrowserScreen(
     // 已经为某个标签页发起过的地址：避免加载失败后无限重试
     val attemptedUrls = remember(sessionId) { mutableMapOf<String, String>() }
     var showTabManager by remember { mutableStateOf(false) }
+    var showZoomDialog by remember { mutableStateOf(false) }
 
     var showWorkspaceHtmlDialog by remember { mutableStateOf(false) }
     val glassAvailable = rememberLiquidGlassAvailable()
@@ -366,6 +357,19 @@ private fun BuiltinBrowserScreen(
 
     fun toast(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    fun changeZoom(deltaPercent: Int) {
+        val tab = selectedTab ?: return
+        val view = webViews[tab.id] ?: return
+        if (deltaPercent < 0 && !view.canZoomOut()) return
+        if (deltaPercent > 0 && !view.canZoomIn()) return
+        val nextPercent = (tab.zoomPercent + deltaPercent)
+            .coerceIn(MIN_BROWSER_ZOOM_PERCENT, MAX_BROWSER_ZOOM_PERCENT)
+        if (nextPercent == tab.zoomPercent) return
+
+        view.zoomBy(nextPercent.toFloat() / tab.zoomPercent)
+        viewModel.updateTab(tab.id) { it.copy(zoomPercent = nextPercent) }
     }
 
     /** 地址栏与工作区入口的统一入口：解析失败只提示，不改变当前页面。 */
@@ -438,6 +442,7 @@ private fun BuiltinBrowserScreen(
                     onNewTab = { viewModel.newTab() },
                     onReload = { selectedTab?.let { webViews[it.id]?.reload() } },
                     onBack = { selectedTab?.let { webViews[it.id]?.goBack() } },
+                    onOpenZoom = { showZoomDialog = true },
                     onCopyUrl = {
                         val url = selectedTab?.url.orEmpty()
                         if (url.isNotBlank()) {
@@ -517,6 +522,19 @@ private fun BuiltinBrowserScreen(
                 )
             }
 
+            if (showZoomDialog) {
+                BrowserZoomPopup(
+                    zoomPercent = selectedTab?.zoomPercent ?: 100,
+                    zoomEnabled = selectedTab?.let { it.url.isNotBlank() && it.id in webViews } == true,
+                    canZoomIn = selectedTab?.let { webViews[it.id]?.canZoomIn() } == true,
+                    canZoomOut = selectedTab?.let { webViews[it.id]?.canZoomOut() } == true,
+                    onZoomIn = { changeZoom(BROWSER_ZOOM_STEP_PERCENT) },
+                    onZoomOut = { changeZoom(-BROWSER_ZOOM_STEP_PERCENT) },
+                    onReset = { changeZoom(100 - (selectedTab?.zoomPercent ?: 100)) },
+                    onDismiss = { showZoomDialog = false },
+                )
+            }
+
             if (showTabManager) {
                 BrowserTabManager(
                     tabs = tabs,
@@ -567,6 +585,7 @@ private fun BrowserTopBar(
     onNewTab: () -> Unit,
     onReload: () -> Unit,
     onBack: () -> Unit,
+    onOpenZoom: () -> Unit,
     onCopyUrl: () -> Unit,
     onOpenSettings: () -> Unit,
     onClose: () -> Unit,
@@ -716,6 +735,15 @@ private fun BrowserTopBar(
                         onReload()
                     },
                 )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.chat_browser_zoom)) },
+                    leadingIcon = { Icon(Icons.Filled.ZoomIn, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onOpenZoom()
+                    },
+                )
                 if (hasWorkspacePages) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_browser_workspace_html)) },
@@ -757,6 +785,86 @@ private fun BrowserTopBar(
                         onClose()
                     },
                 )
+            }
+        }
+    }
+}
+
+/** 页面缩放弹窗：百分比以当前页面默认比例为 100%。 */
+@Composable
+private fun BrowserZoomPopup(
+    zoomPercent: Int,
+    zoomEnabled: Boolean,
+    canZoomIn: Boolean,
+    canZoomOut: Boolean,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(min = 280.dp, max = 360.dp)
+                .padding(horizontal = 24.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_browser_zoom),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = onZoomOut,
+                        enabled = zoomEnabled && canZoomOut && zoomPercent > MIN_BROWSER_ZOOM_PERCENT,
+                    ) {
+                        Icon(
+                            Icons.Filled.ZoomOut,
+                            contentDescription = stringResource(R.string.chat_browser_zoom_out),
+                        )
+                    }
+                    Text(
+                        text = "$zoomPercent%",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    IconButton(
+                        onClick = onZoomIn,
+                        enabled = zoomEnabled && canZoomIn && zoomPercent < MAX_BROWSER_ZOOM_PERCENT,
+                    ) {
+                        Icon(
+                            Icons.Filled.ZoomIn,
+                            contentDescription = stringResource(R.string.chat_browser_zoom_in),
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    TextButton(onClick = onReset, enabled = zoomEnabled && zoomPercent != 100) {
+                        Text(stringResource(R.string.chat_browser_zoom_reset))
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.common_done))
+                    }
+                }
             }
         }
     }

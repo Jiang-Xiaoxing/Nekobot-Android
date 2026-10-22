@@ -78,7 +78,7 @@ import com.nekobot.app.R
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.SectionHeader
@@ -431,7 +431,7 @@ fun StateHistoryScreen(onBack: () -> Unit) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         error?.let {
                             Box(Modifier.padding(16.dp)) {
-                                ErrorBanner(message = it, onRetry = { vm.clearError(); vm.refresh() })
+                                ErrorToast(message = it, onShown = { vm.clearError() })
                             }
                         }
                         EmptyState(title = stringResource(R.string.state_history_empty_title), hint = stringResource(R.string.state_history_empty_hint))
@@ -662,7 +662,7 @@ fun StateHistoryScreen(onBack: () -> Unit) {
 
                         error?.let {
                             item {
-                                ErrorBanner(message = it, onRetry = { vm.clearError(); vm.refresh() })
+                                ErrorToast(message = it, onShown = { vm.clearError() })
                             }
                         }
                     }

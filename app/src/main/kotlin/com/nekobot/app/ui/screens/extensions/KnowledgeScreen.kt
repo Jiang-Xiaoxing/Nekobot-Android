@@ -75,7 +75,7 @@ import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.adaptive.listItemSemantics
 import com.nekobot.app.ui.adaptive.rememberShouldUseTwoPane
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -253,10 +253,7 @@ fun KnowledgeScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                vm.clearError()
-                                vm.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { vm.clearError() })
                         }
                     }
                     // 统计卡片

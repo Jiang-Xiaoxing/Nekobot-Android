@@ -52,7 +52,7 @@ import com.nekobot.app.data.model.WorldBookEntry
 import com.nekobot.app.data.model.WorldBookEntryRequest
 import com.nekobot.app.data.model.WorldBookRequest
 import com.nekobot.app.ui.components.GlassCard
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
 import com.nekobot.app.ui.components.SectionHeader
@@ -550,7 +550,7 @@ fun WorldBookDetailScreen(
             ) {
                 error?.takeIf { it.isNotBlank() }?.let { message ->
                     item {
-                        ErrorBanner(message = message)
+                        ErrorToast(message = message, onShown = { vm.clearError() })
                     }
                 }
                 // 书信息卡片

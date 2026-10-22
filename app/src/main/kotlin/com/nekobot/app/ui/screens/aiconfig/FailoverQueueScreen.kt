@@ -68,7 +68,7 @@ import com.nekobot.app.data.model.FailoverModelDetail
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -406,10 +406,7 @@ fun FailoverQueueScreen(onBack: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                error?.let {
-                    ErrorBanner(message = it, onRetry = vm::load)
-                    Spacer(Modifier.height(8.dp))
-                }
+                ErrorToast(message = error, onShown = { vm.clearError() })
                 val showSmartRouting = ServiceContainer.prefs.isLocalMode && purpose == "chat"
                 if (!loading && queue.isEmpty()) {
                     // 空列表时无滚动内容，智能路由卡片固定显示在空状态上方

@@ -62,7 +62,7 @@ import com.nekobot.app.data.model.MessageFilterConfig
 import com.nekobot.app.data.model.MessageFilterRule
 import com.nekobot.app.data.model.MessageFilterRuleRequest
 import com.nekobot.app.ui.BaseViewModel
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -195,10 +195,7 @@ fun MessageFilterScreen(onBack: () -> Unit, viewModel: MessageFilterViewModel = 
 
                 if (error != null) {
                     item {
-                        ErrorBanner(message = error!!, onRetry = {
-                            viewModel.clearError()
-                            viewModel.load()
-                        })
+                        ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                     }
                 }
 

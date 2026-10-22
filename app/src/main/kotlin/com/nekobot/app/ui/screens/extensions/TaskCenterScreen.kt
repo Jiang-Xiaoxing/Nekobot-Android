@@ -62,7 +62,7 @@ import com.nekobot.app.data.model.TaskItem
 import com.nekobot.app.data.model.TaskRequest
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.NekoDialog
@@ -189,10 +189,7 @@ fun TaskCenterScreen(onBack: () -> Unit, viewModel: TaskCenterViewModel = viewMo
                 ) {
                     if (error != null) {
                         item {
-                            ErrorBanner(message = error!!, onRetry = {
-                                viewModel.clearError()
-                                viewModel.load()
-                            })
+                            ErrorToast(message = error!!, onShown = { viewModel.clearError() })
                         }
                     }
                     items(list, key = { it.id.ifBlank { it.name + it.hashCode().toString() } }) { task ->

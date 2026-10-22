@@ -57,6 +57,14 @@ data class RealtimeModelConfig(
     val isGlmRealtime: Boolean
         get() = realtimeProtocol == RealtimeProtocol.GLM
 
+    /** 是否走阶跃星辰 StepFun Realtime 协议。 */
+    val isStepfunRealtime: Boolean
+        get() = realtimeProtocol == RealtimeProtocol.STEPFUN
+
+    /** 当前协议是否支持应用内 Agent 函数工具。 */
+    val supportsRealtimeFunctionCalling: Boolean
+        get() = isQwenRealtime
+
     val isGeminiLive: Boolean
         get() = realtimeProtocol == RealtimeProtocol.GEMINI
 
@@ -73,14 +81,22 @@ private enum class RealtimeProtocol {
     QWEN,
     SEED,
     GLM,
+    STEPFUN,
     GEMINI,
     GROK;
 
     companion object {
+        private val STEPFUN_PROVIDERS = setOf("stepfun", "stepfun-ai", "step")
+
         fun resolve(provider: String?, model: String): RealtimeProtocol {
             val normalizedProvider = provider.orEmpty().trim().lowercase()
             val normalizedModel = model.trim().lowercase()
+            val isStepfunModel = normalizedModel.startsWith("stepaudio-") ||
+                normalizedModel.startsWith("step-audio-") ||
+                normalizedModel.startsWith("step-1o-audio")
             return when {
+                normalizedProvider == "openai" && isStepfunModel -> OPENAI
+                normalizedProvider in STEPFUN_PROVIDERS || isStepfunModel -> STEPFUN
                 MultimodalProviderSupport.normalize(normalizedProvider) == "gemini" ||
                     normalizedModel.startsWith("gemini") -> GEMINI
                 MultimodalProviderSupport.normalize(normalizedProvider) == "grok" ||
@@ -129,7 +145,9 @@ fun LocalAiModelEntity.toRealtimeModelConfig(): RealtimeModelConfig {
         id = id,
         name = name,
         apiKey = apiKey,
-        baseUrl = baseUrl,
+        baseUrl = baseUrl.ifBlank {
+            if (protocol == RealtimeProtocol.STEPFUN) REALTIME_STEPFUN_DEFAULT_BASE_URL else baseUrl
+        },
         model = resolvedModel,
         appendBaseUrlPath = appendBaseUrlPath,
         proxyUrl = proxyUrl,
@@ -154,7 +172,9 @@ fun AiModel.toRealtimeModelConfig(): RealtimeModelConfig {
         id = id.orEmpty(),
         name = displayName,
         apiKey = apiKey.orEmpty(),
-        baseUrl = baseUrl.orEmpty(),
+        baseUrl = baseUrl.orEmpty().ifBlank {
+            if (protocol == RealtimeProtocol.STEPFUN) REALTIME_STEPFUN_DEFAULT_BASE_URL else ""
+        },
         model = resolvedModel,
         appendBaseUrlPath = appendBaseUrlPath ?: true,
         voice = ttsVoice.takeUnless { it.isNullOrBlank() || it == "default" }
@@ -175,8 +195,6 @@ class RealtimeVoiceClient(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 ) {
-    private val gson = com.google.gson.GsonBuilder().serializeNulls().create()
-
     fun streamTurn(
         config: RealtimeModelConfig,
         instructions: String,
@@ -192,7 +210,7 @@ class RealtimeVoiceClient(
             "Realtime 模型缺少可用的 API Key"
         }
         require(pcm16.isNotEmpty()) { "没有可发送的语音数据" }
-        require(tools.isEmpty() || config.isQwenRealtime) {
+        require(tools.isEmpty() || config.supportsRealtimeFunctionCalling) {
             "当前 Realtime 模型不支持本地 Agent 工具调用"
         }
         require(tools.isEmpty() || onToolCall != null) {
@@ -206,14 +224,29 @@ class RealtimeVoiceClient(
         }
 
         val client = baseClient.withModelProxy(config.proxyUrl)
-        // 聊天录音统一为 16kHz；OpenAI/GLM/Seed 的 PCM16 协议要求 24kHz。
+        val eventSender = RealtimeEventSender(attachEventIds = config.isStepfunRealtime)
+        // 聊天录音统一为 16kHz；除 Qwen/Grok 外，Realtime PCM16 输入按 24kHz 上传。
         val inputAudio = if (config.isQwenRealtime || config.isGrokRealtime) pcm16 else resampleRealtimeInput(pcm16)
         val request = Request.Builder()
-            .url(buildRealtimeWebSocketUrl(config.baseUrl.ifBlank { if (config.isGrokRealtime) "https://api.x.ai/v1" else "" }, config.appendBaseUrlPath, config.model, config.isQwenRealtime))
+            .url(buildRealtimeWebSocketUrl(
+                config.baseUrl.ifBlank {
+                    when {
+                        config.isGrokRealtime -> "https://api.x.ai/v1"
+                        config.isStepfunRealtime -> REALTIME_STEPFUN_DEFAULT_BASE_URL
+                        else -> ""
+                    }
+                },
+                config.appendBaseUrlPath,
+                config.model,
+                config.isQwenRealtime,
+                config.isStepfunRealtime
+            ))
             .header("Authorization", "Bearer ${config.apiKey}")
             .build()
         val userTranscript = StringBuilder()
         val assistantTranscript = StringBuilder()
+        val stepfunAudioTranscript = StringBuilder()
+        val stepfunTextTranscript = StringBuilder()
         val terminal = AtomicBoolean(false)
         var responseDone = false
         var responseActive = false
@@ -235,7 +268,11 @@ class RealtimeVoiceClient(
                 trySend(
                     RealtimeVoiceEvent.Completed(
                         userTranscript = userTranscript.toString().trim(),
-                        assistantTranscript = assistantTranscript.toString().trim()
+                        assistantTranscript = if (config.isStepfunRealtime) {
+                            stepfunAudioTranscript.toString().ifBlank { stepfunTextTranscript.toString() }.trim()
+                        } else {
+                            assistantTranscript.toString().trim()
+                        }
                     )
                 )
             }
@@ -278,7 +315,7 @@ class RealtimeVoiceClient(
         fun failTurn(message: String) {
             if (terminal.compareAndSet(false, true)) {
                 trySend(RealtimeVoiceEvent.Failure(message))
-                socket.close(1011, message.take(100))
+                socket.close(1011, "realtime error")
                 close()
             }
         }
@@ -286,8 +323,7 @@ class RealtimeVoiceClient(
         fun createResponseIfIdle(webSocket: WebSocket) {
             if (terminal.get() || responseCreateSent || responseActive) return
             responseCreateSent = true
-            val responseCreate = gson.toJson(buildRealtimeResponseCreate(config))
-            if (!webSocket.send(responseCreate) && terminal.compareAndSet(false, true)) {
+            if (!eventSender.send(webSocket, buildRealtimeResponseCreate(config)) && terminal.compareAndSet(false, true)) {
                 trySend(RealtimeVoiceEvent.Failure("Realtime 响应创建失败"))
                 webSocket.cancel()
                 close()
@@ -312,11 +348,12 @@ class RealtimeVoiceClient(
                 while (offset < inputAudio.size) {
                     val end = minOf(offset + REALTIME_INPUT_CHUNK_BYTES, inputAudio.size)
                     val bytes = inputAudio.copyOfRange(offset, end)
-                    if (!webSocket.send(
-                        gson.toJson(JsonObject().apply {
+                    if (!eventSender.send(
+                        webSocket,
+                        JsonObject().apply {
                             addProperty("type", "input_audio_buffer.append")
                             addProperty("audio", Base64.getEncoder().encodeToString(bytes))
-                        })
+                        }
                     )) {
                         if (terminal.compareAndSet(false, true)) {
                             trySend(RealtimeVoiceEvent.Failure("Realtime 音频发送失败"))
@@ -328,7 +365,9 @@ class RealtimeVoiceClient(
                     offset = end
                 }
                 // 必须等待 input_audio_buffer.committed 后再 response.create。
-                if (!webSocket.send("{\"type\":\"input_audio_buffer.commit\"}")) {
+                if (!eventSender.send(webSocket, JsonObject().apply {
+                    addProperty("type", "input_audio_buffer.commit")
+                })) {
                     if (terminal.compareAndSet(false, true)) {
                         trySend(RealtimeVoiceEvent.Failure("Realtime 音频提交失败"))
                         webSocket.cancel()
@@ -338,7 +377,7 @@ class RealtimeVoiceClient(
             }
         }
 
-        fun executePendingQwenToolCalls(webSocket: WebSocket) {
+        fun executePendingRealtimeToolCalls(webSocket: WebSocket) {
             val executor = onToolCall ?: return failTurn("Realtime 工具执行器不可用")
             val calls = pendingFunctionCalls.values.toList()
             if (calls.isEmpty()) return
@@ -359,12 +398,12 @@ class RealtimeVoiceClient(
                             "error" to (error.message ?: "工具执行失败")
                         )
                     }
-                    if (!webSocket.send(gson.toJson(buildQwenFunctionCallOutput(call.callId, output)))) {
+                    if (!eventSender.send(webSocket, buildRealtimeFunctionCallOutput(call.callId, output))) {
                         failTurn("Realtime 工具结果发送失败")
                         return@launch
                     }
                 }
-                if (!webSocket.send(gson.toJson(buildRealtimeResponseCreate(config)))) {
+                if (!eventSender.send(webSocket, buildRealtimeResponseCreate(config))) {
                     failTurn("Realtime 工具调用后响应创建失败")
                 }
             }
@@ -375,10 +414,12 @@ class RealtimeVoiceClient(
                 // Qwen Realtime 的 conversation.item.create 仅支持 function_call_output 类型，
                 // 不支持 message 类型，因此上下文需拼接到 instructions 中传递。
                 val sessionUpdate = buildRealtimeSessionUpdate(config, instructions, context, tools)
-                webSocket.send(gson.toJson(sessionUpdate))
+                eventSender.send(webSocket, sessionUpdate)
                 if (!config.isQwenRealtime) {
-                    buildRealtimeContextEvents(context).forEach { event ->
-                        webSocket.send(gson.toJson(event))
+                    // StepFun 的助手历史只接受 text 类型，OpenAI 使用 output_text。
+                    val assistantContentType = if (config.isStepfunRealtime) "text" else "output_text"
+                    buildRealtimeContextEvents(context, assistantContentType).forEach { event ->
+                        eventSender.send(webSocket, event)
                     }
                 }
                 // Qwen 必须先确认 session.update 已禁用服务端 VAD，才可提交音频。
@@ -446,30 +487,45 @@ class RealtimeVoiceClient(
                     "response.output_text.delta", "response.text.delta" -> {
                         val delta = event.string("delta").orEmpty()
                         if (delta.isNotEmpty()) {
-                            assistantTranscript.append(delta)
-                            trySend(RealtimeVoiceEvent.AssistantTranscript(assistantTranscript.toString(), false))
+                            if (config.isStepfunRealtime) {
+                                val isAudioTranscript = event.string("type")?.contains("audio_transcript") == true
+                                val target = if (isAudioTranscript) stepfunAudioTranscript else stepfunTextTranscript
+                                target.append(delta)
+                                val visibleTranscript = stepfunAudioTranscript.toString()
+                                    .ifBlank { stepfunTextTranscript.toString() }
+                                trySend(RealtimeVoiceEvent.AssistantTranscript(visibleTranscript, false))
+                            } else {
+                                assistantTranscript.append(delta)
+                                trySend(RealtimeVoiceEvent.AssistantTranscript(assistantTranscript.toString(), false))
+                            }
                         }
                     }
 
                     "response.output_audio_transcript.done", "response.audio_transcript.done",
                     "response.output_text.done", "response.text.done" -> {
                         val transcript = event.string("transcript") ?: event.string("text")
-                        if (!transcript.isNullOrBlank()) {
-                            assistantTranscript.clear()
-                            assistantTranscript.append(transcript)
+                        val visibleTranscript = if (config.isStepfunRealtime) {
+                            if (!transcript.isNullOrBlank()) {
+                                val isAudioTranscript = event.string("type")?.contains("audio_transcript") == true
+                                val target = if (isAudioTranscript) stepfunAudioTranscript else stepfunTextTranscript
+                                target.clear()
+                                target.append(transcript)
+                            }
+                            stepfunAudioTranscript.toString().ifBlank { stepfunTextTranscript.toString() }
+                        } else {
+                            if (!transcript.isNullOrBlank()) {
+                                assistantTranscript.clear()
+                                assistantTranscript.append(transcript)
+                            }
+                            assistantTranscript.toString()
                         }
-                        if (assistantTranscript.isNotBlank()) {
-                            trySend(
-                                RealtimeVoiceEvent.AssistantTranscript(
-                                    assistantTranscript.toString(),
-                                    true
-                                )
-                            )
+                        if (visibleTranscript.isNotBlank()) {
+                            trySend(RealtimeVoiceEvent.AssistantTranscript(visibleTranscript, true))
                         }
                     }
 
                     "response.function_call_arguments.done" -> {
-                        if (!config.isQwenRealtime) return
+                        if (!config.supportsRealtimeFunctionCalling) return
                         val callId = event.string("call_id").orEmpty()
                         val name = event.string("name").orEmpty()
                         val arguments = event.string("arguments").orEmpty()
@@ -495,14 +551,14 @@ class RealtimeVoiceClient(
                                 ?: "Realtime 响应失败"
                             if (terminal.compareAndSet(false, true)) {
                                 trySend(RealtimeVoiceEvent.Failure(message))
-                                webSocket.close(1011, message.take(100))
+                                webSocket.close(1011, "realtime error")
                                 close()
                             }
                             return
                         }
                         responseActive = false
-                        if (config.isQwenRealtime && pendingFunctionCalls.isNotEmpty()) {
-                            executePendingQwenToolCalls(webSocket)
+                        if (config.supportsRealtimeFunctionCalling && pendingFunctionCalls.isNotEmpty()) {
+                            executePendingRealtimeToolCalls(webSocket)
                             return
                         }
                         responseDone = true
@@ -511,9 +567,7 @@ class RealtimeVoiceClient(
                     }
 
                     "error" -> {
-                        val message = event.objectOrNull("error")?.string("message")
-                            ?: event.string("message")
-                            ?: "Realtime 服务返回错误"
+                        val message = eventSender.describeError(event)
                         if (config.isQwenRealtime && isQwenResponseAlreadyInProgress(message)) {
                             // 服务端已经自动开始了这一轮响应时，重复 response.create 只会返回该错误；
                             // 保留当前 WebSocket，继续等待已有响应的 response.done。
@@ -523,7 +577,7 @@ class RealtimeVoiceClient(
                         }
                         if (terminal.compareAndSet(false, true)) {
                             trySend(RealtimeVoiceEvent.Failure(message))
-                            webSocket.close(1011, message.take(100))
+                            webSocket.close(1011, "realtime error")
                             close()
                         }
                     }
@@ -571,13 +625,28 @@ class RealtimeVoiceClient(
             suspendCancellableCoroutine { continuation ->
                 val completed = AtomicBoolean(false)
                 val client = baseClient.withModelProxy(config.proxyUrl)
+                val eventSender = RealtimeEventSender(attachEventIds = config.isStepfunRealtime)
                 val request = Request.Builder()
-                    .url(buildRealtimeWebSocketUrl(config.baseUrl.ifBlank { if (config.isGrokRealtime) "https://api.x.ai/v1" else "" }, config.appendBaseUrlPath, config.model, config.isQwenRealtime))
+                    .url(
+                        buildRealtimeWebSocketUrl(
+                            config.baseUrl.ifBlank {
+                                when {
+                                    config.isGrokRealtime -> "https://api.x.ai/v1"
+                                    config.isStepfunRealtime -> REALTIME_STEPFUN_DEFAULT_BASE_URL
+                                    else -> ""
+                                }
+                            },
+                            config.appendBaseUrlPath,
+                            config.model,
+                            config.isQwenRealtime,
+                            config.isStepfunRealtime
+                        )
+                    )
                     .header("Authorization", "Bearer ${config.apiKey}")
                     .build()
                 val socket = client.newWebSocket(request, object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {
-                        webSocket.send(gson.toJson(buildRealtimeSessionUpdate(config, "简洁地进行语音对话。")))
+                        eventSender.send(webSocket, buildRealtimeSessionUpdate(config, "简洁地进行语音对话。"))
                     }
 
                     override fun onMessage(webSocket: WebSocket, text: String) {
@@ -588,11 +657,11 @@ class RealtimeVoiceClient(
                             webSocket.close(1000, "test completed")
                             continuation.resume(Unit)
                         } else if (type == "error" && completed.compareAndSet(false, true)) {
-                            val message = runCatching {
-                                JsonParser.parseString(text).asJsonObject
-                                    .objectOrNull("error")?.string("message")
-                            }.getOrNull() ?: "Realtime 服务返回错误"
-                            webSocket.close(1011, message.take(100))
+                            val message = eventSender.describeError(
+                                JsonParser.parseString(text).asJsonObject,
+                                fallbackEventType = "session.update"
+                            )
+                            webSocket.close(1011, "realtime error")
                             continuation.resumeWith(Result.failure(IllegalStateException(message)))
                         }
                     }
@@ -615,6 +684,7 @@ internal fun buildRealtimeSessionUpdate(
     context: List<RealtimeContextMessage> = emptyList(),
     tools: List<Map<String, Any>> = emptyList()
 ): JsonObject {
+    // StepFun 沿用 OpenAI Realtime 兼容格式；厂商识别仅用于默认地址、模型和音色。
     if (config.isGrokRealtime) {
         return Gson().toJsonTree(mapOf(
             "type" to "session.update",
@@ -652,6 +722,9 @@ internal fun buildRealtimeSessionUpdate(
             )
             add("output_modalities", JsonArray().apply { add("audio") })
             addProperty("max_output_tokens", config.maxOutputTokens.coerceIn(1, 4096))
+            if (config.isStepfunRealtime && tools.isNotEmpty()) {
+                add("tools", buildRealtimeFunctionTools(tools))
+            }
             add("audio", JsonObject().apply {
                 add("input", JsonObject().apply {
                     add("format", realtimePcmFormat())
@@ -782,8 +855,29 @@ private fun buildQwenRealtimeSessionUpdate(
     })
 }
 
-/** 将本地 Agent 工具执行结果封装为 DashScope Realtime 所需的 function_call_output 事件。 */
-internal fun buildQwenFunctionCallOutput(
+/**
+ * StepFun Realtime 的 tools 沿用 Chat Completions 结构，服务端按
+ * session.tools[i].function.name 校验，因此必须保留 function 外层。
+ * 已扁平的定义补上外层，原始工具集不做修改。
+ */
+internal fun buildRealtimeFunctionTools(tools: List<Map<String, Any>>): JsonArray = JsonArray().apply {
+    tools.forEach { tool ->
+        val definition = Gson().toJsonTree(tool).asJsonObject
+        if (definition.has("function")) {
+            add(definition)
+        } else {
+            val function = definition.deepCopy()
+            function.remove("type")
+            add(JsonObject().apply {
+                addProperty("type", "function")
+                add("function", function)
+            })
+        }
+    }
+}
+
+/** 将本地 Agent 工具执行结果封装为 Realtime function_call_output 事件。 */
+internal fun buildRealtimeFunctionCallOutput(
     callId: String,
     output: Map<String, Any>
 ): JsonObject = JsonObject().apply {
@@ -794,6 +888,11 @@ internal fun buildQwenFunctionCallOutput(
         addProperty("output", Gson().toJson(output))
     })
 }
+
+internal fun buildQwenFunctionCallOutput(
+    callId: String,
+    output: Map<String, Any>
+): JsonObject = buildRealtimeFunctionCallOutput(callId, output)
 
 /** 将上下文拼接到 instructions 中，用于 Qwen Realtime（不支持 conversation.item.create 的 message 类型）。 */
 private fun buildQwenInstructions(
@@ -827,7 +926,9 @@ private fun buildQwenInstructions(
 }
 
 internal fun buildRealtimeContextEvents(
-    context: List<RealtimeContextMessage>
+    context: List<RealtimeContextMessage>,
+    /** 助手历史的 content 类型：OpenAI 用 output_text，StepFun 只认 text。 */
+    assistantContentType: String = "output_text"
 ): List<JsonObject> = trimRealtimeContext(context).map { message ->
     val user = message.role.equals("user", true) || message.role.equals("human", true)
     JsonObject().apply {
@@ -837,7 +938,7 @@ internal fun buildRealtimeContextEvents(
             addProperty("role", if (user) "user" else "assistant")
             add("content", JsonArray().apply {
                 add(JsonObject().apply {
-                    addProperty("type", if (user) "input_text" else "output_text")
+                    addProperty("type", if (user) "input_text" else assistantContentType)
                     addProperty("text", message.content.trim())
                 })
             })
@@ -867,7 +968,8 @@ internal fun buildRealtimeWebSocketUrl(
     baseUrl: String,
     appendRealtimePath: Boolean,
     model: String,
-    qwenRealtime: Boolean = false
+    qwenRealtime: Boolean = false,
+    stepfunRealtime: Boolean = false
 ): String {
     // Qwen/DashScope Realtime 必须使用 api-ws/v1 端点；若用户误填 compatible-mode/v1（Qwen 预设默认的文本对话
     // baseurl），会导致 "URL does not appear to be valid" 或服务端 fallback 到已下线的旧模型快照。
@@ -876,7 +978,9 @@ internal fun buildRealtimeWebSocketUrl(
     } else {
         baseUrl
     }
-    val raw = correctedBase.trim().ifBlank { "https://api.openai.com/v1" }.trimEnd('/')
+    val raw = correctedBase.trim().ifBlank {
+        if (stepfunRealtime) REALTIME_STEPFUN_DEFAULT_BASE_URL else "https://api.openai.com/v1"
+    }.trimEnd('/')
     val websocketBase = when {
         raw.startsWith("https://", true) -> "wss://${raw.substringAfter("://")}"
         raw.startsWith("http://", true) -> "ws://${raw.substringAfter("://")}"
@@ -895,7 +999,16 @@ internal fun buildRealtimeWebSocketUrl(
     // DashScope Realtime 端点需要 ?model= 查询参数指定模型（参考 dashscope SDK 与官方示例），
     // 不带会导致服务端使用默认模型（可能是已下线的旧快照，触发 ModelNotFound）。
     val queryParts = existingParts.filter { !it.startsWith("model=") }.toMutableList()
-    queryParts += "model=${URLEncoder.encode(model.ifBlank { if (qwenRealtime) REALTIME_QWEN_DEFAULT_MODEL else "gpt-realtime" }, Charsets.UTF_8.name())}"
+    queryParts += "model=${URLEncoder.encode(
+        model.ifBlank {
+            when {
+                qwenRealtime -> REALTIME_QWEN_DEFAULT_MODEL
+                stepfunRealtime -> REALTIME_STEPFUN_DEFAULT_MODEL
+                else -> "gpt-realtime"
+            }
+        },
+        Charsets.UTF_8.name()
+    )}"
     return "$endpoint?${queryParts.joinToString("&")}"
 }
 
@@ -923,6 +1036,7 @@ private val RealtimeProtocol.defaultModel: String
         RealtimeProtocol.QWEN -> REALTIME_QWEN_DEFAULT_MODEL
         RealtimeProtocol.SEED -> REALTIME_SEED_DEFAULT_MODEL
         RealtimeProtocol.GLM -> REALTIME_GLM_DEFAULT_MODEL
+        RealtimeProtocol.STEPFUN -> REALTIME_STEPFUN_DEFAULT_MODEL
         RealtimeProtocol.OPENAI -> "gpt-realtime"
         RealtimeProtocol.GEMINI -> REALTIME_GEMINI_DEFAULT_MODEL
         RealtimeProtocol.GROK -> REALTIME_GROK_DEFAULT_MODEL
@@ -933,6 +1047,7 @@ private val RealtimeProtocol.defaultVoice: String
         RealtimeProtocol.QWEN -> REALTIME_QWEN_DEFAULT_VOICE
         RealtimeProtocol.SEED -> REALTIME_SEED_DEFAULT_VOICE
         RealtimeProtocol.GLM -> REALTIME_GLM_DEFAULT_VOICE
+        RealtimeProtocol.STEPFUN -> REALTIME_STEPFUN_DEFAULT_VOICE
         RealtimeProtocol.OPENAI -> "marin"
         RealtimeProtocol.GEMINI -> "Kore"
         RealtimeProtocol.GROK -> "eve"
@@ -943,6 +1058,7 @@ private val RealtimeProtocol.defaultTranscriptionModel: String
         RealtimeProtocol.QWEN -> REALTIME_QWEN_DEFAULT_TRANSCRIPTION_MODEL
         RealtimeProtocol.SEED -> REALTIME_SEED_DEFAULT_TRANSCRIPTION_MODEL
         RealtimeProtocol.GLM -> REALTIME_GLM_DEFAULT_TRANSCRIPTION_MODEL
+        RealtimeProtocol.STEPFUN -> ""
         RealtimeProtocol.OPENAI -> "gpt-4o-mini-transcribe"
         RealtimeProtocol.GEMINI, RealtimeProtocol.GROK -> ""
     }
@@ -971,6 +1087,15 @@ internal fun resampleRealtimeInput(input: ByteArray): ByteArray {
 
 const val REALTIME_GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-live-preview"
 const val REALTIME_GROK_DEFAULT_MODEL = "grok-voice-latest"
+/** StepFun StepAudio 3 Realtime 预览模型及官方 WebSocket API 地址。 */
+const val REALTIME_STEPFUN_DEFAULT_MODEL = "stepaudio-3-realtime-preview"
+const val REALTIME_STEPFUN_DEFAULT_BASE_URL = "https://api.stepfun.com/v1"
+/** 沿用 OpenAI Realtime 音色：实测可用的音色名，不使用阶跃自有音色名以免服务端校验失败。 */
+const val REALTIME_STEPFUN_DEFAULT_VOICE = "marin"
+val REALTIME_STEPFUN_VOICES = listOf(
+    "marin", "cedar", "alloy", "ash", "ballad",
+    "coral", "echo", "sage", "shimmer", "verse"
+)
 val REALTIME_GEMINI_VOICES = listOf("Kore", "Puck", "Charon", "Aoede", "Fenrir", "Leda", "Orus", "Zephyr")
 val REALTIME_GROK_VOICES = listOf("eve", "ara", "rex", "sal", "leo")
 /** Qwen Realtime 输入采样率（官方默认 16000Hz，更稳定；输出保持 24000Hz）。 */

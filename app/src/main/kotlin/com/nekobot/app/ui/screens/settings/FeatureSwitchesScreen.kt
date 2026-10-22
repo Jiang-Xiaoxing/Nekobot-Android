@@ -47,7 +47,7 @@ import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.data.repository.Resource
 import com.nekobot.app.ui.BaseViewModel
 import com.nekobot.app.ui.components.EmptyState
-import com.nekobot.app.ui.components.ErrorBanner
+import com.nekobot.app.ui.components.ErrorToast
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.SectionHeader
@@ -226,7 +226,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     error?.let {
-                        ErrorBanner(message = it, onRetry = { vm.clearError() })
+                        ErrorToast(message = it, onShown = { vm.clearError() })
                     }
 
                     GlassCard(modifier = Modifier.fillMaxWidth()) {

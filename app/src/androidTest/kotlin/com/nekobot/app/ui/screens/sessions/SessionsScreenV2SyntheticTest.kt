@@ -122,6 +122,23 @@ class SessionsScreenV2SyntheticTest {
         assertEquals("纸舟", vm.pageQueries.value[SessionPage.AGENT].search)
     }
 
+    @Test fun errorsAreConsumedAcrossAllPagesAndDashboardWithoutChangingRows() = isolated { fixture ->
+        launch(fixture)
+        val originalIds = vm.sessionRowsByPage.value.mapValues { (_, rows) -> rows.map { it.id } }
+        SessionPage.entries.forEach { page ->
+            select(page)
+            compose.runOnIdle { vm.showError("合成错误提示") }
+            compose.waitUntil(5_000) { vm.error.value == null }
+            compose.onNodeWithTag(tabTag(page)).assertIsSelected()
+        }
+        openDashboard()
+        compose.runOnIdle { vm.showError("合成错误提示") }
+        compose.waitUntil(5_000) { vm.error.value == null }
+        compose.onNodeWithText(text(R.string.stats_dashboard_title)).assertIsDisplayed()
+        systemBack()
+        compose.runOnIdle { assertEquals(originalIds, vm.sessionRowsByPage.value.mapValues { (_, rows) -> rows.map { it.id } }) }
+    }
+
     @Test fun pageRoundTripsAndSyntheticChatAndDetailReturnsKeepEachScrollAnchor() = isolated { fixture ->
         launch(fixture)
         val anchors = linkedMapOf<SessionPage, Anchor>()
@@ -207,7 +224,7 @@ class SessionsScreenV2SyntheticTest {
             create.performClick()
             when (page) {
                 SessionPage.CHARACTER -> {
-                    compose.onNodeWithText(text(R.string.sessions_new)).assertIsDisplayed()
+                    compose.onNodeWithText(text(R.string.session_create_title)).assertIsDisplayed()
                     capture("large-character-create", isDialog())
                     closeCreateDialog()
                 }

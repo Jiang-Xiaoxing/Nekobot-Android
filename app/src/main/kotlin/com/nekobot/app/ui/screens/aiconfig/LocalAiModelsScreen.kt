@@ -1196,6 +1196,11 @@ private fun LocalAiModelEditDialog(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            Text(
+                text = stringResource(R.string.localai_base_url_http_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = { apiKey = it },
