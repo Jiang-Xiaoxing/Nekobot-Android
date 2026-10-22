@@ -12,14 +12,19 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border as actualBorder
@@ -31,19 +36,23 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -99,17 +108,21 @@ import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PersonOutline
 import com.nekobot.app.ui.components.GlassAlertDialog as AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import com.nekobot.app.ui.components.BorderlessOutlinedTextField as OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -131,6 +144,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -969,6 +983,7 @@ private fun CommandDetailDialog(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ModernChatComposer(
     modifier: Modifier,
@@ -1016,6 +1031,14 @@ private fun ModernChatComposer(
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
+    // 输入法弹起高度：超过阈值即视为弹起。取动画中的实时高度（而不是等完全收起），
+    // 收起后半程就切回单行，避免键盘落下去后输入区还停在双行。
+    val density = LocalDensity.current
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val imeVisible = imeBottomPx > with(density) { 64.dp.roundToPx() }
+    // 底部避让取「导航栏 ∪ 输入法」而不是两者相加，否则键盘弹起时
+    // 输入框与键盘之间会多出一条背景色长条。
+    val composerBottomInsets = WindowInsets.navigationBars.union(WindowInsets.ime)
 
     var inputField by remember(sessionId) {
         mutableStateOf(
@@ -1041,6 +1064,8 @@ private fun ModernChatComposer(
     }
     val companionChat = session?.companionMode == true
     var panelExpanded by rememberSaveable(sessionId) { mutableStateOf(false) }
+    // P0 模型弹窗开关：状态提到输入区外层，输入法收起导致工具行折叠时弹窗不会被一起销毁
+    var showChatModelDialog by rememberSaveable(sessionId) { mutableStateOf(false) }
     // 表情包选择面板开关
     var stickerPickerOpen by remember { mutableStateOf(false) }
     // 输入框下方的快捷工具栏：按钮配置与折叠状态全局持久化
@@ -1553,8 +1578,7 @@ private fun ModernChatComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding()
+                .windowInsetsPadding(composerBottomInsets)
         ) {
             if (!companionChat && (plotChoicesLoading || plotChoices.isNotEmpty())) {
                 ModernPlotChoices(
@@ -1593,9 +1617,10 @@ private fun ModernChatComposer(
                 )
             }
 
-            val actionPanel: @Composable () -> Unit = {
+            val actionPanel: @Composable (Boolean) -> Unit = { inSheet ->
                 ModernChatActionPanel(
                     showClearAction = !companionChat,
+                    inSheet = inSheet,
                     sessionId = sessionId,
                     modelSwitchEnabled = !sessionGenerating && !replyBusy && !compressing,
                     messageCount = messageCount,
@@ -1628,38 +1653,47 @@ private fun ModernChatComposer(
                     onToggleYolo = onToggleYolo,
                     onOpenToolSet = {
                         if (companionChat) onDismissCompanionSettings()
+                        closePanel()
                         showToolSetDialog = true
                     },
                     onCompress = { onCompress() },
                     allowCompression = session?.companionMode != true,
                     onOpenContextAnalysis = {
-                        if (companionChat) onDismissCompanionSettings() else panelExpanded = true
+                        if (companionChat) onDismissCompanionSettings()
+                        closePanel()
                         onOpenContextAnalysis()
                     },
                     onSendFile = {
                         if (companionChat) onDismissCompanionSettings()
+                        closePanel()
                         filePickMode = "send"
                         pickFile.launch("*/*")
                     },
-                    onOpenWorkspace = { if (companionChat) onDismissCompanionSettings(); onOpenWorkspace() },
-                    onSearch = { if (companionChat) onDismissCompanionSettings(); showSearch = true },
-                    onFavorites = { if (companionChat) onDismissCompanionSettings(); showFavorites = true },
-                    onJumpToLatest = { if (companionChat) onDismissCompanionSettings(); onJumpToLatest() },
-                    onMyMessages = { if (companionChat) onDismissCompanionSettings(); showMyMessages = true },
+                    onOpenWorkspace = { if (companionChat) onDismissCompanionSettings(); closePanel(); onOpenWorkspace() },
+                    onSearch = { if (companionChat) onDismissCompanionSettings(); closePanel(); showSearch = true },
+                    onFavorites = { if (companionChat) onDismissCompanionSettings(); closePanel(); showFavorites = true },
+                    onJumpToLatest = { if (companionChat) onDismissCompanionSettings(); closePanel(); onJumpToLatest() },
+                    onMyMessages = { if (companionChat) onDismissCompanionSettings(); closePanel(); showMyMessages = true },
                     onUploadOnly = {
                         if (companionChat) onDismissCompanionSettings()
+                        closePanel()
                         filePickMode = "upload"
                         pickFile.launch("*/*")
                     },
                     onTogglePlotMode = onTogglePlotMode,
                     onTogglePlotRealTimeSync = onTogglePlotRealTimeSync,
-                    onClear = { showClearConfirm = true }
+                    onClear = { closePanel(); showClearConfirm = true }
                 )
             }
-            if (!companionChat) {
-                AnimatedVisibility(visible = panelExpanded,
-                    enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                    actionPanel()
+            // + 号菜单：改为抽屉（底部弹层）弹出，不再内联展开挤压消息列表
+            if (!companionChat && panelExpanded) {
+                ModalBottomSheet(
+                    onDismissRequest = closePanel,
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    dragHandle = { BottomSheetDefaults.DragHandle() }
+                ) {
+                    actionPanel(true)
                 }
             }
 
@@ -1789,131 +1823,42 @@ private fun ModernChatComposer(
                         )
                     }
 
-                    Box(
+                    // 输入框 + 工具栏底衬：工具栏展开时表现为输入框底部延伸出的圆角阴影层。
+                    // 收起/展开时底衬高度跟着内容一起伸缩，看起来像阴影矩形在输入框下方上下移动。
+                    val quickBarVisible = !quickActionsCollapsed && !imeVisible
+                    // 只动画透明度：如果直接插值到 Color.Transparent（透明黑），中途会闪过一层暗色。
+                    val quickBarShellAlpha by animateFloatAsState(
+                        targetValue = if (quickBarVisible) 0.62f else 0f,
+                        animationSpec = tween(200),
+                        label = "quick_bar_shell_alpha"
+                    )
+                    val quickBarShell = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = quickBarShellAlpha)
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                            .shadow(
-                                elevation = 12.dp,
-                                shape = composerShape,
-                                clip = false,
-                                ambientColor = Color.Black.copy(alpha = 0.06f),
-                                spotColor = Color.Black.copy(alpha = 0.09f)
+                            .padding(
+                                start = 12.dp,
+                                end = 12.dp,
+                                top = 8.dp,
+                                // 输入法弹起时输入区直接贴住键盘，底部不再留出背景色长条
+                                bottom = if (imeVisible) 0.dp else 8.dp
                             )
-                            .clip(composerShape)
-                            .background(composerGlassFill, composerShape)
-                            .actualBorder(composerBorderWidth, composerGlassBorder, composerShape)
+                            .background(quickBarShell, composerShape)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .shadow(
+                                    elevation = 12.dp,
+                                    shape = composerShape,
+                                    clip = false,
+                                    ambientColor = Color.Black.copy(alpha = 0.06f),
+                                    spotColor = Color.Black.copy(alpha = 0.09f)
+                                )
+                                .clip(composerShape)
+                                .background(composerGlassFill, composerShape)
+                                .actualBorder(composerBorderWidth, composerGlassBorder, composerShape)
                         ) {
-                            // 面板开关按钮：展开/收起时背景与图标颜色平滑过渡
-                            val panelBtnBg by animateColorAsState(
-                                targetValue = if (panelExpanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
-                                label = "panel_btn_bg"
-                            )
-                            val panelBtnTint by animateColorAsState(
-                                targetValue = if (panelExpanded) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                label = "panel_btn_tint"
-                            )
-                            IconButton(
-                                onClick = togglePanel,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(panelBtnBg)
-                            ) {
-                                Crossfade(targetState = panelExpanded, label = "panel_icon") { expanded ->
-                                    Icon(
-                                        imageVector = if (expanded) Icons.Filled.Close else Icons.Filled.Add,
-                                        contentDescription = if (expanded) stringResource(R.string.chat_close_action_menu) else stringResource(R.string.chat_more_actions),
-                                        tint = panelBtnTint,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 44.dp, max = 128.dp)
-                                    .clip(RoundedCornerShape(22.dp)),
-                                contentAlignment = Alignment.TopStart
-                            ) {
-                                BasicTextField(
-                                    value = inputField,
-                                    onValueChange = {
-                                        if (panelExpanded) closePanel()
-                                        if (it.text != dismissedCommandCandidateInput) {
-                                            dismissedCommandCandidateInput = null
-                                        }
-                                        val nextMention = findWorkspaceMention(it)
-                                        if (workspaceMentionTrigger == null && nextMention != null) {
-                                            workspaceMentionPath = ""
-                                        } else if (nextMention == null) {
-                                            workspaceMentionPath = ""
-                                        }
-                                        inputField = it
-                                        if (pendingPlotChoiceId != null && it.text != plotChoices.firstOrNull { c -> c.id == pendingPlotChoiceId }?.title) {
-                                            pendingPlotChoiceId = null
-                                        }
-                                    },
-                                    // Agent 会话生成中仍可输入，发送的消息会进入排队队列
-                                    enabled = delayReplyPending || !sending || isAgentSession,
-                                    maxLines = 5,
-                                    visualTransformation = commandCapsuleTransformation,
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    decorationBox = { innerTextField ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            // 命令胶囊：视觉变换已隐藏原文中的 /goal、/spec 字符，这里原位绘制胶囊
-                                            if (commandCapsule != null) {
-                                                CommandCapsuleChip(kind = commandCapsule.kind)
-                                                Spacer(Modifier.width(6.dp))
-                                            }
-                                            Box(
-                                                modifier = Modifier.weight(1f),
-                                                contentAlignment = Alignment.TopStart
-                                            ) {
-                                                if (input.isEmpty()) {
-                                                    Text(
-                                                        text = when {
-                                                            sending && isAgentSession ->
-                                                                stringResource(R.string.chat_queue_input_hint)
-                                                            sending -> stringResource(R.string.chat_ai_thinking)
-                                                            else -> stringResource(R.string.chat_input_placeholder)
-                                                        },
-                                                        style = MaterialTheme.typography.bodyLarge,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
-                                                    )
-                                                }
-                                                innerTextField()
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-
-                            // 快捷工具栏折叠时：在操作行内提供展开入口（不占额外纵向空间）
-                            if (quickActionsCollapsed) {
-                                ChatQuickActionExpandButton(
-                                    onExpand = {
-                                        quickActionsCollapsed = false
-                                        ServiceContainer.prefs.chatQuickActionsCollapsed = false
-                                    }
-                                )
-                            }
-
                             // 主操作按钮：背景和图标同步过渡，避免语音/发送/停止状态生硬跳变
                             // Agent 会话生成中：已输入内容时切换为发送（消息进入排队队列），否则保持停止
                             // 后台生成（标题总结/剧情选项/记忆沉淀/唤醒运行等）进行中：无草稿时也提供停止入口
@@ -1927,109 +1872,219 @@ private fun ModernChatComposer(
                                 sessionGenerating -> ModernComposerAction.STOP
                                 else -> ModernComposerAction.VOICE
                             }
-                            val idleActionColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                            val actionStartColor by animateColorAsState(
-                                targetValue = when (action) {
-                                    ModernComposerAction.VOICE -> idleActionColor
-                                    ModernComposerAction.SEND -> MaterialTheme.colorScheme.primary
-                                    ModernComposerAction.STOP -> MaterialTheme.colorScheme.error
-                                },
-                                animationSpec = tween(durationMillis = 180),
-                                label = "composer_action_start"
-                            )
-                            val actionEndColor by animateColorAsState(
-                                targetValue = when (action) {
-                                    ModernComposerAction.VOICE -> idleActionColor
-                                    ModernComposerAction.SEND -> MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
-                                    ModernComposerAction.STOP -> MaterialTheme.colorScheme.error
-                                },
-                                animationSpec = tween(durationMillis = 180),
-                                label = "composer_action_end"
-                            )
-                            IconButton(
-                                onClick = {
-                                    when (action) {
-                                        ModernComposerAction.STOP -> onStop()
-                                        ModernComposerAction.SEND -> {
-                                            val text = input
-                                            val choiceId = pendingPlotChoiceId
-                                            val attachments = pendingAttachments
-                                            val keepComposerOpen = shouldKeepComposerOpen(
-                                                text,
-                                                choiceId == null
-                                            )
-                                            updateInput("")
-                                            inputExpanded = keepComposerOpen
-                                            pendingPlotChoiceId = null
-                                            pendingAttachments = emptyList()
-                                            closePanel()
-                                            if (!keepComposerOpen) keyboard?.hide()
-                                            onSend(text, choiceId, attachments, readReasoningEffort())
-                                        }
-                                        ModernComposerAction.VOICE -> requestMicPermission.launch(
-                                            android.Manifest.permission.RECORD_AUDIO
+                            val onPrimaryAction: () -> Unit = {
+                                when (action) {
+                                    ModernComposerAction.STOP -> onStop()
+                                    ModernComposerAction.SEND -> {
+                                        val text = input
+                                        val choiceId = pendingPlotChoiceId
+                                        val attachments = pendingAttachments
+                                        val keepComposerOpen = shouldKeepComposerOpen(
+                                            text,
+                                            choiceId == null
                                         )
+                                        updateInput("")
+                                        inputExpanded = keepComposerOpen
+                                        pendingPlotChoiceId = null
+                                        pendingAttachments = emptyList()
+                                        closePanel()
+                                        if (!keepComposerOpen) keyboard?.hide()
+                                        onSend(text, choiceId, attachments, readReasoningEffort())
                                     }
-                                },
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(actionStartColor, actionEndColor)
-                                        )
+                                    ModernComposerAction.VOICE -> requestMicPermission.launch(
+                                        android.Manifest.permission.RECORD_AUDIO
                                     )
-                            ) {
-                                Crossfade(
-                                    targetState = action,
-                                    animationSpec = tween(durationMillis = 180),
-                                    label = "composer_action_icon"
-                                ) { currentAction ->
-                                    when (currentAction) {
-                                        ModernComposerAction.STOP -> Icon(
-                                            Icons.Filled.Stop,
-                                            contentDescription = stringResource(R.string.chat_stop_generation),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(21.dp)
+                                }
+                            }
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 面板开关按钮：展开/收起时背景与图标颜色平滑过渡。
+                                    // 用 AnimatedVisibility 包裹（调用点始终存在），输入法弹起后按钮收进下方工具行；
+                                    // 这里只做尺寸动画，后面的输入框节点不会被重建，焦点与输入法状态因此不会丢失。
+                                    // 淡出先于收宽结束，避免看到硬边裁切（「多边形」）的过渡。
+                                    AnimatedVisibility(
+                                        visible = !imeVisible,
+                                        enter = expandHorizontally(animationSpec = tween(200)) +
+                                            fadeIn(animationSpec = tween(150, delayMillis = 60)),
+                                        exit = shrinkHorizontally(animationSpec = tween(140)) +
+                                            fadeOut(animationSpec = tween(70))
+                                    ) {
+                                        val panelBtnBg by animateColorAsState(
+                                            targetValue = if (panelExpanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                            label = "panel_btn_bg"
                                         )
-                                        ModernComposerAction.SEND -> Icon(
-                                            Icons.AutoMirrored.Filled.Send,
-                                            contentDescription = stringResource(R.string.chat_send),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(21.dp)
+                                        val panelBtnTint by animateColorAsState(
+                                            targetValue = if (panelExpanded) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            label = "panel_btn_tint"
                                         )
-                                        ModernComposerAction.VOICE -> Icon(
-                                            Icons.Filled.Mic,
-                                            contentDescription = stringResource(R.string.chat_voice_input),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(21.dp)
+                                        IconButton(
+                                            onClick = togglePanel,
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .background(panelBtnBg)
+                                        ) {
+                                            Crossfade(targetState = panelExpanded, label = "panel_icon") { expanded ->
+                                                Icon(
+                                                    imageVector = if (expanded) Icons.Filled.Close else Icons.Filled.Add,
+                                                    contentDescription = if (expanded) stringResource(R.string.chat_close_action_menu) else stringResource(R.string.chat_more_actions),
+                                                    tint = panelBtnTint,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 44.dp, max = 128.dp)
+                                            .clip(RoundedCornerShape(22.dp)),
+                                        contentAlignment = Alignment.TopStart
+                                    ) {
+                                        BasicTextField(
+                                            value = inputField,
+                                            onValueChange = {
+                                                if (panelExpanded) closePanel()
+                                                if (it.text != dismissedCommandCandidateInput) {
+                                                    dismissedCommandCandidateInput = null
+                                                }
+                                                val nextMention = findWorkspaceMention(it)
+                                                if (workspaceMentionTrigger == null && nextMention != null) {
+                                                    workspaceMentionPath = ""
+                                                } else if (nextMention == null) {
+                                                    workspaceMentionPath = ""
+                                                }
+                                                inputField = it
+                                                if (pendingPlotChoiceId != null && it.text != plotChoices.firstOrNull { c -> c.id == pendingPlotChoiceId }?.title) {
+                                                    pendingPlotChoiceId = null
+                                                }
+                                            },
+                                            // Agent 会话生成中仍可输入，发送的消息会进入排队队列
+                                            enabled = delayReplyPending || !sending || isAgentSession,
+                                            maxLines = 5,
+                                            visualTransformation = commandCapsuleTransformation,
+                                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            decorationBox = { innerTextField ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    // 命令胶囊：视觉变换已隐藏原文中的 /goal、/spec 字符，这里原位绘制胶囊
+                                                    if (commandCapsule != null) {
+                                                        CommandCapsuleChip(kind = commandCapsule.kind)
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+                                                    Box(
+                                                        modifier = Modifier.weight(1f),
+                                                        contentAlignment = Alignment.TopStart
+                                                    ) {
+                                                        if (input.isEmpty()) {
+                                                            Text(
+                                                                text = when {
+                                                                    sending && isAgentSession ->
+                                                                        stringResource(R.string.chat_queue_input_hint)
+                                                                    sending -> stringResource(R.string.chat_ai_thinking)
+                                                                    else -> stringResource(R.string.chat_input_placeholder)
+                                                                },
+                                                                style = MaterialTheme.typography.bodyLarge,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                                                            )
+                                                        }
+                                                        innerTextField()
+                                                    }
+                                                }
+                                            }
                                         )
                                     }
+
+                                    // 快捷工具栏折叠时：在操作行内提供展开入口（不占额外纵向空间）
+                                    AnimatedVisibility(
+                                        visible = !imeVisible && quickActionsCollapsed,
+                                        enter = expandHorizontally(animationSpec = tween(200)) +
+                                            fadeIn(animationSpec = tween(150, delayMillis = 60)),
+                                        exit = shrinkHorizontally(animationSpec = tween(140)) +
+                                            fadeOut(animationSpec = tween(70))
+                                    ) {
+                                        ChatQuickActionExpandButton(
+                                            onExpand = {
+                                                quickActionsCollapsed = false
+                                                ServiceContainer.prefs.chatQuickActionsCollapsed = false
+                                            }
+                                        )
+                                    }
+
+                                    // 主操作按钮：单行状态下贴在输入框右侧，输入法弹起后移入工具行
+                                    AnimatedVisibility(
+                                        visible = !imeVisible,
+                                        enter = expandHorizontally(animationSpec = tween(200)) +
+                                            fadeIn(animationSpec = tween(150, delayMillis = 60)),
+                                        exit = shrinkHorizontally(animationSpec = tween(140)) +
+                                            fadeOut(animationSpec = tween(70))
+                                    ) {
+                                        ComposerPrimaryActionButton(action = action, onClick = onPrimaryAction)
+                                    }
+                                }
+
+                                // 输入法弹起后的工具行：+ 号菜单、当前模型、语音输入、发送/停止
+                                AnimatedVisibility(
+                                    visible = imeVisible,
+                                    enter = expandVertically(animationSpec = tween(200)) +
+                                        fadeIn(animationSpec = tween(150, delayMillis = 50)),
+                                    exit = shrinkVertically(animationSpec = tween(140)) +
+                                        fadeOut(animationSpec = tween(90))
+                                ) {
+                                    ComposerToolRow(
+                                        sessionId = sessionId,
+                                        modelSwitchEnabled = !sessionGenerating && !replyBusy && !compressing,
+                                        action = action,
+                                        onTogglePanel = togglePanel,
+                                        onModelClick = { showChatModelDialog = true },
+                                        onVoice = {
+                                            requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                        },
+                                        onAction = onPrimaryAction
+                                    )
                                 }
                             }
                         }
-                    }
 
-                    // 输入框下方的快捷工具栏：折叠时整条移除、不占用空间（输入框随之下移）
-                    AnimatedVisibility(
-                        visible = !quickActionsCollapsed,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut()
-                    ) {
-                        ChatQuickActionBar(
-                            actions = quickActions.filter { session?.companionMode != true || it != ChatQuickAction.COMPRESS },
-                            onCollapse = {
-                                quickActionsCollapsed = true
-                                ServiceContainer.prefs.chatQuickActionsCollapsed = true
-                            },
-                            onEdit = { showQuickActionEditor = true },
-                            // AI 执行中或延迟回复等待期间禁用「压缩上下文」：压缩会重写历史边界，
-                            // 正在运行的任务/待发批次会丢失工作记忆；达到阈值的自动压缩不受影响。
-                            isActionEnabled = { id ->
-                                id != ChatQuickAction.COMPRESS || (!replyBusy && !compressing)
-                            },
-                            onAction = handleQuickAction
-                        )
+                        // 快捷工具栏：内容锚定在输入区底部，随底衬一起上下伸缩
+                        AnimatedVisibility(
+                            visible = quickBarVisible,
+                            enter = expandVertically(
+                                animationSpec = spring(
+                                    dampingRatio = 0.86f,
+                                    stiffness = Spring.StiffnessMediumLow
+                                )
+                            ) + fadeIn(tween(120)),
+                            exit = shrinkVertically(animationSpec = tween(150)) + fadeOut(tween(90))
+                        ) {
+                            ChatQuickActionBar(
+                                actions = quickActions.filter { session?.companionMode != true || it != ChatQuickAction.COMPRESS },
+                                onCollapse = {
+                                    quickActionsCollapsed = true
+                                    ServiceContainer.prefs.chatQuickActionsCollapsed = true
+                                },
+                                onEdit = { showQuickActionEditor = true },
+                                // AI 执行中或延迟回复等待期间禁用「压缩上下文」：压缩会重写历史边界，
+                                // 正在运行的任务/待发批次会丢失工作记忆；达到阈值的自动压缩不受影响。
+                                isActionEnabled = { id ->
+                                    id != ChatQuickAction.COMPRESS || (!replyBusy && !compressing)
+                                },
+                                onAction = handleQuickAction
+                            )
+                        }
                     }
                 }
             }
@@ -2106,6 +2161,15 @@ private fun ModernChatComposer(
             sessionId = sessionId,
             onDismiss = { showToolSetDialog = false },
             onChanged = { toolSetRevision++ }
+        )
+    }
+
+    // 输入工具行的「当前模型」入口：弹窗挂在输入区外层，不随工具行折叠而消失
+    if (showChatModelDialog) {
+        SessionChatModelDialogHost(
+            sessionId = sessionId,
+            enabled = !sessionGenerating && !replyBusy && !compressing,
+            onDismiss = { showChatModelDialog = false }
         )
     }
 
@@ -2211,6 +2275,139 @@ private fun ModernChatComposer(
                 ) { CircularProgressIndicator() }
             },
             confirmButton = {}
+        )
+    }
+}
+
+/**
+ * 输入区主操作按钮（语音/发送/停止）：单行输入行与双行工具行共用同一套配色过渡。
+ *
+ * @param idleAsSend 空闲（无草稿）时仍画出发送图标而不是麦克风：
+ *   工具行里已经有语音按钮，这里固定显示发送位，靠颜色变化过渡，避免按钮凭空出现/消失。
+ */
+@Composable
+private fun ComposerPrimaryActionButton(
+    action: ModernComposerAction,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    idleAsSend: Boolean = false
+) {
+    val idleActionColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+    val actionStartColor by animateColorAsState(
+        targetValue = when (action) {
+            ModernComposerAction.VOICE -> idleActionColor
+            ModernComposerAction.SEND -> MaterialTheme.colorScheme.primary
+            ModernComposerAction.STOP -> MaterialTheme.colorScheme.error
+        },
+        animationSpec = tween(durationMillis = 180),
+        label = "composer_action_start"
+    )
+    val actionEndColor by animateColorAsState(
+        targetValue = when (action) {
+            ModernComposerAction.VOICE -> idleActionColor
+            ModernComposerAction.SEND -> MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
+            ModernComposerAction.STOP -> MaterialTheme.colorScheme.error
+        },
+        animationSpec = tween(durationMillis = 180),
+        label = "composer_action_end"
+    )
+    IconButton(
+        // 工具行里的空闲发送位只做展示，点击交给旁边的语音按钮
+        onClick = onClick,
+        enabled = !(idleAsSend && action == ModernComposerAction.VOICE),
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(actionStartColor, actionEndColor)))
+    ) {
+        Crossfade(
+            targetState = action,
+            animationSpec = tween(durationMillis = 180),
+            label = "composer_action_icon"
+        ) { currentAction ->
+            when (currentAction) {
+                ModernComposerAction.STOP -> Icon(
+                    Icons.Filled.Stop,
+                    contentDescription = stringResource(R.string.chat_stop_generation),
+                    tint = Color.White,
+                    modifier = Modifier.size(21.dp)
+                )
+                ModernComposerAction.SEND -> Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    contentDescription = stringResource(R.string.chat_send),
+                    tint = Color.White,
+                    modifier = Modifier.size(21.dp)
+                )
+                ModernComposerAction.VOICE -> Icon(
+                    if (idleAsSend) Icons.AutoMirrored.Filled.Send else Icons.Filled.Mic,
+                    contentDescription = stringResource(
+                        if (idleAsSend) R.string.chat_send else R.string.chat_voice_input
+                    ),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 输入法弹起后的工具行：+ 号菜单、当前模型（显示模型 id，点击打开 P0 模型弹窗）、语音输入、发送/停止。
+ * 与上方纯输入行共同组成双行输入区；发送位常驻（不做出现/消失动画），右侧图标不会左右跳动。
+ */
+@Composable
+private fun ComposerToolRow(
+    sessionId: String,
+    modelSwitchEnabled: Boolean,
+    action: ModernComposerAction,
+    onTogglePanel: () -> Unit,
+    onModelClick: () -> Unit,
+    onVoice: () -> Unit,
+    onAction: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onTogglePanel,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = stringResource(R.string.chat_more_actions),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        // 模型胶囊放在占满剩余宽度的容器里并靠左：胶囊长短只影响自身，
+        // 右侧语音/发送按钮始终钉在行末，不会因为模型 id 变短而左移。
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            SessionChatModelChip(
+                sessionId = sessionId,
+                enabled = modelSwitchEnabled,
+                onClick = onModelClick
+            )
+        }
+        IconButton(onClick = onVoice, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Filled.Mic,
+                contentDescription = stringResource(R.string.chat_voice_input),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+        ComposerPrimaryActionButton(
+            action = action,
+            onClick = onAction,
+            idleAsSend = true
         )
     }
 }
@@ -2735,6 +2932,8 @@ private fun ReasoningEffortSelector(
 private fun ModernChatActionPanel(
     allowCompression: Boolean = true,
     showClearAction: Boolean = true,
+    /** 抽屉（底部弹层）展开：外层容器由抽屉提供，这里只保留贴边内容。 */
+    inSheet: Boolean = false,
     sessionId: String,
     modelSwitchEnabled: Boolean,
     messageCount: Int,
@@ -2776,15 +2975,22 @@ private fun ModernChatActionPanel(
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        cornerRadius = 24,
+            .padding(horizontal = if (inSheet) 0.dp else 12.dp, vertical = if (inSheet) 0.dp else 4.dp),
+        cornerRadius = if (inSheet) 0 else 24,
+        // 抽屉里去掉卡片外观，内容直接铺满弹层；内联面板仍保留玻璃卡片
+        containerColor = if (inSheet) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         contentPadding = PaddingValues(0.dp)
     ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 470.dp),
-            contentPadding = PaddingValues(14.dp),
+                .heightIn(max = if (inSheet) 520.dp else 470.dp),
+            contentPadding = PaddingValues(
+                start = if (inSheet) 16.dp else 14.dp,
+                end = if (inSheet) 16.dp else 14.dp,
+                top = 14.dp,
+                bottom = if (inSheet) 24.dp else 14.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
