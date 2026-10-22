@@ -74,7 +74,7 @@ class CharacterThinkingProtocolTest {
         assertSystemOnly(http.bodies.single())
         assertSame(user, messages.last())
         for (required in listOf("简体中文", "第一人称")) assertTrue(prompt.contains(required))
-        // 独白格式只在角色设定的 output.inner_monologue 里说明，末尾思考提示不重复。
+        // 2026-10-22 起默认不再教独白，末尾思考提示也不写这种格式。
         assertFalse(prompt.contains("（内心：…）"))
         assertFalse(prompt.contains("{{"))
     }

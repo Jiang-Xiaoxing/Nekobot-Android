@@ -204,7 +204,8 @@ internal class LocalPipelineCallbacks(
             "character_thinking_enabled" to ctx.usesCharacterThinking(), "reasoning_effort" to reasoningEffort.name,
             "character_thinking_settings" to getCharacterThinkingSettings(ctx),
             "show_reasoning" to com.nekobot.app.ServiceContainer.prefs.companionShowReasoning(db.dbName, session.id),
-            "show_inner_monologue" to com.nekobot.app.ServiceContainer.prefs.companionShowInnerMonologue(db.dbName, session.id),
+            // 2026-10-22 起「显示内心独白」开关已取消：这一项固定为 true，仅作诊断留痕，不代表还有开关。
+            "show_inner_monologue" to true,
             "prompt_stack" to ctx.promptStack.getItems(), "messages" to messages, "parameters" to extra,
             "body_only_thinking" to session.companionMode
         ), modelQueueFor(ctx).map { it.apiKey })

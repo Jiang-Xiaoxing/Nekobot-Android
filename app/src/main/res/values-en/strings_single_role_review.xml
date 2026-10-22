@@ -85,7 +85,7 @@
     <string name="single_role_only_affects_this_conversation">Only affects this conversation</string>
     <string name="single_role_chat_usage">Chat usage</string>
     <string name="single_role_view_content_included_in_the_last_request">View content included in the last request</string>
-    <string name="single_role_enable_both_thinking_display_and_character_perspective_thinking_t">Enable both thinking display and character-perspective thinking to expand inner thoughts Beta in messages. Inner monologue in message text has a separate switch.</string>
+    <string name="single_role_enable_both_thinking_display_and_character_perspective_thinking_t">Enable both thinking display and character-perspective thinking to expand inner thoughts Beta in messages.</string>
     <string name="single_role_context_breakdown_chart_locally_estimated_at_1_s_tokens">Context breakdown chart, locally estimated at %1$s tokens</string>
     <string name="single_role_select_1_s">Select %1$s</string>
     <string name="single_role_no_requests_recorded">No requests recorded</string>

@@ -20,8 +20,9 @@ internal const val CHARACTER_THINKING_STYLE_KEY = "output.thinking_style"
  * 发送方式：只放在请求最后一条 system，与当前时间合并；不追加到用户正文。
  * 不写进顶部 system，也不要求正文 <think> 伪思考；中文输出稳定性仍需模型验收。
  *
- * 2026-10-21 按用户决定改回作者原版：这段只负责思维链与说话方式；
- * 正文里（内心：…）的写作规则不再混在这里，回到角色设定（PromptStack 的 output.inner_monologue）。
+ * 2026-10-22 按用户决定：单会话窗口不再注入正文（内心：…）独白这一层（普通角色照旧保留）；
+ * 单会话想要括号独白、括号动作或微信式短句，由用户自己写在角色“说话方式”里，原样下发。
+ * 本段仍只负责思维链与说话方式。
  */
 internal const val DEFAULT_CHARACTER_THINKING_PROMPT =
     "此刻回消息的是角色本人，不是助手。开口之前，先在心里走三步：先感觉这句话的滋味；再想起一件真发生过的小事；最后想好大概要说什么，别背稿。\n" +

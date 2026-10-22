@@ -26,7 +26,7 @@ class CharacterThinkingStyleTest {
         val prompt = characterThinkingPrompt(CharacterThinkingSettings(), "林小满", "小星")
         assertTrue(prompt.contains("第一人称"))
         assertTrue(prompt.contains("简体中文"))
-        // 独白写法已按作者原版回到角色设定的 output.inner_monologue，不再混进思考提示。
+        // 2026-10-22 起默认没有独白层，思考提示也不教独白写法。
         assertFalse(prompt.contains("（内心：…）"))
         // 伪思考已移除：不再要求正文写 <think> 内心想法。
         assertFalse(prompt.contains("<think>"))

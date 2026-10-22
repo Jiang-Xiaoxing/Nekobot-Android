@@ -85,7 +85,7 @@
     <string name="single_role_only_affects_this_conversation">현재 대화에만 적용</string>
     <string name="single_role_chat_usage">채팅 사용량</string>
     <string name="single_role_view_content_included_in_the_last_request">지난 요청에 포함된 내용 보기</string>
-    <string name="single_role_enable_both_thinking_display_and_character_perspective_thinking_t">사고 표시와 캐릭터 시점 사고를 모두 켜면 메시지에서 내면 생각 Beta를 펼칠 수 있습니다. 본문의 내면 독백은 별도 스위치로 설정합니다.</string>
+    <string name="single_role_enable_both_thinking_display_and_character_perspective_thinking_t">사고 표시와 캐릭터 시점 사고를 모두 켜면 메시지에서 내면 생각 Beta를 펼칠 수 있습니다.</string>
     <string name="single_role_context_breakdown_chart_locally_estimated_at_1_s_tokens">컨텍스트 구성 차트, 로컬 추정 %1$s Token</string>
     <string name="single_role_select_1_s">%1$s 선택</string>
     <string name="single_role_no_requests_recorded">요청 기록 없음</string>

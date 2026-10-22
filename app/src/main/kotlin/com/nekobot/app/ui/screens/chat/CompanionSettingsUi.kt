@@ -126,8 +126,6 @@ internal fun CompanionSettingsScreen(
     onDismiss: () -> Unit, onDetails: () -> Unit, onSearch: () -> Unit,
     onFavorites: () -> Unit, onUsage: () -> Unit, onArchive: (() -> Unit)? = null,
     portraitUrl: String? = null,
-    showInnerMonologue: Boolean = true,
-    onShowInnerMonologueChange: ((Boolean) -> Unit)? = null,
     reasoningEffort: ReasoningEffort = ReasoningEffort.NONE,
     customReasoning: CustomReasoningParam = CustomReasoningParam(),
     onReasoningEffortChange: (ReasoningEffort) -> Unit = {},
@@ -180,12 +178,7 @@ internal fun CompanionSettingsScreen(
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         CompanionPreferenceGroup(textResources.getString(R.string.single_role_display_and_usage)) {
-                            if (onShowInnerMonologueChange != null) {
-                                CompanionPreferenceRow(textResources.getString(R.string.single_role_show_inner_monologue), Icons.Outlined.ChatBubbleOutline, textResources.getString(R.string.single_role_only_affects_this_conversation),
-                                    modifier = Modifier.testTag("companion-show-inner-monologue"),
-                                    checked = showInnerMonologue, onCheckedChange = { onShowInnerMonologueChange(it); onSaved() })
-                                CompanionPreferenceDivider()
-                            }
+                            // 2026-10-22 用户决定：不再提供“显示内心独白”开关，恒定显示。
                             CompanionPreferenceRow(textResources.getString(R.string.single_role_chat_usage), Icons.Outlined.BarChart, textResources.getString(R.string.single_role_view_content_included_in_the_last_request), onClick = onUsage)
                         }
                         Text(textResources.getString(R.string.single_role_enable_both_thinking_display_and_character_perspective_thinking_t), Modifier.padding(horizontal = 4.dp),

@@ -1773,10 +1773,9 @@ class LocalRepository(
     internal fun setCustomReasoningFor(sessionId: String, companionMode: Boolean, sessionMode: String?, value: com.nekobot.app.data.model.CustomReasoningParam) =
         ServiceContainer.prefs.setCustomReasoningFor(db.dbName, sessionId, companionMode, sessionMode, value)
 
+    /** 2026-10-22 起恒定显示；不再提供关闭入口，旧配置值不影响显示。 */
     internal fun companionShowInnerMonologue(sessionId: String) =
         ServiceContainer.prefs.companionShowInnerMonologue(db.dbName, sessionId)
-    internal fun setCompanionShowInnerMonologue(sessionId: String, show: Boolean) =
-        ServiceContainer.prefs.setCompanionShowInnerMonologue(db.dbName, sessionId, show)
 
     internal fun companionShowReasoning(sessionId: String) = ServiceContainer.prefs.companionShowReasoning(db.dbName, sessionId)
     internal fun setCompanionShowReasoning(sessionId: String, show: Boolean) =

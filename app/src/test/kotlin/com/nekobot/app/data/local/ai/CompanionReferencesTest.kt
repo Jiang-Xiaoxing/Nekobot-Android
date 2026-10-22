@@ -104,7 +104,7 @@ class CompanionReferencesTest {
         assertTrue(result[1]["content"].toString().contains("半段加完整后文"))
     }
 
-    @Test fun pipelinePlacesSpeakingAndMonologueRulesAtOpeningNotInCurrentMaterials() = runBlocking {
+    @Test fun pipelinePlacesSpeakingRuleAtOpeningAndNoMonologueRuleAnywhere() = runBlocking {
         val ctx = PipelineContext(ChatRequest.forLocal("s", "在吗")).apply {
             metadata[META_FUSED_COMPANION] = true
             metadata["session_mode"] = "agent"
@@ -120,7 +120,8 @@ class CompanionReferencesTest {
             override suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>, tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> {
                 val opening = messages.first()["content"].toString()
                 assertTrue(opening.contains(CompanionPromptLanguage.speakingRule))
-                assertTrue(opening.contains("内心独白格式"))
+                // 2026-10-22 起默认不再教独白：开头与辅助资料都不该出现独白写法。
+                assertFalse(opening.contains("内心独白格式"))
                 assertEquals(1, opening.split(CompanionPromptLanguage.bubbleRule).size - 1)
                 assertFalse(dynamic.contains(CompanionPromptLanguage.speakingRule))
                 assertFalse(dynamic.contains("内心独白格式"))

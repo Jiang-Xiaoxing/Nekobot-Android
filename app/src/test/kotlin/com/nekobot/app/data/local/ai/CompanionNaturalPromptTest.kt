@@ -79,10 +79,10 @@ class CompanionNaturalPromptTest {
     }
 
     @Test fun companionStackHidesKeysAndOrdinaryStackIsVerbatim() {
-        val stack = PromptStack().apply { add("character.runtime_state", "有点开心"); add("output.inner_monologue", "心里话", 15) }
-        assertEquals("设定\n\n## output.inner_monologue\n心里话\n\n## character.runtime_state\n有点开心", stack.render("设定"))
+        val stack = PromptStack().apply { add("character.runtime_state", "有点开心"); add("output.extra_notes", "心里话", 15) }
+        assertEquals("设定\n\n## output.extra_notes\n心里话\n\n## character.runtime_state\n有点开心", stack.render("设定"))
         assertEquals("设定\n\n心里话\n\n有点开心", stack.render("设定", companionMode = true))
-        assertEquals(listOf("character.runtime_state", "output.inner_monologue"), stack.keys)
+        assertEquals(listOf("character.runtime_state", "output.extra_notes"), stack.keys)
     }
 
     @Test fun companionThinkingExtractsChineseBodyThoughtAndKeepsMonologueSeparate() {
@@ -125,7 +125,7 @@ class CompanionNaturalPromptTest {
         assertEquals(CompanionRecallFinal.FINAL_NOTE, final.last()["content"])
     }
 
-    @Test fun companionUsesOneBubbleRuleAndLabeledMonologueFollowsItsOwnSpeech() {
+    @Test fun companionUsesOneBubbleRuleAndNoDefaultMonologueRule() {
         val stack = PromptStack().apply { buildCharacterInjections(this, CharacterProfile(), companionMode = true) }
         val split = requireNotNull(stack.get("output.bubble_split")).content
         assertEquals(CompanionPromptLanguage.bubbleRule, split)
@@ -133,11 +133,10 @@ class CompanionNaturalPromptTest {
         assertTrue(split.contains("内容多时用<||>分成几条短消息"))
         assertTrue(split.contains("一句简短回应可以只发一条"))
         assertFalse(split.contains("想分成"))
-        val inner = requireNotNull(stack.get("output.inner_monologue")).content
-        assertTrue(inner.contains("（内心：...）"))
-        assertTrue(inner.contains("那条话的末尾"))
-        assertTrue(inner.contains("放在 <||> 之前"))
-        assertTrue(inner.contains("不要每次回复都加"))
+        // 默认不再教独白：这一层不在栈里，说话方式里也没有独白要求，用户想写自己在说话方式里加。
+        assertNull(stack.get("output.inner_monologue"))
+        assertFalse(CompanionPromptLanguage.speakingRule.contains("内心"))
+        assertFalse(stack.render("设定", companionMode = true).contains("内心独白格式"))
     }
 
     @Test fun companionThinkingRequestsAreIdempotentAndKeepOrdinaryFormat() {

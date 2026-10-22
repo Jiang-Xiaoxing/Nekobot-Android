@@ -358,11 +358,12 @@ class CompanionRecallClosingAndroidTest {
                         it.asJsonObject["content"]?.takeUnless { content -> content.isJsonNull }?.asString.orEmpty()
                     }
                     assertTrue(all.contains(CompanionPromptLanguage.bubbleRule))
-                    assertTrue(all.contains("放在<||>之前"))
-                    // 写独白的规则回到角色设定（PromptStack 注入项），不再混在末尾思考提示词里。
-                    val monologueRule = f.ctx.characterTurn?.promptStackItems
-                        ?.firstOrNull { it.key == "output.inner_monologue" }
-                    assertTrue(monologueRule != null && monologueRule.content.contains("内心独白格式"))
+                    // 2026-10-22 起默认不再教写独白：请求里不应再有独白写法，
+                    // 正文里的（内心：…）由客户端渲染层自己识别，与提示词无关。
+                    assertEquals(null, f.ctx.characterTurn?.promptStackItems
+                        ?.firstOrNull { it.key == "output.inner_monologue" })
+                    assertFalse(all.contains("内心独白格式"))
+                    assertFalse(all.contains("放在<||>之前"))
                     // 思考提示词出现在请求末尾（最后一条用户消息 + 最后一条 system）。
                     assertTrue(all.contains("【思考方式】"))
                     assertFalse(all.contains("（内心：…）"))

@@ -1457,13 +1457,19 @@ class PrefsManager(context: Context) {
         prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_reasoning", show).apply()
     }
 
-    /** Display only: hides （内心：...） blocks in bubbles; default shown, never changes prompts or message text. */
+    /**
+     * 2026-10-22 用户决定：取消“隐藏内心独白”，恒定显示。
+     *
+     * 返回值恒为 true。旧配置里 `:show_inner_monologue` 存的 true / false / 缺失、
+     * 甚至被外部改坏成别的类型，都不再影响显示，也不迁移、不清理、不报错。
+     * 读取只是为了兼容旧设置文件的读取路径（读不出来就当作没有旧值），不会改变结果。
+     */
     internal fun companionShowInnerMonologue(profile: String, sessionId: String): Boolean =
-        prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", true)
-
-    internal fun setCompanionShowInnerMonologue(profile: String, sessionId: String, show: Boolean) {
-        prefs.edit().putBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", show).apply()
-    }
+        innerMonologueAlwaysVisible(
+            runCatching {
+                prefs.getBoolean(companionRecallKey(profile, sessionId) + ":show_inner_monologue", true)
+            }.getOrNull()
+        )
 
     /** “对话示例已停用”提示只显示一次；用户点“不再提示”后永久隐藏。 */
     internal fun companionExamplesNoticeDismissed(profile: String, sessionId: String): Boolean =
@@ -1855,3 +1861,12 @@ class PrefsManager(context: Context) {
             prefs.edit().putString(KEY_LANGUAGE, value).apply()
         }
 }
+
+/**
+ * 正文内心独白的显示判定（2026-10-22 用户决定：取消开关，恒定显示）。
+ *
+ * 旧的「显示内心独白」偏好值（true / false / 缺失 / 读不出来）一律忽略，结果恒为 true；
+ * 不做数据迁移、不清理旧键、不把旧值当错误。参数保留只为说明“旧值不影响结果”。
+ */
+@Suppress("UNUSED_PARAMETER")
+internal fun innerMonologueAlwaysVisible(legacyStored: Boolean?): Boolean = true

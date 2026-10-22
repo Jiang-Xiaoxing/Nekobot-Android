@@ -85,7 +85,7 @@
     <string name="single_role_only_affects_this_conversation">この会話にのみ適用</string>
     <string name="single_role_chat_usage">チャット使用量</string>
     <string name="single_role_view_content_included_in_the_last_request">前回のリクエストに含めた内容を確認</string>
-    <string name="single_role_enable_both_thinking_display_and_character_perspective_thinking_t">思考の表示とキャラクター視点の思考を両方有効にすると、メッセージ内の内面の思考 Beta を展開できます。本文の内面独白は別のスイッチで設定します。</string>
+    <string name="single_role_enable_both_thinking_display_and_character_perspective_thinking_t">思考の表示とキャラクター視点の思考を両方有効にすると、メッセージ内の内面の思考 Beta を展開できます。</string>
     <string name="single_role_context_breakdown_chart_locally_estimated_at_1_s_tokens">コンテキストの内訳グラフ、ローカル推定 %1$s Token</string>
     <string name="single_role_select_1_s">%1$sを選択</string>
     <string name="single_role_no_requests_recorded">リクエスト記録はありません</string>

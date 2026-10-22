@@ -44,29 +44,28 @@ fun buildCharacterInjections(
     if (companionMode) stack.add(COMPANION_SPEAKING_STYLE_KEY, CompanionPromptLanguage.speakingRule,
         priority = PromptStack.Priority.BUBBLE_SPLIT - 1)
 
-    // 内心独白格式约定：按作者原版放回角色设定，正文里（内心：…）的写法只在这里说明。
-    // 末尾的思考提示词只管思维链与说话方式，不再混入独白规则。
-    val monologueAwareness = if (companionMode) {
-        "你知道玩家能看到你写出的内心独白，不要把它当成对方看不到的秘密。"
-    } else {
-        ""
+    // 内心独白格式约定（2026-10-22 按用户决定限定范围）：
+    // - 普通角色 / 群聊（companionMode = false）：保留作者原版整段，行为与以前一致；
+    // - 单会话窗口（companionMode = true）：不再注入这一层，也不再加“你知道玩家能看到独白”的说明。
+    //   想要括号独白、括号动作或微信式短句，由用户在“说话方式”里自己写，这里只原样下发。
+    if (!companionMode) {
+        stack.add(
+            "output.inner_monologue",
+            """
+            内心独白格式：当角色有隐藏的想法或感受、与表面表现不同时，可以用（内心：...）写在正文里。
+
+            把它放在那条话的末尾，接在说出口的内容之后；分段回复时放在 <||> 之前。
+            规则：
+            - 克制使用：只有隐藏情绪形成有意义的反差或张力时才写，不要每次回复都加内心独白。
+            - 保持简短（1—2句），表达一闪而过的念头，不要写成长段。
+            - 写出真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
+            - 不要借内心独白解释规则或脱离角色。
+            - 示例：'嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
+            前台会把（内心：...）渲染为颜色较淡、可折叠的区域，按渲染已生效来写。
+            """.trimIndent(),
+            priority = PromptStack.Priority.BUBBLE_SPLIT + 1
+        )
     }
-    stack.add(
-        "output.inner_monologue",
-        """
-        内心独白格式：当角色有隐藏的想法或感受、与表面表现不同时，可以用（内心：...）写在正文里。
-        $monologueAwareness
-        把它放在那条话的末尾，接在说出口的内容之后；分段回复时放在 <||> 之前。
-        规则：
-        - 克制使用：只有隐藏情绪形成有意义的反差或张力时才写，不要每次回复都加内心独白。
-        - 保持简短（1—2句），表达一闪而过的念头，不要写成长段。
-        - 写出真正想着却没说出口的内容；可以与表面表现矛盾、流露脆弱，或暗示隐藏动机。
-        - 不要借内心独白解释规则或脱离角色。
-        - 示例：'嗯，随便吧。（内心：其实我很在意，但我不想表现出来）'
-        前台会把（内心：...）渲染为颜色较淡、可折叠的区域，按渲染已生效来写。
-        """.trimIndent(),
-        priority = PromptStack.Priority.BUBBLE_SPLIT + 1
-    )
 
     // 角色运行时状态
     if (state != null) {
@@ -176,10 +175,15 @@ private fun formatReactionPlan(plan: ReactionPlan, companionMode: Boolean): Stri
         lines.add("表露的情绪：${plan.visibleEmotion}。回复中必须清楚表现出这种表层情绪。")
     }
     if (plan.hiddenEmotion.isNotEmpty()) {
-        val awareness = if (companionMode) {
-            "你知道玩家能看到写出的独白，可以有意让对方看见，也可以半有意半无意地流露，不要当作对方看不到的秘密。"
-        } else ""
-        lines.add("隐藏动机：${plan.hiddenEmotion}。当它与表露的情绪形成有意义的反差时，可以考虑用（内心：...）格式在正文中表达内心独白；不要每轮硬加，只在反差能增加层次时使用。$awareness")
+        // 普通角色保持改动前原文（逐字）；单会话窗口（2026-10-22 起）不教（内心：…）格式，
+        // 只提示把反差体现在言行里。
+        lines.add(
+            if (companionMode) {
+                "隐藏动机：${plan.hiddenEmotion}。它不必说出口，可以在言行里自然露出痕迹；当它与表露的情绪形成有意义的反差时，优先用措辞、停顿或动作表现，不要每轮硬加，也不要向玩家点明。"
+            } else {
+                "隐藏动机：${plan.hiddenEmotion}。当它与表露的情绪形成有意义的反差时，可以考虑用（内心：...）格式在正文中表达内心独白；不要每轮硬加，只在反差能增加层次时使用。"
+            }
+        )
     }
     if (plan.tone.isNotEmpty()) lines.add("语气：${plan.tone}。")
 

@@ -271,9 +271,8 @@ fun ModernChatScreen(
     }
     val savedContext = LocalContext.current
     val savedNotice = remember(savedContext) { Toast.makeText(savedContext, textResources.getString(R.string.localai_saved), Toast.LENGTH_SHORT) }
-    var showInnerMonologue by remember(sessionId) {
-        mutableStateOf(ServiceContainer.localRepository.companionShowInnerMonologue(sessionId))
-    }
+    // 2026-10-22 用户决定：取消“显示内心独白”开关，正文里的（内心：…）恒定按可折叠样式显示。
+    val showInnerMonologue = true
     var companionUtilityRequest by remember(sessionId) { mutableStateOf<CompanionChatUtility?>(null) }
     val isAgentSession = session?.sessionMode.equals("agent", ignoreCase = true)
     val yoloAvailable = isAgentSession && ServiceContainer.prefs.isLocalMode
@@ -412,11 +411,6 @@ fun ModernChatScreen(
             onSearch = { companionSearchRequest++ },
             onFavorites = { companionFavoritesRequest++ },
             onUsage = { onOpenContextAnalysis(sessionId) },
-            showInnerMonologue = showInnerMonologue,
-            onShowInnerMonologueChange = { show ->
-                ServiceContainer.localRepository.setCompanionShowInnerMonologue(sessionId, show)
-                showInnerMonologue = show
-            },
             reasoningEffort = companionEffort,
             customReasoning = ServiceContainer.localRepository.companionCustomReasoning(sessionId),
             onReasoningEffortChange = { ServiceContainer.localRepository.setCompanionReasoningEffort(sessionId, it) },
