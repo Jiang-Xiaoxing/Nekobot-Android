@@ -17,6 +17,29 @@ internal object CompanionMemoryV2Schema {
         db.execSQL("CREATE TABLE IF NOT EXISTS companion_locked_reviews (id TEXT NOT NULL PRIMARY KEY, scopeId TEXT NOT NULL, sessionId TEXT NOT NULL, lockedMemoryId TEXT NOT NULL, confirmedMemoryId TEXT NOT NULL, createdAt TEXT NOT NULL, resolvedAt TEXT, resolution TEXT)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_companion_locked_reviews_pending ON companion_locked_reviews(sessionId,resolvedAt)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_companion_memories_scope_pending ON companion_memories(scopeId,pendingConfirm,voided)")
+        // Preserve the same superseded/retracted records that old upgrades physically pruned.
+        // Do not change valid/content: their invalidation triggers would discard associated data.
+        db.execSQL("""UPDATE companion_memories SET current=0,voided=1,
+            voidedReason=CASE WHEN status='retracted' THEN 'retract' ELSE 'update' END,
+            voidedAt=updatedAt,
+            supersededById=(SELECT next.id FROM companion_memories next
+                WHERE next.scopeId=companion_memories.scopeId
+                  AND next.factKey=companion_memories.factKey
+                  AND next.version>companion_memories.version AND next.valid=1
+                  AND ((next.current=1 AND next.status IN ('active','completed','cancelled'))
+                       OR next.status='retracted')
+                ORDER BY next.version DESC LIMIT 1)
+            WHERE id IN (SELECT old.id FROM companion_memories old
+                JOIN companion_scopes s ON s.id=old.scopeId
+                JOIN local_sessions session ON session.id=s.sessionId
+                WHERE session.companion_mode=1 AND old.locked=0
+                  AND old.status NOT IN ('conflict','locked_conflict')
+                  AND ((old.status='retracted' AND old.valid=1) OR EXISTS (
+                    SELECT 1 FROM companion_memories next
+                    WHERE next.scopeId=old.scopeId AND next.factKey=old.factKey
+                      AND next.version>old.version AND next.valid=1
+                      AND ((next.current=1 AND next.status IN ('active','completed','cancelled'))
+                           OR next.status='retracted'))))""")
         db.execSQL("UPDATE companion_memories SET voided=1,voidedReason='retract',voidedAt=updatedAt WHERE status='retracted' AND current=0")
         installTriggers(db)
         CompanionSchema.installTriggers(db)

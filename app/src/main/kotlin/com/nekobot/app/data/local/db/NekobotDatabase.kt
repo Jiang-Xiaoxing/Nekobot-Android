@@ -1329,6 +1329,19 @@ abstract class NekobotDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = CompanionMemoryV2Schema.migrate(db)
         }
 
+        /**
+         * Direct upgrades to memory v2 must not run the historical 60→61 pruning.
+         * Keep that released migration for its original destination, but preserve all
+         * records here and classify history only after the v2 columns have been added.
+         */
+        val MIGRATION_60_64 = object : Migration(60, 64) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                CompanionExamplesSchema.create(db)
+                MIGRATION_61_62.migrate(db)
+                MIGRATION_62_63.migrate(db)
+                MIGRATION_63_64.migrate(db)
+            }
+        }
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
             MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
@@ -1342,7 +1355,7 @@ abstract class NekobotDatabase : RoomDatabase() {
             MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
             MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
             MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49,
-            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64
+            MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_60_64
         )
 
         fun get(context: Context): NekobotDatabase =

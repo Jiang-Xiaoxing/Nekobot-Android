@@ -8,7 +8,9 @@ import java.io.File
 class NekobotDatabaseMigrationChainTest {
     @Test
     fun migrationChain_isContiguousThroughCurrentVersion() {
-        val migrations = NekobotDatabase.ALL_MIGRATIONS.sortedBy { it.startVersion }
+        // Keep verifying every original adjacent edge; shortcuts are checked by Room path tests.
+        val migrations = NekobotDatabase.ALL_MIGRATIONS
+            .filter { it.endVersion == it.startVersion + 1 }.sortedBy { it.startVersion }
 
         assertTrue(migrations.isNotEmpty())
         assertEquals(1, migrations.first().startVersion)

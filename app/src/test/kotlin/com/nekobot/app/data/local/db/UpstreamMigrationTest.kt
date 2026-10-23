@@ -1,6 +1,7 @@
 package com.nekobot.app.data.local.db
 
 import android.database.Cursor
+import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -47,7 +48,10 @@ class UpstreamMigrationTest(private val version: Int) {
                 }
                 val database = sqliteBridge(connection)
                 connection.autoCommit = false
-                NekobotDatabase.ALL_MIGRATIONS.filter { it.startVersion >= version }.forEach { it.migrate(database) }
+                val path = RoomDatabase.MigrationContainer().apply {
+                    addMigrations(*NekobotDatabase.ALL_MIGRATIONS)
+                }.findMigrationPath(version, latestSchemaVersion())
+                requireNotNull(path).forEach { it.migrate(database) }
                 connection.commit()
                 connection.autoCommit = true
                 assertSchema(connection)
