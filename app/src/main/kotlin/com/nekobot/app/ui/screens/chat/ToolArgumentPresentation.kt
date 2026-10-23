@@ -207,6 +207,14 @@ private fun formatArgumentValue(value: Any?): String = when (value) {
 internal const val STEP_RESULT_MAX_DEPTH = 6
 
 /**
+ * 返回结果每一层最多渲染的条目数。
+ *
+ * 子代理回执、列表类工具结果动辄几十上百个键；详情弹窗用的是普通 Column（非懒加载），
+ * 逐条渲染会把主线程拖到 ANR，因此超量条目直接截断并补一个省略号。
+ */
+internal const val STEP_RESULT_MAX_ITEMS = 60
+
+/**
  * 工具返回结果的结构化节点：
  * - [Obj] 对象：有序键值对；
  * - [Arr] 数组：有序元素；
@@ -232,23 +240,26 @@ internal fun parseStepResultNode(raw: String, depth: Int = 0): StepResultNode {
     if (text.startsWith("{")) {
         if (looksLikeJsonObject(text)) {
             (runCatching { JsonParser.parseString(text) }.getOrNull() as? JsonObject)?.let { obj ->
-                return StepResultNode.Obj(
-                    obj.entrySet().map { (name, value) -> name to jsonElementToNode(value, depth + 1) }
-                )
+                return StepResultNode.Obj(jsonObjectEntries(obj, depth + 1))
             }
         }
         val rows = parseFlattenedArgumentPreview(text)
         // 只在真的解析出「名称=值」条目时才按对象展示；整段裸值（非键值格式）保留原文
         if (rows.any { it.name.isNotEmpty() }) {
+            val visible = rows.take(STEP_RESULT_MAX_ITEMS)
             return StepResultNode.Obj(
-                rows.map { it.name to parseStepResultNode(it.value, depth + 1) }
+                visible.map { it.name to parseStepResultNode(it.value, depth + 1) } +
+                    truncatedMarker(rows.size - visible.size)
             )
         }
         return StepResultNode.Text(text)
     }
     if (text.startsWith("[")) {
         (runCatching { JsonParser.parseString(text) }.getOrNull() as? JsonArray)?.let { arr ->
-            return StepResultNode.Arr(arr.map { jsonElementToNode(it, depth + 1) })
+            return StepResultNode.Arr(
+                arr.take(STEP_RESULT_MAX_ITEMS).map { jsonElementToNode(it, depth + 1) } +
+                    truncatedNodes(arr.size() - STEP_RESULT_MAX_ITEMS)
+            )
         }
     }
     return StepResultNode.Text(text)
@@ -258,9 +269,24 @@ internal fun parseStepResultNode(raw: String, depth: Int = 0): StepResultNode {
 private fun jsonElementToNode(element: JsonElement, depth: Int): StepResultNode = when {
     element.isJsonNull -> StepResultNode.Text("null")
     depth >= STEP_RESULT_MAX_DEPTH -> StepResultNode.Text(element.toString())
-    element.isJsonObject -> StepResultNode.Obj(
-        element.asJsonObject.entrySet().map { (name, value) -> name to jsonElementToNode(value, depth + 1) }
+    element.isJsonObject -> StepResultNode.Obj(jsonObjectEntries(element.asJsonObject, depth + 1))
+    element.isJsonArray -> StepResultNode.Arr(
+        element.asJsonArray.take(STEP_RESULT_MAX_ITEMS).map { jsonElementToNode(it, depth + 1) } +
+            truncatedNodes(element.asJsonArray.size() - STEP_RESULT_MAX_ITEMS)
     )
-    element.isJsonArray -> StepResultNode.Arr(element.asJsonArray.map { jsonElementToNode(it, depth + 1) })
     else -> parseStepResultNode(element.asString, depth + 1)
 }
+
+/** 对象的键值对（含超量截断标记）。 */
+private fun jsonObjectEntries(obj: JsonObject, depth: Int): List<Pair<String, StepResultNode>> =
+    obj.entrySet().take(STEP_RESULT_MAX_ITEMS).map { (name, value) ->
+        name to jsonElementToNode(value, depth)
+    } + truncatedMarker(obj.size() - STEP_RESULT_MAX_ITEMS)
+
+/** 超量条目的截断提示：只有一个省略号键，不依赖任何语言资源。 */
+private fun truncatedMarker(hiddenCount: Int): List<Pair<String, StepResultNode>> =
+    if (hiddenCount > 0) listOf("…" to StepResultNode.Text("")) else emptyList()
+
+private fun truncatedNodes(hiddenCount: Int): List<StepResultNode> =
+    if (hiddenCount > 0) listOf(StepResultNode.Text("…")) else emptyList()
+

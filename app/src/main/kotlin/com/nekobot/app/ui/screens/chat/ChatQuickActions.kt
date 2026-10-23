@@ -144,10 +144,10 @@ internal object ChatQuickAction {
 }
 
 /**
- * 输入框下方的快捷工具栏（展开态）。
+ * 输入框下方的快捷工具栏内容（展开态）。
  *
- * 最左为折叠按钮，中间是横向滚动的操作按钮，最右为编辑按钮。
- * 折叠后整条工具栏不再占位（输入框随之下移），由输入框操作行里的展开按钮重新打开。
+ * 本身不再画卡片：背景由输入区外层的「延伸阴影层」提供，这里只排左侧折叠按钮、
+ * 中间横向滚动的操作项与右侧编辑按钮。
  */
 @Composable
 internal fun ChatQuickActionBar(
@@ -164,12 +164,12 @@ internal fun ChatQuickActionBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 4.dp),
+            .padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(
             onClick = onCollapse,
-            modifier = Modifier.size(30.dp)
+            modifier = Modifier.size(32.dp)
         ) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
@@ -182,18 +182,19 @@ internal fun ChatQuickActionBar(
             modifier = Modifier
                 .weight(1f)
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (actions.isEmpty()) {
                 Text(
                     text = stringResource(R.string.chat_quick_bar_empty),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
                 )
             } else {
                 actions.forEach { id ->
-                    ChatQuickActionChip(
+                    ChatQuickActionItem(
                         id = id,
                         enabled = isActionEnabled(id),
                         onClick = { onAction(id) }
@@ -201,7 +202,7 @@ internal fun ChatQuickActionBar(
                 }
             }
         }
-        IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+        IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
             Icon(
                 Icons.Filled.Tune,
                 contentDescription = stringResource(R.string.chat_quick_bar_edit),
@@ -234,9 +235,9 @@ internal fun ChatQuickActionExpandButton(
     }
 }
 
-/** 单个快捷操作：图标 + 名称的胶囊按钮；[enabled] 为 false 时半透明且不可点击。 */
+/** 单个快捷操作：图标 + 名称，直接平铺在工具栏卡片里（无胶囊底色）；[enabled] 为 false 时半透明且不可点击。 */
 @Composable
-private fun ChatQuickActionChip(
+private fun ChatQuickActionItem(
     id: String,
     enabled: Boolean,
     onClick: () -> Unit
@@ -244,10 +245,9 @@ private fun ChatQuickActionChip(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
             .alpha(if (enabled) 1f else 0.4f)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 9.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(

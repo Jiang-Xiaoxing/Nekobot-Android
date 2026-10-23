@@ -273,6 +273,8 @@ import com.nekobot.app.ui.components.ThirdPartyPluginConsentContent
 import com.nekobot.app.ui.components.builtinToolParameterEntries
 import com.nekobot.app.ui.components.resolveAvatarUrl
 import com.nekobot.app.ui.components.toolDescResId
+import com.nekobot.app.ui.components.toolNameResId
+import com.nekobot.app.ui.components.localToolDefinitionDescription
 import com.nekobot.app.ui.components.ToolParameterList
 import com.nekobot.app.ui.theme.BubbleUser
 import com.nekobot.app.ui.theme.BubbleUserLight
@@ -4202,6 +4204,17 @@ internal fun isStreamingThinkingStep(step: com.nekobot.app.data.model.ThinkingSt
             step.status.equals("active", ignoreCase = true))
 
 /**
+ * 步骤能否点开详情。
+ *
+ * 工具步骤一律可点开：正在运行、还没产生参数与结果的步骤（子代理轮询 subagent_list 这类
+ * 无参数工具尤其常见）同样要能打开，详情弹窗里至少有工具名称与说明。
+ * 非工具步骤则要求确有内容（参数 / 结果 / 思考正文 / 多语言说明）。
+ */
+internal fun progressStepHasDetail(step: com.nekobot.app.data.model.ThinkingStep): Boolean =
+    isLocalToolStep(step) || step.arguments != null || step.fullResult != null ||
+        !step.thinkingContent.isNullOrBlank() || step.name?.let { toolDescResId(it) != 0 } == true
+
+/**
  * 行内思考预览：压成单行并只保留末尾片段。
  *
  * 流式追加时最新内容始终停在可见位置；只处理末尾窗口，避免长思考每次重组都跑全量正则。
@@ -4271,6 +4284,18 @@ private fun matchesStepDetailTarget(
 ): Boolean = step.type.equals(target.stepType, ignoreCase = true) && step.name == target.stepName
 
 /**
+ * 步骤显示名：本地已知工具用多语言名称，远程 / MCP 等未知工具保留原始 id。
+ *
+ * 只影响展示，不参与 [StepDetailTarget] 的定位匹配（匹配始终用 `step.name` 原值）。
+ */
+@Composable
+private fun stepDisplayName(step: com.nekobot.app.data.model.ThinkingStep): String? {
+    val raw = step.name?.stripEmoji()?.takeIf { it.isNotBlank() } ?: return null
+    val resId = toolNameResId(raw)
+    return if (resId != 0) stringResource(resId) else raw
+}
+
+/**
  * 进度卡片单步渲染：Material Icon + 名称 + 状态色 + 详情摘要，含详情时可点击。
  *
  * 思考步骤正在流式输出时同样可点击：行内只放一个有界的预览窗口（长思考不拖慢列表），
@@ -4302,8 +4327,7 @@ private fun ProgressStepRow(
         else -> Icons.Filled.Circle
     }
     val iconSize = if (step.type?.lowercase() == "done") 14.dp else 16.dp
-    val name = step.name?.stripEmoji()?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.chat_step)
+    val name = stepDisplayName(step) ?: stringResource(R.string.chat_step)
     val detail = step.detail?.stripEmoji()?.takeIf { it.isNotBlank() }
     // 工具执行耗时（本地 Agent 模式在工具完成后写入；远程/运行中为 null 时不展示）
     val durationLabel = step.durationMs?.let { formatToolDuration(it) }
@@ -4319,11 +4343,9 @@ private fun ProgressStepRow(
             detail?.let { buildThinkingLinePreview(it) }?.takeIf(String::isNotBlank)
         }
     } else null
-    // 含任一详情字段时可点击查看详情（对齐原仓库 has-detail 判定）；
-    // 工具步骤即使没有参数/结果也带工具说明，同样可点开
-    val hasDetail = step.arguments != null || step.fullResult != null ||
-        !step.thinkingContent.isNullOrBlank() || step.name?.let { toolDescResId(it) != 0 } == true
-    val canOpenDetail = hasDetail
+    // 含任一详情字段时可点击查看详情；工具步骤一律可点（见 [progressStepHasDetail]），
+    // 正在运行、还没有参数与结果的步骤同样能打开，不会出现「点了没反应」。
+    val canOpenDetail = progressStepHasDetail(step)
 
     Row(
         modifier = Modifier
@@ -4793,6 +4815,80 @@ private fun GitDiffFileRow(
 /** 详情弹窗流式跟随恢复阈值：用户回滚到距底部不超过该像素数时重新自动跟随。 */
 private const val STEP_DETAIL_FOLLOW_SLOP_PX = 240
 
+/** 步骤详情里整理好的内容；任一项解析失败时保持为空，由调用方跳过该区块。 */
+private data class StepDetailContent(
+    val argumentRows: List<ToolArgumentRow> = emptyList(),
+    val argumentsJson: String? = null,
+    val fullResultJson: String? = null,
+    val toolOutputWasTruncated: Boolean = false,
+    val parameterToolId: String? = null
+)
+
+/**
+ * 把步骤数据整理成详情弹窗要展示的内容，全程兜底。
+ *
+ * 子代理步骤的参数里带有整段任务指令、结果里带有整段回执，解析（JSON 美化 / 扁平化预览拆分 /
+ * 工具 Schema 查表）出任何异常都不应让「点开详情」变成闪退：失败的区块留空或退回原文。
+ */
+private fun buildStepDetailContent(
+    step: com.nekobot.app.data.model.ThinkingStep,
+    toolName: String?
+): StepDetailContent {
+    val stepLabel = "（type=${step.type}, name=${step.name}）"
+    val argumentRows = runCatching { toolArgumentRows(step.arguments) }.getOrElse { error ->
+        logStepDetailFailure("参数整理$stepLabel", error)
+        emptyList()
+    }
+    val argumentsJson = if (argumentRows.isEmpty()) {
+        step.arguments
+            ?.takeIf { arguments ->
+                arguments.isNotEmpty() &&
+                    !(arguments.size == 1 && arguments.keys.firstOrNull() == "preview")
+            }
+            ?.let { arguments ->
+                runCatching { formatJsonForDisplay(arguments) }.getOrElse { error ->
+                    logStepDetailFailure("参数 JSON 格式化$stepLabel", error)
+                    arguments.toString()
+                }
+            }
+    } else {
+        null
+    }
+    // 结果预览是纯文本（本地 Agent 写入的扁平预览）时直接展示，避免被 JSON 引号与转义包裹
+    val fullResultJson = when (val result = step.fullResult) {
+        null -> null
+        is String -> result.takeIf { it.isNotBlank() }
+        else -> runCatching { formatJsonForDisplay(result) }.getOrElse { error ->
+            logStepDetailFailure("结果 JSON 格式化$stepLabel", error)
+            result.toString()
+        }
+    }
+    val truncated = step.resultTruncated == true ||
+        runCatching { fullResultIndicatesTruncation(step.fullResult) }.getOrDefault(false)
+    // 参数定义区块的显示条件：本地有 Schema（有参数或有多语言说明）的工具步骤。
+    // 没有参数的工具也要显示，用「该工具没有输入参数」占位，而不是整块消失。
+    val parameterToolId = toolName?.takeIf { name ->
+        isLocalToolStep(step) &&
+            (builtinToolParameterEntries(name).isNotEmpty() || toolDescResId(name) != 0)
+    }
+    return StepDetailContent(
+        argumentRows = argumentRows,
+        argumentsJson = argumentsJson,
+        fullResultJson = fullResultJson,
+        toolOutputWasTruncated = truncated,
+        parameterToolId = parameterToolId
+    )
+}
+
+/** 详情整理失败只记日志：弹窗降级展示，不能让主线程抛异常。 */
+private fun logStepDetailFailure(stage: String, error: Throwable) {
+    com.nekobot.app.data.local.LocalLogger.w(
+        "ChatScreen",
+        "步骤详情${stage}失败，已降级展示：${error.message}",
+        error
+    )
+}
+
 /**
  * 进度卡片步骤详情弹窗：展示工具说明（多语言）/ 输入参数 / AI 思考内容 / 返回结果。
  *
@@ -4812,8 +4908,7 @@ private fun StepDetailDialog(
     step: com.nekobot.app.data.model.ThinkingStep,
     onDismiss: () -> Unit
 ) {
-    val name = step.name?.stripEmoji()?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.chat_step_details)
+    val name = stepDisplayName(step) ?: stringResource(R.string.chat_step_details)
     val rawThinkingContent = step.thinkingContent?.takeIf(String::isNotBlank)
     val thinkingWasTruncated = rawThinkingContent?.length
         ?.let { it > AgentToolLimits.PROGRESS_REASONING_CHARS } == true
@@ -4823,34 +4918,34 @@ private fun StepDetailDialog(
         ?.takeIf(String::isNotBlank)
     // 参数优先整理成「参数名 → 参数值」列表；整理不出来（空参数 / 旧式 preview 包裹）时不再
     // 回退原始 JSON，避免详情弹窗里出现 {"preview": "..."} 这种对用户没有意义的内部结构。
-    val argumentRows = remember(step.arguments) { toolArgumentRows(step.arguments) }
-    val argumentsJson = if (argumentRows.isEmpty()) {
-        step.arguments
-            ?.takeIf { arguments ->
-                arguments.isNotEmpty() &&
-                    !(arguments.size == 1 && arguments.keys.firstOrNull() == "preview")
-            }
-            ?.let { formatJsonForDisplay(it) }
-    } else {
-        null
-    }
-    // 结果预览是纯文本（本地 Agent 写入的扁平预览）时直接展示，避免被 JSON 引号与转义包裹
-    val fullResultJson = when (val result = step.fullResult) {
-        null -> null
-        is String -> result.takeIf { it.isNotBlank() }
-        else -> formatJsonForDisplay(result)
-    }
-    val toolOutputWasTruncated = step.resultTruncated == true ||
-        fullResultIndicatesTruncation(step.fullResult)
-    val durationLabel = step.durationMs?.let { formatToolDuration(it) }
     val toolName = step.name?.stripEmoji()?.takeIf { it.isNotBlank() }
+    // 参数/结果的整理涉及 JSON 美化、扁平化预览拆分与工具 Schema 查表。子代理步骤的参数与结果
+    // 正文都很长，任何一处解析异常都会让详情弹窗直接抛到主线程把进程带走，因此统一兜底：
+    // 解析失败降级为原文展示，绝不因为「看详情」而失败。
+    val detail = remember(step.type, step.arguments, step.fullResult, step.resultTruncated, toolName) {
+        buildStepDetailContent(step, toolName)
+    }
+    val argumentRows = detail.argumentRows
+    val argumentsJson = detail.argumentsJson
+    val fullResultJson = detail.fullResultJson
+    val toolOutputWasTruncated = detail.toolOutputWasTruncated
+    val durationLabel = step.durationMs?.let { formatToolDuration(it) }
     // 详情弹窗不再展示「描述/摘要」字段：思考步骤有推理正文、工具步骤有参数与返回结果，
     // 步骤摘要只是重复预览（AI 思考与 MCP 动态工具尤其冗余），任何步骤类型都不再显示。
     // 参数定义（本地已知 Schema 的工具步骤才有）与 hasAny 判定共用这一份缓存结果。
-    val parameterToolId = remember(step.type, toolName) {
-        toolName?.takeIf { isLocalToolStep(step) && builtinToolParameterEntries(it).isNotEmpty() }
+    val parameterToolId = detail.parameterToolId
+    // 工具说明：本地已知工具走多语言资源，其余回退到工具定义里的说明。正在运行、还没有参数与
+    // 结果的步骤（子代理轮询类工具尤其常见）靠这一块保证详情弹窗有内容可看。
+    val toolDescriptionFallback = remember(toolName) {
+        if (toolName != null && isLocalToolStep(step)) localToolDefinitionDescription(toolName) else null
     }
-    val hasAny = parameterToolId != null || thinkingContent != null ||
+    val toolDescriptionResId = toolName?.takeIf { isLocalToolStep(step) }?.let { toolDescResId(it) } ?: 0
+    val toolDescription = if (toolDescriptionResId != 0) {
+        stringResource(toolDescriptionResId)
+    } else {
+        toolDescriptionFallback
+    }
+    val hasAny = parameterToolId != null || thinkingContent != null || !toolDescription.isNullOrBlank() ||
         argumentRows.isNotEmpty() || !argumentsJson.isNullOrBlank() || !fullResultJson.isNullOrBlank()
 
     val scrollState = rememberScrollState()
@@ -4916,6 +5011,13 @@ private fun StepDetailDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+                if (!toolDescription.isNullOrBlank()) {
+                    StepDetailSection(
+                        label = stringResource(R.string.chat_step_tool_description),
+                        content = toolDescription,
+                        icon = Icons.Filled.Build
+                    )
                 }
                 if (!hasAny) {
                     Text(
@@ -5102,7 +5204,13 @@ private fun StepResultSection(
     resultText: String,
     truncatedNotice: String?
 ) {
-    val rootNode = remember(resultText) { parseStepResultNode(resultText) }
+    val rootNode = remember(resultText) {
+        // 解析失败按纯文本展示：详情弹窗的渲染不能因为一段畸形 JSON 直接崩掉进程
+        runCatching { parseStepResultNode(resultText) }.getOrElse { error ->
+            logStepDetailFailure("结果结构化", error)
+            StepResultNode.Text(resultText)
+        }
+    }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(

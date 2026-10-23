@@ -188,6 +188,9 @@
     <string name="tool_desc_subagent_resume">保存された会話とチェックポイントからサブエージェントのタスクを続行します。</string>
     <string name="tool_desc_subagent_pause">バックグラウンド子エージェントを一時停止し、会話を保存します。</string>
     <string name="tool_desc_subagent_retry">元の指示で失敗または終了したタスクを再試行し、元タスクとの関係を保存します。</string>
+    <string name="tool_desc_subagent_list">このセッションのサブエージェントタスクと状態を一覧します。</string>
+    <string name="tool_desc_subagent_get">タスク id でサブエージェントの進捗または結果を取得します。</string>
+    <string name="tool_desc_subagent_kill">指定したバックグラウンドサブエージェントタスクを終了します。</string>
     <string name="tool_desc_get_session_thinking_history">現在のセッションにおけるモデルの思考履歴を取得します。</string>
     <string name="tool_desc_send_message">指定したセッションまたはチャンネルにメッセージを送信します。</string>
     <string name="tool_desc_skill_list">現在有効な Skill とそのファイル数を一覧表示します。</string>

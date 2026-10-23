@@ -192,4 +192,43 @@ class ToolArgumentPresentationTest {
         assertTrue(levels <= STEP_RESULT_MAX_DEPTH)
         assertTrue(node is StepResultNode.Text)
     }
+
+    @Test
+    fun oversizedObjectResultIsCappedWithEllipsisMarker() {
+        // 子代理回执这类超长 JSON：逐条渲染会拖死主线程，超过条数上限后只留省略号占位
+        val json = (1..(STEP_RESULT_MAX_ITEMS + 20)).joinToString(prefix = "{", postfix = "}") {
+            "\"k$it\": $it"
+        }
+
+        val node = parseStepResultNode(json)
+
+        assertTrue(node is StepResultNode.Obj)
+        val entries = (node as StepResultNode.Obj).entries
+        assertEquals(STEP_RESULT_MAX_ITEMS + 1, entries.size)
+        assertEquals("…", entries.last().first)
+    }
+
+    @Test
+    fun oversizedArrayResultIsCappedWithEllipsisMarker() {
+        val json = (1..(STEP_RESULT_MAX_ITEMS + 20)).joinToString(prefix = "[", postfix = "]") { "\"v$it\"" }
+
+        val node = parseStepResultNode(json)
+
+        assertTrue(node is StepResultNode.Arr)
+        val items = (node as StepResultNode.Arr).items
+        assertEquals(STEP_RESULT_MAX_ITEMS + 1, items.size)
+        assertEquals(StepResultNode.Text("…"), items.last())
+    }
+
+    @Test
+    fun oversizedFlattenedPreviewIsCappedAsWell() {
+        val preview = (1..(STEP_RESULT_MAX_ITEMS + 10)).joinToString(prefix = "{", postfix = "}") {
+            "k$it=v$it"
+        }
+
+        val node = parseStepResultNode(preview)
+
+        assertTrue(node is StepResultNode.Obj)
+        assertEquals(STEP_RESULT_MAX_ITEMS + 1, (node as StepResultNode.Obj).entries.size)
+    }
 }

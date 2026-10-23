@@ -1010,26 +1010,32 @@ class LocalRepository(
 
     init {
         com.nekobot.app.data.local.ai.SubagentTaskStore.bind(db.localSubagentTaskDao())
-        com.nekobot.app.data.local.ai.SubagentTaskStore.all()
-            .filter { it.status == com.nekobot.app.data.local.ai.SubagentTaskStatus.INTERRUPTED }
-            .forEach { task ->
-                persistAgentProgressCard(
-                    sessionId = task.sessionId,
-                    card = ThinkingCard(
-                        id = task.id,
-                        content = "⏸ 子代理已中断: ${task.description}",
-                        steps = task.steps,
-                        isComplete = true,
-                        isAgent = true,
-                        timestamp = nowIsoStatic(),
-                        parentMessageId = task.parentMessageId,
-                        subagentStatus = "interrupted",
-                        subagentBackground = task.runInBackground,
-                        subagentPrompt = task.prompt,
-                        subagentResult = task.result.takeIf { it.isNotBlank() }
+        // 启动阶段恢复中断态子代理卡片：任何异常都只记日志，不允许阻断 LocalRepository 初始化
+        // （初始化在 Application.onCreate 主线程执行，异常会让应用直接无法启动）。
+        runCatching {
+            com.nekobot.app.data.local.ai.SubagentTaskStore.all()
+                .filter { it.status == com.nekobot.app.data.local.ai.SubagentTaskStatus.INTERRUPTED }
+                .forEach { task ->
+                    persistAgentProgressCard(
+                        sessionId = task.sessionId,
+                        card = ThinkingCard(
+                            id = task.id,
+                            content = "⏸ 子代理已中断: ${task.description}",
+                            steps = task.steps,
+                            isComplete = true,
+                            isAgent = true,
+                            timestamp = nowIsoStatic(),
+                            parentMessageId = task.parentMessageId,
+                            subagentStatus = "interrupted",
+                            subagentBackground = task.runInBackground,
+                            subagentPrompt = task.prompt,
+                            subagentResult = task.result.takeIf { it.isNotBlank() }
+                        )
                     )
-                )
-            }
+                }
+        }.onFailure { error ->
+            LocalLogger.w(TAG, "恢复中断态子代理卡片失败，已跳过：${error.message}", error)
+        }
         aiClient.setOAuthCredentialResolver(oauthManager::resolveCredential)
         appContext?.let { context ->
             LocalPlotStoryStore.activateProfile(db.dbName, plotStoryOwner) {
