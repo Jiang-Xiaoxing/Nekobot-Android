@@ -313,10 +313,32 @@ fun ChatScreen(
     companionUtilityRequest: CompanionChatUtility? = null,
     onCompanionUtilityHandled: () -> Unit = {},
     // 平板双栏嵌入会话页时，底部悬浮导航栏盖住覆盖层输入区，需要整体抬升避让
-    embeddedBottomBarClearance: Dp = 0.dp
+    embeddedBottomBarClearance: Dp = 0.dp,
+    interactionVisible: Boolean = true
 ) {
     val textResources = LocalResources.current
     val viewModel: ChatViewModel = viewModel()
+    val memoryDecision by viewModel.memoryMessageDecision.collectAsStateWithLifecycle()
+    val memoryDecisionBusy by viewModel.memoryMessageDecisionBusy.collectAsStateWithLifecycle()
+    val memoryDecisionError by viewModel.memoryMessageDecisionError.collectAsStateWithLifecycle()
+    val memoryForeground by viewModel.memoryChatForeground.collectAsStateWithLifecycle()
+    val review by viewModel.lockedMemoryReview.collectAsStateWithLifecycle()
+    val reviewBusy by viewModel.lockedMemoryReviewBusy.collectAsStateWithLifecycle()
+    val reviewError by viewModel.lockedMemoryReviewError.collectAsStateWithLifecycle()
+    val memoryDataRevision by ServiceContainer.dataSourceRevision.collectAsStateWithLifecycle()
+    val memorySessionGenerating by viewModel.sessionGenerating.collectAsStateWithLifecycle()
+    memoryDecision?.takeIf { it.change.sessionId == sessionId && memoryForeground && interactionVisible }?.let {
+        com.nekobot.app.ui.screens.memory.CompanionMemoryTheme {
+        com.nekobot.app.ui.screens.memory.CompanionMessageMemoryDialog(it, memoryDecisionBusy, memoryDecisionError,
+            onChoice = viewModel::chooseMessageMemories)
+        }
+    }
+    review?.takeIf { it.review.sessionId == sessionId && memoryForeground && interactionVisible && memoryDecision == null }?.let {
+        com.nekobot.app.ui.screens.memory.CompanionMemoryTheme {
+        com.nekobot.app.ui.screens.memory.CompanionLockedMemoryDialog(it, reviewBusy, reviewError,
+            onDismiss = viewModel::dismissLockedMemoryReview, onResolve = viewModel::resolveLockedMemoryReview)
+        }
+    }
     val messageMotion = remember(sessionId) { MessageMotionRegistry(System.currentTimeMillis()) }
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val delayReplyBubbleStatus by viewModel.delayReplyBubbleStatus.collectAsStateWithLifecycle()
@@ -353,6 +375,10 @@ fun ChatScreen(
     val hookNotifications by viewModel.hookNotifications.collectAsStateWithLifecycle()
     val agentRecovery by viewModel.agentRecovery.collectAsStateWithLifecycle()
     val agentContextCompressionInProgress by viewModel.agentContextCompressionInProgress.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionId, session?.companionMode, sending, memorySessionGenerating, agentContextCompressionInProgress,
+        messages.lastOrNull(), memoryForeground, memoryDecision, memoryDecisionBusy, memoryDataRevision) {
+        viewModel.refreshLockedMemoryReview()
+    }
     // 所有会话内联提示（压缩 / 技能沉淀 / 长期记忆）：统一锚定到触发它的消息下方渲染。
     val inlineNotices by viewModel.inlineNotices.collectAsStateWithLifecycle()
     val agentTodos by viewModel.agentTodos.collectAsStateWithLifecycle()
@@ -758,11 +784,11 @@ fun ChatScreen(
     }
     // 生命周期绑定：聊天界面可见性追踪（用于通知提醒判断）
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, sessionId, interactionVisible) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                    viewModel.setChatVisible(true)
+                    viewModel.setChatVisible(interactionVisible)
                     viewModel.refreshSession()
                     viewModel.activateRealtimeSession()
                     // 事件钩子：app.lifecycle（chat.open）
@@ -787,7 +813,11 @@ fun ChatScreen(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        viewModel.setChatVisible(interactionVisible && lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.setChatVisible(false)
+        }
     }
     // 新消息时滚动：首次加载用瞬时滚动（无动画），后续用动画滚动。
     // 向上分页会在头部插入更早历史，此时首条消息与列表长度同时变化——
@@ -5817,7 +5847,8 @@ private fun ChatInlineNoticeDivider(notice: ChatInlineNotice, onDismissMemoryFai
         )
         is ContextCompressionUiState -> InlineNoticeDivider(
             text = stringResource(
-                if (notice.running) R.string.chat_agent_context_compressing
+                if (notice.memorySummarizing) R.string.memory_v2_summarizing
+                else if (notice.running) R.string.chat_agent_context_compressing
                 else R.string.chat_agent_context_compressed
             ),
             icon = Icons.Filled.Compress,

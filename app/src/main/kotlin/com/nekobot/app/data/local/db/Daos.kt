@@ -252,6 +252,8 @@ interface MessageDao {
 
     @Query("SELECT * FROM local_messages WHERE session_id = :sessionId AND role = 'user' AND deleted = 0 ORDER BY created_at DESC LIMIT 1")
     suspend fun latestUserBySession(sessionId: String): LocalMessageEntity?
+    @Query("SELECT * FROM local_messages WHERE session_id = :sessionId AND deleted = 0 AND role IN ('user','assistant') ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    suspend fun latestCompanionDialogue(sessionId: String): LocalMessageEntity?
 
     @Query("SELECT * FROM local_messages WHERE session_id = :sessionId AND source = :source AND deleted = 0 ORDER BY created_at DESC LIMIT 1")
     suspend fun latestBySource(sessionId: String, source: String): LocalMessageEntity?
@@ -466,6 +468,8 @@ interface MessageImageDao {
  */
 @Dao
 interface MessageVariantDao {
+    @Query("SELECT v.* FROM local_message_variants v JOIN local_messages m ON m.id=v.message_id AND m.session_id=v.session_id WHERE v.session_id=:sessionId AND m.deleted=0 AND m.role='assistant' ORDER BY v.created_at DESC,v.rowid DESC LIMIT 1")
+    suspend fun latestCompanionVariant(sessionId: String): LocalMessageVariantEntity?
     @Query("SELECT * FROM local_message_variants WHERE message_id = :messageId ORDER BY variant_index ASC")
     suspend fun listByMessage(messageId: String): List<LocalMessageVariantEntity>
 

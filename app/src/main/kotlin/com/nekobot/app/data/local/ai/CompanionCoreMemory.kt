@@ -8,7 +8,7 @@ internal object CompanionCoreMemory {
     const val maintenanceTokens = 1000
 
     fun contains(memory: CompanionMemoryEntity, now: Instant = Instant.now()): Boolean =
-        memory.current && memory.valid && memory.status in setOf("active", "completed") &&
+        memory.current && memory.valid && !memory.voided && !memory.pendingConfirm && memory.status in setOf("active", "completed") &&
             CompanionImportPolicy.usable(memory, now) &&
             (memory.alwaysProvide || (memory.kind == "core" && !memory.coreExcluded))
 

@@ -313,6 +313,7 @@ fun ModernChatScreen(
     externalListState = listState,
     onOpenCompanionSettings = { settingsKeyboard?.hide(); companionSettingsOpen = true },
     companionUtilityRequest = companionUtilityRequest,
+    interactionVisible = !companionSettingsOpen,
     onCompanionUtilityHandled = { companionUtilityRequest = null },
     embeddedBottomBarClearance = embeddedBottomBarClearance,
     customBottomBar = {

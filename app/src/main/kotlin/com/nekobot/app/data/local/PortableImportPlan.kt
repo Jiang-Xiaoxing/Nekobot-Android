@@ -306,6 +306,13 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             names.forEach { existing.add(it, flags[it]) }
             onWrite("companion_memories", existing, token in newKeys, names.toSet())
         }
+        // 队列随备份迁入；缺失的记忆不能阻止其余资料导入，也不能产生悬空弹窗。
+        if (sql.query("SELECT name FROM sqlite_master WHERE type='table' AND name='companion_locked_reviews'").isNotEmpty()) sql.execute("""
+            UPDATE companion_locked_reviews SET resolvedAt=?,resolution='obsolete'
+            WHERE resolvedAt IS NULL AND (
+                NOT EXISTS(SELECT 1 FROM companion_memories m WHERE m.id=lockedMemoryId AND m.scopeId=companion_locked_reviews.scopeId)
+                OR NOT EXISTS(SELECT 1 FROM companion_memories m WHERE m.id=confirmedMemoryId AND m.scopeId=companion_locked_reviews.scopeId))
+        """.trimIndent(), listOf(java.time.Instant.now().toString()))
         return changed
     }
 
@@ -394,6 +401,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
         val logical = when {
             table == "local_sessions" -> listOf("character_id" to "local_characters")
             table == "companion_sources" -> listOf("memoryId" to "companion_memories", "messageId" to "local_messages")
+            table == "companion_locked_reviews" -> listOf("scopeId" to "companion_scopes", "sessionId" to "local_sessions")
             table == "companion_scopes" || table == "companion_owners" -> listOf("sessionId" to "local_sessions", "characterId" to "local_characters")
             table.startsWith("companion_") && table !in setOf("companion_relationship_state", "companion_relationship_events", "companion_relationship_assessments", "companion_examples") -> listOf("scopeId" to "companion_scopes", "memoryId" to "companion_memories")
             table == "local_character_memories" -> listOf("character_id" to "local_characters")
@@ -425,6 +433,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             "companion_scopes", "companion_relationship_state" -> setOf("sessionId", "characterId")
             "companion_owners" -> setOf("sessionId")
             "companion_memories", "companion_clarifications" -> setOf("scopeId")
+            "companion_locked_reviews" -> setOf("scopeId", "sessionId", "lockedMemoryId", "confirmedMemoryId")
             else -> emptySet()
         }
         fun protectedColumns(table: String): Set<String> = sensitiveColumns(table) + ownershipColumns(table) + when (table) {

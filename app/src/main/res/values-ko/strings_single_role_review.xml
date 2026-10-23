@@ -225,7 +225,7 @@
     <string name="single_role_earlier_content">이전 내용</string>
     <string name="single_role_this_content_was_deleted">이 내용은 삭제되었습니다</string>
     <string name="single_role_saved_manually">수동 저장</string>
-    <string name="single_role_organized_automatically">자동 정리</string>
+    <string name="single_role_organized_automatically">자동 요약</string>
     <string name="single_role_save_time_not_recorded">저장 시간 미기록</string>
     <string name="single_role_original_messages_for_this_memory">이 기억의 원문</string>
     <string name="single_role_no_original_messages_to_locate">이동할 원문이 없습니다.</string>
@@ -241,7 +241,7 @@
     <string name="single_role_keep_memory">기억 유지</string>
     <string name="single_role_deleting">삭제 중…</string>
     <string name="single_role_not_deleted_yet">아직 삭제되지 않았습니다</string>
-    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">이 기억과 수정 기록이 지워집니다. 정리 진행 상황은 유지됩니다. 이후 새로운 명확한 발언으로 새 기억이 만들어질 수 있습니다.</string>
+    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">이 기억은 무효화되며 변경 기록에서 복원할 수 있습니다. 요약 진행 상태는 유지되며 이후 새 발언으로 새 기억이 생길 수 있습니다.</string>
     <string name="single_role_memory_settings">기억 설정</string>
     <string name="single_role_retrieval_settings_all_single_session_characters">검색 설정 · 모든 단일 세션 캐릭터 공통</string>
     <string name="single_role_keyword_search">키워드 검색</string>

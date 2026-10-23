@@ -11,14 +11,14 @@ import java.sql.DriverManager
 
 /** SQL/storage coverage of the actual public Room schema; not a substitute for Android UI checks. */
 class PortableImportSchemaCoverageTest {
-    @Test fun allFortyNinePortableTablesRoundTripWithoutRecreatingRecords() {
-        val schemaRelative = "schemas/com.nekobot.app.data.local.db.NekobotDatabase/62.json"
+    @Test fun allFiftyPortableTablesRoundTripWithoutRecreatingRecords() {
+        val schemaRelative = "schemas/com.nekobot.app.data.local.db.NekobotDatabase/64.json"
         val schemaFile = listOf(File(schemaRelative), File("app/$schemaRelative"),
             File(System.getProperty("nekobot.import.repo", "."), "app/$schemaRelative")).first { it.isFile }
         val database = JsonParser.parseString(schemaFile.readText()).asJsonObject.getAsJsonObject("database")
         val entities = database.getAsJsonArray("entities").associate { it.asJsonObject["tableName"].asString to it.asJsonObject }
         val portableTables = PortableDataCategory.entries.flatMap { it.tables }
-        assertEquals(49, portableTables.size)
+        assertEquals(50, portableTables.size)
         DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->
             val sql = JdbcPortableImportSql(connection)
             sql.execute("PRAGMA foreign_keys=ON")
@@ -63,6 +63,20 @@ class PortableImportSchemaCoverageTest {
                 if (row.has("memoryId")) row.add("memoryId", fixtures.getValue("companion_memories")["id"])
                 if (row.has("characterId")) row.add("characterId", character)
             }
+            fixtures.getValue("companion_locked_reviews").apply {
+                add("lockedMemoryId", fixtures.getValue("companion_memories")["id"])
+                add("confirmedMemoryId", fixtures.getValue("companion_memories")["id"])
+            }
+            fixtures.getValue("companion_memories").apply {
+                addProperty("voided", 1); addProperty("voidedReason", "update")
+                addProperty("voidedAt", "2026-10-23T10:00:00Z")
+                addProperty("supersededById", "synthetic-next")
+                addProperty("pendingConfirm", 1); addProperty("uncertainInjectedTurns", 3)
+                addProperty("uncertainTargetId", "synthetic-protected")
+                addProperty("timeText", "下周三"); addProperty("modelDate", "2026-10-29")
+                addProperty("eventDate", "2026-10-28"); addProperty("dateType", "day"); addProperty("dateSource", "program")
+            }
+            assertFalse("companion_applied_ops" in portableTables)
             val message = fixtures.getValue("local_messages")
             fixtures.getValue("companion_sources").apply {
                 add("messageId", message["id"]); add("quote", message["content"]); add("role", message["role"])
@@ -74,13 +88,33 @@ class PortableImportSchemaCoverageTest {
             val planner = PortableImportPlanner(sql, "synthetic.db")
             val first = planner.preview(visitor, PortableImportChoices())
             assertEquals(emptyList<String>(), first.issues)
-            assertEquals(49, first.counts.added)
+            assertEquals(50, first.counts.added)
             connection.autoCommit = false
-            assertEquals(49, planner.apply(visitor, PortableImportChoices()))
+            assertEquals(50, planner.apply(visitor, PortableImportChoices()))
             connection.commit()
             val repeat = planner.preview(visitor, PortableImportChoices())
-            assertEquals(49, repeat.counts.same)
+            assertEquals(50, repeat.counts.same)
             assertEquals(0, planner.apply(visitor, PortableImportChoices()))
+            val exported = portableTables.flatMap { table -> sql.query("SELECT * FROM `$table`").map { PortableIncomingRow(table, it) } }
+            val exportedVisitor: PortableRowVisitor = { consume -> exported.forEach(consume) }
+            assertEquals(0, planner.apply(exportedVisitor, PortableImportChoices()))
+            val actualMemory = sql.query("SELECT * FROM companion_memories").single()
+            for (column in listOf("voided", "voidedAt", "voidedReason", "supersededById", "pendingConfirm", "uncertainTargetId",
+                "uncertainInjectedTurns", "timeText", "modelDate", "dateType", "dateSource")) {
+                assertEquals(column, fixtures.getValue("companion_memories")[column], actualMemory[column])
+            }
+            // 63版归档没有新增字段，由64版SQLite表的真实默认值补齐。
+            val oldMemory = fixtures.getValue("companion_memories").deepCopy().apply {
+                addProperty("id", "old-backup-memory"); addProperty("factKey", "old-backup-key")
+                listOf("voided", "voidedAt", "voidedReason", "supersededById", "pendingConfirm", "uncertainTargetId",
+                    "uncertainInjectedTurns", "timeText", "modelDate", "dateType", "dateSource").forEach(::remove)
+            }
+            val oldVisitor: PortableRowVisitor = { consume -> consume(PortableIncomingRow("companion_memories", oldMemory)) }
+            assertEquals(1, planner.apply(oldVisitor, PortableImportChoices()))
+            val importedOld = sql.query("SELECT * FROM companion_memories WHERE id='old-backup-memory'").single()
+            for (column in listOf("voided", "pendingConfirm", "uncertainInjectedTurns")) assertEquals(column, 0, importedOld[column].asInt)
+            for (column in listOf("messageSnapshot")) assertTrue(sql.query("SELECT * FROM companion_sources").single()[column].isJsonNull)
+            assertTrue(importedOld["dateSource"].isJsonNull)
             assertTrue(sql.query("PRAGMA foreign_key_check").isEmpty())
             assertEquals("ok", sql.query("PRAGMA integrity_check").single().entrySet().single().value.asString)
         }

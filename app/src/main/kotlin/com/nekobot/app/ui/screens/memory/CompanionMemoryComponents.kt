@@ -48,21 +48,18 @@ internal val memoryCategoryNames: Map<String, String>
     }
 
 @Composable
-internal fun memoryAccent(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
-    Color(0xFFB3C3ED) else Color(0xFF5365A2)
+internal fun memoryAccent(): Color = MaterialTheme.colorScheme.primary
+
+internal fun companionMemoryColorScheme(colors: ColorScheme): ColorScheme = colors.copy(
+    onPrimary = if (colors.surface.luminance() < 0.5f) colors.background else colors.onPrimary,
+    primaryContainer = lerp(colors.surface, colors.primary, 0.12f),
+    onPrimaryContainer = colors.primary,
+    surfaceContainerLow = lerp(colors.surface, colors.onSurface, 0.035f))
 
 /** 只在独立记忆入口内应用，不覆盖其他页面的用户主题。 */
 @Composable
 fun CompanionMemoryTheme(content: @Composable () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val accent = memoryAccent()
-    val dark = colors.surface.luminance() < 0.5f
-    MaterialTheme(colorScheme = colors.copy(primary = accent,
-        onPrimary = if (dark) Color(0xFF182544) else Color.White,
-        primaryContainer = lerp(colors.surface, accent, 0.12f), onPrimaryContainer = colors.onSurface,
-        surface = if (dark) colors.surface else Color.White,
-        surfaceContainer = if (dark) colors.surfaceContainer else Color(0xFFF3F1EE),
-        background = if (dark) colors.background else Color(0xFFF8F7F4)), content = content)
+    MaterialTheme(colorScheme = companionMemoryColorScheme(MaterialTheme.colorScheme), content = content)
 }
 
 @Composable
@@ -237,7 +234,7 @@ internal fun CompanionMemoryCard(
                 Text(memory.content, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             }
             if (!memory.eventDate.isNullOrBlank()) {
-                Text(memory.eventDate.orEmpty(), style = MaterialTheme.typography.labelMedium,
+                Text(memoryDisplayDate(memory.eventDate.orEmpty()), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (memory.category == "episode") {
                 Text(textResources.getString(R.string.single_role_event_date_unknown), style = MaterialTheme.typography.labelMedium,

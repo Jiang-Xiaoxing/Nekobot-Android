@@ -225,7 +225,7 @@
     <string name="single_role_earlier_content">以前的内容</string>
     <string name="single_role_this_content_was_deleted">这条内容已删除</string>
     <string name="single_role_saved_manually">手动保存</string>
-    <string name="single_role_organized_automatically">自动整理</string>
+    <string name="single_role_organized_automatically">自动总结</string>
     <string name="single_role_save_time_not_recorded">保存时间未记录</string>
     <string name="single_role_original_messages_for_this_memory">这条记忆的原话</string>
     <string name="single_role_no_original_messages_to_locate">暂无可定位的原话。</string>
@@ -241,7 +241,7 @@
     <string name="single_role_keep_memory">保留记忆</string>
     <string name="single_role_deleting">正在删除…</string>
     <string name="single_role_not_deleted_yet">还没有删除成功</string>
-    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">这条记忆及其修改记录会被清除。已整理进度不变；以后新的明确表达仍可能形成新的记忆。</string>
+    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">这条记忆会标为已作废，可在修订历史中恢复。已总结进度不变；以后新的明确表达仍可能形成新的记忆。</string>
     <string name="single_role_memory_settings">记忆设置</string>
     <string name="single_role_retrieval_settings_all_single_session_characters">检索设置 · 所有单会话角色通用</string>
     <string name="single_role_keyword_search">关键词检索</string>

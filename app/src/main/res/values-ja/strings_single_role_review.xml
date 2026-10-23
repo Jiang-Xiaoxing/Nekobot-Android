@@ -225,7 +225,7 @@
     <string name="single_role_earlier_content">以前の内容</string>
     <string name="single_role_this_content_was_deleted">この内容は削除されました</string>
     <string name="single_role_saved_manually">手動で保存</string>
-    <string name="single_role_organized_automatically">自動で整理</string>
+    <string name="single_role_organized_automatically">自動で要約</string>
     <string name="single_role_save_time_not_recorded">保存時刻の記録なし</string>
     <string name="single_role_original_messages_for_this_memory">この記憶の原文</string>
     <string name="single_role_no_original_messages_to_locate">移動できる原文はありません。</string>
@@ -241,7 +241,7 @@
     <string name="single_role_keep_memory">記憶を残す</string>
     <string name="single_role_deleting">削除中…</string>
     <string name="single_role_not_deleted_yet">まだ削除できていません</string>
-    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">この記憶と変更履歴を削除します。整理の進捗は変わりません。今後の明確な発言から新しい記憶が作られる場合があります。</string>
+    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">この記憶は無効になり、変更履歴から復元できます。要約の進捗は変わりません。今後の発言から新しい記憶が作られることがあります。</string>
     <string name="single_role_memory_settings">記憶の設定</string>
     <string name="single_role_retrieval_settings_all_single_session_characters">検索設定 · 全単一セッションキャラクター共通</string>
     <string name="single_role_keyword_search">キーワード検索</string>

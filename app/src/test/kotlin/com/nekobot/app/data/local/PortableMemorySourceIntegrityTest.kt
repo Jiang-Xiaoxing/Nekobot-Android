@@ -283,4 +283,49 @@ class PortableMemorySourceIntegrityTest {
         val saved = sql.query("SELECT * FROM companion_memories").single()
         assertEquals(0, saved["valid"].asInt); assertEquals(0, saved["current"].asInt)
     }
+
+    private fun enableV2() {
+        sql.execute("ALTER TABLE local_sessions ADD COLUMN companion_mode INTEGER NOT NULL DEFAULT 1")
+        sql.execute("ALTER TABLE companion_sources ADD COLUMN messageSnapshot TEXT")
+    }
+    private fun v2Source() = source(quote = "").also { it.values.addProperty("messageSnapshot", messageBody) }
+
+    @Test fun v2FullSnapshotImportsWithoutQuoteAfterEditOrSoftDelete() {
+        enableV2()
+        sql.execute("UPDATE local_messages SET content='虚构编辑后的原话',deleted=1")
+        val incoming = rows(memory(), v2Source())
+        val choices = overwrite(incoming)
+        assertTrue(planner.preview(incoming, choices).issues.isEmpty())
+        assertEquals(2, planner.apply(incoming, choices))
+        val saved = sql.query("SELECT * FROM companion_sources").single()
+        assertEquals("", saved["quote"].asString)
+        assertEquals(messageBody, saved["messageSnapshot"].asString)
+        assertEquals(0, planner.apply(incoming, PortableImportChoices()))
+    }
+
+    @Test fun v2SnapshotCannotBypassFingerprintRoleOrSessionOwnership() {
+        enableV2()
+        val wrongSnapshot = v2Source().also { it.values.addProperty("messageSnapshot", "另一个虚构版本") }
+        val wrongRole = v2Source().also { it.values.addProperty("role", "assistant") }
+        for (bad in listOf(wrongSnapshot, wrongRole)) assertTrue(planner.preview(rows(memory(), bad), PortableImportChoices()).issues.isNotEmpty())
+        sql.execute("UPDATE local_messages SET session_id='other'")
+        assertTrue(planner.preview(rows(memory(), v2Source()), PortableImportChoices()).issues.isNotEmpty())
+    }
+
+    @Test fun ordinarySessionStillRequiresVerbatimQuoteEvenWithV2Columns() {
+        enableV2(); sql.execute("UPDATE local_sessions SET companion_mode=0")
+        assertTrue(planner.preview(rows(memory(), v2Source()), PortableImportChoices()).issues.isNotEmpty())
+    }
+
+    @Test fun missingReviewMemoryImportsAsObsoleteInsteadOfBlockingOtherData() {
+        sql.execute("CREATE TABLE companion_locked_reviews(id TEXT PRIMARY KEY,scopeId TEXT,sessionId TEXT,lockedMemoryId TEXT,confirmedMemoryId TEXT,createdAt TEXT,resolvedAt TEXT,resolution TEXT)")
+        val review = PortableIncomingRow("companion_locked_reviews", JsonParser.parseString("""{"id":"review","scopeId":"scope","sessionId":"session","lockedMemoryId":"memory","confirmedMemoryId":"missing","createdAt":"$stamp"}""").asJsonObject)
+        val incoming = rows(review)
+        assertTrue(planner.preview(incoming, PortableImportChoices()).issues.isEmpty())
+        assertEquals(1, planner.apply(incoming, PortableImportChoices()))
+        val saved = sql.query("SELECT * FROM companion_locked_reviews").single()
+        assertEquals("obsolete", saved["resolution"].asString)
+        assertFalse(saved["resolvedAt"].isJsonNull)
+        assertEquals(0, planner.apply(incoming, PortableImportChoices()))
+    }
 }

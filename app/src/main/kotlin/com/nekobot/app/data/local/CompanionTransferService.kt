@@ -109,7 +109,10 @@ internal class CompanionTransferService(
                 stage.run(job, conversion.copy(generate = { system, material ->
                     guard(report.snapshot.sessionIds)
                     conversion.generate(system, material).also { guard(report.snapshot.sessionIds) }
-                }), progress)
+                }, generateStream = conversion.generateStream?.let { stream -> { system, material, callbacks ->
+                    guard(report.snapshot.sessionIds)
+                    stream(system, material, callbacks).also { guard(report.snapshot.sessionIds) }
+                } }), progress)
                 report = report.copy(conversion = report.conversion!!.copy(memories = stage.count(job)))
                 job = job.copy(reportJson = gson.toJson(report))
                 checkpoint("converted")

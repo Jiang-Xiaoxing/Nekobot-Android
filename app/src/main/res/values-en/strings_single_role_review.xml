@@ -225,7 +225,7 @@
     <string name="single_role_earlier_content">Earlier content</string>
     <string name="single_role_this_content_was_deleted">This content was deleted</string>
     <string name="single_role_saved_manually">Saved manually</string>
-    <string name="single_role_organized_automatically">Organized automatically</string>
+    <string name="single_role_organized_automatically">Summarized automatically</string>
     <string name="single_role_save_time_not_recorded">Save time not recorded</string>
     <string name="single_role_original_messages_for_this_memory">Original messages for this memory</string>
     <string name="single_role_no_original_messages_to_locate">No original messages to locate.</string>
@@ -241,7 +241,7 @@
     <string name="single_role_keep_memory">Keep memory</string>
     <string name="single_role_deleting">Deleting…</string>
     <string name="single_role_not_deleted_yet">Not deleted yet</string>
-    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">This memory and its revisions will be removed. Organization progress stays the same; new explicit statements may create new memories later.</string>
+    <string name="single_role_this_memory_and_its_revisions_will_be_removed_organization_progre">This memory will be voided and can be restored from revision history. Summary progress stays unchanged; new statements may create new memories.</string>
     <string name="single_role_memory_settings">Memory settings</string>
     <string name="single_role_retrieval_settings_all_single_session_characters">Retrieval settings · All single-session characters</string>
     <string name="single_role_keyword_search">Keyword search</string>

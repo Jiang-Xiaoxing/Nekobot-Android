@@ -62,9 +62,11 @@ internal class PortableMemorySourceIntegrity(private val sql: PortableImportSql)
         }
         val messageIds = sources.keys.mapTo(linkedSetOf()) { it.second }
         val messages = linkedMapOf<String, JsonObject>()
+        val sessions = linkedMapOf<String, JsonObject>()
         // Read only referenced messages on this second streaming pass, not the entire chat in memory.
         rows { incoming ->
             checkpoint()
+            if (incoming.table == "local_sessions") effectiveRow(incoming).let { row -> row.text("id")?.let { sessions[it] = row } }
             if (incoming.table == "local_messages" && incoming.values.text("id") in messageIds) {
                 val row = effectiveRow(incoming)
                 messages[requireNotNull(row.text("id"))] = row
@@ -87,11 +89,18 @@ internal class PortableMemorySourceIntegrity(private val sql: PortableImportSql)
             val role = message?.text("role")
             val createdAt = message?.text("created_at")
             val content = message?.text("content")
-            val valid = memory != null && scope != null && message != null &&
-                scope.text("sessionId") == message.text("session_id") && message["deleted"]?.asInt == 0 &&
-                role != null && role == source.text("role") && createdAt != null && content != null &&
-                !quote.isNullOrBlank() && content.contains(quote) &&
-                CompanionMemoryPolicy.fingerprint(key.second, role, createdAt, message.text("timestamp"), content, false) == source.text("fingerprint")
+            val sessionId = scope?.text("sessionId")
+            val session = sessionId?.let { sessions[it] ?: find("local_sessions", it) }
+            observe("memory-source-session:$sessionId", session)
+            val snapshot = source.text("messageSnapshot")
+            val v2 = session?.get("companion_mode")?.asInt == 1 && snapshot != null
+            // 新版快照证明的是当时的完整原话，保留选择后允许消息被编辑或软删除。
+            // 非单会话和没有快照的旧备份继续使用原有逐字来源校验。
+            val evidence = if (v2) snapshot else content
+            val valid = memory != null && scope != null && message != null && sessionId == message.text("session_id") &&
+                (v2 || message["deleted"]?.asInt == 0) && role != null && role == source.text("role") &&
+                createdAt != null && evidence != null && (v2 || (!quote.isNullOrBlank() && evidence.contains(quote))) &&
+                CompanionMemoryPolicy.fingerprint(key.second, role, createdAt, message.text("timestamp"), evidence, false) == source.text("fingerprint")
             if (!valid) issues += "记忆原话来源与当前聊天不一致，请核对会话、原文和来源版本后重新预览"
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +31,7 @@ import com.nekobot.app.data.local.CompanionEmbeddingSettings
 import com.nekobot.app.data.local.ai.estimateLocalTextTokens
 import com.nekobot.app.data.local.ai.CompanionCoreMemory
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
-import com.nekobot.app.data.local.db.CompanionSourceEntity
+import com.nekobot.app.data.local.ai.CompanionMemorySourceView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
@@ -62,7 +63,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var editor by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var versions by remember { mutableStateOf<List<CompanionMemoryEntity>?>(null) }
-    var sources by remember { mutableStateOf<List<CompanionSourceEntity>?>(null) }
+    var versionKey by remember { mutableStateOf<String?>(null) }
+    var sources by remember { mutableStateOf<List<CompanionMemorySourceView>?>(null) }
     var sourceMemory by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var deletion by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var ready by remember { mutableStateOf(false) }
@@ -169,6 +171,9 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }, navigationIcon = {
         IconButton(onClick = { if (coreOnly) coreOnly = false else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, textResources.getString(R.string.common_back)) }
     }, actions = {
+        IconButton(enabled = editable, onClick = { action { versionKey = null; versions = repo.fusedMemoryHistory(sessionId) } }) {
+            Icon(Icons.Filled.History, textResources.getString(R.string.single_role_revision_history))
+        }
         IconButton(enabled = editable && embeddingSettings != null, onClick = { recallSettings = repo.companionRecallSettings(sessionId); actionError = null; recallSettingsOpen = true }) {
             Icon(Icons.Filled.Tune, textResources.getString(R.string.single_role_memory_settings))
         }
@@ -221,9 +226,9 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             }
             items(shown, key = { it.id }) { memory ->
                 CompanionMemoryCard(memory, enabled = editable, hasSources = memory.id in linkedMemoryIds,
-                    onSource = { action { sources = repo.fusedMemorySources(sessionId, memory.id); sourceMemory = memory } },
+                    onSource = { action { sources = repo.fusedMemorySourceViews(sessionId, memory.id); sourceMemory = memory } },
                     onEdit = { selected = memory; actionError = null; editor = true },
-                    onVersions = { action { versions = repo.fusedMemoryVersions(sessionId, memory.factKey) } },
+                    onVersions = { action { versionKey = memory.factKey; versions = repo.fusedMemoryVersions(sessionId, memory.factKey) } },
                     onDelete = { actionError = null; deletion = memory },
                     onCoreChange = { action { repo.setFusedMemoryCore(sessionId, memory.factKey, !CompanionCoreMemory.contains(memory)) } })
             }
@@ -236,7 +241,12 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
             editor = false
         } }
     }
-    versions?.let { rows -> CompanionMemoryChanges(rows) { versions = null } }
+    versions?.takeIf { sources == null }?.let { rows -> CompanionMemoryChanges(rows, busy, actionError,
+        onDismiss = { versions = null; actionError = null },
+        onRestore = { memory -> action {
+            repo.restoreFusedMemory(sessionId, memory.id)
+            versions = versionKey?.let { repo.fusedMemoryVersions(sessionId, it) } ?: repo.fusedMemoryHistory(sessionId)
+        } }, onSource = { memory -> action { sources = repo.fusedMemorySourceViews(sessionId, memory.id); sourceMemory = memory } }) }
     sources?.let { rows -> CompanionMemorySources(rows, sourceMemory, ownerName,
         onDismiss = { sources = null }, onLocate = { messageId -> sources = null; onLocate(messageId) }) }
     deletion?.let { memory -> CompanionMemoryDelete(memory, busy, actionError,

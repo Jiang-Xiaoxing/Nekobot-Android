@@ -63,6 +63,7 @@ enum class PortableDataCategory(
             "companion_pending",
             "companion_vectors",
             "companion_clarifications",
+            "companion_locked_reviews",
             "companion_owners",
             "companion_relationship_state",
             "companion_relationship_events",
