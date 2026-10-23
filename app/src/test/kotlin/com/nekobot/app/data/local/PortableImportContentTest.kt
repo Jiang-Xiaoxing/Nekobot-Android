@@ -105,7 +105,7 @@ class PortableImportContentTest {
         assertRejected { PortableImportContentInspector.inspect(catalog, emptyMap(), listOf(file, file)) }
     }
 
-    @Test fun acceptsTheExistingFourteenCategoryCatalogAndAllFiftyTables() {
+    @Test fun acceptsTheExistingFourteenCategoryCatalogAndAllPortableTables() {
         val completeCatalog = PortableDataCategory.entries.map { category ->
             PortableImportContentSpec(category.id, category.tables.toSet(),
                 fileRoots = if (category.tables.isEmpty() && category != PortableDataCategory.APP_SETTINGS) setOf("synthetic_root") else emptySet(),
@@ -119,8 +119,8 @@ class PortableImportContentTest {
         }
         val result = PortableImportContentInspector.inspect(completeCatalog, data, files)
         assertEquals(14, result.categoryIds.size)
-        assertEquals(50, result.contents.count { it.detailKey.startsWith("table:") })
-        assertEquals(51, result.contents.sumOf { it.rows }) // 50张表及设置对象。
+        assertEquals(51, result.contents.count { it.detailKey.startsWith("table:") })
+        assertEquals(52, result.contents.sumOf { it.rows }) // 51张表及设置对象。
     }
 
     private fun assertRejected(block: () -> Unit) {

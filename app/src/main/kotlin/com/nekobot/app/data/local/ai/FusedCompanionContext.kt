@@ -15,14 +15,15 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val scope = store.ensureScope(session)
         val raw = requireNotNull(db.messageDao().getById(messageId))
         val consolidation = consolidationSettingsFor(db.dbName, session.id)
-        val receipts = FusedSummaryProgress.summarizedIds(scope, history + raw, dao.receipts(scope.id))
-        val plan = FusedCompanionPolicy.windowPlan(history + raw, receipts, consolidation.recent, consolidation.trigger, messageId)
+        val eligible = FusedSourceExclusions.eligible(dao, scope.id, history + raw)
+        val receipts = FusedSummaryProgress.summarizedIds(scope, eligible, dao.receipts(scope.id))
+        val plan = FusedCompanionPolicy.windowPlan(eligible, receipts, consolidation.recent, consolidation.trigger, messageId)
         suspend fun rebuild(): List<Map<String, Any>> = build(session, messageId, history, system, tools, currentMessage, dynamic,
             maxContext, outputReserve, now, stateKey, thinkingPrompt, summarize, refs)
         suspend fun summarizeAndRebuild(limit: Int): List<Map<String, Any>> {
             FusedCompanionSummary.advance(receipts,
                 summarize = { summarize?.invoke(limit) ?: false },
-                reload = { FusedSummaryProgress.summarizedIds(scope, history + raw, dao.receipts(scope.id)) })
+                reload = { FusedSummaryProgress.summarizedIds(scope, eligible, dao.receipts(scope.id)) })
             return rebuild()
         }
         if (plan.needsSummary) return summarizeAndRebuild(consolidation.recent)

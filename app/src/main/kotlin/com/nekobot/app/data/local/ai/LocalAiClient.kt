@@ -397,8 +397,10 @@ class LocalAiClient(
                 }
 
             var streamErrorMessage: String? = null
+            val completion = LocalStreamCompletion(protocol)
             BufferedReader(InputStreamReader(src, Charsets.UTF_8)).use { reader ->
                 readSseEvents(reader) { data ->
+                    completion.observe(data)
                     if (data == "[DONE]") return@readSseEvents false
                     // 尝试解析 usage（OpenAI 在最后 chunk、Anthropic 在 message_delta）
                     protocol.parseStreamUsageDetail(data)?.let { detail ->
@@ -438,6 +440,7 @@ class LocalAiClient(
                 emit(RealtimeEvent.StreamEnd(null))
                 return@flow
             }
+            completion.requireComplete()
             terminal?.content
                 ?.takeIf { it.isNotBlank() && !sawContentChunk }
                 ?.let { onStreamContent(it) }
@@ -697,10 +700,12 @@ class LocalAiClient(
             }
             val source = response.body?.byteStream()
                 ?: throw IllegalStateException("响应体为空")
+            val completion = LocalStreamCompletion(protocol)
             BufferedReader(InputStreamReader(source, Charsets.UTF_8)).use { reader ->
                 readSseEvents(reader) { data ->
                     streamCallbacks?.onStreamObserved?.invoke()
-                    if (data == "[DONE]") return@readSseEvents true
+                    completion.observe(data)
+                    if (data == "[DONE]") return@readSseEvents false
                     protocol.parseStreamUsageDetail(data)?.let { detail ->
                         usage = detail.toUsageMap()
                     }
@@ -728,6 +733,7 @@ class LocalAiClient(
                     true
                 }
             }
+            completion.requireComplete()
             deliverMarkerEvents(markerState.finish())
             val parsed = terminal
             val streamedToolCalls = toolCallAccumulator.build()
@@ -1580,8 +1586,10 @@ class LocalAiClient(
                     response.close()
                     continue
                 }
+                val completion = LocalStreamCompletion(protocol)
                 BufferedReader(InputStreamReader(src, Charsets.UTF_8)).use { reader ->
                     readSseEvents(reader) { data ->
+                        completion.observe(data)
                         if (data == "[DONE]") return@readSseEvents false
                         protocol.parseStreamUsageDetail(data)?.let { detail ->
                             inputTokens = detail.promptTokens
@@ -1617,6 +1625,7 @@ class LocalAiClient(
                     response.close()
                     continue
                 }
+                completion.requireComplete()
                 terminal?.content
                     ?.takeIf { it.isNotBlank() && !sawContentChunk }
                     ?.let { onStreamContent(it) }

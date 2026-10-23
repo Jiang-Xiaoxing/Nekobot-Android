@@ -158,7 +158,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
                 key.entrySet().forEach { add(it.key, it.value) }
                 differences(table, values, existing).filter { it in choices.fields[token].orEmpty() }.forEach { add(it, values[it]) }
             }
-            if (table in setOf("companion_memories", "companion_sources", "companion_scopes")) {
+            if (table in setOf("companion_memories", "companion_sources", "companion_scopes", "companion_applied_ops")) {
                 val effective = (existing?.deepCopy() ?: JsonObject()).apply { written.entrySet().forEach { add(it.key, it.value) } }
                 memorySources.record(table, values, effective, existing == null || written.size() > key.size())
             }
@@ -433,6 +433,7 @@ internal class PortableImportPlanner(private val sql: PortableImportSql, private
             "companion_scopes", "companion_relationship_state" -> setOf("sessionId", "characterId")
             "companion_owners" -> setOf("sessionId")
             "companion_memories", "companion_clarifications" -> setOf("scopeId")
+            "companion_applied_ops" -> setOf("scopeId", "memoryId")
             "companion_locked_reviews" -> setOf("scopeId", "sessionId", "lockedMemoryId", "confirmedMemoryId")
             else -> emptySet()
         }

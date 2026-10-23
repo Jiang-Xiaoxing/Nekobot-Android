@@ -44,6 +44,22 @@ class MemoryV2ResourcesTest {
             assertFalse("$locale/$key", strings(locale, false)[key].isNullOrBlank())
         }
     }
+    @Test fun bugFixMessagesAndCropActionsHaveFiveTranslationsWithMatchingArguments() {
+        val keys = strings("values", false).keys.filter {
+            it.startsWith("avatar_crop_") || it.startsWith("webdav_test_") || it.startsWith("webdav_folder_") || it == "ai_stream_incomplete"
+        }
+        assertEquals(19, keys.size) // Includes the existing webdav_test_connection label.
+        val args = Regex("%[0-9]+\\\$[dsf]")
+        val baseline = strings("values", false)
+        for (locale in locales) {
+            val translated = strings(locale, false)
+            for (key in keys) {
+                assertFalse("$locale/$key", translated[key].isNullOrBlank())
+                assertEquals("$locale/$key", args.findAll(baseline.getValue(key)).map { it.value }.toList(),
+                    args.findAll(translated.getValue(key)).map { it.value }.toList())
+            }
+        }
+    }
     @Test fun lightAndDarkMemorySurfacesPreserveAppPaletteAndReadableBodyText() {
         for (base in listOf(LightColors, DarkColors)) {
             val colors = companionMemoryColorScheme(base)

@@ -4,11 +4,13 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import android.content.res.Configuration
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import com.nekobot.app.ServiceContainer
 import com.nekobot.app.R
 import com.nekobot.app.data.local.ai.CompanionMemoryStore
@@ -24,6 +26,23 @@ import java.util.Locale
 
 class FusedCompanionMemoryScreenTest {
     @get:Rule val compose=createAndroidComposeRule<ComponentActivity>()
+    @Test fun memorySettingsRouteRestoresWhileEmbeddingSettingsReload() {
+        val id = "restored-memory-${UUID.randomUUID()}"
+        val db = NekobotDatabase.get(compose.activity, ServiceContainer.prefs.activeDbName)
+        val session = LocalSessionEntity(id, "Synthetic restore", characterId = "$id-character", sessionMode = "agent",
+            inheritCharacter = true, longConversationEnabled = true, companionMode = true, createdAt = "now", updatedAt = "now")
+        try {
+            runBlocking { db.sessionDao().upsert(session); CompanionMemoryStore(db).ensureScope(session) }
+            val restoration = StateRestorationTester(compose)
+            showPage(id, restoration)
+            compose.waitUntil(5000) { compose.onAllNodes(hasContentDescription("记忆设置") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("记忆设置").performClick()
+            compose.onNodeWithTag("companion-vector-switch").assertExists()
+            restoration.emulateSavedInstanceStateRestore()
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("companion-vector-switch").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("记忆设置").assertIsDisplayed()
+        } finally { runBlocking { db.sessionDao().deleteById(id) } }
+    }
     @Test fun memoryPageShowsSeparateControlsAndSavesManualRecord() {
         val id="fused-ui-${UUID.randomUUID()}"
         val db=NekobotDatabase.get(compose.activity,ServiceContainer.prefs.activeDbName)
@@ -81,15 +100,16 @@ class FusedCompanionMemoryScreenTest {
         } finally { runBlocking { db.sessionDao().deleteById(id) } }
     }
 
-    private fun showPage(id: String) {
+    private fun showPage(id: String, restoration: StateRestorationTester? = null) {
         val context = compose.activity.createConfigurationContext(Configuration(compose.activity.resources.configuration).apply {
             setLocale(Locale.SIMPLIFIED_CHINESE)
         })
-        compose.setContent {
+        val content: @Composable () -> Unit = {
             CompositionLocalProvider(LocalContext provides context, LocalResources provides context.resources,
                 LocalConfiguration provides context.resources.configuration) {
                 MaterialTheme { FusedCompanionMemoryScreen(id, {}, {}) }
             }
         }
+        if (restoration == null) compose.setContent(content) else restoration.setContent(content)
     }
 }

@@ -11,14 +11,14 @@ import java.sql.DriverManager
 
 /** SQL/storage coverage of the actual public Room schema; not a substitute for Android UI checks. */
 class PortableImportSchemaCoverageTest {
-    @Test fun allFiftyPortableTablesRoundTripWithoutRecreatingRecords() {
+    @Test fun allPortableTablesRoundTripWithoutRecreatingRecords() {
         val schemaRelative = "schemas/com.nekobot.app.data.local.db.NekobotDatabase/64.json"
         val schemaFile = listOf(File(schemaRelative), File("app/$schemaRelative"),
             File(System.getProperty("nekobot.import.repo", "."), "app/$schemaRelative")).first { it.isFile }
         val database = JsonParser.parseString(schemaFile.readText()).asJsonObject.getAsJsonObject("database")
         val entities = database.getAsJsonArray("entities").associate { it.asJsonObject["tableName"].asString to it.asJsonObject }
         val portableTables = PortableDataCategory.entries.flatMap { it.tables }
-        assertEquals(50, portableTables.size)
+        assertEquals(51, portableTables.size)
         DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->
             val sql = JdbcPortableImportSql(connection)
             sql.execute("PRAGMA foreign_keys=ON")
@@ -76,7 +76,7 @@ class PortableImportSchemaCoverageTest {
                 addProperty("timeText", "下周三"); addProperty("modelDate", "2026-10-29")
                 addProperty("eventDate", "2026-10-28"); addProperty("dateType", "day"); addProperty("dateSource", "program")
             }
-            assertFalse("companion_applied_ops" in portableTables)
+            assertTrue("companion_applied_ops" in portableTables)
             val message = fixtures.getValue("local_messages")
             fixtures.getValue("companion_sources").apply {
                 add("messageId", message["id"]); add("quote", message["content"]); add("role", message["role"])
@@ -88,16 +88,17 @@ class PortableImportSchemaCoverageTest {
             val planner = PortableImportPlanner(sql, "synthetic.db")
             val first = planner.preview(visitor, PortableImportChoices())
             assertEquals(emptyList<String>(), first.issues)
-            assertEquals(50, first.counts.added)
+            assertEquals(51, first.counts.added)
             connection.autoCommit = false
-            assertEquals(50, planner.apply(visitor, PortableImportChoices()))
+            assertEquals(51, planner.apply(visitor, PortableImportChoices()))
             connection.commit()
             val repeat = planner.preview(visitor, PortableImportChoices())
-            assertEquals(50, repeat.counts.same)
+            assertEquals(51, repeat.counts.same)
             assertEquals(0, planner.apply(visitor, PortableImportChoices()))
             val exported = portableTables.flatMap { table -> sql.query("SELECT * FROM `$table`").map { PortableIncomingRow(table, it) } }
             val exportedVisitor: PortableRowVisitor = { consume -> exported.forEach(consume) }
             assertEquals(0, planner.apply(exportedVisitor, PortableImportChoices()))
+            assertEquals(fixtures.getValue("companion_applied_ops"), sql.query("SELECT * FROM companion_applied_ops").single())
             val actualMemory = sql.query("SELECT * FROM companion_memories").single()
             for (column in listOf("voided", "voidedAt", "voidedReason", "supersededById", "pendingConfirm", "uncertainTargetId",
                 "uncertainInjectedTurns", "timeText", "modelDate", "dateType", "dateSource")) {

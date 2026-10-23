@@ -68,9 +68,9 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     var sourceMemory by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var deletion by remember { mutableStateOf<CompanionMemoryEntity?>(null) }
     var ready by remember { mutableStateOf(false) }
-    var recallSettingsOpen by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var recallSettingsOpen by rememberSaveable(sessionId, dataSourceRevision, appMode) { mutableStateOf(false) }
     var recallSettings by remember { mutableStateOf(repo.companionRecallSettings(sessionId)) }
-    var embeddingSettings by remember { mutableStateOf<CompanionEmbeddingSettings?>(null) }
+    var embeddingSettings by remember(sessionId, dataSourceRevision, appMode) { mutableStateOf<CompanionEmbeddingSettings?>(null) }
     var addingEmbeddingModel by rememberSaveable { mutableStateOf(false) }
     var addedEmbeddingId by remember { mutableStateOf<String?>(null) }
     val categories = memoryCategoryNames
@@ -87,7 +87,6 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
         deletion = null
         selected = null
         actionError = null
-        recallSettingsOpen = false
         embeddingSettings = null
         addingEmbeddingModel = false
         addedEmbeddingId = null
@@ -149,7 +148,8 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
     val shown = filteredRecords.filter { (category.isEmpty() || it.category == category) &&
         (query.isBlank() || "${it.content} ${it.tagsJson} ${it.factKey}".contains(query, true)) }
     val editable = ready && !busy && error == null && repo === ServiceContainer.localRepository
-    if (recallSettingsOpen) {
+    val loadedEmbedding = embeddingSettings
+    if (recallSettingsOpen && loadedEmbedding != null) {
         CompanionRecallSettingsScreen(sessionId, ownerName, ownerAvatar, recallSettings, busy, actionError,
             onBack = { recallSettingsOpen = false; actionError = null; addedEmbeddingId = null }, onSave = { rounds, tokens, perCall, enabled, modelId, consolidation -> action {
                 repo.saveCompanionMemorySettings(sessionId, rounds, tokens, perCall, enabled, modelId, consolidation)
@@ -157,7 +157,7 @@ private fun CompanionMemoryDetail(sessionId: String, onBack: () -> Unit, onLocat
                 embeddingSettings = repo.companionEmbeddingSettings(sessionId)
                 recallSettingsOpen = false
                 addedEmbeddingId = null
-            } }, embedding = requireNotNull(embeddingSettings), onAddModel = { addingEmbeddingModel = true }, addedModelId = addedEmbeddingId,
+            } }, embedding = loadedEmbedding, onAddModel = { addingEmbeddingModel = true }, addedModelId = addedEmbeddingId,
             initialConsolidation = repo.companionConsolidationSettings(sessionId))
         if (addingEmbeddingModel) CompanionEmbeddingModelEditor(repo, onDismiss = { addingEmbeddingModel = false }, onAdded = { id -> action {
             embeddingSettings = repo.companionEmbeddingSettings(sessionId)

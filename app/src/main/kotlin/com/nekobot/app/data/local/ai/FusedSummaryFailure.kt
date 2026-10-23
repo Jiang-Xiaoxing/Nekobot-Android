@@ -29,7 +29,7 @@ internal class FusedSummaryFailure(val reason: Reason) : IllegalStateException(r
             if (error is FusedSummaryFailure) return error
             val reason = when (error) {
                 is TimeoutCancellationException, is SocketTimeoutException -> Reason.TIMEOUT
-                is IncompleteMemoryStream -> Reason.INCOMPLETE
+                is IncompleteMemoryStream, is IncompleteChatStream -> Reason.INCOMPLETE
                 is FailoverRejectedContentException -> Reason.REJECTED
                 is FailoverAllFailedException -> error.failures.lastOrNull()?.let {
                     classify(it.statusCode, it.message)
@@ -50,6 +50,7 @@ internal class FusedSummaryFailure(val reason: Reason) : IllegalStateException(r
         private fun classify(status: Int, message: String): Reason {
             val value = message.lowercase()
             return when {
+                message == IncompleteChatStream.messageText() -> Reason.INCOMPLETE
                 status == -2 || status == 408 || status == 504 -> Reason.TIMEOUT
                 status == -1 -> Reason.NETWORK
                 status in setOf(401, 403) -> Reason.AUTH

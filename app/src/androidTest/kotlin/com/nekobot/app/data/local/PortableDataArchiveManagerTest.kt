@@ -118,9 +118,15 @@ class PortableDataArchiveManagerTest {
         assertEquals(true, written["success"])
         db.companionMemoryDao().saveReceipts(listOf(com.nekobot.app.data.local.db.CompanionReceiptEntity(scope.id,source.id,
             com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(source))))
+        val pending = db.companionMemoryDao().memories(scope.id).single().copy(pendingConfirm = true, uncertainInjectedTurns = 2)
+        db.companionMemoryDao().saveMemory(pending)
+        com.nekobot.app.data.local.ai.FusedUncertainMemory.recordInjected(db.companionMemoryDao(), scope.id, source.id, listOf(pending), "now")
+        val operationKeys = db.companionMemoryDao().appliedOpKeys(scope.id, "").toSet()
+        assertEquals(2, operationKeys.size)
         val output=ByteArrayOutputStream()
         manager.export(setOf(PortableDataCategory.CONVERSATIONS),"",output,"test")
         db.sessionDao().deleteById(row.id)
+        db.openHelper.writableDatabase.execSQL("DELETE FROM companion_applied_ops WHERE scopeId=?", arrayOf(scope.id))
         manager.import(ByteArrayInputStream(output.toByteArray()),"",setOf(PortableDataCategory.CONVERSATIONS))
         // Committing an import rebuilds the active Room instance. Read through the new connection.
         val reopenedDb=NekobotDatabase.get(context, com.nekobot.app.ServiceContainer.prefs.activeDbName)
@@ -132,6 +138,13 @@ class PortableDataArchiveManagerTest {
         val fact=reopenedStore.validatedMemories(restoredScope).single { it.current }
         assertEquals("用户怕辣",fact.content)
         assertEquals(source.id,reopenedDb.companionMemoryDao().sources(fact.id).single().messageId)
+        assertEquals(operationKeys, reopenedDb.companionMemoryDao().appliedOpKeys(restoredScope.id, "").toSet())
+        com.nekobot.app.data.local.ai.FusedUncertainMemory.recordInjected(reopenedDb.companionMemoryDao(), restoredScope.id, source.id, listOf(fact), "later")
+        assertEquals(3, reopenedDb.companionMemoryDao().memory(fact.id)!!.uncertainInjectedTurns)
+        assertEquals(true, reopenedStore.fusedTool(restored, "agent_memory_update", mapOf("op" to "add", "category" to "user_profile",
+            "content" to "用户怕辣", "evidence" to listOf("S1"), "date_type" to "habit"),
+            com.nekobot.app.data.local.ai.FusedMemoryReferences(listOf(source)))["success"])
+        assertEquals(1, reopenedDb.companionMemoryDao().memories(restoredScope.id).size)
         assertTrue(reopenedDb.companionMemoryDao().pending(restoredScope.id).isEmpty())
         assertTrue(reopenedDb.companionMemoryDao().contextMaterials(restoredScope.id).isEmpty())
     }

@@ -391,4 +391,22 @@
     <string name="sessions_page_local_only">專屬對話僅支援本機模式</string>
     <string name="sessions_page_empty_hint">點右上角＋，新增%1$s對話</string>
     <string name="sessions_page_search_title">搜尋與篩選 · %1$s</string>
+    <string name="ai_stream_incomplete">模型回應未完整結束，請重試。</string>
+    <string name="webdav_test_existing">連線成功，遠端備份檔案已存在</string>
+    <string name="webdav_test_ready">連線成功，nekobot/ 資料夾已就緒，備份後會建立設定檔</string>
+    <string name="webdav_test_head_denied">伺服器拒絕 HEAD 檢查；請透過備份或還原操作確認是否可用</string>
+    <string name="webdav_test_auth">驗證失敗 (HTTP 401)</string>
+    <string name="webdav_test_status">伺服器傳回異常狀態碼：HTTP %1$d</string>
+    <string name="webdav_test_failed">連線失敗</string>
+    <string name="avatar_crop_area">頭像裁剪區域</string>
+    <string name="avatar_crop_position">橫向 %1$d%%，縱向 %2$d%%</string>
+    <string name="avatar_crop_left">裁剪區域向左移</string>
+    <string name="avatar_crop_right">裁剪區域向右移</string>
+    <string name="avatar_crop_up">裁剪區域向上移</string>
+    <string name="avatar_crop_down">裁剪區域向下移</string>
+    <string name="webdav_folder_exists">資料夾已存在</string>
+    <string name="webdav_folder_created">資料夾已建立</string>
+    <string name="webdav_folder_parent_missing">上層目錄不存在，請檢查 WebDAV 根位址</string>
+    <string name="webdav_folder_denied">沒有建立資料夾的權限 (HTTP %1$d)</string>
+    <string name="webdav_folder_failed">建立資料夾失敗 (HTTP %1$d)</string>
 </resources>

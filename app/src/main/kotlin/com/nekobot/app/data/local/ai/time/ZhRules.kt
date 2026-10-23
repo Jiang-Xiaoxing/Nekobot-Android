@@ -5,6 +5,9 @@ import java.time.LocalDate
 internal object ZhRules {
     val rules = relativeRules(mapOf("今天" to 0, "今日" to 0, "明天" to 1, "明日" to 1,
         "后天" to 2, "大后天" to 3, "昨天" to -1, "昨日" to -1, "前天" to -2, "大前天" to -3)) + listOf(
+        DateRule("(去年|今年|明年)(?:的)?(?:圣诞|聖誕)(?:节|節)?") { m, d ->
+            LocalDate.of(d.year + when (m.groupValues[1]) { "去年" -> -1; "明年" -> 1; else -> 0 }, 12, 25)
+        },
         DateRule("($CJK_NUMBER)\\s*(天|日|周|星期|个星期)\\s*(前|后)") { m, d ->
             d.plusDays(m.n(1).toLong() * (if (m.groupValues[2] in listOf("天", "日")) 1 else 7) * (if (m.groupValues[3] == "前") -1 else 1))
         },

@@ -119,6 +119,10 @@ interface CompanionMemoryDao {
     suspend fun memory(id: String): CompanionMemoryEntity?
     @Query("SELECT * FROM companion_applied_ops WHERE scopeId=:scopeId AND opKey=:key")
     suspend fun appliedOp(scopeId: String, key: String): CompanionAppliedOpEntity?
+    @Query("DELETE FROM companion_applied_ops WHERE scopeId=:scopeId AND opKey=:key")
+    suspend fun removeAppliedOp(scopeId: String, key: String)
+    @Query("SELECT opKey FROM companion_applied_ops WHERE scopeId=:scopeId AND substr(opKey,1,length(:prefix))=:prefix")
+    suspend fun appliedOpKeys(scopeId: String, prefix: String): List<String>
     @Query("SELECT memoryId FROM companion_applied_ops WHERE scopeId=:scopeId AND opKey LIKE :prefix || '%' AND memoryId IS NOT NULL")
     suspend fun injectedMemoryIds(scopeId: String, prefix: String): List<String>
     @Insert suspend fun insertAppliedOp(row: CompanionAppliedOpEntity)

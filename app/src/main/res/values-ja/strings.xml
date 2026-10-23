@@ -366,4 +366,22 @@
     <string name="sessions_page_local_only">専属の会話はローカルモードで利用できます</string>
     <string name="sessions_page_empty_hint">右上の＋から%1$sの会話を作成できます</string>
     <string name="sessions_page_search_title">検索・絞り込み · %1$s</string>
+    <string name="ai_stream_incomplete">モデルの応答が完了する前に終了しました。再試行してください。</string>
+    <string name="webdav_test_existing">接続しました。リモートのバックアップが存在します。</string>
+    <string name="webdav_test_ready">接続しました。nekobot/ フォルダーは準備済みです。バックアップ時に設定ファイルを作成します。</string>
+    <string name="webdav_test_head_denied">サーバーが HEAD 確認を拒否しました。バックアップまたは復元で利用可能か確認してください。</string>
+    <string name="webdav_test_auth">認証に失敗しました (HTTP 401)</string>
+    <string name="webdav_test_status">予期しないサーバー状態: HTTP %1$d</string>
+    <string name="webdav_test_failed">接続に失敗しました</string>
+    <string name="avatar_crop_area">アバターの切り抜き範囲</string>
+    <string name="avatar_crop_position">横 %1$d%%、縦 %2$d%%</string>
+    <string name="avatar_crop_left">切り抜き範囲を左へ</string>
+    <string name="avatar_crop_right">切り抜き範囲を右へ</string>
+    <string name="avatar_crop_up">切り抜き範囲を上へ</string>
+    <string name="avatar_crop_down">切り抜き範囲を下へ</string>
+    <string name="webdav_folder_exists">フォルダーは既に存在します</string>
+    <string name="webdav_folder_created">フォルダーを作成しました</string>
+    <string name="webdav_folder_parent_missing">親フォルダーがありません。WebDAV のルート URL を確認してください。</string>
+    <string name="webdav_folder_denied">フォルダー作成の権限がありません (HTTP %1$d)</string>
+    <string name="webdav_folder_failed">フォルダーを作成できませんでした (HTTP %1$d)</string>
 </resources>

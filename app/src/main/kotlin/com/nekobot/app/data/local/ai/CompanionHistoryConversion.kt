@@ -21,7 +21,8 @@ internal class CompanionHistoryConversion(private val db: NekobotDatabase) {
         // 已有明确来源的失效/到期条目不从同一旧原话再次提取。
         val blocked = legacy.filter { !CompanionImportPolicy.usable(it) || it.status in setOf("cancelled", "retracted") }
             .flatMap { dao.sources(it.id) }.map { it.messageId }.toSet()
-        val eligible = history.filterNot { it.id in blocked }
+        db.withTransaction { FusedSourceExclusions.save(dao, scope.id, history.filter { it.id in blocked }) }
+        val eligible = FusedSourceExclusions.eligible(dao, scope.id, history)
         val total = eligible.size.toLong()
         val receipts = db.openHelper.readableDatabase.query("SELECT messageId FROM companion_receipts WHERE scopeId=?", arrayOf(scope.id)).use { c ->
             buildSet { while (c.moveToNext()) add(c.getString(0)) }

@@ -22,6 +22,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -107,9 +113,34 @@ internal fun CompanionAvatarCropDialog(bitmap: Bitmap?, busy: Boolean, failed: B
         onCancel = onDismiss, contentScrollable = true) {
         if (bitmap != null) {
             val image = remember(bitmap) { bitmap.asImageBitmap() }
+            val cropLabel = stringResource(R.string.avatar_crop_area)
+            val position = stringResource(R.string.avatar_crop_position, (horizontal * 100).toInt(), (vertical * 100).toInt())
+            val left = stringResource(R.string.avatar_crop_left)
+            val right = stringResource(R.string.avatar_crop_right)
+            val up = stringResource(R.string.avatar_crop_up)
+            val down = stringResource(R.string.avatar_crop_down)
+            fun move(dx: Float, dy: Float): Boolean {
+                if (busy) return false
+                val crop = avatarCrop(bitmap.width, bitmap.height, zoom, horizontal, vertical)
+                val x = if (bitmap.width > crop.side) (horizontal + dx).coerceIn(0f, 1f) else horizontal
+                val y = if (bitmap.height > crop.side) (vertical + dy).coerceIn(0f, 1f) else vertical
+                val changed = x != horizontal || y != vertical
+                horizontal = x; vertical = y
+                return changed
+            }
             Canvas(Modifier.fillMaxWidth().aspectRatio(1f).clipToBounds()
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 .testTag("companion-avatar-crop")
+                .semantics {
+                    contentDescription = cropLabel
+                    stateDescription = position
+                    if (busy) disabled()
+                    customActions = if (busy) emptyList() else listOf(
+                        CustomAccessibilityAction(left) { move(-.1f, 0f) },
+                        CustomAccessibilityAction(right) { move(.1f, 0f) },
+                        CustomAccessibilityAction(up) { move(0f, -.1f) },
+                        CustomAccessibilityAction(down) { move(0f, .1f) })
+                }
                 .onSizeChanged { viewport = it.width.coerceAtLeast(1) }
                 .pointerInput(bitmap, zoom, busy) {
                     detectDragGestures { change, drag ->

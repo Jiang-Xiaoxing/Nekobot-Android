@@ -49,6 +49,20 @@ class PortableImportPlannerTest {
     private val defaults = PortableImportChoices()
     private fun seed() = sql.execute("INSERT INTO local_characters VALUES ('same-id','Current name','User edited description','later')")
 
+    @Test fun operationProgressRequiresMemoryFromSameScopeAndCannotChangeItsOwner() {
+        sql.execute("CREATE TABLE companion_applied_ops(scopeId TEXT NOT NULL,opKey TEXT NOT NULL,memoryId TEXT,createdAt TEXT NOT NULL,PRIMARY KEY(scopeId,opKey))")
+        sql.execute("INSERT INTO companion_scopes(id,sessionId) VALUES('a','session'),('b','other')")
+        sql.execute("INSERT INTO companion_memories(id,scopeId,content) VALUES('memory','b','synthetic')")
+        val bad = rows(row("companion_applied_ops", """{"scopeId":"a","opKey":"key","memoryId":"memory","createdAt":"now"}"""))
+        assertTrue(planner.preview(bad, defaults).issues.any { it.contains("不属于同一会话") })
+        val good = rows(row("companion_applied_ops", """{"scopeId":"b","opKey":"key","memoryId":"memory","createdAt":"now"}"""))
+        assertEquals(emptyList<String>(), planner.preview(good, defaults).issues)
+        assertEquals(1, planner.apply(good, defaults))
+        assertEquals(0, planner.apply(good, defaults))
+        val rebind = rows(row("companion_applied_ops", """{"scopeId":"b","opKey":"key","memoryId":null,"createdAt":"now"}"""))
+        assertTrue(planner.preview(rebind, defaults).issues.any { it.contains("归属与本地不同") })
+    }
+
     @Test fun newRowsAreInsertedAndRepeatingSameIdsIsZeroWrites() {
         val source = rows(row("local_characters", """{"id":"a","name":"Fixture"}"""))
         assertEquals(1, planner.preview(source, defaults).counts.added)

@@ -378,4 +378,22 @@
     <string name="sessions_page_local_only">Companion chats are available only in local mode</string>
     <string name="sessions_page_empty_hint">Tap + at the top right to start a chat in %1$s</string>
     <string name="sessions_page_search_title">Search and filter · %1$s</string>
+    <string name="ai_stream_incomplete">The model response ended before completion. Please retry.</string>
+    <string name="webdav_test_existing">Connected. A remote backup already exists.</string>
+    <string name="webdav_test_ready">Connected. The nekobot/ folder is ready; a backup will create the configuration file.</string>
+    <string name="webdav_test_head_denied">The server denied the HEAD check. Verify access with a backup or restore operation.</string>
+    <string name="webdav_test_auth">Authentication failed (HTTP 401)</string>
+    <string name="webdav_test_status">Unexpected server status: HTTP %1$d</string>
+    <string name="webdav_test_failed">Connection failed</string>
+    <string name="avatar_crop_area">Avatar crop area</string>
+    <string name="avatar_crop_position">Horizontal %1$d%%, vertical %2$d%%</string>
+    <string name="avatar_crop_left">Move crop area left</string>
+    <string name="avatar_crop_right">Move crop area right</string>
+    <string name="avatar_crop_up">Move crop area up</string>
+    <string name="avatar_crop_down">Move crop area down</string>
+    <string name="webdav_folder_exists">Folder already exists</string>
+    <string name="webdav_folder_created">Folder created</string>
+    <string name="webdav_folder_parent_missing">The parent folder does not exist. Check the WebDAV root URL.</string>
+    <string name="webdav_folder_denied">Permission denied when creating folder (HTTP %1$d)</string>
+    <string name="webdav_folder_failed">Could not create folder (HTTP %1$d)</string>
 </resources>

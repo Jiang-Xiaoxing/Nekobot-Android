@@ -403,4 +403,22 @@
     <string name="sessions_page_local_only">专属会话仅支持本地模式</string>
     <string name="sessions_page_empty_hint">点右上角＋，新建%1$s会话</string>
     <string name="sessions_page_search_title">搜索与筛选 · %1$s</string>
+    <string name="ai_stream_incomplete">模型响应未完整结束，请重试。</string>
+    <string name="webdav_test_existing">连接成功，远程备份文件已存在</string>
+    <string name="webdav_test_ready">连接成功，nekobot/ 文件夹已就绪，备份后会创建配置文件</string>
+    <string name="webdav_test_head_denied">服务器拒绝 HEAD 检查；请通过备份或恢复操作确认可用性</string>
+    <string name="webdav_test_auth">认证失败 (HTTP 401)</string>
+    <string name="webdav_test_status">服务器返回异常状态码：HTTP %1$d</string>
+    <string name="webdav_test_failed">连接失败</string>
+    <string name="avatar_crop_area">头像裁剪区域</string>
+    <string name="avatar_crop_position">横向 %1$d%%，纵向 %2$d%%</string>
+    <string name="avatar_crop_left">裁剪区域向左移</string>
+    <string name="avatar_crop_right">裁剪区域向右移</string>
+    <string name="avatar_crop_up">裁剪区域向上移</string>
+    <string name="avatar_crop_down">裁剪区域向下移</string>
+    <string name="webdav_folder_exists">文件夹已存在</string>
+    <string name="webdav_folder_created">文件夹已创建</string>
+    <string name="webdav_folder_parent_missing">父目录不存在，请检查 WebDAV 根地址</string>
+    <string name="webdav_folder_denied">无权限创建文件夹 (HTTP %1$d)</string>
+    <string name="webdav_folder_failed">创建文件夹失败 (HTTP %1$d)</string>
 </resources>

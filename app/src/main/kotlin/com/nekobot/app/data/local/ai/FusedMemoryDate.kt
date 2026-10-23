@@ -9,13 +9,13 @@ internal data class FusedMemoryDate(val day: LocalDate?, val source: String, val
         fun resolve(op: FusedMemoryOperation, evidence: List<LocalMessageEntity>): FusedMemoryDate {
             if (op.dateType == "habit") return FusedMemoryDate(null, "none")
             val matching = evidence.firstOrNull { op.timeText.isNotBlank() && op.timeText in it.content }
-            val spoken = (matching ?: evidence.firstOrNull())?.let(::agentUtteranceDay)
+            val spoken = matching?.let(::agentUtteranceDay)
             val missing = op.timeText.isNotBlank() && matching == null
-            if (op.timeText.isBlank()) return FusedMemoryDate(spoken, if (spoken == null) "none" else "spoken_day")
+            if (op.timeText.isBlank() || missing) return FusedMemoryDate(null, "none", missing)
             val model = runCatching { LocalDate.parse(op.modelDate) }.getOrNull()
             val calculated = spoken?.let { TimeWordEngine.resolve(op.timeText, it) } as? TimeWordEngine.Result.Day
             return if (calculated != null) FusedMemoryDate(calculated.date, "program", missing, model != null && calculated.date != model)
-                else FusedMemoryDate(model, if (model == null) "none" else "model", missing)
+                else FusedMemoryDate(null, "none", missing)
         }
     }
 }

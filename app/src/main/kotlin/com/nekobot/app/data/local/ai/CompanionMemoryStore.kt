@@ -169,6 +169,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             val scope = dao.scope(initial.id) ?: return@run null
             var history = permittedHistory(session, db.messageDao().listBySession(session.id))
                 .filter { !it.deleted && it.role in setOf("user", "assistant") && !it.isLocalCommandMessage() }
+            history = FusedSourceExclusions.eligible(dao, scope.id, history)
             val current = currentMessageId ?: history.lastOrNull { it.role == "user" }?.id
             if (current != null) {
                 val index = history.indexOfFirst { it.id == current }
@@ -184,7 +185,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
                 summarizeFusedBatch(session, plan.batch, plan.reference, inputTokens,
                     FusedCompanionPolicy.extractionPrompt, strictCompletion = true) { prompt, material, callbacks ->
                     generateStream?.invoke(prompt, material, callbacks) ?: generate(prompt, material)
-                }
+                }.changed
             }
         })
     }
@@ -198,18 +199,30 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         if (batches.size > 1) fusedMemoryLog("info", "scope=${scope.id} batch from=${target.size} to=${batches.map { it.size }}")
         try {
             var changed = 0
-            for (batch in batches) changed += if (batches.size > 1)
-                summarizeWithRetry(session, batch, reference, inputTokens, prompt, legacy, generate)
-            else summarizeFusedBatch(session, batch, reference, inputTokens, prompt, legacy, generate = generate)
+            for (batch in batches) {
+                if (batches.size > 1) changed += summarizeWithRetry(session, batch, reference, inputTokens, prompt, legacy, generate)
+                else {
+                    var remaining = batch
+                    while (remaining.isNotEmpty()) {
+                        val result = summarizeFusedBatch(session, remaining, reference, inputTokens, prompt, legacy, generate = generate)
+                        check(result.processed > 0)
+                        changed += result.changed
+                        remaining = remaining.drop(result.processed)
+                    }
+                }
+            }
             retryPolicy.complete(key)
             return changed
         } catch (error: IncompleteMemoryStream) { retryPolicy.incomplete(key); throw error }
     }
 
-    private suspend fun summarizeFusedBatch(session: LocalSessionEntity, target: List<LocalMessageEntity>,
+    private data class FusedBatchResult(val changed: Int, val processed: Int)
+
+    private suspend fun summarizeFusedBatch(session: LocalSessionEntity, requestedTarget: List<LocalMessageEntity>,
         reference: List<LocalMessageEntity>, inputTokens: Int, prompt: String, legacy: List<CompanionMemoryEntity> = emptyList(),
         strictCompletion: Boolean = false,
-        generate: suspend (String, String, LocalAiStreamCallbacks) -> String): Int {
+        generate: suspend (String, String, LocalAiStreamCallbacks) -> String): FusedBatchResult {
+        var target = requestedTarget
         val scope = ensureScope(session)
         val old = validatedMemories(scope).filter { it.current && !it.voided }
         val query = target.joinToString(" ") { it.content }
@@ -222,29 +235,32 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         val ordered = old.sortedWith(compareByDescending<CompanionMemoryEntity> { it.locked || it.manual || it.pendingConfirm }
             .thenByDescending { CompanionCoreMemory.contains(it) }
             .thenByDescending { scores[it.id] ?: 0f })
-        val targetIds = target.map { it.id }.toSet()
         var existing = FusedCompanionPolicy.packExistingMemories(ordered,
             isProtected = { it.locked || it.manual || it.pendingConfirm || CompanionCoreMemory.contains(it) },
             fits = { estimateLocalTextTokens(gson.toJson(it.map { row -> row.content })) <= settings.existing }).kept
         var referenceRows = reference
-        fun material(): String = gson.toJson(mapOf(
+        fun material(targetRows: List<LocalMessageEntity> = target, refs: List<LocalMessageEntity> = referenceRows,
+            memories: List<CompanionMemoryEntity> = existing): String = gson.toJson(mapOf(
             "legacy_reference" to legacy.take(40).map { mapOf("content" to it.content, "status" to it.status, "expires_at" to it.expiresAt) },
-            "target" to target.mapIndexed { i, row -> mapOf("no" to "S${i+1}", "role" to row.role,
+            "target" to targetRows.mapIndexed { i, row -> mapOf("no" to "S${i+1}", "role" to row.role,
                 "spoken_day" to agentUtteranceDay(row)?.toString(), "text" to row.content) },
-            "reference" to referenceRows.mapIndexed { i, row -> mapOf("no" to "R${i+1}", "role" to row.role,
+            "reference" to refs.mapIndexed { i, row -> mapOf("no" to "R${i+1}", "role" to row.role,
                 "spoken_day" to agentUtteranceDay(row)?.toString(), "text" to row.content) },
-            "existing" to existing.mapIndexed { i, row -> mapOf("no" to "M${i+1}", "category" to row.category,
+            "existing" to memories.mapIndexed { i, row -> mapOf("no" to "M${i+1}", "category" to row.category,
                 "content" to row.content, "date" to row.eventDate, "kind" to row.kind,
                 "保护" to (row.locked || row.manual), "本批已存" to false) }))
-        // 重跑时标记证据落在本批的已保存条目。编号只属于本次调用。
-        val already = old.filter { row -> dao.sources(row.id).any { it.messageId in targetIds } }.map { it.id }.toSet()
-        while (estimateLocalTextTokens(prompt + material()) > inputTokens) {
-            when {
-                referenceRows.isNotEmpty() -> referenceRows = FusedCompanionPolicy.turns(referenceRows).drop(1).flatten()
-                existing.isNotEmpty() -> existing = existing.dropLast(1)
-                else -> error(FusedMemoryText.MODEL_TOO_SMALL.value())
-            }
+        val fit = FusedCompanionPolicy.fitConsolidationPayload(
+            FusedCompanionPolicy.turns(target).map { it.size }, FusedCompanionPolicy.turns(referenceRows).map { it.size }, existing.size
+        ) { targets, references, memories ->
+            estimateLocalTextTokens(prompt + material(target.take(targets), referenceRows.takeLast(references), existing.take(memories))) <= inputTokens
         }
+        if (fit.needsLargerModel) throw FusedSummaryFailure(FusedSummaryFailure.Reason.CAPACITY)
+        target = target.take(fit.targetMessages)
+        referenceRows = referenceRows.takeLast(fit.referenceMessages)
+        existing = existing.take(fit.existingCount)
+        // 仅这次实际发送的完整轮次可记回执；转换调用方继续处理剩余轮次。
+        val targetIds = target.map { it.id }.toSet()
+        val already = old.filter { row -> dao.sources(row.id).any { it.messageId in targetIds } }.map { it.id }.toSet()
         val json = JsonParser.parseString(material()).asJsonObject
         json["existing"].asJsonArray.forEachIndexed { index, value -> value.asJsonObject.addProperty("本批已存", existing[index].id in already) }
         var refs = FusedMemoryReferences(target, existing)
@@ -290,7 +306,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         }
         if (strictCompletion) FusedSummaryRetry.saving { saveProgress() } else saveProgress()
         fusedMemoryLog("info", "summary_end scope=${scope.id} batch=$batchNumber success=true elapsedMs=${(System.nanoTime() - started) / 1_000_000} ok=${summary.ok} dropped=${summary.dropped} uncertain=${summary.uncertain}")
-        return summary.ok
+        return FusedBatchResult(summary.ok, target.size)
     }
 
     suspend fun indexFused(session: LocalSessionEntity) {

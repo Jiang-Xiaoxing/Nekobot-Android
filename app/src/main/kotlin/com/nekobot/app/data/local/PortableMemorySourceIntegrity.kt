@@ -13,9 +13,11 @@ internal class PortableMemorySourceIntegrity(private val sql: PortableImportSql)
     private val scopes = linkedMapOf<String, JsonObject>()
     private val sourceWrites = linkedMapOf<Pair<String, String>, JsonObject>()
     private val verifiedWrites = linkedSetOf<String>()
+    private val operationWrites = mutableListOf<JsonObject>()
 
     fun record(table: String, incoming: JsonObject, effective: JsonObject, writes: Boolean) {
         when (table) {
+            "companion_applied_ops" -> if (writes) operationWrites += effective
             "companion_memories" -> {
                 val id = effective.text("id") ?: return
                 incomingMemories[id] = incoming
@@ -35,6 +37,15 @@ internal class PortableMemorySourceIntegrity(private val sql: PortableImportSql)
     fun validate(rows: PortableRowVisitor, effectiveRow: (PortableIncomingRow) -> JsonObject,
                  observe: (String, JsonObject?) -> Unit, issues: MutableSet<String>,
                  requiredTables: MutableSet<String>, checkpoint: () -> Unit) {
+        for (operation in operationWrites) {
+            checkpoint()
+            val scopeId = operation.text("scopeId")
+            val memoryId = operation.text("memoryId") ?: continue // retract/exclusion records have no resulting memory.
+            val memory = memories[memoryId] ?: find("companion_memories", memoryId)
+            observe("memory-operation-target:$memoryId", memory)
+            if (scopeId == null || memory?.text("scopeId") != scopeId)
+                issues += "记忆操作进度与记忆不属于同一会话，请同时核对记忆及其归属后重新预览"
+        }
         if (sourceWrites.isEmpty() && verifiedWrites.isEmpty()) return
         val sources = linkedMapOf<Pair<String, String>, JsonObject>()
         val affectedMemories = (sourceWrites.keys.map { it.first } + verifiedWrites).toSet()

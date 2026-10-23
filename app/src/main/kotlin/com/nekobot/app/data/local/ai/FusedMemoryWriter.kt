@@ -45,12 +45,33 @@ internal class FusedMemoryWriter(
             if (!ownsScope(scope)) return@transaction reject("source_changed")
             val targetId = op.target?.let(refs::memoryId)
             val evidenceIds = op.evidence.mapNotNull { refs.sources[it]?.id }
-            val key = FusedMemoryValidation.opKey(scope.id, op, targetId, evidenceIds)
+            val evidence = op.evidence.mapNotNull { refs.sources[it] }.distinctBy { it.id }
+            // 同一消息编辑后是新的证据版本；先核原话，再核操作回执。
+            for (row in evidence) {
+                val fresh = source(row.id)
+                if (fresh == null || fresh.deleted || fresh.sessionId != scope.sessionId ||
+                    CompanionMemoryPolicy.fingerprint(fresh) != CompanionMemoryPolicy.fingerprint(row)) {
+                    return@transaction reject("source_changed", op.evidence.firstOrNull { refs.sources[it]?.id == row.id })
+                }
+            }
+            val legacyKey = FusedMemoryValidation.opKey(scope.id, op, targetId, evidenceIds)
+            val key = "v2:" + FusedMemoryValidation.opKey(scope.id, op, targetId,
+                evidence.map { it.id + ":" + CompanionMemoryPolicy.fingerprint(it) })
             // 仅对合法映射计算幂等。重跑曾成功的操作允许目标已被那次操作作废。
             if (evidenceIds.size == op.evidence.size && (op.target == null || targetId != null)) {
-                dao.appliedOp(scope.id, key)?.let {
-                    log("debug", "idempotent_skip opKey=$key")
-                    return@transaction FusedMemoryWriteResult(it.memoryId, skipped = true)
+                for (candidate in listOf(key, legacyKey)) dao.appliedOp(scope.id, candidate)?.let { applied ->
+                    val resultRow = (applied.memoryId ?: targetId)?.let { dao.memory(it) }
+                    val invalidated = resultRow?.voidedReason in setOf("source_edited", "source_deleted")
+                    val sameSources = if (candidate == key) true else resultRow?.let { row ->
+                        val saved = dao.sources(row.id).associateBy { it.messageId }
+                        evidence.all { saved[it.id]?.fingerprint == CompanionMemoryPolicy.fingerprint(it) }
+                    } == true
+                    if (!invalidated && sameSources) {
+                        log("debug", "idempotent_skip opKey=$candidate")
+                        return@transaction FusedMemoryWriteResult(applied.memoryId, skipped = true)
+                    }
+                    // 原话退回同一内容也不能被已经连带作废的操作挡住。历史记忆和来源不动。
+                    if (candidate == key && invalidated) dao.removeAppliedOp(scope.id, key)
                 }
             }
             val targets = listOfNotNull(targetId, op.doubt?.let(refs::memoryId)).distinct()
@@ -58,13 +79,6 @@ internal class FusedMemoryWriter(
             val (valid, failure) = FusedMemoryValidation.validate(op, refs, targets, tool)
             if (failure != null) return@transaction reject(failure.reason, failure.ref)
             checkNotNull(valid)
-            for (row in valid.sources) {
-                val fresh = source(row.id)
-                if (fresh == null || fresh.deleted || fresh.sessionId != scope.sessionId ||
-                    CompanionMemoryPolicy.fingerprint(fresh) != CompanionMemoryPolicy.fingerprint(row)) {
-                    return@transaction reject("source_changed", op.evidence.firstOrNull { refs.sources[it]?.id == row.id })
-                }
-            }
             val now = Instant.now().toString()
             val old = valid.target
             val protected = old != null && (old.locked || old.manual)

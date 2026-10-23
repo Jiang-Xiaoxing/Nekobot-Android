@@ -16,6 +16,12 @@ internal object EnRules {
     val rules = relativeRules(mapOf("today" to 0, "tomorrow" to 1, "the day after tomorrow" to 2,
         "day after tomorrow" to 2, "three days from today" to 3, "yesterday" to -1,
         "the day before yesterday" to -2, "day before yesterday" to -2, "three days before today" to -3)) + numeric + listOf(
+        DateRule("christmas (last|this|next) year") { m, d ->
+            LocalDate.of(d.year + when (m.groupValues[1]) { "last" -> -1; "next" -> 1; else -> 0 }, 12, 25)
+        },
+        DateRule("(last|this|next) year's christmas") { m, d ->
+            LocalDate.of(d.year + when (m.groupValues[1]) { "last" -> -1; "next" -> 1; else -> 0 }, 12, 25)
+        },
         DateRule("in ($NUMBER) (days?|weeks?)") { m, d -> d.plusDays(m.n(1).toLong() * if (m.groupValues[2].startsWith("week")) 7 else 1) },
         DateRule("($NUMBER) (days?|weeks?) (ago|later|from now)") { m, d -> d.plusDays(m.n(1).toLong() *
             (if (m.groupValues[2].startsWith("week")) 7 else 1) * (if (m.groupValues[3] == "ago") -1 else 1)) },

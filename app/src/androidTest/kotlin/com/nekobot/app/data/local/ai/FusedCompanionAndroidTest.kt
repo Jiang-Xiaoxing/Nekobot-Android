@@ -15,6 +15,53 @@ import java.time.ZonedDateTime
 
 @RunWith(AndroidJUnit4::class)
 class FusedCompanionAndroidTest {
+    @Test fun smallContextSplitsWholeTurnsAndAdvancesOnlySuccessfulSubBatches() = runBlocking<Unit> {
+        val db = db()
+        try {
+            val session = setup(db)
+            val store = CompanionMemoryStore(db)
+            val scope = store.ensureScope(session)
+            val target = (1..4).flatMap { n -> listOf(
+                say(db, "small-u$n", "合成原文".repeat(180)), say(db, "small-a$n", "合成回复".repeat(100), "assistant")) }
+            val capacity = estimateLocalTextTokens(CompanionConversionRules.prompt) + 1600
+            val completed = mutableListOf<String>()
+            var calls = 0
+            store.convertBatch(session, target, emptyList(), emptyList(), capacity, generate = { prompt, material ->
+                calls++
+                assertTrue(estimateLocalTextTokens(prompt + material) <= capacity)
+                val sent = JsonParser.parseString(material).asJsonObject["target"].asJsonArray
+                assertTrue(sent.size() > 0 && sent.size() < target.size)
+                assertEquals("user", sent.first().asJsonObject["role"].asString)
+                assertEquals("assistant", sent.last().asJsonObject["role"].asString)
+                assertEquals(completed.size, db.companionMemoryDao().receipts(scope.id).size)
+                completed += target.drop(completed.size).take(sent.size()).map { it.id }
+                "{\"done\":true}"
+            })
+            assertTrue(calls > 1)
+            assertEquals(target.map { it.id }, completed)
+            assertEquals(target.map { it.id }.toSet(), db.companionMemoryDao().receipts(scope.id).map { it.messageId }.toSet())
+        } finally { db.close() }
+    }
+
+    @Test fun conversionExclusionSurvivesProcessingAndKeepsOriginalForLookup() = runBlocking<Unit> {
+        val db = db()
+        try {
+            val session = setup(db)
+            val store = CompanionMemoryStore(db)
+            val scope = store.ensureScope(session)
+            val old = say(db, "excluded", "这条旧说法已经撤回")
+            val dao = db.companionMemoryDao()
+            dao.saveMemory(CompanionMemoryEntity("legacy", scope.id, "legacy", 1, "fact", "", "旧说法", "retracted",
+                current = false, provenance = CompanionConversionRules.referenceProvenance, createdAt = "now", updatedAt = "now"))
+            dao.saveSources(listOf(CompanionSourceEntity("legacy", old.id, CompanionMemoryPolicy.fingerprint(old), old.content, null, "user")))
+            CompanionHistoryConversion(db).run(session, 16000, generate = { _, _ -> error("Excluded evidence must not be summarized") }, progress = { _, _ -> })
+            assertTrue(dao.receipts(scope.id).isEmpty())
+            assertEquals(1, dao.appliedOpKeys(scope.id, FusedSourceExclusions.PREFIX).size)
+            assertEquals(listOf(old), store.permittedHistory(session, listOf(old)))
+            assertTrue(FusedSourceExclusions.eligible(dao, scope.id, listOf(old)).isEmpty())
+            assertEquals(old.content, db.messageDao().getById(old.id)!!.content)
+        } finally { db.close() }
+    }
     @Test fun rankedRecallRejectsBrokenEvidenceAndFindsNextValidCandidate() = runBlocking<Unit> {
         val db=db(); try {
             val session=setup(db)

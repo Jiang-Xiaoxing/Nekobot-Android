@@ -59,6 +59,7 @@ enum class PortableDataCategory(
             "companion_memories",
             "companion_sources",
             "companion_receipts",
+            "companion_applied_ops",
             "companion_forgotten_sources",
             "companion_pending",
             "companion_vectors",

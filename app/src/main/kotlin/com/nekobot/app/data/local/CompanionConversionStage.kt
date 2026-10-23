@@ -50,11 +50,16 @@ internal class CompanionConversionStage(context: Context, directory: File, profi
         val stagedScope = requireNotNull(db.companionMemoryDao().scope(scope.id))
         val out = destination.openHelper.writableDatabase
         out.execSQL("DELETE FROM companion_sources WHERE memoryId IN (SELECT id FROM companion_memories WHERE scopeId=?)", arrayOf(scope.id))
-        val tables = listOf("companion_memories", "companion_receipts", "companion_forgotten_sources", "companion_clarifications", "companion_pending", "companion_locked_reviews")
+        val tables = listOf("companion_memories", "companion_receipts", "companion_applied_ops", "companion_forgotten_sources", "companion_clarifications", "companion_pending", "companion_locked_reviews")
         for (table in tables) out.execSQL("DELETE FROM $table WHERE scopeId=?", arrayOf(scope.id))
         for (table in tables.filterNot { it == "companion_pending" }) {
-            val filter = if (table == "companion_memories") " AND provenance!='${CompanionConversionRules.referenceProvenance}'" else ""
-            db.openHelper.readableDatabase.query("SELECT * FROM $table WHERE scopeId=?$filter", arrayOf(scope.id)).use { cursor ->
+            val filter = when (table) {
+                "companion_memories" -> " AND provenance!='${CompanionConversionRules.referenceProvenance}'"
+                "companion_applied_ops" -> " AND (memoryId IS NULL OR memoryId IN (SELECT id FROM companion_memories WHERE scopeId=? AND provenance!='${CompanionConversionRules.referenceProvenance}'))"
+                else -> ""
+            }
+            db.openHelper.readableDatabase.query("SELECT * FROM $table WHERE scopeId=?$filter",
+                if (table == "companion_applied_ops") arrayOf(scope.id, scope.id) else arrayOf(scope.id)).use { cursor ->
                 while (cursor.moveToNext()) out.insertTransfer(table, cursor.transferJson())
             }
         }

@@ -32,6 +32,7 @@ class FusedMemoryWriterTest {
                 "versions" -> memories.values.filter { it.scopeId == a[0] && it.factKey == a[1] }
                 "sources" -> sources.values.filter { it.memoryId == a[0] }
                 "appliedOp" -> ops[a[1]]
+                "removeAppliedOp" -> { ops.remove(a[1]); Unit }
                 "saveMemory" -> { val row = a[0] as CompanionMemoryEntity; memories[row.id] = row; Unit }
                 "saveSources" -> { (a[0] as List<CompanionSourceEntity>).forEach { sources[it.memoryId to it.messageId] = it }; Unit }
                 "voidMemory" -> { val row = memories.getValue(a[0] as String); memories[row.id] = row.copy(current = false,
@@ -56,6 +57,53 @@ class FusedMemoryWriterTest {
         """{"op":"add","category":"user_profile","content":"$content","evidence":["$evidence"],"date_type":"day"$extra}"""
     private fun update(target: String = "M1", content: String = "我记得他现在在上海上班", extra: String = "") =
         """{"op":"update","target":"$target","category":"user_profile","content":"$content","evidence":["S1"],"date_type":"day"$extra}"""
+
+    @Test fun editedSourceCanBeAddedAgainButRetryRemainsIdempotent() = runBlocking {
+        for (legacy in listOf(false, true)) {
+            val db = Store()
+            val original = db.write(add()).memoryId!!
+            if (legacy) {
+                val op = (FusedMemoryValidation.parseLine(add()) as FusedMemoryLine.Operation).value
+                val old = db.ops.values.single()
+                db.ops.clear()
+                val legacyKey = FusedMemoryValidation.opKey(scope.id, op, null, listOf(user.id))
+                db.ops[legacyKey] = old.copy(opKey = legacyKey)
+                assertTrue(db.write(add()).skipped)
+            }
+            db.memories[original] = db.memories.getValue(original).copy(current = false, voided = true, voidedReason = "source_edited")
+            val edited = user.copy(content = "修改后的完整来源：仍要去面试")
+            db.messages[user.id] = edited
+            val refs = FusedMemoryReferences(listOf(edited))
+            val result = db.write(add(), refs)
+            assertTrue(result.success)
+            assertFalse(result.skipped)
+            assertNotEquals(original, result.memoryId)
+            assertTrue(db.write(add(), FusedMemoryReferences(listOf(edited))).skipped)
+            assertEquals(1, db.memories.values.count { it.current })
+            assertTrue(db.memories.getValue(original).voided)
+            assertEquals(user.content, db.sources[original to user.id]!!.messageSnapshot)
+        }
+    }
+
+    @Test fun staleCallCannotUseExistingReceiptAfterSourceChanged() = runBlocking {
+        val db = Store()
+        val refs = db.refs()
+        db.write(add(), refs)
+        db.messages[user.id] = user.copy(content = "已改")
+        assertEquals("source_changed", db.write(add(), refs).reason)
+        assertEquals(1, db.memories.size)
+    }
+
+    @Test fun invalidatedSourceRestoredToSameTextDoesNotResurrectOldRow() = runBlocking {
+        val db = Store()
+        val original = db.write(add()).memoryId!!
+        db.memories[original] = db.memories.getValue(original).copy(current = false, voided = true, voidedReason = "source_edited")
+        val new = db.write(add())
+        assertFalse(new.skipped)
+        assertNotEquals(original, new.memoryId)
+        assertEquals(2, db.memories.size)
+        assertTrue(db.write(add()).skipped)
+    }
 
     @Test fun partialStreamRetriesWithoutDuplicateMemoryAndOnlyThenCompletes() = runBlocking {
         for (invalidLine in listOf(false, true)) {
@@ -246,16 +294,25 @@ class FusedMemoryWriterTest {
         }
         assertEquals(FusedMemoryLine.Done, FusedMemoryValidation.parseLine("{\"done\":true}"))
     }
-    @Test fun dateFallbackHabitAndEvidenceDayUseTheSharedPolicy() {
+    @Test fun unknownDateStaysEmptyAndEvidenceDayOnlyAnchorsExplicitTime() {
         val base = (FusedMemoryValidation.parseLine(add()) as FusedMemoryLine.Operation).value
-        assertEquals("2026-10-23", FusedMemoryDate.resolve(base, listOf(user)).day.toString())
-        assertEquals("spoken_day", FusedMemoryDate.resolve(base, listOf(user)).source)
-        assertEquals("model", FusedMemoryDate.resolve(base.copy(timeText = "月底", modelDate = "2026-10-31"), listOf(user)).source)
+        assertNull(FusedMemoryDate.resolve(base, listOf(user)).day)
+        assertEquals("none", FusedMemoryDate.resolve(base, listOf(user)).source)
+        assertEquals("none", FusedMemoryDate.resolve(base.copy(timeText = "月底", modelDate = "2026-10-31"), listOf(user)).source)
         assertNull(FusedMemoryDate.resolve(base.copy(timeText = "过几天"), listOf(user)).day)
         assertNull(FusedMemoryDate.resolve(base.copy(dateType = "habit", modelDate = "2026-10-23"), listOf(user)).day)
         val earlier = user.copy(id = "earlier", content = "前天很冷", timestamp = "2026-10-20T10:00:00Z", createdAt = "2026-10-20T10:00:00Z")
         assertEquals("2026-10-18", FusedMemoryDate.resolve(base.copy(timeText = "前天"), listOf(user, earlier)).day.toString())
         assertTrue(FusedMemoryDate.resolve(base.copy(timeText = "月底"), listOf(user)).missingTimeEvidence)
+        for (text in listOf("那年", "上次", "不知道哪一天")) {
+            val source = user.copy(content = "$text 我们一起散步")
+            val result = FusedMemoryDate.resolve(base.copy(timeText = text, modelDate = "2026-10-23"), listOf(source))
+            assertNull(result.day)
+            assertFalse(result.missingTimeEvidence)
+        }
+        val christmas = user.copy(content = "去年圣诞节一起吃饭", timestamp = "2024-01-02T10:00:00Z", createdAt = "2024-01-02T10:00:00Z")
+        assertEquals("2023-12-25", FusedMemoryDate.resolve(base.copy(timeText = "去年圣诞节"), listOf(christmas)).day.toString())
+        assertNull(FusedMemoryDate.resolve(base.copy(timeText = "去年圣诞节"), listOf(christmas.copy(timestamp = "", createdAt = ""))).day)
     }
     @Test fun allProtectedQuestionLanguagesAndSixtyCoreRowsRemainAvailable() {
         assertEquals(5, listOf("zh", "zh-TW", "en", "ja", "ko").map { FusedMemoryWriter.protectedQuestion("旧事实", it) }.distinct().size)
