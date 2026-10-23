@@ -46,8 +46,9 @@ class CreateCharacterSessionDialogTest {
         onLoad: () -> Unit = {}
     ) {
         val context = LocalContext.current
-        val localized = remember {
-            context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
+        val currentConfiguration = LocalConfiguration.current
+        val localized = remember(currentConfiguration) {
+            context.createConfigurationContext(Configuration(currentConfiguration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         }
         val density = LocalDensity.current
         CompositionLocalProvider(

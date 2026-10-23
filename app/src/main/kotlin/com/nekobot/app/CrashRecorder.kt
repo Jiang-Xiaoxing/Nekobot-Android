@@ -2,6 +2,7 @@ package com.nekobot.app
 
 import android.content.Context
 import android.os.Build
+import androidx.core.content.pm.PackageInfoCompat
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -64,7 +65,8 @@ internal object CrashRecorder {
     /** 版本信息：不依赖 BuildConfig（项目未开启 buildConfig 生成）。 */
     private fun appVersion(context: Context): String = runCatching {
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        "${info.versionName} (${info.longVersionCode})"
+        // longVersionCode 需要 API 28，minSdk 26 下直接调用会在 Android 8.x 抛 NoSuchMethodError
+        "${info.versionName} (${PackageInfoCompat.getLongVersionCode(info)})"
     }.getOrDefault(context.packageName)
 
     /** 读取最近一次崩溃记录（供诊断页展示）；没有记录时返回 null。 */
