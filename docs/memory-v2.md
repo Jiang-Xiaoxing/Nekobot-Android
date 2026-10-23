@@ -4,20 +4,22 @@
 
 ## 发送前总结记忆
 
-用户消息先落库，再用同一套 Token 估算检查全部未总结整轮；本轮消息计入近期额度，但永远不进入总结目标。默认近期额度为8000，未总结量大于额度时，先总结记忆再回复。没有回执的整轮必须保留在窗口里，有回执的近期原话才可按剩余空间补入或移出。
+用户消息先落库，再用同一套Token估算检查尚未总结的完整轮次。默认近期原文预算为8000；达到预算且有旧轮次可处理时，先总结再回复。2000是每批原话的目标量，不是单独的积累触发门槛，也不是生成摘要的长度。8000只限制近期原文，不包含系统提示、记忆与工具等材料。
 
-普通批次从最旧未总结整轮开始，目标约为批量设置（默认2000）与超额部分中较大者，每包不超过4000。遇到单个完整轮次超过4000时，先处理它前面的短聊天，再单独处理该长轮；短包完成后即使降回门槛内，也在同一次等待内完成已排定的长包，然后回复。没有前置短聊天时只有长包一次。前置短聊天本身超过4000时按普通包上限分包，仍在同次等待内顺序完成。
+从最旧未总结整轮起，每批目标约2000；成功完成输出、逐条保存结果，并在事务内核对整批原话指纹及保存完成回执后，这批才退出后续普通聊天的近期输入。例如约8000→总结约2000→剩约6000，随后增长再循环；积压较多时连续处理多批，恢复预算后即停止，不必凑满8000。回执按资料库、会话和角色隔离，重启后继续使用；已总结原话不会再回填近期窗口。聊天、来源和记忆仍留在数据库，可回看或通过明确引用及检索读取。
 
-长轮绝不拆句或拆轮，允许目标超过4000，但完整模型请求仍受可用输入容量限制：优先减少参考原话、旧记忆，仍放不下则沿用容量错误提示。长包完成后恢复正常门槛判断，不无条件处理所有后续长轮。每包重新读取原话和回执，无进展的同一批不能无限重试。
+普通批次尽量保留整轮，最多约4000；单个更长的历史轮次独占一批，绝不为了凑2000拆句或剪掉内容。完整总结请求先减少参考原话及旧记忆，仍超出模型容量就明确提示换更大容量模型。本轮尚未回复的消息不能提前总结；若它本身超过近期预算，则停止发送并提示调整输入或预算。总提示词容量不足时也必须先成功总结旧轮次，不能静默裁剪未总结原话。
 
-整个调用只显示一次“正在总结记忆…”等待状态。停止会取消未完成总结及本轮回复；已完成包和已入库条目保留。第一包失败不继续第二包。失败包不写完成回执，保留未总结状态，并按既有失败提示、总上下文退让和下次发送重试规则处理。回复结束、手动编辑记忆后不额外触发后台总结。
+一次连续处理使用现有“正在总结记忆…”状态。网络直连异常、格式错误或不完整结束最多尝试3次，间隔1秒、2秒；已经走完故障转移队列的失败不再整队重复。每批沿用总结用途的10分钟总时限，包含所有尝试和退避，内部模型请求仍受原有超时限制。认证、额度、容量、保存等不可立即恢复的错误直接结束本轮。错误按已知原因给出五语安全提示和重新发送/检查设置等操作，不显示服务原始错误体、地址或凭据。
+
+失败、超时或取消都不写该批完成回执、不继续普通回复，也不跳过失败批次；原话和已逐条保存的有效结果保留，重试按持久操作标识跳过重复操作。再次发送仍从最早未完成整轮处理。状态在结束时清理，用户可再次发起；已完成的前批不会重做。回复结束、手动编辑记忆后不额外触发后台总结。
 
 ## 编号、逐条写入与版本
 
 - 每次调用由程序生成本批原话S编号、辅助原话R编号、旧记忆M编号；新增操作按顺序获得N编号。失败的新增操作也占其编号位置，不能把后续编号前移。
 - 输出为JSONL，只支持`add`、`update`、`cancel`、`complete`、`retract`，最后必须输出`{"done":true}`。每条通过校验后立即事务入库；坏行不回滚已成功条目。
 - 证据仅接受本批S编号，辅助R编号不能作为证据。未知目标不能降级为新增；用户画像必须有用户原话证据。回复中的工具使用同一套写入器，证据限本轮用户S1。
-- 只有输出完整结束且原话指纹仍一致才写完成回执。未完成输出可重试，已存操作按幂等标识跳过；连续缺少done按原策略拆多轮批次，单个完整轮次不拆。
+- 发送前总结只有输出完整结束、没有被拒绝的操作，且整批原话指纹仍一致才写完成回执。坏行和未完成输出保留有效写入，但整批重试，已存操作按幂等标识跳过；单个完整轮次不拆。旧资料转换继续使用其原有重试分包策略。
 - 更新或撤回将旧版标为作废，保留历史，查询给模型只提供当前有效版本。恢复会建立新的当前版本，历史仍可追溯。
 
 ## 拿不准与锁定保护
@@ -46,7 +48,7 @@
 
 | 范围 | 主要入口 | 回归 |
 |---|---|---|
-| 窗口、连续总结 | `FusedCompanionPolicy`、`FusedCompanionSummary`、`CompanionMemoryStore` | `CompanionConsolidationCallCountTest`、`FusedCompanionSummaryTest`、`FusedCompanionConsolidationFitTest` |
+| 窗口、连续总结及失败恢复 | `FusedCompanionPolicy`、`FusedCompanionSummary`、`FusedSummaryProgress`、`FusedSummaryRetry`、`CompanionMemoryStore` | `FusedRollingWindowTest`、`FusedSummaryRecoveryTest`、`FusedSummaryProgressPersistenceTest`、`FusedSummaryRuntimeTest`及原有选批/容量回归 |
 | 流式写入、编号、日期 | `FusedMemoryStream`、`FusedMemoryWriter`、`FusedMemoryOperation`、`TimeWordEngine` | `FusedMemoryStreamTest`、`FusedMemoryWriterTest`、`FusedReplyMemoryMappingTest`、`TimeWordEngineTest`、`TimeWordOriginal61Test` |
 | 迁移与触发器 | `CompanionMemoryV2Schema`、`NekobotDatabase` | `CompanionMemoryV2MigrationTest`、`CompanionMemoryV2TriggerTest`、`UpstreamMigrationTest`、`NekobotDatabaseMigrationChainTest` |
 | 编辑删除及锁定确认 | `CompanionMemoryInteractions`、`CompanionMessageDecision`、`CompanionReviewReply`、`ChatViewModel` | `CompanionMemoryInteractionsTest`、`CompanionMessageDecisionTest`、`CompanionReviewReplyTest` |

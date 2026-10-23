@@ -138,51 +138,34 @@ internal object FusedCompanionPolicy {
 
     data class WindowPlan(val window: List<LocalMessageEntity>, val unsummarizedTokens: Int,
         val needsSummary: Boolean, val batch: List<LocalMessageEntity>, val reference: List<LocalMessageEntity>,
-        val continueThroughMessageId: String? = null)
+        val currentTurnTokens: Int = 0)
 
-    /** 检查、选批、组装共用口径。本轮占窗口额度，但永远不进入总结记忆批次。 */
+    /** Receipted history stays in storage and explicit lookup, but never refills ordinary recent input. */
     fun windowPlan(history: List<LocalMessageEntity>, summarizedIds: Set<String>, recentBudget: Int = 8000,
         batchBudget: Int = 2000, currentMessageId: String? = history.lastOrNull { it.role == "user" }?.id,
-        count: (List<LocalMessageEntity>) -> Int = ::tokens, continueThroughMessageId: String? = null): WindowPlan {
+        count: (List<LocalMessageEntity>) -> Int = ::tokens): WindowPlan {
         val units = turns(history.filter { !it.deleted && it.role in setOf("user", "assistant") })
-        val pending = units.filter { turn -> turn.any { it.id !in summarizedIds } }
-        val pendingIds = pending.flatten().map { it.id }.toSet()
-        val u = count(pending.flatten())
-        val selected = pending.toMutableList()
-        var used = u
-        for (turn in units.asReversed().filter { unit -> unit.none { it.id in pendingIds } }) {
-            val cost = count(turn)
-            if (used + cost > recentBudget) break
-            selected += turn
-            used += cost
-        }
-        val ids = selected.flatten().map { it.id }.toSet()
-        val window = history.filter { it.id in ids }
-        val batch = mutableListOf<LocalMessageEntity>()
-        val goal = minOf(4000, maxOf(batchBudget, u - recentBudget))
+        val currentTokens = units.firstOrNull { turn -> turn.any { it.id == currentMessageId } }?.let(count) ?: 0
+        if (currentTokens > recentBudget) throw FusedSummaryFailure(FusedSummaryFailure.Reason.CURRENT_LIMIT)
+        val pending = units.filter { turn -> turn.any { it.id !in summarizedIds || it.id == currentMessageId } }
+        val window = pending.flatten()
+        val u = count(window)
         val processable = pending.takeWhile { turn -> turn.none { it.id == currentMessageId } }
-        val continuation = processable.indexOfFirst { turn -> turn.any { it.id == continueThroughMessageId } }
-        val needsSummary = u > recentBudget || continuation >= 0
-        // 本次已触发时，连同前面的短聊天一起安排到首个超长轮为止；短包完成后不再受门槛阻断。
-        val through = if (continuation >= 0) continuation else if (needsSummary)
-            processable.indexOfFirst { count(it) > 4000 } else -1
-        if (needsSummary) for ((index, turn) in processable.withIndex()) {
-            // 单个超长完整轮次独占一批；实际模型输入容量由请求组装阶段检查。
+        val needsSummary = u > recentBudget || (u >= recentBudget && processable.isNotEmpty())
+        val batch = mutableListOf<LocalMessageEntity>()
+        val goal = batchBudget.coerceIn(1, 4000)
+        if (needsSummary) for (turn in processable) {
+            // An oversized whole turn owns its batch; request capacity is checked before sending.
             if (batch.isNotEmpty() && count(batch + turn) > 4000) break
             batch += turn
-            if (index == through || (through < 0 && count(batch) >= goal)) break
+            if (count(batch) >= goal) break
         }
-        val positions = history.mapIndexed { i, row -> row.id to i }.toMap()
-        val last = batch.lastOrNull()?.let { positions[it.id] } ?: -1
-        val newer = window.filter { positions.getValue(it.id) > last }
-        // 失败积压可能使window暂时超额，参考资料仍限于正常窗口。
         val reference = mutableListOf<LocalMessageEntity>()
-        for (turn in turns(newer).asReversed()) {
+        for (turn in turns(window.drop(batch.size)).asReversed()) {
             if (count(reference + turn) > recentBudget) break
             reference.addAll(0, turn)
         }
-        val continueThrough = processable.getOrNull(through)?.last()?.id?.takeUnless { id -> batch.any { it.id == id } }
-        return WindowPlan(window, u, needsSummary, batch, reference, continueThrough)
+        return WindowPlan(window, u, needsSummary, batch, reference, currentTokens)
     }
 
     /** 聊天近期额度取用户上限与按上下文缩放后的份额中较小的一个。 */
@@ -218,7 +201,7 @@ internal object FusedCompanionPolicy {
     }
 
     // Bump when the auxiliary format changes so old interval hints are not replayed.
-    const val contextFormat = "fused-unified-references-v11"
+    const val contextFormat = "fused-unified-references-v12"
 
     fun timeKey(now: ZonedDateTime): String =
         "${now.format(java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm", java.util.Locale.ROOT))}（${now.zone.id}，UTC${if (now.offset.totalSeconds == 0) "+00:00" else now.offset.id}）"

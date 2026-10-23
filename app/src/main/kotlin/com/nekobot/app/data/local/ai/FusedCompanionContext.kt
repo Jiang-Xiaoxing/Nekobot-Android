@@ -6,7 +6,6 @@ import com.nekobot.app.data.local.db.*
 import java.time.ZonedDateTime
 
 internal class FusedCompanionContext(private val db: NekobotDatabase) {
-    private var summaryFailed = false
     suspend fun build(session: LocalSessionEntity, messageId: String, history: List<LocalMessageEntity>,
         system: String, tools: List<Map<String, Any>>, currentMessage: Map<String, Any>, dynamic: String,
         maxContext: Int, outputReserve: Int, now: ZonedDateTime = ZonedDateTime.now(), stateKey: String = "relationship-v2:off",
@@ -16,15 +15,17 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         val scope = store.ensureScope(session)
         val raw = requireNotNull(db.messageDao().getById(messageId))
         val consolidation = consolidationSettingsFor(db.dbName, session.id)
-        val receipts = dao.receipts(scope.id).map { it.messageId }.toSet()
+        val receipts = FusedSummaryProgress.summarizedIds(scope, history + raw, dao.receipts(scope.id))
         val plan = FusedCompanionPolicy.windowPlan(history + raw, receipts, consolidation.recent, consolidation.trigger, messageId)
         suspend fun rebuild(): List<Map<String, Any>> = build(session, messageId, history, system, tools, currentMessage, dynamic,
             maxContext, outputReserve, now, stateKey, thinkingPrompt, summarize, refs)
-        if (plan.needsSummary && !summaryFailed) {
-            if (summarize?.invoke(consolidation.recent) == true) return rebuild()
-            summaryFailed = true
+        suspend fun summarizeAndRebuild(limit: Int): List<Map<String, Any>> {
+            FusedCompanionSummary.advance(receipts,
+                summarize = { summarize?.invoke(limit) ?: false },
+                reload = { FusedSummaryProgress.summarizedIds(scope, history + raw, dao.receipts(scope.id)) })
             return rebuild()
         }
+        if (plan.needsSummary) return summarizeAndRebuild(consolidation.recent)
         // 到期后连同历史辅助资料一起重建，避免旧缓存继续带入已经过期的记忆。
         val expired = dao.memories(scope.id).filterNot { CompanionImportPolicy.usable(it, now.toInstant()) }.map { it.id }.sorted()
         // State changes invalidate auxiliary caches, including turning the feature off.
@@ -62,35 +63,20 @@ internal class FusedCompanionContext(private val db: NekobotDatabase) {
         fun size(rows: List<LocalMessageEntity>) = estimateLocalMessagesTokens(
             assembleMessages(opening, rows, cached, material(rows), turnReminder, currentMessage, raw, uncertain = uncertainty(rows)).map(CompanionRequestUsage::clean)) -
             estimateLocalTextTokens(system)
-        var selected = plan.window.filterNot { it.id == messageId }
+        val selected = plan.window.filterNot { it.id == messageId }
         if (selected.size < history.size || FusedCompanionPolicy.tokens(plan.window) >= consolidation.recent) {
             examples.windowFull(session.id, history.lastOrNull { it.role == "assistant" }?.id ?: messageId)
             opening = system
         }
-        // 总容量不足先移出已有回执的整轮；核心和沿用记忆不挤占8000额度。
-        for (turn in FusedCompanionPolicy.turns(selected)) {
-            if (size(selected) <= available) break
-            if (turn.all { it.id in receipts }) {
-                val ids = turn.map { it.id }.toSet()
-                selected = selected.filterNot { it.id in ids }
+        // The 8000-token recent-text budget is separate from total prompt capacity.
+        // More history may leave only after a successful summary; failures never fall back to truncation.
+        if (size(selected) > available) {
+            if (selected.isEmpty()) {
+                throw FusedSummaryFailure(FusedSummaryFailure.Reason.CONTEXT_LIMIT)
             }
-        }
-        if (size(selected) > available && !summaryFailed) {
-            val target = (plan.unsummarizedTokens - (size(selected) - available) - 32).coerceAtLeast(0)
-            if (summarize?.invoke(target) == true) return rebuild()
-            summaryFailed = true
-            return rebuild()
-        }
-        // 仅在总结失败且总容量仍不足时临时让出原话；没有回执，下次照常重试。
-        var dropped = 0
-        while (size(selected) > available && selected.isNotEmpty() && summaryFailed) {
-            val turn = FusedCompanionPolicy.turns(selected).first()
-            dropped += FusedCompanionPolicy.tokens(turn)
-            selected = selected.drop(turn.size)
-        }
-        if (dropped > 0) fusedMemoryLog("warn", "unsummarized_dropped scope=${scope.id} droppedTokens=$dropped")
-        require(size(selected) <= available) {
-            FusedMemoryText.CONTEXT_TOO_LARGE.value()
+            val target = (plan.unsummarizedTokens - (size(selected) - available) - 32)
+                .coerceAtLeast(plan.currentTurnTokens)
+            return summarizeAndRebuild(target)
         }
         val startId = selected.firstOrNull()?.id ?: messageId
         val userPayload = currentMessage

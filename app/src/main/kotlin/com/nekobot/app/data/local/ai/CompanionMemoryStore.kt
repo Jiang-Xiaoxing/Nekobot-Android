@@ -165,21 +165,26 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         generateStream: (suspend (String, String, LocalAiStreamCallbacks) -> String)?, currentMessageId: String?): Int {
         val initial = ensureScope(session)
         val settings = consolidationSettingsFor(db.dbName, session.id)
-        return FusedCompanionSummary.run(nextPlan = { continueThrough ->
+        return FusedCompanionSummary.run(nextPlan = {
             val scope = dao.scope(initial.id) ?: return@run null
             var history = permittedHistory(session, db.messageDao().listBySession(session.id))
                 .filter { !it.deleted && it.role in setOf("user", "assistant") && !it.isLocalCommandMessage() }
             val current = currentMessageId ?: history.lastOrNull { it.role == "user" }?.id
-            if (current != null) history = history.take(history.indexOfFirst { it.id == current } + 1)
-            val summarized = dao.receipts(scope.id).map { it.messageId }.toSet()
-            val plan = FusedCompanionPolicy.windowPlan(history, summarized, recentTokenBudget ?: settings.recent, settings.trigger, current,
-                continueThroughMessageId = continueThrough)
+            if (current != null) {
+                val index = history.indexOfFirst { it.id == current }
+                if (index < 0) throw FusedSummaryFailure(FusedSummaryFailure.Reason.SOURCE_CHANGED)
+                history = history.take(index + 1)
+            }
+            val summarized = FusedSummaryProgress.summarizedIds(scope, history, dao.receipts(scope.id))
+            val plan = FusedCompanionPolicy.windowPlan(history, summarized, recentTokenBudget ?: settings.recent, settings.trigger, current)
             fusedMemoryLog("debug", "scope=${scope.id} unsummarizedTokens=${plan.unsummarizedTokens} recent=${recentTokenBudget ?: settings.recent} batch=${settings.trigger} decided=${if (plan.needsSummary) "summarize" else "skip"}")
             plan
         }, summarize = { plan ->
-            summarizeWithRetry(session, plan.batch, plan.reference, inputTokens,
-                FusedCompanionPolicy.extractionPrompt) { prompt, material, callbacks ->
-                generateStream?.invoke(prompt, material, callbacks) ?: generate(prompt, material)
+            FusedSummaryRetry.run {
+                summarizeFusedBatch(session, plan.batch, plan.reference, inputTokens,
+                    FusedCompanionPolicy.extractionPrompt, strictCompletion = true) { prompt, material, callbacks ->
+                    generateStream?.invoke(prompt, material, callbacks) ?: generate(prompt, material)
+                }
             }
         })
     }
@@ -195,7 +200,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
             var changed = 0
             for (batch in batches) changed += if (batches.size > 1)
                 summarizeWithRetry(session, batch, reference, inputTokens, prompt, legacy, generate)
-            else summarizeFusedBatch(session, batch, reference, inputTokens, prompt, legacy, generate)
+            else summarizeFusedBatch(session, batch, reference, inputTokens, prompt, legacy, generate = generate)
             retryPolicy.complete(key)
             return changed
         } catch (error: IncompleteMemoryStream) { retryPolicy.incomplete(key); throw error }
@@ -203,6 +208,7 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
 
     private suspend fun summarizeFusedBatch(session: LocalSessionEntity, target: List<LocalMessageEntity>,
         reference: List<LocalMessageEntity>, inputTokens: Int, prompt: String, legacy: List<CompanionMemoryEntity> = emptyList(),
+        strictCompletion: Boolean = false,
         generate: suspend (String, String, LocalAiStreamCallbacks) -> String): Int {
         val scope = ensureScope(session)
         val old = validatedMemories(scope).filter { it.current && !it.voided }
@@ -257,21 +263,32 @@ internal class CompanionMemoryStore(private val db: NekobotDatabase,
         val summary = try { FusedMemoryStream.consume({ callbacks -> generate(prompt, gson.toJson(json), callbacks) },
             reset = { refs = FusedMemoryReferences(target, existing) },
             log = { level, line -> fusedMemoryLog(level, "scope=${scope.id} $line") },
-            write = { writer.write(scope, it, refs, newMemoryExpiresAt = expiry(it)) })
+            write = { line ->
+                if (strictCompletion) FusedSummaryRetry.saving {
+                    writer.write(scope, line, refs, newMemoryExpiresAt = expiry(line))
+                } else writer.write(scope, line, refs, newMemoryExpiresAt = expiry(line))
+            })
         } catch (error: Exception) {
             fusedMemoryLog("info", "summary_end scope=${scope.id} batch=$batchNumber success=false elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
             throw error
         }
-        db.withTransaction {
-            val latest = requireNotNull(dao.scope(scope.id))
-            require(db.sessionDao().getById(session.id)?.usesFusedCompanionMemory() == true)
-            val unchanged = target.filter { row -> db.messageDao().getById(row.id)?.let {
-                !it.deleted && it.sessionId == session.id && CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row)
-            } == true }
-            // 调用期间被改过的消息继续待总结，不能用旧指纹标记为已总结。
-            dao.saveReceipts(unchanged.map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) })
+        if (strictCompletion) summary.requireReceiptReady()
+        suspend fun saveProgress() = db.withTransaction {
+            val latest = dao.scope(scope.id)
+            val owner = db.sessionDao().getById(session.id)
+            if (latest == null || owner?.usesFusedCompanionMemory() != true || owner.characterId != scope.characterId) {
+                throw FusedSummaryFailure(FusedSummaryFailure.Reason.SOURCE_CHANGED)
+            }
+            val fresh = target.mapNotNull { db.messageDao().getById(it.id) }
+            val receipts = if (strictCompletion) FusedSummaryProgress.receipts(scope, target, fresh)
+                else fresh.filter { row -> target.any { it.id == row.id &&
+                    CompanionMemoryPolicy.fingerprint(it) == CompanionMemoryPolicy.fingerprint(row) } &&
+                    row.sessionId == scope.sessionId && !row.deleted }
+                    .map { CompanionReceiptEntity(scope.id, it.id, CompanionMemoryPolicy.fingerprint(it)) }
+            dao.saveReceipts(receipts)
             dao.saveScope(latest.copy(error = null, updatedAt = Instant.now().toString()))
         }
+        if (strictCompletion) FusedSummaryRetry.saving { saveProgress() } else saveProgress()
         fusedMemoryLog("info", "summary_end scope=${scope.id} batch=$batchNumber success=true elapsedMs=${(System.nanoTime() - started) / 1_000_000} ok=${summary.ok} dropped=${summary.dropped} uncertain=${summary.uncertain}")
         return summary.ok
     }

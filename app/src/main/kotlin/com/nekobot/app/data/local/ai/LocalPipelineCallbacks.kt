@@ -246,10 +246,10 @@ internal class LocalPipelineCallbacks(
             thinkingPrompt = ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.takeIf { it.enabled }?.content,
             refs = fusedMemoryRefs, summarize = { limit ->
                 if (generationController.isStopped) throw kotlinx.coroutines.CancellationException("用户停止总结记忆")
-                emitEvent(RealtimeEvent.ContextCompressionStatus(session.id, true,
-                    anchorContent = ctx.chatRequest.content, memorySummarizing = true))
-                try { summarizeCompanionMemory?.invoke(requireNotNull(parentMessageId), limit) ?: false }
-                finally { emitEvent(RealtimeEvent.ContextCompressionStatus(session.id, false, memorySummarizing = true)) }
+                FusedCompanionSummary.waiting(notice = { running ->
+                    emitEvent(RealtimeEvent.ContextCompressionStatus(session.id, running,
+                        anchorContent = ctx.chatRequest.content, memorySummarizing = true))
+                }) { summarizeCompanionMemory?.invoke(requireNotNull(parentMessageId), limit) ?: false }
             })
         CompanionMemoryStore(db).ensureScope(session).let { companionScopeId = it.id; companionRevision = it.revision }
         if (generationController.isStopped) throw kotlinx.coroutines.CancellationException("用户停止本轮回复")

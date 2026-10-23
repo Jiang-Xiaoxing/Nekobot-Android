@@ -13,7 +13,13 @@ internal object FusedMemoryStream {
         data object Reset : Event
         data class Line(val text: String) : Event
     }
-    data class Summary(val ok: Int, val dropped: Map<String, Int>, val uncertain: Int)
+    data class Summary(val ok: Int, val dropped: Map<String, Int>, val uncertain: Int) {
+        fun requireReceiptReady() {
+            if (dropped.isNotEmpty()) throw FusedSummaryFailure(
+                if ("source_changed" in dropped) FusedSummaryFailure.Reason.SOURCE_CHANGED
+                else FusedSummaryFailure.Reason.FORMAT)
+        }
+    }
 
     suspend fun consume(generate: suspend (LocalAiStreamCallbacks) -> String,
         reset: () -> Unit = {}, log: (String, String) -> Unit = ::fusedMemoryLog,

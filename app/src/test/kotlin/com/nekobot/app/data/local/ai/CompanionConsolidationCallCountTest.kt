@@ -8,16 +8,14 @@ import org.junit.Test
 class CompanionConsolidationCallCountTest {
     private fun row(id: String, role: String, cost: Int) = LocalMessageEntity(id, "s", role, cost.toString(),
         timestamp = "2026-10-23T12:00:00Z", createdAt = "2026-10-23T12:00:00Z")
-    private fun plan(rows: List<LocalMessageEntity>, receipts: Set<String> = emptySet(), budget: Int = 8000,
-        continueThrough: String? = null) =
-        FusedCompanionPolicy.windowPlan(rows, receipts, budget, 2000, count = { it.sumOf { row -> row.content.toInt() } },
-            continueThroughMessageId = continueThrough)
+    private fun plan(rows: List<LocalMessageEntity>, receipts: Set<String> = emptySet(), budget: Int = 8000) =
+        FusedCompanionPolicy.windowPlan(rows, receipts, budget, 2000, count = { it.sumOf { row -> row.content.toInt() } })
     private fun history(turns: Int, user: Int = 500, reply: Int = 500) = (1..turns).flatMap {
         listOf(row("u$it", "user", user), row("a$it", "assistant", reply))
     }
-    @Test fun eightThousandRepliesWithoutSummaryAndEightThousandOneTriggers() {
+    @Test fun eightThousandStartsRollingSummaryWithoutWaitingForOverflow() {
         val rows = history(7) + row("u8", "user", 1000)
-        assertFalse(plan(rows).needsSummary)
+        assertTrue(plan(rows).needsSummary)
         assertEquals(8000, plan(rows).unsummarizedTokens)
         val over = plan(rows.dropLast(1) + row("u8", "user", 1001))
         assertTrue(over.needsSummary); assertEquals(4, over.batch.size)
@@ -55,7 +53,7 @@ class CompanionConsolidationCallCountTest {
             assertEquals(0, batch.size % 2); assertFalse(batch.any { it.id == "current" })
             receipts += batch.map { it.id }; calls++
         }
-        assertEquals(2, calls)
+        assertEquals(4, calls)
     }
     @Test fun failedSummaryKeepsEverythingAndNextSendRetriesSameOldestBatch() {
         val rows = history(8) + row("current", "user", 50)
@@ -80,19 +78,18 @@ class CompanionConsolidationCallCountTest {
         val next = plan(rows)
         assertTrue(next.needsSummary); assertEquals(rows.take(2), next.batch); assertEquals(rows, next.window)
     }
-    @Test fun oversizedTurnIsReservedForSameWaitEvenBelowThresholdAfterShortBatch() {
+    @Test fun oversizedTurnWaitsUntilAnotherBatchIsNeededAndThenStaysWhole() {
         val rows = history(1) + listOf(row("hugeU", "user", 3000), row("hugeA", "assistant", 3000)) +
             listOf(row("laterU", "user", 500), row("laterA", "assistant", 500), row("current", "user", 500))
         val first = plan(rows)
         assertEquals(rows.take(2), first.batch)
-        assertEquals("hugeA", first.continueThroughMessageId)
         val receipts = first.batch.map { it.id }.toSet()
         assertFalse(plan(rows, receipts).needsSummary)
-        val second = plan(rows, receipts, continueThrough = first.continueThroughMessageId)
+        val grown = rows.dropLast(1) + row("current", "user", 1500)
+        val second = plan(grown, receipts)
         assertTrue(second.needsSummary)
         assertEquals(listOf("hugeU", "hugeA"), second.batch.map { it.id })
-        assertNull(second.continueThroughMessageId)
-        assertFalse(plan(rows, (first.batch + second.batch).map { it.id }.toSet()).needsSummary)
+        assertFalse(plan(grown, (first.batch + second.batch).map { it.id }.toSet()).needsSummary)
     }
     @Test fun referenceContainsOnlyNewerTurnsAndIsBounded() {
         val rows = history(15) + row("current", "user", 1)

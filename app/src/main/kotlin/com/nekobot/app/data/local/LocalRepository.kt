@@ -9511,25 +9511,22 @@ class LocalRepository(
 
     /** 与当前回复同一协程；取消同时停止总结记忆与聊天。 */
     private suspend fun summarizeCompanionMemoryNow(sessionId: String, messageId: String, recentLimit: Int): Boolean {
-        val session = sessionDao.getById(sessionId)?.takeIf { it.usesFusedCompanionMemory() } ?: return false
-        val store = CompanionMemoryStore(db)
-        val scope = store.ensureScope(session)
-        val before = db.companionMemoryDao().receipts(scope.id).size
         return try {
+            val session = sessionDao.getById(sessionId)?.takeIf { it.usesFusedCompanionMemory() }
+                ?: throw com.nekobot.app.data.local.ai.FusedSummaryFailure(
+                    com.nekobot.app.data.local.ai.FusedSummaryFailure.Reason.SOURCE_CHANGED)
             val model = aiModelDao.getActiveByPurpose("compression") ?: aiModelDao.getActiveByPurpose("chat") ?: aiModelDao.getActive()
-            store.process(session,
+            CompanionMemoryStore(db).process(session,
                 generate = { system, material -> generateExperienceArchive(sessionId, system, material) },
                 generateStream = { system, material, callbacks -> generateExperienceArchive(sessionId, system, material, callbacks) },
                 inputBudgetChars = (model?.maxContextLength ?: DEFAULT_AGENT_CONTEXT_TOKENS) - (model?.maxTokens ?: 4000) - 1000,
                 recentTokenBudget = recentLimit, currentMessageId = messageId)
-            db.companionMemoryDao().receipts(scope.id).size > before
+            true // The context builder independently requires durable progress before rebuilding.
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (failure: Exception) {
-            com.nekobot.app.data.local.ai.fusedMemoryLog("warn", "scope=${scope.id} cause=${failure.javaClass.simpleName}")
-            _autoMemoryEvents.tryEmit(com.nekobot.app.data.local.ai.AgentMemoryNotice(sessionId, 0,
-                com.nekobot.app.data.local.ai.AgentMemoryPhase.DONE, failed = true,
-                failureKey = "memory_summary_failed"))
-            false
+            val safe = com.nekobot.app.data.local.ai.FusedSummaryFailure.from(failure)
+            com.nekobot.app.data.local.ai.fusedMemoryLog("warn", "summary_failed cause=${safe.reason.name}")
+            throw safe
         }
     }
 

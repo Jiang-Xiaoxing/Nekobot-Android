@@ -57,6 +57,37 @@ class FusedMemoryWriterTest {
     private fun update(target: String = "M1", content: String = "我记得他现在在上海上班", extra: String = "") =
         """{"op":"update","target":"$target","category":"user_profile","content":"$content","evidence":["S1"],"date_type":"day"$extra}"""
 
+    @Test fun partialStreamRetriesWithoutDuplicateMemoryAndOnlyThenCompletes() = runBlocking {
+        for (invalidLine in listOf(false, true)) {
+            val db = Store()
+            var calls = 0
+            var receipt = false
+            FusedSummaryRetry.run(pause = {}) {
+                calls++
+                val firstSaved = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val refs = db.refs() // Recreate the call-local mapping, as after retry/restart.
+                val result = FusedMemoryStream.consume({ callbacks ->
+                    callbacks.onContentChunk(add() + "\n")
+                    firstSaved.await()
+                    assertFalse(receipt)
+                    assertEquals(1, db.memories.size)
+                    if (calls == 1 && !invalidLine) throw java.io.IOException("synthetic connection loss")
+                    if (calls == 1) callbacks.onContentChunk("invalid line\n")
+                    callbacks.onContentChunk("{\"done\":true}")
+                    ""
+                }) { line ->
+                    db.writer.write(scope, line, refs).also { if (it.success) firstSaved.complete(Unit) }
+                }
+                result.requireReceiptReady()
+                receipt = true
+            }
+            assertEquals(2, calls)
+            assertTrue(receipt)
+            assertEquals(1, db.memories.size)
+            assertEquals(1, db.ops.size)
+        }
+    }
+
     @Test fun toolCannotReuseBackgroundNReferenceThroughIdempotency() = runBlocking {
         val db = Store(); val refs = db.refs()
         assertTrue(db.write(add(), refs).success)
