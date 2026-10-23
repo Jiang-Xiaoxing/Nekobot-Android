@@ -122,17 +122,27 @@ class FusedCompanionAndroidTest {
             val s=setup(db); val store=CompanionMemoryStore(db)
             store.editFused(s,"diet","用户怕辣","user_profile",emptyList(),false,true)
             val row=say(db,"current","现在我喜欢辣")
-            fails { store.fusedTool(s,"agent_memory_update",mapOf("key" to "diet","operation" to "update",
-                "category" to "user_profile","content" to "用户喜欢辣","quote" to row.content),row.id) }
-            assertFalse(store.validatedMemories(store.ensureScope(s)).single().alwaysProvide)
-            store.editFused(s,"diet","用户怕辣","user_profile",emptyList(),false,false)
-            store.fusedTool(s,"agent_memory_update",mapOf("key" to "diet","operation" to "update",
-                "category" to "user_profile","content" to "用户喜欢辣","quote" to row.content),row.id)
-            assertEquals("用户喜欢辣",store.validatedMemories(store.ensureScope(s)).single { it.current }.content)
+            val scope=store.ensureScope(s)
+            val original=store.validatedMemories(scope).single()
+            val result=store.fusedTool(s,"agent_memory_update",mapOf("op" to "update","target" to "M1",
+                "category" to "user_profile","content" to "用户喜欢辣","evidence" to listOf("S1"),"date_type" to "habit"),
+                FusedMemoryReferences(listOf(row),listOf(original)))
+            assertEquals(true,result["success"])
+            val protected=store.validatedMemories(store.ensureScope(s)).single { it.id==original.id }
+            assertEquals("用户怕辣",protected.content)
+            assertTrue(protected.locked)
+            assertFalse(protected.alwaysProvide)
+            val pending=store.validatedMemories(store.ensureScope(s)).single { it.pendingConfirm }
+            assertEquals(original.id,pending.uncertainTargetId)
+            assertEquals("用户喜欢辣",pending.content)
+            store.deleteFused(s,pending.factKey)
             store.deleteFused(s,"diet")
+            assertTrue(db.companionMemoryDao().versions(scope.id,"diet").single().voided)
             val fresh=say(db,"fresh","现在我喜欢辣")
-            store.fusedTool(s,"agent_memory_update",mapOf("key" to "diet","operation" to "add",
-                "category" to "user_profile","content" to "用户喜欢辣","quote" to fresh.content),fresh.id)
+            val added=store.fusedTool(s,"agent_memory_update",mapOf("op" to "add",
+                "category" to "user_profile","content" to "用户喜欢辣","evidence" to listOf("S1"),"date_type" to "habit"),
+                FusedMemoryReferences(listOf(fresh)))
+            assertEquals(true,added["success"])
             assertEquals("用户喜欢辣",store.validatedMemories(store.ensureScope(s)).single { it.current }.content)
         } finally { db.close() }
     }
@@ -282,31 +292,43 @@ class FusedCompanionAndroidTest {
         } finally { db.close() }
     }
 
-    @Test fun eventUpdatesRetractionAndClarificationReuseOneCanonicalRecord() = runBlocking<Unit> {
+    @Test fun eventUpdatesRetractionAndConfirmationRetainHistoryAndOneCurrentRecord() = runBlocking<Unit> {
         val db=db(); try {
             val s=setup(db); val store=CompanionMemoryStore(db)
-            suspend fun tool(id: String, text: String, operation: String, content: String, key: String="walk", extra: Map<String,Any> = emptyMap()) {
+            suspend fun tool(id: String, text: String, operation: String, content: String,
+                target: CompanionMemoryEntity? = null, doubt: CompanionMemoryEntity? = null): CompanionMemoryEntity? {
                 val row=say(db,id,text)
-                store.fusedTool(s,"agent_memory_update", mapOf("key" to key,"target_key" to key,
-                    "operation" to operation,"category" to "episode","content" to content,"quote" to text)+extra,row.id)
+                val refs=FusedMemoryReferences(listOf(row),listOfNotNull(target,doubt))
+                val args=mutableMapOf<String,Any>("op" to operation,"category" to "episode",
+                    "content" to content,"evidence" to listOf("S1"),"date_type" to "day")
+                target?.let { args["target"]=refs.register(it.id) }
+                doubt?.let { args["doubt"]=refs.register(it.id); args["tags"]=listOf("待确认") }
+                val result=store.fusedTool(s,"agent_memory_update",args,refs)
+                assertEquals(true,result["success"])
+                return refs.memoryId(result["memory"].toString())?.let { db.companionMemoryDao().memory(it) }
             }
-            tool("start","今天我们出发散步了","add","散步进行中")
-            tool("end","散步回来后一起吃了晚饭","update","散步后一起吃了晚饭")
+            val started=tool("start","今天我们出发散步了","add","散步进行中")!!
+            val ended=tool("end","散步回来后一起吃了晚饭","update","散步后一起吃了晚饭",started)!!
             var scope=store.ensureScope(s)
             assertEquals(1,store.validatedMemories(scope).count { it.current })
-            assertEquals(1,db.companionMemoryDao().versions(scope.id,"walk").size)
-            tool("denial","你记错了，我们并没有一起吃晚饭","retract","撤销一起吃晚饭的错误记录")
+            assertEquals(2,db.companionMemoryDao().versions(scope.id,started.factKey).size)
+            assertTrue(db.companionMemoryDao().memory(started.id)!!.voided)
+            tool("denial","你记错了，我们并没有一起吃晚饭","retract","撤销一起吃晚饭的错误记录",ended)
             scope=store.ensureScope(s)
             assertFalse(store.validatedMemories(scope).any { it.current })
-            assertTrue(db.companionMemoryDao().versions(scope.id,"walk").isEmpty())
-            tool("tea","我喝茶不加糖","add","喝茶不加糖","tea")
-            tool("different","今天茶里加了糖","clarify","茶里加糖","tea",mapOf("question" to "现在喝茶要加糖了吗？"))
-            val question=store.questionForReply(s)!!
-            say(db,"question",question,"assistant"); store.recordClarificationQuestion(s,"question")
-            tool("repeat","今天的茶加了糖","clarify","今天加糖","tea",mapOf("question" to "改成加糖了吗？"))
-            assertNull(store.questionForReply(s))
-            val pending=db.companionMemoryDao().clarifications(scope.id).single()
-            tool("confirm","是的","resolve","今天加糖","tea",mapOf("conflict_id" to pending.memoryId))
+            val history=db.companionMemoryDao().versions(scope.id,started.factKey)
+            assertEquals(2,history.size)
+            assertTrue(history.all { it.voided })
+            val tea=tool("tea","我喝茶不加糖","add","喝茶不加糖")!!
+            val pending=tool("different","今天茶里加了糖","add","茶里加糖",doubt=tea)!!
+            assertTrue(pending.pendingConfirm)
+            assertEquals(tea.id,pending.uncertainTargetId)
+            assertNull(store.legacyQuestionForReply(s))
+            val confirmed=tool("confirm","是的，现在喝茶加糖","update","今天加糖",pending)!!
+            assertFalse(confirmed.pendingConfirm)
+            assertEquals(pending.factKey,confirmed.factKey)
+            assertEquals(2,db.companionMemoryDao().versions(scope.id,pending.factKey).size)
+            assertTrue(db.companionMemoryDao().memory(tea.id)!!.voided)
             assertTrue(db.companionMemoryDao().clarifications(scope.id).isEmpty())
             assertEquals("今天加糖",store.validatedMemories(store.ensureScope(s)).single { it.current }.content)
         } finally { db.close() }

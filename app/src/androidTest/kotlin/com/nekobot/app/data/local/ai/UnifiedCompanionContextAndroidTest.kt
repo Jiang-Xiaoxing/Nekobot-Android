@@ -58,7 +58,8 @@ class UnifiedCompanionContextAndroidTest {
             val updated = build(again, listOf(first, answer, next))
             assertEquals(setOf(current.id), CompanionReferences.visibleIds(updated))
             assertFalse(updated.any { it["content"].toString().contains(old.content) })
-            val tool = store.fusedTool(session, "agent_memory_read", mapOf("query" to "喝茶"), again.id)
+            val tool = store.fusedTool(session, "agent_memory_read", mapOf("query" to "喝茶"),
+                FusedMemoryReferences(listOf(again), listOf(current)))
             assertFalse(tool.toString().contains(old.content))
             val reader = LocalAgentRecallReader(db)
             val search = AgentRecallToolHandler(session.id, reader, currentOnly = true)

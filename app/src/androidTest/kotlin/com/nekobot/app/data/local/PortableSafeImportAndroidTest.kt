@@ -128,7 +128,10 @@ class PortableSafeImportAndroidTest {
         db().messageDao().upsert(source)
         val store = com.nekobot.app.data.local.ai.CompanionMemoryStore(db())
         val scope = store.ensureScope(session)
-        store.fusedTool(session, "agent_memory_update", mapOf("key" to "synthetic-diet", "operation" to "add", "category" to "user_profile", "content" to "喜欢茉莉茶", "quote" to source.content), source.id)
+        val written = store.fusedTool(session, "agent_memory_update", mapOf("op" to "add", "category" to "user_profile",
+            "content" to "喜欢茉莉茶", "evidence" to listOf("S1"), "date_type" to "habit"),
+            com.nekobot.app.data.local.ai.FusedMemoryReferences(listOf(source)))
+        assertEquals(true, written["success"])
         val out = ByteArrayOutputStream()
         PortableDataArchiveManager(context).export(setOf(PortableDataCategory.CONVERSATIONS), "", out, "synthetic")
         db().openHelper.writableDatabase.execSQL("UPDATE companion_memories SET category='character_profile' WHERE scopeId=?", arrayOf(scope.id))

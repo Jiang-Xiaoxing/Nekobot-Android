@@ -15,6 +15,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import com.nekobot.app.R
 import com.nekobot.app.data.local.ai.CompanionImportPolicy
+import com.nekobot.app.data.local.ai.CompanionMemorySourceView
 import com.nekobot.app.data.local.db.CompanionMemoryEntity
 import com.nekobot.app.data.local.db.CompanionSourceEntity
 import org.junit.Assert.assertEquals
@@ -47,7 +48,8 @@ class ImportedPartialMemorySourcesTest {
                 LocalConfiguration provides context.resources.configuration,
                 LocalDensity provides Density(density.density, scale)) {
                 MaterialTheme(colorScheme = lightColorScheme()) {
-                    CompanionMemorySources(listOf(source), memory, "合成角色", {}, { located += it })
+                    CompanionMemorySources(listOf(CompanionMemorySourceView(source, quote,
+                        originalDeleted = false, snapshot = false)), memory, "合成角色", {}, { located += it })
                 }
             }
         }

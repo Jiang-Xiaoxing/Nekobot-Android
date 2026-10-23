@@ -42,9 +42,9 @@ class CompanionCoreAdvisoryTest {
                 "fact", "合成用户", "合成长期偏好".repeat(130), "active", alwaysProvide = true, manual = true, createdAt = "now", updatedAt = "now")) }
             val source = LocalMessageEntity("synthetic-new", s.id, "user", "以后一直叫我小舟。", timestamp = "2026-01-01T00:00:00Z", createdAt = "2026-01-01T00:00:00Z")
             db.messageDao().upsert(source)
-            val response = Gson().toJson(mapOf("changes" to listOf(mapOf("key" to "stable-name", "operation" to "add", "kind" to "core", "subject" to "用户",
-                "content" to "常用称呼是小舟。", "source_id" to "m1", "quote" to source.content, "category" to "user_profile"))))
-            store.convertBatch(s, listOf(source), emptyList(), emptyList(), mapOf(source.id to "m1"), 12000) { _, _ -> response }
+            val response = Gson().toJson(mapOf("op" to "add", "kind" to "core", "category" to "user_profile",
+                "content" to "常用称呼是小舟。", "evidence" to listOf("S1"), "date_type" to "habit")) + "\n{\"done\":true}"
+            store.convertBatch(s, listOf(source), emptyList(), emptyList(), 12000, generate = { _, _ -> response })
             val rows = db.companionMemoryDao().memories(scope.id).filter { it.current }
             val added = rows.single { it.content == "常用称呼是小舟。" }
             assertEquals("core", added.kind)

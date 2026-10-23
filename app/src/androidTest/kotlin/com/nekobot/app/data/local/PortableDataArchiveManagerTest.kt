@@ -112,8 +112,10 @@ class PortableDataArchiveManagerTest {
         val scope=store.ensureScope(row)
         val source=LocalMessageEntity("$mergeSessionId-source",row.id,"user","我怕辣",timestamp="2026-10-08",createdAt="2026-10-08")
         db.messageDao().upsert(source)
-        store.fusedTool(row,"agent_memory_update",mapOf("key" to "diet","operation" to "add","category" to "user_profile",
-            "content" to "用户怕辣","quote" to source.content),source.id)
+        val written = store.fusedTool(row,"agent_memory_update",mapOf("op" to "add","category" to "user_profile",
+            "content" to "用户怕辣","evidence" to listOf("S1"),"date_type" to "habit"),
+            com.nekobot.app.data.local.ai.FusedMemoryReferences(listOf(source)))
+        assertEquals(true, written["success"])
         db.companionMemoryDao().saveReceipts(listOf(com.nekobot.app.data.local.db.CompanionReceiptEntity(scope.id,source.id,
             com.nekobot.app.data.local.ai.CompanionMemoryPolicy.fingerprint(source))))
         val output=ByteArrayOutputStream()

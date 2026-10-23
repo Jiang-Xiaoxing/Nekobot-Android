@@ -35,3 +35,11 @@
 - [x] 本轮最终编译、全量2929项JVM测试（0失败/错误/跳过）、Lint（0错误、955警告、36提示）及Debug构建通过。
 - [x] 核对交付目标仍为开放的原PR #31、contrib/single-session-followups；对应提交的远端CI和正文读回结果另记于PR与本地HANDOFF，不由本机测试代替。
 - [ ] 真机交互、真实模型与长期记忆效果独立验收；不以虚构数据回归代替。
+
+## 主线 CI OOM 与 lint 修复合并
+
+- [x] 正常 merge 主线 d37a2ca6，保留分阶段独立 daemon、6GB 堆、2 worker、关闭 Kotlin 增量编译及本分支的公共线程池并发限制。
+- [x] 保留 CrashRecorder 的 API 26 兼容读取，以及对话框测试的 LocalConfiguration 读取和既有单会话用例。
+- [x] 修正 androidTest 中此前遗留的记忆接口失配：旧模式澄清方法名、编号引用、JSONL 转换与来源视图类型；8份测试文件的55个用例均保留，未改产品功能。
+- [x] 合并后 compileDebugKotlin、testDebugUnitTest、compileDebugAndroidTestKotlin、lintDebug 全部通过；全量2929项单元测试，0失败/错误/跳过，Lint 0错误、955警告。
+- [ ] Android设备上的测试执行及本次提交的远端CI结果单独验收；本轮仅编译androidTest，没有打包APK或调用真实模型。
