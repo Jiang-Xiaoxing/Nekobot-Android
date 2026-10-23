@@ -155,8 +155,31 @@ class FusedMemoryWriterTest {
             assertEquals(original.id, added.uncertainTargetId); assertTrue(added.pendingConfirm)
         }
         val db = Store(listOf(memory(manual = true)))
-        val result = db.write("""{"op":"retract","target":"M1","evidence":["S1"]}""")
+        val result = db.writer.write(scope,
+            FusedMemoryValidation.parseLine("""{"op":"retract","target":"M1","evidence":["S1"]}"""), db.refs(), language = "zh-CN")
         assertTrue(db.memories[result.memoryId]!!.content.contains("好像有变化了"))
+    }
+    @Test fun protectedRetractionPersistsTheRequestedLanguageInAllFiveLocales() = runBlocking {
+        val expected = mapOf(
+            "zh-CN" to "我记得之前是“旧事实”，好像有变化了？",
+            "zh-TW" to "我記得之前是「旧事实」，好像有變化了？",
+            "en-US" to "I remember it was ‘旧事实’. Has something changed?",
+            "ja-JP" to "前は「旧事实」だったと覚えているけど、何か変わったのかな？",
+            "ko-KR" to "전에는 ‘旧事实’라고 기억하는데, 뭔가 달라졌을까?"
+        )
+        for ((language, question) in expected) {
+            val original = memory(locked = true).copy(content = "旧事实")
+            val db = Store(listOf(original))
+            val result = db.writer.write(scope,
+                FusedMemoryValidation.parseLine("""{"op":"retract","target":"M1","evidence":["S1"]}"""), db.refs(), language = language)
+            assertTrue(language, result.success)
+            assertTrue(language, result.uncertain)
+            val added = db.memories.getValue(result.memoryId!!)
+            assertEquals(language, question, added.content)
+            assertTrue(language, added.pendingConfirm)
+            assertEquals(original.id, added.uncertainTargetId)
+            assertEquals(original, db.memories[original.id])
+        }
     }
     @Test fun confirmationVoidsUnlockedOriginalOrQueuesLockedReview() = runBlocking {
         for (locked in listOf(false, true)) {
