@@ -2,6 +2,44 @@
 
 本文件记录 Nekobot Android 应用的版本变更。
 
+## v0.8.6-rc2 - 2026-10-23
+
+### 新增
+
+- 聊天输入区重构：输入法弹起时切换为双行工具行，含「+」菜单、当前模型胶囊、语音输入与发送/停止按钮；「+」面板改为底部抽屉。
+- 实时对话界面重构为呼吸感动效布局：氛围光晕、环形频谱、字幕面板与玻璃质操作按钮。
+- 新增阶跃星辰 StepAudio 3 Realtime 语音，支持应用内 Agent 工具调用。
+- 新建角色会话改为可搜索的角色选择弹窗，同名角色可按标签定位，开场白支持折叠编辑。
+- 内置浏览器新增页面缩放，按标签页保存缩放比例。
+- 本地 AI 模型支持通过 HTTP 地址连接；内置浏览器与 Agent 浏览器开放白名单主机明文访问。
+- 新增原生崩溃记录，写入 crash/last_crash.txt。
+
+### 修复
+
+- 修复进度步骤详情闪退与点击无响应，超长工具结果截断以避免卡顿。
+- 修复启动时子代理任务恢复触发的 Room 主线程崩溃。
+- 全应用错误提示统一改为系统 Toast。
+
+### 优化
+
+- 工具步骤优先展示多语言名称，补充子代理工具说明，详情解析失败降级为原文。
+- 优化会话列表搜索栏样式，并适配横屏与键盘弹出时的弹窗布局。
+
+### English
+
+- Reworked the chat composer: a two-row toolbar appears with the keyboard, holding the "+" menu, current model chip, voice input, and send/stop; the "+" panel now opens as a bottom sheet.
+- The realtime voice screen uses a breathing animated layout with ambient glow, ring spectrum, subtitle panel, and glass action buttons.
+- Added StepFun StepAudio 3 Realtime voice with in-app Agent tool calling.
+- Creating a character session now uses a searchable character picker with tag-based disambiguation and a collapsible opening message.
+- The built-in browser supports page zoom, stored per tab.
+- Local AI models can connect over HTTP; the built-in and Agent browsers allow cleartext access to whitelisted hosts.
+- Added native crash recording to crash/last_crash.txt.
+- Fixed crashes and unresponsive taps in progress-step details; overly long tool results are truncated to avoid stalling.
+- Fixed a Room main-thread crash when restoring subagent tasks at startup.
+- Unified app-wide error messages as system toasts.
+- Tool steps prefer localized names, subagent tool descriptions are complete, and unparsable details fall back to raw text.
+- Refined the session-list search bar and dialog layout for landscape and keyboard insets.
+
 ## v0.8.6-rc1 - 2026-10-19
 
 ### 新增
