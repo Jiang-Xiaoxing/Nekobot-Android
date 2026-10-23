@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.math.BigInteger
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 
@@ -427,23 +428,50 @@ object UpdateChecker {
 
     /**
      * 比较 tag 与当前版本号，判断是否更新。
-     * 支持形如 "v0.3.4" / "0.3.4" / "0.3.4-beta" 的版本号，按数字段比较。
+     * 先比较主版本；同版本下正式版高于预发布版，rc1/rc2 等后缀按数字比较。
+     * 构建元数据不参与排序，兼容 v 前缀及缺省为零的末尾版本段。
      */
-    private fun isNewer(tag: String, current: String): Boolean {
-        fun normalize(v: String): List<Int> {
-            val s = v.trim().removePrefix("v").removePrefix("V")
-            // 取首个非数字/非点分隔的部分
-            val core = s.split("-", "_", " ", "+").first()
-            return core.split(".").mapNotNull { it.toIntOrNull() }
-        }
-        val a = normalize(tag)
-        val b = normalize(current)
-        val maxLen = maxOf(a.size, b.size)
+    internal fun isNewer(tag: String, current: String): Boolean {
+        val a = parseVersion(tag) ?: return false
+        val b = parseVersion(current) ?: return false
+        val maxLen = maxOf(a.core.size, b.core.size)
         for (i in 0 until maxLen) {
-            val av = a.getOrNull(i) ?: 0
-            val bv = b.getOrNull(i) ?: 0
+            val av = a.core.getOrNull(i) ?: BigInteger.ZERO
+            val bv = b.core.getOrNull(i) ?: BigInteger.ZERO
             if (av != bv) return av > bv
         }
-        return false
+        if (a.prerelease.isEmpty() || b.prerelease.isEmpty()) {
+            return a.prerelease.isEmpty() && b.prerelease.isNotEmpty()
+        }
+        for (i in 0 until minOf(a.prerelease.size, b.prerelease.size)) {
+            val av = a.prerelease[i]
+            val bv = b.prerelease[i]
+            val an = av.toBigIntegerOrNull()
+            val bn = bv.toBigIntegerOrNull()
+            val comparison = when {
+                an != null && bn != null -> an.compareTo(bn)
+                an != null -> -1
+                bn != null -> 1
+                else -> av.compareTo(bv)
+            }
+            if (comparison != 0) return comparison > 0
+        }
+        return a.prerelease.size > b.prerelease.size
+    }
+
+    private data class Version(val core: List<BigInteger>, val prerelease: List<String>)
+
+    private val versionPattern = Regex("""^(\d+(?:\.\d+)*)(?:[-_ ]([a-z\d]+(?:[._ -][a-z\d]+)*))?$""", RegexOption.IGNORE_CASE)
+    private val prereleasePartPattern = Regex("""[a-z]+|\d+""")
+
+    private fun parseVersion(value: String): Version? {
+        val normalized = value.trim().removePrefix("v").removePrefix("V").substringBefore('+')
+        val match = versionPattern.matchEntire(normalized) ?: return null
+        return Version(
+            core = match.groupValues[1].split('.').map { it.toBigInteger() },
+            // 拆开紧凑后缀中的字母和数字，避免把 rc10 排在 rc2 前面。
+            prerelease = prereleasePartPattern.findAll(match.groupValues[2].lowercase())
+                .map { it.value }.toList()
+        )
     }
 }
