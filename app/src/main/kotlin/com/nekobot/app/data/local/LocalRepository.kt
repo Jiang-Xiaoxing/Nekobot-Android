@@ -443,7 +443,11 @@ class LocalRepository(
     private val worldBookDao = db.worldBookDao()
     private val aiModelDao = db.aiModelDao()
     private val achievementScopeId = "local:${db.dbName.removeSuffix(".db")}"
-    val oauthManager = LocalOAuthManager(db.oauthAccountDao(), aiModelDao)
+    val oauthManager = LocalOAuthManager(
+        db.oauthAccountDao(),
+        aiModelDao,
+        filesDir = appContext?.filesDir
+    )
     private val failoverHealthDao = db.failoverHealthDao()
     private val localExecAuthorizationManager =
         com.nekobot.app.data.local.ai.LocalExecAuthorizationManager(

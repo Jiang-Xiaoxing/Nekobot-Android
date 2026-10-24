@@ -16,7 +16,8 @@ class LocalOAuthProvidersTest {
                 LocalOAuthProviders.XAI,
                 LocalOAuthProviders.OPENCODE_ZEN,
                 LocalOAuthProviders.OPENCODE_GO,
-                LocalOAuthProviders.ANTHROPIC
+                LocalOAuthProviders.ANTHROPIC,
+                LocalOAuthProviders.KIMI
             ),
             LocalOAuthProviders.all.map { it.id }.toSet()
         )
@@ -28,6 +29,23 @@ class LocalOAuthProvidersTest {
             OAuthLoginMode.API_KEY,
             requireNotNull(LocalOAuthProviders.get(LocalOAuthProviders.OPENCODE_GO)).loginMode
         )
+        assertEquals(
+            OAuthLoginMode.DEVICE_CODE,
+            requireNotNull(LocalOAuthProviders.get(LocalOAuthProviders.KIMI)).loginMode
+        )
+    }
+
+    @Test
+    fun `kimi models target the coding plan chat completion endpoint`() {
+        val target = LocalOAuthProviders.resolveModelTarget(
+            LocalOAuthProviders.KIMI,
+            "k3.1-pro"
+        )
+
+        assertEquals("openai_chat", target.protocol)
+        assertEquals("https://api.kimi.com/coding/v1", target.baseUrl)
+        assertEquals(262_144, target.maxContextLength)
+        assertTrue(target.maxTokens > 0)
     }
 
     @Test
