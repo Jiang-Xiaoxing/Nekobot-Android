@@ -223,6 +223,7 @@
     <string name="aimodel_editor_provider_minimax">MiniMax</string>
     <string name="aimodel_editor_provider_grok">Grok (xAI)</string>
     <string name="aimodel_editor_provider_qwen">通义千问</string>
+    <string name="aimodel_editor_provider_kimi">Kimi（月之暗面）</string>
     <string name="aimodel_editor_provider_xiaomi">小米 MiMo</string>
     <string name="aimodel_editor_provider_doubao">豆包 Seed</string>
     <string name="aimodel_editor_provider_stepfun">阶跃星辰 StepFun</string>

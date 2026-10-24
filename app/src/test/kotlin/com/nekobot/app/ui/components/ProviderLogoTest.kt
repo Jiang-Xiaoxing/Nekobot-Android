@@ -22,6 +22,14 @@ class ProviderLogoTest {
     }
 
     @Test
+    fun `kimi logos resolve from provider url and model names`() {
+        assertTrue(providerLogoAsset("kimi", null, "kimi-k3").endsWith("/kimi.svg"))
+        assertTrue(providerLogoAsset("moonshot-cn", null, null).endsWith("/kimi.svg"))
+        assertTrue(providerLogoAsset(null, "https://api.moonshot.cn/v1", null).endsWith("/kimi.svg"))
+        assertTrue(providerLogoAsset(null, null, "kimi-k2.7-code").endsWith("/kimi.svg"))
+    }
+
+    @Test
     fun `doubao uses the same asset in every theme`() {
         assertTrue(
             providerLogoAsset("doubao", null, null).endsWith("/doubao-dark.svg")

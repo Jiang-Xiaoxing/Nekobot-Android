@@ -226,6 +226,17 @@ private val providerPresets = listOf(
     ProviderPreset("Grok", "grok", "grok-4.20", "https://api.x.ai/v1", "1000000", "131072", "", ""),
     ProviderPreset("Qwen", "qwen", "qwen3.7-max", "https://dashscope.aliyuncs.com/compatible-mode/v1", "1000000", "65536", "", ""),
     ProviderPreset(
+        label = "Kimi",
+        provider = "kimi",
+        model = "kimi-k3",
+        baseUrl = "https://api.moonshot.cn/v1",
+        maxContextLength = "1048576",
+        maxTokens = "131072",
+        inputPrice = "",
+        outputPrice = "",
+        labelRes = R.string.aimodel_editor_provider_kimi
+    ),
+    ProviderPreset(
         label = "Qwen Image 3.0",
         provider = "qwen",
         model = "qwen-image-3.0",
@@ -274,6 +285,7 @@ private fun rememberProviderLabels(): LinkedHashMap<String, String> = linkedMapO
     "minimax" to stringResource(R.string.aimodel_editor_provider_minimax),
     "grok" to stringResource(R.string.aimodel_editor_provider_grok),
     "qwen" to stringResource(R.string.aimodel_editor_provider_qwen),
+    "kimi" to stringResource(R.string.aimodel_editor_provider_kimi),
     "xiaomi" to stringResource(R.string.aimodel_editor_provider_xiaomi),
     "doubao" to stringResource(R.string.aimodel_editor_provider_doubao),
     "stepfun" to stringResource(R.string.aimodel_editor_provider_stepfun),

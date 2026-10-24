@@ -221,6 +221,7 @@
     <string name="aimodel_editor_provider_minimax">MiniMax</string>
     <string name="aimodel_editor_provider_grok">Grok (xAI)</string>
     <string name="aimodel_editor_provider_qwen">Tongyi Qianwen</string>
+    <string name="aimodel_editor_provider_kimi">Kimi (Moonshot)</string>
     <string name="aimodel_editor_provider_xiaomi">Xiaomi MiMo</string>
     <string name="aimodel_editor_provider_doubao">Doubao Seed</string>
     <string name="aimodel_editor_provider_stepfun">StepFun</string>
