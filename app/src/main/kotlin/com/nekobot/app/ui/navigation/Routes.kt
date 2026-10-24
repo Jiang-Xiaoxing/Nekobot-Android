@@ -54,6 +54,8 @@ object Routes {
     const val LOCAL_AI_MODELS = "local_ai_models"
     const val MODEL_PROXY = "model_proxy"
     const val OAUTH_ACCOUNTS = "oauth_accounts"
+    /** AI 模型余额查询 */
+    const val AI_BALANCE = "ai_balance"
     const val SETTINGS = "settings"
     const val SYSTEM_SETTINGS = "system_settings"
     const val SYSTEM_OPERATIONS = "system_operations"

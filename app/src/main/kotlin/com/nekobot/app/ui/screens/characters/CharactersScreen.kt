@@ -626,40 +626,11 @@ private fun AiGenerateCharacterDialog(
             if (description.isBlank()) return@NekoDialog
             onConfirm(description.trim(), language)
         },
-        onCancel = onDismiss
+        onCancel = onDismiss,
+        // 内容可能超出弹窗高度上限，开启滚动避免底部选项被裁掉
+        contentScrollable = true
     ) {
-        Text(
-            stringResource(R.string.character_description_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(4.dp))
-        OutlinedTextField(
-            value = description,
-            onValueChange = { description = it },
-            singleLine = false,
-            minLines = 6,
-            maxLines = 12,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = {
-                Text(
-                    stringResource(R.string.character_ai_placeholder),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        )
-        Spacer(Modifier.height(12.dp))
+        // 语言选择放在描述上方：描述输入框会随内容增高，放在下面会被挤出可视区
         Text(
             stringResource(R.string.character_ai_language_label),
             style = MaterialTheme.typography.labelMedium,
@@ -694,6 +665,38 @@ private fun AiGenerateCharacterDialog(
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.character_description_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            singleLine = false,
+            minLines = 4,
+            maxLines = 8,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = {
+                Text(
+                    stringResource(R.string.character_ai_placeholder),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
         Spacer(Modifier.height(8.dp))
         Text(
             stringResource(R.string.character_ai_hint),

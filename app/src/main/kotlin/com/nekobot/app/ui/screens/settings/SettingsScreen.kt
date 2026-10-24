@@ -378,7 +378,11 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(if (connectionVisible) R.string.settings_home_connection else R.string.more_category_app))
+                    Text(
+                        stringResource(if (connectionVisible) R.string.settings_home_connection else R.string.more_category_app),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 },
                 navigationIcon = {
                     IconButton(
@@ -403,7 +407,8 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
             if (connectionVisible) {
                 SettingsConnectionContent(

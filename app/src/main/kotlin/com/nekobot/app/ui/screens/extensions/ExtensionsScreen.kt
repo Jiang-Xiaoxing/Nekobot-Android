@@ -5,19 +5,23 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AppRegistration
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Campaign
@@ -33,6 +37,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -107,7 +112,7 @@ fun ExtensionsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.extensions_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 navigationIcon = {
@@ -118,37 +123,52 @@ fun ExtensionsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit) {
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
-            if (pageEntries.isNotEmpty()) {
-                ExtensionGroupCard(groupTitle = stringResource(R.string.extensions_group_plugin_pages)) {
-                    pageEntries.forEachIndexed { index, (plugin, page) ->
-                        if (index > 0) Spacer(Modifier.height(4.dp))
-                        PluginPageRow(
-                            plugin = plugin,
-                            page = page,
-                            languageCode = languageCode,
-                            onClick = { onNavigate(Routes.pluginPage(plugin.id, page.id)) }
-                        )
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (pageEntries.isNotEmpty()) {
+                    item(key = "plugin_pages") {
+                        ExtensionGroupCard(groupTitle = stringResource(R.string.extensions_group_plugin_pages)) {
+                            pageEntries.forEachIndexed { index, (plugin, page) ->
+                                if (index > 0) ExtensionDivider()
+                                PluginPageRow(
+                                    plugin = plugin,
+                                    page = page,
+                                    languageCode = languageCode,
+                                    onClick = { onNavigate(Routes.pluginPage(plugin.id, page.id)) }
+                                )
+                            }
+                        }
                     }
                 }
-            }
-            groups.forEach { group ->
-                ExtensionGroupCard(groupTitle = group.title) {
-                    group.items.forEachIndexed { index, item ->
-                        if (index > 0) Spacer(Modifier.height(4.dp))
-                        ExtensionRow(item = item, onClick = { onNavigate(item.route) })
+                items(groups, key = { it.title }) { group ->
+                    ExtensionGroupCard(groupTitle = group.title) {
+                        group.items.forEachIndexed { index, item ->
+                            if (index > 0) ExtensionDivider()
+                            ExtensionRow(item = item, onClick = { onNavigate(item.route) })
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** 组内入口分隔线：从标题文字起始处开始，避免穿过图标。 */
+@Composable
+private fun ExtensionDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 52.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    )
 }
 
 /** 插件页面入口行：插件图标（可选）+ 页面标题 + 插件名。 */
@@ -169,7 +189,8 @@ private fun PluginPageRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -208,6 +229,13 @@ private fun PluginPageRow(
                 maxLines = 1
             )
         }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -316,13 +344,16 @@ private fun ExtensionGroupCard(
     groupTitle: String,
     content: @Composable () -> Unit
 ) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    ) {
         Text(
             text = groupTitle,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 6.dp, start = 2.dp)
+            modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp)
         )
         content()
     }
@@ -336,7 +367,8 @@ private fun ExtensionRow(item: ExtensionItem, onClick: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -351,7 +383,21 @@ private fun ExtensionRow(item: ExtensionItem, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(item.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-            Text(item.desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                item.desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

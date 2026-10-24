@@ -4,6 +4,8 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +53,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nekobot.app.R
 import com.nekobot.app.ui.navigation.Routes
+import com.nekobot.app.ui.navigation.rememberLiquidGlassBottomBarClearance
 
 @Composable
 fun MoreScreen(onNavigate: (String) -> Unit) {
@@ -90,6 +93,7 @@ internal fun MoreHomeContent(
     modifier: Modifier = Modifier,
     scrollState: ScrollState = rememberScrollState()
 ) {
+    val bottomBarClearance = rememberLiquidGlassBottomBarClearance()
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -102,40 +106,42 @@ internal fun MoreHomeContent(
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .testTag("more-home-scroll")
-                .verticalScroll(scrollState)
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 110.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            MoreHomeGroup {
-                MoreHomeRow(
-                    icon = Icons.Outlined.Search,
-                    title = stringResource(R.string.global_search_title),
-                    route = Routes.GLOBAL_SEARCH,
-                    onNavigate = onNavigate
-                )
-            }
-            MoreHomeGroup {
-                MoreCategory.entries.forEachIndexed { index, category ->
-                    if (index > 0) MoreHomeDivider()
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxSize()
+                    .testTag("more-home-scroll")
+                    .verticalScroll(scrollState)
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomBarClearance + 24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                MoreHomeGroup {
                     MoreHomeRow(
-                        icon = category.icon,
-                        title = stringResource(category.title),
-                        subtitle = stringResource(category.summary),
-                        route = category.route,
+                        icon = Icons.Outlined.Search,
+                        title = stringResource(R.string.global_search_title),
+                        route = Routes.GLOBAL_SEARCH,
                         onNavigate = onNavigate
                     )
+                }
+                MoreHomeGroup {
+                    MoreCategory.entries.forEachIndexed { index, category ->
+                        if (index > 0) MoreHomeDivider()
+                        MoreHomeRow(
+                            icon = category.icon,
+                            title = stringResource(category.title),
+                            subtitle = stringResource(category.summary),
+                            route = category.route,
+                            onNavigate = onNavigate
+                        )
+                    }
                 }
             }
         }
