@@ -73,6 +73,7 @@ private val quickSetupProviderPresets = listOf(
     QuickSetupProviderPreset("MiniMax", "minimax", "openai_chat", "https://api.minimaxi.com/v1", "minimax-m2.7"),
     QuickSetupProviderPreset("Grok", "grok", "openai_chat", "https://api.x.ai/v1", "grok-4.20"),
     QuickSetupProviderPreset("Qwen", "qwen", "openai_chat", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-max"),
+    QuickSetupProviderPreset("Kimi", "kimi", "openai_chat", "https://api.moonshot.cn/v1", "kimi-k3"),
     QuickSetupProviderPreset("Mimo", "xiaomi", "openai_chat", "https://api.xiaomimimo.com/v1", "mimo-v2.5"),
     QuickSetupProviderPreset("Doubao Seed", "doubao", "openai_chat", "https://ark.cn-beijing.volces.com/api/v3", "doubao-seedream-4-0-250828"),
     QuickSetupProviderPreset("custom", "custom", "openai_chat", "", "")

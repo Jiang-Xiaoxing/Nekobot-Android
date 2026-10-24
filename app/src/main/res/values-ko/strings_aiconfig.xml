@@ -221,6 +221,7 @@
     <string name="aimodel_editor_provider_minimax">MiniMax</string>
     <string name="aimodel_editor_provider_grok">Grok (xAI)</string>
     <string name="aimodel_editor_provider_qwen">통의천문</string>
+    <string name="aimodel_editor_provider_kimi">Kimi (Moonshot)</string>
     <string name="aimodel_editor_provider_stepfun">StepFun (스텝펀)</string>
     <string name="aimodel_editor_provider_xiaomi">샤오미 MiMo</string>
     <string name="aimodel_editor_provider_azure">Azure OpenAI</string>
