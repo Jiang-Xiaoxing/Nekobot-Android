@@ -76,16 +76,15 @@ class AgentCharacterMemoryDirectoryTest {
                 var page by remember { mutableStateOf("more") }
                 var owner by remember { mutableStateOf("") }
                 MaterialTheme { when (page) {
-                    "more" -> MoreScreen({ destination=it; page=it })
+                    "more" -> MoreScreen({ destination=it; page=it }, {})
                     Routes.MORE_MEMORY -> MoreCategoryContent(MoreCategory.MEMORY, AppMode.LOCAL,
                         { destination=it; page=it }, { page="more" })
-                    Routes.AGENT_CHARACTER_MEMORY -> AgentCharacterMemoryDirectoryScreen({ page=Routes.MORE_MEMORY }, { owner=it; page="detail" })
+                    Routes.AGENT_CHARACTER_MEMORY -> AgentCharacterMemoryDirectoryScreen({ page="more" }, { owner=it; page="detail" })
                     else -> FusedCompanionMemoryScreen(owner,{ page=Routes.AGENT_CHARACTER_MEMORY },{})
                 } }
             }
             val title=compose.activity.getString(R.string.agent_character_memory_title)
-            compose.onNodeWithTag("more-home-${Routes.MORE_MEMORY}").performScrollTo().performClick()
-            compose.onNodeWithText(title).performScrollTo()
+            compose.onNodeWithTag("more-list").performScrollToNode(androidx.compose.ui.test.hasText(title))
             screenshot("more")
             compose.onNodeWithText(title).performClick()
             assertEquals(Routes.AGENT_CHARACTER_MEMORY, destination)

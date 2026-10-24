@@ -77,6 +77,7 @@ object LocalOAuthProviders {
     const val OPENCODE_ZEN = "opencode-zen"
     const val OPENCODE_GO = "opencode-go"
     const val ANTHROPIC = "anthropic-oauth"
+    const val KIMI = "kimi-oauth"
 
     val all: List<OAuthProviderSpec> = listOf(
         OAuthProviderSpec(
@@ -225,6 +226,25 @@ object LocalOAuthProviders {
             ),
             defaultContextLength = 1_000_000,
             defaultMaxTokens = 128_000
+        ),
+        OAuthProviderSpec(
+            id = KIMI,
+            title = "Kimi Code",
+            subtitle = "使用 Kimi 会员订阅登录，浏览器设备码授权",
+            loginMode = OAuthLoginMode.DEVICE_CODE,
+            protocol = "openai_chat",
+            baseUrl = "https://api.kimi.com/coding/v1",
+            models = listOf(
+                "k3.1-pro",
+                "k3.1-pro-highspeed",
+                "k3",
+                "k3-256k",
+                "kimi-for-coding",
+                "kimi-for-coding-highspeed"
+            ),
+            // 1M 上下文需要更高会员等级，统一按 256K 预算避免超限请求
+            defaultContextLength = 262_144,
+            defaultMaxTokens = 32_768
         )
     )
 

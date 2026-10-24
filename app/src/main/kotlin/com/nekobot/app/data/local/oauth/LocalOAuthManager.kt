@@ -31,11 +31,14 @@ import java.util.concurrent.TimeUnit
 class LocalOAuthManager(
     private val accountDao: OAuthAccountDao,
     private val aiModelDao: AiModelDao,
-    private val client: OkHttpClient = defaultClient
+    private val client: OkHttpClient = defaultClient,
+    /** 用于持久化 Kimi OAuth 的设备 ID；为空时退化为进程内随机 ID。 */
+    private val filesDir: java.io.File? = null
 ) {
     private val gson = Gson()
     private val secrets = OAuthSecretStore()
     private val refreshLocks = ConcurrentHashMap<String, Mutex>()
+    private val kimiDeviceId: String by lazy { loadOrCreateKimiDeviceId() }
 
     fun observeAccounts(): Flow<List<LocalOAuthAccountEntity>> = accountDao.observeAll()
 
@@ -47,6 +50,7 @@ class LocalOAuthManager(
             LocalOAuthProviders.MINIMAX -> startMiniMaxLogin()
             LocalOAuthProviders.XAI -> startXaiLogin()
             LocalOAuthProviders.ANTHROPIC -> startAnthropicLogin()
+            LocalOAuthProviders.KIMI -> startKimiLogin()
             LocalOAuthProviders.QWEN ->
                 error("Qwen OAuth 需要导入 Qwen CLI 的 oauth_creds.json")
             LocalOAuthProviders.OPENCODE_ZEN,
@@ -66,6 +70,7 @@ class LocalOAuthManager(
                     LocalOAuthProviders.CODEX -> pollCodex(session)
                     LocalOAuthProviders.MINIMAX -> pollMiniMax(session)
                     LocalOAuthProviders.XAI -> pollXai(session)
+                    LocalOAuthProviders.KIMI -> pollKimi(session)
                     else -> OAuthPollResult.Failed("该提供商不使用设备码轮询")
                 }
             }.getOrElse { OAuthPollResult.Failed(it.message ?: "OAuth 登录失败") }
@@ -483,6 +488,79 @@ class LocalOAuthManager(
         }
     }
 
+    private fun startKimiLogin(): OAuthLoginSession {
+        val form = FormBody.Builder()
+            .add("client_id", KIMI_CLIENT_ID)
+            .build()
+        val response = executeJson(
+            Request.Builder()
+                .url("$KIMI_OAUTH_HOST/api/oauth/device_authorization")
+                .header("Accept", "application/json")
+                .post(form)
+                .apply { kimiDeviceHeaders().forEach { (name, value) -> header(name, value) } }
+                .build()
+        )
+        val userCode = response.string("user_code")
+        val deviceCode = response.string("device_code")
+        require(userCode.isNotBlank() && deviceCode.isNotBlank()) {
+            "Kimi 设备码响应缺少必要字段"
+        }
+        val verificationUrl = response.string("verification_uri_complete")
+            .ifBlank { response.string("verification_uri") }
+        require(verificationUrl.isNotBlank()) { "Kimi 未返回授权地址" }
+        return OAuthLoginSession(
+            provider = LocalOAuthProviders.KIMI,
+            verificationUrl = verificationUrl,
+            userCode = userCode,
+            expiresAt = System.currentTimeMillis() +
+                (response.longOrNull("expires_in") ?: 900L) * 1000L,
+            pollIntervalSeconds = response.intOrNull("interval")?.coerceAtLeast(2) ?: 5,
+            secret = mapOf("device_code" to deviceCode)
+        )
+    }
+
+    private suspend fun pollKimi(session: OAuthLoginSession): OAuthPollResult {
+        val form = FormBody.Builder()
+            .add("client_id", KIMI_CLIENT_ID)
+            .add("device_code", session.secret.getValue("device_code"))
+            .add("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+            .build()
+        val response = client.newCall(
+            Request.Builder()
+                .url(KIMI_TOKEN_URL)
+                .header("Accept", "application/json")
+                .post(form)
+                .apply { kimiDeviceHeaders().forEach { (name, value) -> header(name, value) } }
+                .build()
+        ).execute()
+        response.use {
+            val raw = it.body?.string().orEmpty()
+            val data = runCatching { JsonParser.parseString(raw).asJsonObject }
+                .onFailure { error ->
+                    LocalLogger.w(TAG, R.string.log_oauth_poll_parse_failed, error.message)
+                }.getOrDefault(JsonObject())
+            if (it.isSuccessful && data.string("access_token").isNotBlank()) {
+                return connectedResult(
+                    LocalOAuthProviders.KIMI,
+                    tokenStateFromStandardResponse(
+                        data,
+                        clientId = KIMI_CLIENT_ID,
+                        tokenEndpoint = KIMI_TOKEN_URL
+                    )
+                )
+            }
+            return when (data.string("error")) {
+                "authorization_pending", "slow_down" -> OAuthPollResult.Pending
+                "expired_token" -> OAuthPollResult.Failed("Kimi 设备码已过期，请重新登录")
+                else -> OAuthPollResult.Failed(
+                    data.string("error_description").ifBlank {
+                        "Kimi OAuth 失败: HTTP ${it.code} ${raw.take(200)}"
+                    }
+                )
+            }
+        }
+    }
+
     private fun startAnthropicLogin(): OAuthLoginSession {
         val verifier = randomUrlSafe(32)
         val challenge = sha256UrlSafe(verifier)
@@ -627,8 +705,68 @@ class LocalOAuthManager(
                     previousRefreshToken = state.refreshToken
                 )
             }
+            LocalOAuthProviders.KIMI -> refreshKimi(state)
             else -> error("该 OAuth 提供商不支持刷新")
         }
+    }
+
+    /**
+     * Kimi Code OAuth 刷新：token endpoint 要求携带设备信息头（X-Msh-*）。
+     */
+    private fun refreshKimi(state: OAuthTokenState): OAuthTokenState {
+        require(KIMI_TOKEN_URL.startsWith("https://")) { "OAuth token endpoint 不安全" }
+        val form = FormBody.Builder()
+            .add("client_id", KIMI_CLIENT_ID)
+            .add("grant_type", "refresh_token")
+            .add("refresh_token", state.refreshToken)
+            .build()
+        val response = executeJson(
+            Request.Builder()
+                .url(KIMI_TOKEN_URL)
+                .header("Accept", "application/json")
+                .post(form)
+                .apply { kimiDeviceHeaders().forEach { (name, value) -> header(name, value) } }
+                .build()
+        )
+        return tokenStateFromStandardResponse(
+            response,
+            clientId = KIMI_CLIENT_ID,
+            tokenEndpoint = KIMI_TOKEN_URL,
+            previousRefreshToken = state.refreshToken
+        )
+    }
+
+    /** Kimi OAuth 设备信息头；首次启动生成并持久化的稳定设备 ID。 */
+    private fun kimiDeviceHeaders(): Map<String, String> {
+        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+        return mapOf(
+            "X-Msh-Platform" to "kimi_cli",
+            "X-Msh-Version" to KIMI_CLIENT_VERSION,
+            "X-Msh-Device-Name" to asciiHeader(
+                android.os.Build.MODEL.ifBlank { "Android" }
+            ),
+            "X-Msh-Device-Model" to asciiHeader(
+                "Android ${android.os.Build.VERSION.RELEASE} $abi"
+            ),
+            "X-Msh-Os-Version" to asciiHeader(android.os.Build.VERSION.RELEASE),
+            "X-Msh-Device-Id" to kimiDeviceId
+        )
+    }
+
+    private fun asciiHeader(value: String): String {
+        val cleaned = value.filter { it.code in 32..126 }.trim()
+        return cleaned.ifEmpty { "unknown" }
+    }
+
+    private fun loadOrCreateKimiDeviceId(): String {
+        val file = filesDir?.let { java.io.File(it, "kimi_oauth_device_id") }
+        val existing = runCatching {
+            file?.takeIf { it.isFile }?.readText()?.trim().orEmpty()
+        }.getOrDefault("")
+        if (existing.isNotEmpty()) return existing
+        val created = UUID.randomUUID().toString().replace("-", "")
+        runCatching { file?.writeText(created) }
+        return created
     }
 
     private fun refreshStandardForm(
@@ -679,6 +817,9 @@ class LocalOAuthManager(
                         "https://api.openai.com/auth",
                         "chatgpt_account_id"
                     )?.let { header("ChatGPT-Account-Id", it) }
+                }
+                if (provider == LocalOAuthProviders.KIMI) {
+                    kimiDeviceHeaders().forEach { (name, value) -> header(name, value) }
                 }
             }
             .get()
@@ -877,6 +1018,13 @@ class LocalOAuthManager(
             "interleaved-thinking-2025-05-14," +
                 "fine-grained-tool-streaming-2025-05-14," +
                 "claude-code-20250219,oauth-2025-04-20"
+
+        /** Kimi Code OAuth（Device Authorization Grant），public client，无 client_secret。 */
+        const val KIMI_OAUTH_HOST = "https://auth.kimi.com"
+        const val KIMI_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098"
+        const val KIMI_TOKEN_URL = "$KIMI_OAUTH_HOST/api/oauth/token"
+        /** 设备信息头版本号，仅用于标识客户端。 */
+        const val KIMI_CLIENT_VERSION = "1.6.0"
 
         val defaultClient: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)

@@ -89,11 +89,11 @@ class CompanionNaturalPromptTest {
         val prompt = characterThinkingPrompt(CharacterThinkingSettings(), "小满", "小舟", companionMode = true)
         for (word in listOf("token", "上下文", "模型", "系统", "output.")) assertFalse(word, prompt.contains(word, true))
         // 默认文案不点名、不带占位符，任何角色通用；姓名替换由自定义文案覆盖。
-        assertFalse(prompt.contains("{{")); assertTrue(prompt.contains("角色本人"))
-        // 伪思考已移除：不再要求正文 <think>，原生思考由底部规则强制中文后直接显示。
+        assertFalse(prompt.contains("{{")); assertTrue(prompt.contains("保持既有性格和称呼"))
+        // 默认只指导内部判断，不要求把推理或伪思考写入正文；既有流式解析能力保持兼容。
         assertFalse(prompt.contains("<think>"))
         assertFalse(prompt.contains("（内心：…）"))
-        assertTrue(prompt.contains("这些念头只在心里过"))
+        assertTrue(prompt.contains("不公开内部推理"))
         assertFalse(prompt.contains("先在开头用一对中文圆括号"))
         val thinking = StringBuilder(); val spoken = StringBuilder()
         val stream = CharacterThinkingStream(true, LocalAiStreamCallbacks(onContentChunk = spoken::append,

@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CompanionPromptSettingsTest {
-    @Test fun defaultsReuseExistingWordsAndResetDoesNotChangeTheSwitch() {
+    @Test fun defaultsUseCurrentWordsAndResetDoesNotChangeTheSwitch() {
         val settings = CompanionPromptSettings(thinkingEnabled = false)
         assertEquals(CompanionPromptLanguage.styleReminder.replace(CompanionPromptLanguage.bubbleRule, ""), settings.speakingForEditing)
         assertEquals(DEFAULT_CHARACTER_THINKING_PROMPT, characterThinkingPromptForEditing(settings.thinking))
@@ -56,8 +56,31 @@ class CompanionPromptSettingsTest {
         assertEquals("现在是测试时间\n\n$DEFAULT_CHARACTER_THINKING_PROMPT", second.last()["content"])
     }
 
-    private suspend fun prepare(settings: CompanionPromptSettings, effort: ReasoningEffort = ReasoningEffort.HIGH): List<Map<String, Any>> {
-        val ctx = PipelineContext(ChatRequest.forLocal("synthetic", "本轮原话")).apply {
+    @Test fun previouslySavedSpeakingTextIsNotSilentlyReplacedByNewDefaults() = runBlocking {
+        val oldDefault = "像平时和对方聊天一样，用口语，简短自然。别用总结、汇报或记账的语气，也别列清单；不确定或忘了就直说，不要复述设定和规则。"
+        val settings = CompanionPromptSettings(speakingPrompt = oldDefault)
+        assertEquals(oldDefault, companionSpeakingPromptToSave(oldDefault))
+        val messages = prepare(settings)
+        assertTrue(messages.first()["content"].toString().contains(oldDefault))
+        assertFalse(messages.first()["content"].toString().contains(CompanionPromptLanguage.speakingRule))
+        assertEquals(oldDefault, settings.speakingPrompt)
+    }
+
+    @Test fun dailyInputsStayVerbatimWhileOneDefaultBlockIsInjected() = runBlocking {
+        // Synthetic situations verify request construction, not a model's conversational quality.
+        for (input in listOf("今天终于把报告交了", "同事又临时把活推给我了", "我先睡了，晚安",
+            "不是去年，是前年；我也不记得哪天", "我和你看法不一样", "上次说的面试有结果了")) {
+            val messages = prepare(CompanionPromptSettings(), userText = input)
+            assertEquals(input, messages.last { it["role"] == "user" }["content"])
+            assertEquals(1, messages.count { it["content"].toString().contains(CompanionPromptLanguage.speakingRule) })
+            assertEquals("现在是测试时间\n\n$DEFAULT_CHARACTER_THINKING_PROMPT", messages.last()["content"])
+            assertTrue(messages.first()["content"].toString().contains(CompanionPromptLanguage.bubbleRule))
+        }
+    }
+
+    private suspend fun prepare(settings: CompanionPromptSettings, effort: ReasoningEffort = ReasoningEffort.HIGH,
+        userText: String = "本轮原话"): List<Map<String, Any>> {
+        val ctx = PipelineContext(ChatRequest.forLocal("synthetic", userText)).apply {
             metadata[META_FUSED_COMPANION] = true
             metadata["session_mode"] = "agent"
         }
@@ -76,7 +99,7 @@ class CompanionPromptSettingsTest {
             override fun getReasoningEffort(ctx: PipelineContext) = effort
             override fun getCharacterRuntime(ctx: PipelineContext) = runtime
             override fun getCharacterContext(ctx: PipelineContext) = CharacterIdentity("role", "player", "synthetic")
-            override fun loadMessages(ctx: PipelineContext) = listOf(mapOf<String, Any>("role" to "user", "content" to "本轮原话"))
+            override fun loadMessages(ctx: PipelineContext) = listOf(mapOf<String, Any>("role" to "user", "content" to userText))
             override suspend fun finalizeContext(ctx: PipelineContext, messages: List<Map<String, Any>>, tools: List<Map<String, Any>>, dynamic: String): List<Map<String, Any>> {
                 val clock = mapOf<String, Any>("role" to "system", "content" to "现在是测试时间", CHARACTER_TURN_CONTEXT to "现在是测试时间")
                 result = withCharacterThinkingRule(messages + clock, ctx.promptStack.get(CHARACTER_THINKING_STYLE_KEY)?.content, ctx.usesCharacterThinking())

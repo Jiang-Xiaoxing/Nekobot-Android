@@ -481,7 +481,14 @@ fun NekobotNavGraph() {
                                     onNavigate = { route -> navController.navigate(route) }
                                 )
 
-                                Routes.MORE -> MoreScreen(onNavigate = { route -> navController.navigate(route) })
+                                Routes.MORE -> MoreScreen(
+                                    onNavigate = { route -> navController.navigate(route) },
+                                    onLogout = {
+                                        ServiceContainer.socket.disconnect()
+                                        ServiceContainer.repository.logoutLocal()
+                                        ServiceContainer.notifyLoginState(false)
+                                    }
+                                )
                             }
                     }
                 }
@@ -620,7 +627,14 @@ fun NekobotNavGraph() {
             }
             composable(Routes.MORE) {
                 Box(modifier = Modifier.fillMaxSize().mainTabInset(navRailClearance)) {
-                    MoreScreen(onNavigate = { route -> navController.navigate(route) })
+                    MoreScreen(
+                        onNavigate = { route -> navController.navigate(route) },
+                        onLogout = {
+                            ServiceContainer.socket.disconnect()
+                            ServiceContainer.repository.logoutLocal()
+                            ServiceContainer.notifyLoginState(false)
+                        }
+                    )
                 }
             }
             MoreCategory.entries.filter { it != MoreCategory.APP }.forEach { category ->

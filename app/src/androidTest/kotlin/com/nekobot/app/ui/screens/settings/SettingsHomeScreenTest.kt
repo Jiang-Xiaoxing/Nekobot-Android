@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.onNodeWithText
+import com.nekobot.app.R
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -228,80 +230,50 @@ class SettingsHomeScreenTest {
         compose.onNodeWithTag("settings-connection-logout").assertDoesNotExist()
     }
 
-    @Test fun errorsAreConsumedOnHomeConnectionAndReturnWithoutLosingNavigation() {
+    @Test fun errorsAreConsumedOnTheAuthorListIncludingAfterScroll() {
         lateinit var screenModel: SettingsViewModel
         compose.runOnUiThread { screenModel = ViewModelProvider(compose.activity)[SettingsViewModel::class.java] }
-        compose.setContent {
-            Theme {
-                Box(Modifier.fillMaxSize().testTag("settings-test-root")) {
-                    SettingsScreen({}, {}, {})
-                }
-            }
-        }
-        compose.runOnIdle { screenModel.showError("合成设置错误") }
+        compose.setContent { Theme { SettingsScreen({}, {}, {}) } }
+        compose.runOnIdle { screenModel.showError("Synthetic settings failure") }
         compose.waitUntil(5_000) { screenModel.error.value == null }
-        compose.onNodeWithTag("settings-home-connection").performScrollTo().performClick()
-        compose.onNodeWithTag("settings-connection-mode").assertIsDisplayed()
-        compose.runOnIdle { screenModel.showError("合成设置错误") }
+        compose.onNodeWithText(ServiceContainer.getString(R.string.settings_about)).performScrollTo()
+        compose.runOnIdle { screenModel.showError("Synthetic scrolled settings failure") }
         compose.waitUntil(5_000) { screenModel.error.value == null }
-        compose.onNodeWithTag("settings-home-back").performClick()
-        compose.onNodeWithTag("settings-home-connection").assertIsDisplayed()
-        compose.runOnIdle { screenModel.showError("合成设置错误") }
-        compose.waitUntil(5_000) { screenModel.error.value == null }
+        compose.onNodeWithText(ServiceContainer.getString(R.string.settings_about)).assertIsDisplayed()
     }
 
-    @Test fun connectionBackAndDestinationBackRestoreHomeScrollAndAllowReentry() {
+    @Test fun authorListDestinationBackRestoresScrollAndAllowsReentry() {
         val visited = mutableListOf<String>()
         compose.setContent {
             Theme {
-                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize().testTag("settings-test-root").background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.sizeIn(maxWidth = 320.dp, maxHeight = 560.dp).fillMaxSize()) {
                     val nav = rememberNavController()
                     NavHost(nav, "settings") {
-                        composable("settings") {
-                            SettingsScreen({}, { visited += it; nav.navigate("test/$it") }, { nav.popBackStack() })
-                        }
-                        composable("test/{route}") { entry ->
-                            if (entry.arguments?.getString("route") == "data_portability") {
-                                DataPortabilityScreen(onBack = { nav.popBackStack() })
-                            } else {
-                                Column {
-                                    Text("合成测试目的页")
-                                    Button(onClick = { nav.popBackStack() }, modifier = Modifier.testTag("settings-test-return")) { Text("返回") }
-                                }
-                            }
+                        composable("settings") { SettingsScreen({}, { visited += it; nav.navigate("test/$it") }, {}) }
+                        composable("test/{route}") {
+                            Button(onClick = { nav.popBackStack() }, modifier = Modifier.testTag("settings-test-return")) { Text("Back") }
                         }
                     }
                 }
             }
         }
-        screenshot("normal-common")
-        compose.onNodeWithTag("settings-home-about").performScrollTo()
-        screenshot("normal-about")
-        compose.onNodeWithTag("settings-home-connection").performScrollTo()
-        fun homeScroll() = compose.onNodeWithTag("settings-home-scroll").fetchSemanticsNode()
+        val about = ServiceContainer.getString(R.string.settings_about)
+        compose.onNodeWithText(about).performScrollTo()
+        fun listScroll() = compose.onNodeWithTag("settings-list").fetchSemanticsNode()
             .config[SemanticsProperties.VerticalScrollAxisRange].value()
-        val before = homeScroll()
+        val before = listScroll()
         assertTrue(before > 0f)
-        compose.onNodeWithTag("settings-home-connection").performClick()
-        compose.onNodeWithTag("settings-connection-mode").assertIsDisplayed()
-        screenshot("local-connection")
-        compose.onNodeWithTag("settings-home-back").performClick()
-        assertEquals(before, homeScroll(), 1f)
-        compose.onNodeWithTag("settings-home-connection").performClick()
-        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithTag("settings-home-connection").assertIsDisplayed()
-        assertEquals(before, homeScroll(), 1f)
-        compose.onNodeWithTag("settings-home-system_operations").performScrollTo().performTouchInput {
-            click()
-            advanceEventTime(1)
-            click()
-        }
+        compose.onNodeWithText(about).performTouchInput { click(); advanceEventTime(1); click() }
         compose.onNodeWithTag("settings-test-return").assertIsDisplayed()
-        assertEquals(listOf("system_operations"), visited)
+        assertEquals(listOf("about"), visited)
         compose.onNodeWithTag("settings-test-return").performClick()
-        compose.onNodeWithTag("settings-home-system_operations").assertIsDisplayed().performClick()
-        assertEquals(listOf("system_operations", "system_operations"), visited)
+        compose.onNodeWithText(about).assertIsDisplayed()
+        assertEquals(before, listScroll(), 1f)
+        compose.onNodeWithText(about).performClick()
+        compose.onNodeWithTag("settings-test-return").assertIsDisplayed()
+        assertEquals(listOf("about", "about"), visited)
     }
+
     @Test fun maintenanceStillOpensTheExistingImportAndExportTabs() {
         compose.setContent {
             Theme {
