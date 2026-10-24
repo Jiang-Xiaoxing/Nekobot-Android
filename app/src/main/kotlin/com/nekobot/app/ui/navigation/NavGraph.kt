@@ -49,6 +49,7 @@ import com.nekobot.app.ui.components.glassBackdropSource
 import com.nekobot.app.ui.components.rememberGlassBackdrop
 import com.nekobot.app.ui.components.rememberLiquidGlassAvailable
 import com.nekobot.app.ui.screens.aiconfig.AiConfigCenterScreen
+import com.nekobot.app.ui.screens.aiconfig.AiBalanceScreen
 import com.nekobot.app.ui.screens.aiconfig.AiConfigScreen
 import com.nekobot.app.ui.screens.aiconfig.AiModelsScreen
 import com.nekobot.app.ui.screens.aiconfig.FailoverQueueScreen
@@ -692,6 +693,9 @@ fun NekobotNavGraph() {
             }
             composable(Routes.OAUTH_ACCOUNTS) {
                 OAuthAccountsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.AI_BALANCE) {
+                AiBalanceScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.MEMORY) {
                 MemoryScreen(onBack = { navController.popBackStack() })

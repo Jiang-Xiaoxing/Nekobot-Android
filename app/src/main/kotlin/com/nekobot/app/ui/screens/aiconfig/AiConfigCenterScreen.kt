@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Key
@@ -68,6 +69,8 @@ private data class AiConfigStatus(
     val proxyModelCount: Int = 0,
     val enabledModelCount: Int = 0,
     val activeModelName: String? = null,
+    /** 最近一次余额查询的余额文案；无记录或失败时为空。 */
+    val balanceStatus: String = "",
 )
 
 /**
@@ -89,10 +92,18 @@ fun AiConfigCenterScreen(
     var status by remember { mutableStateOf(AiConfigStatus()) }
     val scope = rememberCoroutineScope()
 
-    // 加载入口状态概览（模型数 / 账户数 / 密钥数 / 当前模型名）
+    // 加载入口状态概览（模型数 / 账户数 / 密钥数 / 当前模型名 / 最近余额）
     suspend fun loadStatus() {
+        // 余额记录按 Profile 存于本地文件，两种模式都可读取
+        val latestBalance = runCatching {
+            ServiceContainer.localRepository.listAiBalanceRecords(1).firstOrNull()
+        }.getOrNull()
+        val balanceStatus = latestBalance
+            ?.takeIf { it.isSuccess }
+            ?.let { formatBalanceAmount(it.currency, it.remaining ?: it.total) }
+            .orEmpty()
         if (!isLocalMode) {
-            status = AiConfigStatus()
+            status = AiConfigStatus(balanceStatus = balanceStatus)
             return
         }
         val repo = ServiceContainer.localRepository
@@ -107,6 +118,7 @@ fun AiConfigCenterScreen(
             proxyModelCount = models.count { it.proxyUrl.isNotBlank() },
             enabledModelCount = models.count { it.enabled },
             activeModelName = activeModel?.name,
+            balanceStatus = balanceStatus,
         )
     }
 
@@ -240,6 +252,13 @@ fun AiConfigCenterScreen(
                         stringResource(R.string.aiconfig_status_count_keys, status.apiKeyCount)
                     else ""
                 ) { onNavigate("api_keys") }
+                RowDivider()
+                ConfigRow(
+                    icon = Icons.Filled.AccountBalanceWallet,
+                    title = stringResource(R.string.ai_balance_title),
+                    subtitle = stringResource(R.string.ai_balance_subtitle),
+                    status = status.balanceStatus
+                ) { onNavigate("ai_balance") }
                 if (isLocalMode) {
                     RowDivider()
                     ConfigRow(

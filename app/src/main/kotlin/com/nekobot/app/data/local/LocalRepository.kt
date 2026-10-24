@@ -10,6 +10,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.nekobot.app.data.local.ai.AiOutputLanguage
+import com.nekobot.app.data.local.ai.AiBalanceProviders
+import com.nekobot.app.data.local.ai.AiBalanceQuery
+import com.nekobot.app.data.local.ai.AiBalanceRecord
+import com.nekobot.app.data.local.ai.AiBalanceSource
 import com.nekobot.app.data.local.ai.AgentNoticeBus
 import com.nekobot.app.data.local.ai.buildAgentWakeUpMessage
 import com.nekobot.app.data.local.ai.buildImagePromptRewriteMessages
@@ -13736,6 +13740,88 @@ ${AiOutputLanguage.directive()}
 
     private fun maskKeyValue(key: String): String =
         if (key.length <= 8) "****" else key.take(4) + "****" + key.takeLast(4)
+
+    // ==================== AI 模型余额查询 ====================
+
+    private val aiBalanceQuery = AiBalanceQuery()
+    private val aiBalanceStore by lazy { AiBalanceStore.create(appContext, db.dbName) }
+
+    /**
+     * 查询模型账户余额并持久化。
+     *
+     * 成功与失败都会写一条记录，便于回看历史与排错；网络异常不向上抛出。
+     * 明文密钥只用于本次请求，落盘的只有脱敏后的 keyHint。
+     */
+    suspend fun queryAiBalance(
+        apiKey: String,
+        baseUrl: String = "",
+        providerHint: String = AiBalanceProviders.AUTO,
+        proxyUrl: String = "",
+        source: String = AiBalanceSource.MANUAL,
+        label: String = ""
+    ): AiBalanceRecord = withContext(Dispatchers.IO) {
+        val key = apiKey.trim()
+        val provider = AiBalanceProviders.resolve(key, baseUrl, providerHint)
+        val keyHint = maskKeyValue(key)
+        val createdAt = nowIso()
+        val record = try {
+            if (key.isEmpty()) throw IllegalArgumentException("请输入 API Key")
+            val snapshot = aiBalanceQuery.query(key, baseUrl, providerHint, proxyUrl)
+            AiBalanceRecord(
+                id = UUID.randomUUID().toString(),
+                provider = snapshot.provider,
+                source = source,
+                label = label.trim().ifBlank { keyHint },
+                baseUrl = baseUrl.trim(),
+                keyHint = keyHint,
+                currency = snapshot.currency,
+                total = snapshot.total,
+                remaining = snapshot.remaining,
+                used = snapshot.used,
+                granted = snapshot.granted,
+                available = snapshot.available,
+                endpoint = snapshot.endpoint,
+                status = "success",
+                rawJson = snapshot.raw.take(6000),
+                createdAt = createdAt
+            )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            val message = (error.message ?: "查询失败").let {
+                if (key.isNotBlank()) it.replace(key, "•••") else it
+            }
+            AiBalanceRecord(
+                id = UUID.randomUUID().toString(),
+                provider = provider,
+                source = source,
+                label = label.trim().ifBlank { keyHint },
+                baseUrl = baseUrl.trim(),
+                keyHint = keyHint,
+                currency = "",
+                available = false,
+                status = "error",
+                error = message.take(300),
+                createdAt = createdAt
+            )
+        }
+        aiBalanceStore.append(record)
+        record
+    }
+
+    suspend fun listAiBalanceRecords(limit: Int = 100): List<AiBalanceRecord> =
+        withContext(Dispatchers.IO) {
+            aiBalanceStore.list().take(limit)
+        }
+
+    suspend fun deleteAiBalanceRecord(id: String) = withContext(Dispatchers.IO) {
+        aiBalanceStore.delete(id)
+        Unit
+    }
+
+    suspend fun clearAiBalanceRecords() = withContext(Dispatchers.IO) {
+        aiBalanceStore.clear()
+    }
 
     // ==================== 扩展功能：AI 配置中心（基于激活模型生成 AiConfig）====================
 
