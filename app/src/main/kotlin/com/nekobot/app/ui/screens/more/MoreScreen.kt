@@ -9,18 +9,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -57,6 +61,7 @@ import com.nekobot.app.ServiceContainer
 import com.nekobot.app.data.local.AppMode
 import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.navigation.Routes
+import com.nekobot.app.ui.navigation.rememberLiquidGlassBottomBarClearance
 import com.nekobot.app.ui.theme.accentSecondary
 import com.nekobot.app.ui.theme.accentSuccess
 import com.nekobot.app.ui.theme.accentTertiary
@@ -75,30 +80,40 @@ fun MoreScreen(
     val textResources = LocalResources.current
     // 订阅全局 appMode Flow，模式切换时自动重组
     val appMode by ServiceContainer.appModeFlow.collectAsStateWithLifecycle()
+    val bottomBarClearance = rememberLiquidGlassBottomBarClearance()
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.more_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
         containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
-        Column(
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 110.dp),
+                .widthIn(max = 720.dp)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = bottomBarClearance + 24.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // -------------------- 外观 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_appearance)
-            ) {
+            item(key = "appearance") {
+                // -------------------- 外观 --------------------
+                MoreGroupCard(
+                    groupTitle = stringResource(R.string.more_group_appearance)
+                ) {
                 MoreRow(
                     icon = Icons.Filled.Palette,
                     tint = accentWarning(),
@@ -106,7 +121,10 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_style_settings_desc),
                     onClick = { onNavigate("style_settings") }
                 )
-                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
                 MoreRow(
                     icon = Icons.Filled.Landscape,
                     tint = MaterialTheme.colorScheme.primary,
@@ -116,10 +134,12 @@ fun MoreScreen(
                 )
             }
 
-            // -------------------- AI 能力 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_ai)
-            ) {
+            }
+            item(key = "ai") {
+                // -------------------- AI 能力 --------------------
+                MoreGroupCard(
+                    groupTitle = stringResource(R.string.more_group_ai)
+                ) {
                 MoreRow(
                     icon = Icons.Filled.AutoAwesome,
                     tint = accentTertiary(),
@@ -127,7 +147,10 @@ fun MoreScreen(
                     desc = if (appMode == AppMode.LOCAL) stringResource(R.string.more_ai_config_desc_local) else stringResource(R.string.more_ai_config_desc_server),
                     onClick = { onNavigate("ai_config_center") }
                 )
-                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
                 MoreRow(
                     icon = Icons.Filled.Psychology,
                     tint = MaterialTheme.colorScheme.primary,
@@ -136,7 +159,10 @@ fun MoreScreen(
                     onClick = { onNavigate("memory") }
                 )
                 if (appMode == AppMode.LOCAL) {
-                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 52.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    )
                     MoreRow(
                         icon = Icons.Outlined.Book,
                         tint = accentTertiary(),
@@ -145,7 +171,10 @@ fun MoreScreen(
                         onClick = { onNavigate(Routes.AGENT_CHARACTER_MEMORY) }
                     )
                 }
-                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
                 MoreRow(
                     icon = Icons.Filled.Bookmarks,
                     tint = accentSecondary(),
@@ -155,10 +184,12 @@ fun MoreScreen(
                 )
             }
 
-            // -------------------- 功能 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_features)
-            ) {
+            }
+            item(key = "features") {
+                // -------------------- 功能 --------------------
+                MoreGroupCard(
+                    groupTitle = stringResource(R.string.more_group_features)
+                ) {
                 MoreRow(
                     icon = Icons.Filled.Search,
                     tint = accentSecondary(),
@@ -166,7 +197,10 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_global_search_desc),
                     onClick = { onNavigate("global_search") }
                 )
-                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
                 MoreRow(
                     icon = Icons.AutoMirrored.Filled.ShowChart,
                     tint = accentSuccess(),
@@ -174,15 +208,10 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_state_history_desc),
                     onClick = { onNavigate("state_history") }
                 )
-                Spacer(Modifier.height(4.dp))
-                MoreRow(
-                    icon = Icons.Filled.Extension,
-                    tint = accentTertiary(),
-                    title = stringResource(R.string.more_extensions),
-                    desc = if (appMode != AppMode.LOCAL) stringResource(R.string.more_extensions_desc_server) else stringResource(R.string.more_extensions_desc_local),
-                    onClick = { onNavigate("extensions") }
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                 )
-                Spacer(Modifier.height(4.dp))
                 // 自定义表情包：导入图片后聊天中 `[名称]` 直接显示原图，AI 也能发送
                 MoreRow(
                     icon = Icons.Filled.EmojiEmotions,
@@ -191,12 +220,25 @@ fun MoreScreen(
                     desc = stringResource(R.string.more_stickers_desc),
                     onClick = { onNavigate("stickers") }
                 )
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
+                MoreRow(
+                    icon = Icons.Filled.Extension,
+                    tint = accentTertiary(),
+                    title = stringResource(R.string.more_extensions),
+                    desc = if (appMode != AppMode.LOCAL) stringResource(R.string.more_extensions_desc_server) else stringResource(R.string.more_extensions_desc_local),
+                    onClick = { onNavigate("extensions") }
+                )
             }
 
-            // -------------------- 系统 --------------------
-            MoreGroupCard(
-                groupTitle = stringResource(R.string.more_group_system)
-            ) {
+            }
+            item(key = "system") {
+                // -------------------- 系统 --------------------
+                MoreGroupCard(
+                    groupTitle = stringResource(R.string.more_group_system)
+                ) {
                 MoreRow(
                     icon = Icons.Filled.Security,
                     tint = accentSecondary(),
@@ -206,7 +248,10 @@ fun MoreScreen(
                 )
                 if (appMode == AppMode.LOCAL) {
                     // 本地模式：DB Profile 管理（从远程导入 nbotcfg / 切换 / 删除）
-                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 52.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    )
                     MoreRow(
                         icon = Icons.Filled.Storage,
                         tint = accentTertiary(),
@@ -217,8 +262,10 @@ fun MoreScreen(
                 }
             }
 
+            }
             // 设置置于底部
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
+            item(key = "settings") {
+                MoreGroupCard {
                 MoreRow(
                     icon = Icons.Filled.Settings,
                     tint = MaterialTheme.colorScheme.primary,
@@ -228,9 +275,11 @@ fun MoreScreen(
                 )
             }
 
+            }
             // 退出登录（仅服务器模式，本地模式无需登录）
             if (appMode != AppMode.LOCAL) {
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                item(key = "logout") {
+                    MoreGroupCard {
                     MoreRow(
                         icon = Icons.AutoMirrored.Filled.Logout,
                         tint = MaterialTheme.colorScheme.error,
@@ -238,26 +287,33 @@ fun MoreScreen(
                         desc = stringResource(R.string.more_current_user, ServiceContainer.prefs.username.ifBlank { stringResource(R.string.common_not_logged_in) }),
                         onClick = onLogout
                     )
+                    }
                 }
             }
         }
     }
 }
+}
 
 /** 分组卡片：顶部小标题 + 组内入口。 */
 @Composable
 private fun MoreGroupCard(
-    groupTitle: String,
+    groupTitle: String? = null,
     content: @Composable () -> Unit
 ) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = groupTitle,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 6.dp, start = 2.dp)
-        )
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        if (groupTitle != null) {
+            Text(
+                text = groupTitle,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp)
+            )
+        }
         content()
     }
 }
@@ -297,14 +353,32 @@ private fun MoreRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         leadingIcon()
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

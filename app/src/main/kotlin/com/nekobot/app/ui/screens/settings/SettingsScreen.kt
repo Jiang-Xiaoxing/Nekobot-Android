@@ -10,26 +10,32 @@ import android.net.Uri
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Description
@@ -38,7 +44,6 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Tune
@@ -53,6 +58,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -97,7 +103,6 @@ import com.nekobot.app.ui.components.GlassCard
 import com.nekobot.app.ui.components.LoadingOverlay
 import com.nekobot.app.ui.components.MarkdownText
 import com.nekobot.app.ui.components.NekoDialog
-import com.nekobot.app.ui.components.SectionHeader
 import com.nekobot.app.ui.theme.BgDark
 import com.nekobot.app.ui.theme.BgSurfaceVariant
 import com.nekobot.app.ui.theme.ErrorRed
@@ -392,7 +397,13 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
+                title = {
+                    Text(
+                        stringResource(R.string.settings_title),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -413,13 +424,15 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
             Column(
                 modifier = Modifier
+                    .widthIn(max = 720.dp)
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 error?.let {
@@ -428,7 +441,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
 
                 // 0. 运行模式切换
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(title = stringResource(R.string.settings_run_mode))
+                    SettingsSectionHeader(title = stringResource(R.string.settings_run_mode))
                     Spacer(Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -471,7 +484,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 // 1. 服务器配置（仅服务器模式）
                 if (appMode != AppMode.LOCAL) {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(title = stringResource(R.string.settings_server_config))
+                        SettingsSectionHeader(title = stringResource(R.string.settings_server_config))
                         Spacer(Modifier.height(12.dp))
 
                         OutlinedTextField(
@@ -517,30 +530,23 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
 
                 // 2. 系统设置（仅服务器模式）
                 if (appMode != AppMode.LOCAL) {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { onNavigate("system_settings") }
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Filled.SettingsIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stringResource(R.string.settings_system_settings), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                                Text(stringResource(R.string.settings_system_settings_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        SettingNavRow(
+                            icon = Icons.Filled.SettingsIcon,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            title = stringResource(R.string.settings_system_settings),
+                            subtitle = stringResource(R.string.settings_system_settings_desc)
+                        ) { onNavigate("system_settings") }
                     }
                 }
 
                 // 4. 系统操作（仅服务器模式）
                 if (appMode != AppMode.LOCAL) {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(title = stringResource(R.string.settings_system_actions))
+                        SettingsSectionHeader(title = stringResource(R.string.settings_system_actions))
                         Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = { vm.reloadConfig() },
@@ -555,104 +561,45 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 }
 
                 // 4.5 高级功能：数据导出中心与数据维护全模式可用，其余能力按模式展示。
-                if (appMode != AppMode.LOCAL) {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(title = stringResource(R.string.settings_advanced))
-                        Spacer(Modifier.height(12.dp))
-                        SettingSwitchRow(
-                            icon = Icons.Filled.Fingerprint,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_app_lock),
-                            subtitle = stringResource(R.string.settings_app_lock_desc),
-                            checked = appLockEnabled,
-                            enabled = pendingAppLockState.value == null,
-                            onCheckedChange = ::requestAppLockChange
-                        )
-                        SettingSwitchRow(
-                            icon = Icons.Filled.Tune,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_recent_sessions_include_archived),
-                            subtitle = stringResource(R.string.settings_recent_sessions_include_archived_desc),
-                            checked = recentSessionsIncludeArchived,
-                            onCheckedChange = { enabled ->
-                                ServiceContainer.prefs.recentSessionsIncludeArchived = enabled
-                            }
-                        )
-                        SettingSwitchRow(
-                            icon = Icons.Filled.Tune,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_open_latest_session_on_launch),
-                            subtitle = stringResource(R.string.settings_open_latest_session_on_launch_desc),
-                            checked = openLatestSessionOnLaunch,
-                            onCheckedChange = { enabled ->
-                                ServiceContainer.prefs.openLatestSessionOnLaunch = enabled
-                            }
-                        )
-                        SettingNavRow(
-                            icon = Icons.Filled.Tune,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_feature_switches),
-                            subtitle = stringResource(R.string.settings_feature_switches_desc)
-                        ) { onNavigate("feature_switches") }
-                        SettingNavRow(
-                            icon = Icons.Filled.ImportExport,
-                            iconColor = MaterialTheme.colorScheme.secondary,
-                            title = stringResource(R.string.settings_data_portability),
-                            subtitle = stringResource(R.string.settings_data_portability_desc)
-                        ) { onNavigate("data_portability") }
-                        SettingNavRow(
-                            icon = Icons.Filled.Build,
-                            iconColor = MaterialTheme.colorScheme.tertiary,
-                            title = stringResource(R.string.settings_data_maintenance),
-                            subtitle = stringResource(R.string.settings_data_maintenance_desc)
-                        ) { onNavigate("data_maintenance") }
-                        SettingNavRow(
-                            icon = Icons.Filled.ImportExport,
-                            iconColor = MaterialTheme.colorScheme.secondary,
-                            title = stringResource(R.string.settings_config_transfer),
-                            subtitle = stringResource(R.string.settings_config_transfer_desc)
-                        ) { onNavigate("config_transfer") }
-                        SettingNavRow(
-                            icon = Icons.Filled.CloudUpload,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_webdav_backup),
-                            subtitle = stringResource(R.string.settings_webdav_backup_desc)
-                        ) { onNavigate("webdav_backup") }
-                    }
-                } else {
-                    // 本地模式：保留本地可用的数据能力与 WebDAV 备份。
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(title = stringResource(R.string.settings_advanced))
-                        Spacer(Modifier.height(12.dp))
-                        SettingSwitchRow(
-                            icon = Icons.Filled.Fingerprint,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_app_lock),
-                            subtitle = stringResource(R.string.settings_app_lock_desc),
-                            checked = appLockEnabled,
-                            enabled = pendingAppLockState.value == null,
-                            onCheckedChange = ::requestAppLockChange
-                        )
-                        SettingSwitchRow(
-                            icon = Icons.Filled.Tune,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_recent_sessions_include_archived),
-                            subtitle = stringResource(R.string.settings_recent_sessions_include_archived_desc),
-                            checked = recentSessionsIncludeArchived,
-                            onCheckedChange = { enabled ->
-                                ServiceContainer.prefs.recentSessionsIncludeArchived = enabled
-                            }
-                        )
-                        SettingSwitchRow(
-                            icon = Icons.Filled.Tune,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_open_latest_session_on_launch),
-                            subtitle = stringResource(R.string.settings_open_latest_session_on_launch_desc),
-                            checked = openLatestSessionOnLaunch,
-                            onCheckedChange = { enabled ->
-                                ServiceContainer.prefs.openLatestSessionOnLaunch = enabled
-                            }
-                        )
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                ) {
+                    SettingsSectionHeader(title = stringResource(R.string.settings_advanced))
+                    Spacer(Modifier.height(8.dp))
+                    SettingSwitchRow(
+                        icon = Icons.Filled.Fingerprint,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = stringResource(R.string.settings_app_lock),
+                        subtitle = stringResource(R.string.settings_app_lock_desc),
+                        checked = appLockEnabled,
+                        enabled = pendingAppLockState.value == null,
+                        onCheckedChange = ::requestAppLockChange
+                    )
+                    SettingDivider()
+                    SettingSwitchRow(
+                        icon = Icons.Filled.Tune,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = stringResource(R.string.settings_recent_sessions_include_archived),
+                        subtitle = stringResource(R.string.settings_recent_sessions_include_archived_desc),
+                        checked = recentSessionsIncludeArchived,
+                        onCheckedChange = { enabled ->
+                            ServiceContainer.prefs.recentSessionsIncludeArchived = enabled
+                        }
+                    )
+                    SettingDivider()
+                    SettingSwitchRow(
+                        icon = Icons.Filled.Tune,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = stringResource(R.string.settings_open_latest_session_on_launch),
+                        subtitle = stringResource(R.string.settings_open_latest_session_on_launch_desc),
+                        checked = openLatestSessionOnLaunch,
+                        onCheckedChange = { enabled ->
+                            ServiceContainer.prefs.openLatestSessionOnLaunch = enabled
+                        }
+                    )
+                    if (appMode == AppMode.LOCAL) {
+                        SettingDivider()
                         SettingSwitchRow(
                             icon = Icons.Filled.AutoAwesome,
                             iconColor = MaterialTheme.colorScheme.primary,
@@ -664,30 +611,53 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                                 ServiceContainer.prefs.messageImagePromptOptimizeEnabled = enabled
                             }
                         )
+                    } else {
+                        SettingDivider()
+                        SettingNavRow(
+                            icon = Icons.Filled.Tune,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            title = stringResource(R.string.settings_feature_switches),
+                            subtitle = stringResource(R.string.settings_feature_switches_desc)
+                        ) { onNavigate("feature_switches") }
+                    }
+                    SettingDivider()
+                    SettingNavRow(
+                        icon = Icons.Filled.ImportExport,
+                        iconColor = MaterialTheme.colorScheme.secondary,
+                        title = stringResource(R.string.settings_data_portability),
+                        subtitle = stringResource(R.string.settings_data_portability_desc)
+                    ) { onNavigate("data_portability") }
+                    SettingDivider()
+                    SettingNavRow(
+                        icon = Icons.Filled.Build,
+                        iconColor = MaterialTheme.colorScheme.tertiary,
+                        title = stringResource(R.string.settings_data_maintenance),
+                        subtitle = stringResource(R.string.settings_data_maintenance_desc)
+                    ) { onNavigate("data_maintenance") }
+                    if (appMode != AppMode.LOCAL) {
+                        SettingDivider()
                         SettingNavRow(
                             icon = Icons.Filled.ImportExport,
                             iconColor = MaterialTheme.colorScheme.secondary,
-                            title = stringResource(R.string.settings_data_portability),
-                            subtitle = stringResource(R.string.settings_data_portability_desc)
-                        ) { onNavigate("data_portability") }
-                        SettingNavRow(
-                            icon = Icons.Filled.Build,
-                            iconColor = MaterialTheme.colorScheme.tertiary,
-                            title = stringResource(R.string.settings_data_maintenance),
-                            subtitle = stringResource(R.string.settings_data_maintenance_desc)
-                        ) { onNavigate("data_maintenance") }
-                        SettingNavRow(
-                            icon = Icons.Filled.CloudUpload,
-                            iconColor = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.settings_webdav_backup),
-                            subtitle = stringResource(R.string.settings_webdav_backup_desc)
-                        ) { onNavigate("webdav_backup") }
+                            title = stringResource(R.string.settings_config_transfer),
+                            subtitle = stringResource(R.string.settings_config_transfer_desc)
+                        ) { onNavigate("config_transfer") }
                     }
+                    SettingDivider()
+                    SettingNavRow(
+                        icon = Icons.Filled.CloudUpload,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = stringResource(R.string.settings_webdav_backup),
+                        subtitle = stringResource(R.string.settings_webdav_backup_desc)
+                    ) { onNavigate("webdav_backup") }
                 }
 
                 // 4.6 Agent 设置（Agent 会话运行参数）
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(title = stringResource(R.string.settings_agent_settings))
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                ) {
+                    SettingsSectionHeader(title = stringResource(R.string.settings_agent_settings))
                     Spacer(Modifier.height(8.dp))
                     SettingNavRow(
                         icon = Icons.Filled.Psychology,
@@ -698,8 +668,11 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 }
 
                 // 5. 日志与诊断（日志查看为独立页面：等级筛选 + 搜索 + 复制/清空）
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(title = stringResource(R.string.settings_logs_diagnostics))
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                ) {
+                    SettingsSectionHeader(title = stringResource(R.string.settings_logs_diagnostics))
                     Spacer(Modifier.height(8.dp))
                     SettingNavRow(
                         icon = Icons.Filled.Description,
@@ -707,6 +680,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                         title = if (appMode == AppMode.LOCAL) stringResource(R.string.settings_local_logs) else stringResource(R.string.settings_logs_view),
                         subtitle = stringResource(R.string.settings_logs_desc)
                     ) { onNavigate("logs") }
+                    SettingDivider()
                     SettingNavRow(
                         icon = Icons.Filled.BugReport,
                         iconColor = MaterialTheme.colorScheme.tertiary,
@@ -718,7 +692,7 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 // 6. 账号（仅服务器模式，本地模式无需登录）
                 if (appMode != AppMode.LOCAL) {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        SectionHeader(title = stringResource(R.string.settings_account))
+                        SettingsSectionHeader(title = stringResource(R.string.settings_account))
                         Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = { vm.logout() },
@@ -733,47 +707,36 @@ fun SettingsScreen(onLogout: () -> Unit, onNavigate: (String) -> Unit, onBack: (
                 }
 
                 // 7. 语言设置
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { showLanguagePicker = true }
-                            .padding(vertical = 12.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Filled.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                when (ServiceContainer.prefs.language) {
-                                    PrefsManager.LANGUAGE_ZH -> stringResource(R.string.language_chinese)
-                                    PrefsManager.LANGUAGE_ZH_TW -> stringResource(R.string.language_chinese_traditional)
-                                    PrefsManager.LANGUAGE_EN -> stringResource(R.string.language_english)
-                                    PrefsManager.LANGUAGE_JA -> stringResource(R.string.language_japanese)
-                                    PrefsManager.LANGUAGE_KO -> stringResource(R.string.language_korean)
-                                    else -> stringResource(R.string.language_system)
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    SettingNavRow(
+                        icon = Icons.Filled.Language,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = stringResource(R.string.settings_language),
+                        subtitle = when (ServiceContainer.prefs.language) {
+                            PrefsManager.LANGUAGE_ZH -> stringResource(R.string.language_chinese)
+                            PrefsManager.LANGUAGE_ZH_TW -> stringResource(R.string.language_chinese_traditional)
+                            PrefsManager.LANGUAGE_EN -> stringResource(R.string.language_english)
+                            PrefsManager.LANGUAGE_JA -> stringResource(R.string.language_japanese)
+                            PrefsManager.LANGUAGE_KO -> stringResource(R.string.language_korean)
+                            else -> stringResource(R.string.language_system)
                         }
-                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    ) { showLanguagePicker = true }
                 }
 
                 // 8. 关于（跳转独立关于页面）
-                GlassCard(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader(title = stringResource(R.string.settings_about))
-                    Spacer(Modifier.height(8.dp))
-                    AboutRow(
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    SettingNavRow(
                         icon = Icons.Filled.Info,
                         iconColor = MaterialTheme.colorScheme.primary,
                         title = stringResource(R.string.settings_about),
-                        subtitle = "v${getAppVersion(context)}",
-                        onClick = { onNavigate("about") }
-                    )
+                        subtitle = "v${getAppVersion(context)}"
+                    ) { onNavigate("about") }
                 }
             }
 
@@ -898,7 +861,7 @@ private fun LanguagePickerDialog(
                     )
                     if (tag == currentLanguage) {
                         Icon(
-                            Icons.Filled.KeyboardArrowRight,
+                            Icons.Filled.Check,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -909,7 +872,28 @@ private fun LanguagePickerDialog(
     }
 }
 
-/** 通用设置导航行：图标 + 标题 + 副标题 + 右箭头。 */
+/** 设置分组标题：与更多页保持一致的主色小标题。 */
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 2.dp)
+    )
+}
+
+/** 设置组内行分隔线，起点避开左侧图标。 */
+@Composable
+private fun SettingDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 52.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    )
+}
+
+/** 通用设置导航行：图标底座 + 标题 + 副标题 + 右箭头。 */
 @Composable
 private fun SettingNavRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -923,16 +907,41 @@ private fun SettingNavRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
+            .heightIn(min = 64.dp)
             .padding(vertical = 12.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
+        SettingIconBadge(icon = icon, tint = iconColor)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** 行首图标底座：与更多页、扩展页统一的圆角淡色背景。 */
+@Composable
+private fun SettingIconBadge(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(tint.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -952,10 +961,11 @@ private fun SettingSwitchRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(vertical = 12.dp),
+            .heightIn(min = 64.dp)
+            .padding(vertical = 12.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
+        SettingIconBadge(icon = icon, tint = iconColor)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -964,6 +974,7 @@ private fun SettingSwitchRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold
             )
+            Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
@@ -983,39 +994,6 @@ private fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
     is FragmentActivity -> this
     is ContextWrapper -> baseContext.findFragmentActivity()
     else -> null
-}
-
-/** 关于页面的导航行：与 [SettingNavRow] 等价，但右箭头前可显示更紧凑的副标题。 */
-@Composable
-private fun AboutRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconColor: Color,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
 }
 
 /** 用浏览器打开指定 URL，失败时 Toast 提示。 */
